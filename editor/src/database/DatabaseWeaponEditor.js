@@ -534,7 +534,7 @@ class DatabaseWeaponEditor {
         console.log('DatabaseWeaponEditor.refreshWeaponDetail - Refreshing weapon:', weapon.id);
         console.log('DatabaseWeaponEditor.refreshWeaponDetail - Weapon traits:', weapon.traits);
 
-        const container = document.querySelector('.database-detail-panel');
+        const container = document.getElementById('database-detail');
         if (container) {
             console.log('DatabaseWeaponEditor.refreshWeaponDetail - Found container, clearing and rebuilding');
             container.innerHTML = '';

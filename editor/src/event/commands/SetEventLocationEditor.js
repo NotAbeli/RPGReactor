@@ -8,7 +8,7 @@ class SetEventLocationEditor {
         this.modal = null;
         this.callback = null;
 
-        // Parameters: [characterId, type, x/mapId, y/eventId, direction]
+        // Parameters: [characterId, type, x|variable|otherCharacterId, y|variable, direction]
         // type: 0=Direct designation, 1=Designation with variables, 2=Exchange with another event
         this.characterId = -1; // -1=Player, 0=This Event, 1+=Event ID
         this.type = 0;
@@ -16,8 +16,9 @@ class SetEventLocationEditor {
         this.y = 0;
         this.xVariable = 1;
         this.yVariable = 1;
-        this.mapId = 1;
-        this.eventId = 1;
+        // Type 2 swaps with another character on THIS map; params[2] is that
+        // character's id. There is no map id in this command form.
+        this.exchangeCharacterId = 1;
         this.direction = 0; // 0=Retain, 2=Down, 4=Left, 6=Right, 8=Up
     }
 
@@ -40,9 +41,9 @@ class SetEventLocationEditor {
                 this.yVariable = params[3] || 1;
                 this.direction = params[4] || 0;
             } else if (this.type === 2) {
-                // Exchange with event
-                this.mapId = params[2] || 1;
-                this.eventId = params[3] || 1;
+                // Exchange with another character on this map.
+                this.exchangeCharacterId = params[2] ?? 0;
+                this.direction = params[4] || 0;
             }
         } else {
             this.characterId = -1;
@@ -51,8 +52,7 @@ class SetEventLocationEditor {
             this.y = 0;
             this.xVariable = 1;
             this.yVariable = 1;
-            this.mapId = 1;
-            this.eventId = 1;
+            this.exchangeCharacterId = 1;
             this.direction = 0;
         }
 
@@ -252,8 +252,9 @@ class SetEventLocationEditor {
             inputSection.appendChild(dirRow);
         } else if (this.type === 2) {
             // Exchange with event
-            const mapRow = this.createNumberInput('Map ID:', this.mapId, (value) => { this.mapId = value; }, 1, 999);
-            const eventRow = this.createNumberInput('Event ID:', this.eventId, (value) => { this.eventId = value; }, 1, 999);
+            const mapRow = this.createNumberInput('Event ID:', this.exchangeCharacterId,
+                (value) => { this.exchangeCharacterId = value; }, 0, 999);
+            const eventRow = this.createDirectionSelector();
 
             const noteDiv = document.createElement('div');
             noteDiv.textContent = tt('Exchange positions with another event');
@@ -421,8 +422,10 @@ class SetEventLocationEditor {
             // Variable designation
             params.push(this.xVariable, this.yVariable, this.direction);
         } else if (this.type === 2) {
-            // Exchange with event
-            params.push(this.mapId, this.eventId);
+            // The engine reads params[2] as the other character and params[4]
+            // as the direction; params[3] is unused but must be present so the
+            // direction lands in the slot the engine looks at.
+            params.push(this.exchangeCharacterId, 0, this.direction);
         }
 
         return {

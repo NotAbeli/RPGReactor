@@ -3759,7 +3759,13 @@ Spriteset_Map.prototype.updateOffscreenCulling = function() {
         if (!(child instanceof Window_Base)) continue;
         if (disabled) continue;
         if (this._rrWindowDormant(child, minX, maxX, minY, maxY)) {
+            // Parked this tick. The display-tree cascade in Spriteset_Base
+            // .update already ran its update() a moment ago, so the catch-up
+            // loop below must skip it or it steps twice on the transition
+            // frame — a doubled openness/animation step, and a repeat of any
+            // side effect a plugin's update() performs.
             child._rrCulled = true;
+            child._rrParkedThisTick = true;
             this._rrCullHolder.addChild(child);
         }
     }
@@ -3768,6 +3774,10 @@ Spriteset_Map.prototype.updateOffscreenCulling = function() {
     for (let i = this._rrCullHolder.children.length - 1; i >= 0; i--) {
         const child = this._rrCullHolder.children[i];
         if (!(child instanceof Window_Base)) continue;
+        if (child._rrParkedThisTick) {
+            child._rrParkedThisTick = false;
+            continue;
+        }
         child._rrCulled = false;   // let update() run normally
         if (child.update) child.update();
         if (disabled || !this._rrWindowDormant(child, minX, maxX, minY, maxY)) {
@@ -3780,10 +3790,28 @@ Spriteset_Map.prototype.updateOffscreenCulling = function() {
 
 Spriteset_Map.prototype._rrWindowDormant = function(child, minX, maxX, minY, maxY) {
     if (!child.visible) return true;
-    if (child.x < minX || child.x > maxX || child.y < minY || child.y > maxY) {
+    // Cull on the drawn extent, not the anchor point — the same correction the
+    // character-sprite branch above already carries. Window.move assigns x/y as
+    // the TOP-LEFT corner with width/height extending right and down, so a
+    // window wider than the margin can still overlap the viewport while its
+    // corner sits outside it. Culled objects are detached from the display
+    // tree, so getting this wrong makes them disappear rather than flicker.
+    const width = child.width || 0;
+    const height = child.height || 0;
+    if (child.x + width < minX || child.x > maxX ||
+        child.y + height < minY || child.y > maxY) {
         return true;
     }
-    return child.opacity === 0 && child.contentsOpacity === 0 && !child.pause;
+    // A transparent frame and transparent contents do not mean the window
+    // draws nothing: _contentsBackSprite and anything added through
+    // addInnerChild (Sprite_Gauge, Sprite_Name, Sprite_StateIcon) are siblings
+    // in the client area with their own alpha, which contentsOpacity never
+    // touches. Only park on opacity when there is nothing else drawing.
+    if (child.opacity !== 0 || child.contentsOpacity !== 0 || child.pause) return false;
+    const innerChildren = child._clientArea ? child._clientArea.children.length : 0;
+    const contentsSprite = child._contentsSprite ? 1 : 0;
+    const contentsBack = child._contentsBackSprite ? 1 : 0;
+    return innerChildren <= contentsSprite + contentsBack;
 };
 
 // Culled objects live outside the display tree; fold them back in before

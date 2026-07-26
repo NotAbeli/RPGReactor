@@ -73,7 +73,6 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 90
     env:
-      WINDOWS_CERTIFICATE_PATH: ${{ runner.temp }}\rpg-reactor-signing.pfx
       WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
       WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
       WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
@@ -88,9 +87,13 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Materialize Authenticode certificate
         if: inputs.publishable
+        env:
+          WINDOWS_CERTIFICATE_PATH: ${{ runner.temp }}\rpg-reactor-signing.pfx
         shell: pwsh
         run: '[IO.File]::WriteAllBytes($env:WINDOWS_CERTIFICATE_PATH, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))'
       - shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_PATH: ${{ runner.temp }}\rpg-reactor-signing.pfx
         run: node editor/build-scripts/release-editor.cjs --target windows --mode "$env:RELEASE_MODE" --version "$env:RELEASE_VERSION" --output-root "$env:RUNNER_TEMP\rpg-release"
       - uses: actions/upload-artifact@v4
         with:

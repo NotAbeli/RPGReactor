@@ -109,8 +109,25 @@
             }
         };
 
+        // A rejected write used to be dropped from `pending` by its own
+        // .finally() before flush() ever awaited it, so a browser storage
+        // failure — quota exceeded is the realistic one — left the in-memory
+        // file updated, flush() reporting success, and nothing on disk. The
+        // project silently reverted to its last persisted state on reload.
+        // Record failures instead and let flush() surface them.
+        const failures = [];
+        const track = (operation, relativePath) => {
+            pending.add(operation);
+            operation
+                .catch(error => {
+                    failures.push({ path: relativePath, error });
+                    console.error(`Web project write failed for ${relativePath}:`, error);
+                })
+                .finally(() => pending.delete(operation));
+        };
+
         const persist = (relativePath, data) => {
-            const operation = new Promise((resolve, reject) => {
+            track(new Promise((resolve, reject) => {
                 const request = db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put({
                     path: relativePath,
                     data,
@@ -118,9 +135,7 @@
                 });
                 request.onsuccess = resolve;
                 request.onerror = () => reject(request.error);
-            });
-            pending.add(operation);
-            operation.finally(() => pending.delete(operation));
+            }), relativePath);
         };
 
         const fs = {
@@ -192,13 +207,11 @@
                 const relativePath = projectRelative(filePath);
                 entries.delete(relativePath);
                 contents.delete(relativePath);
-                const operation = new Promise((resolve, reject) => {
+                track(new Promise((resolve, reject) => {
                     const request = db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).delete(relativePath);
                     request.onsuccess = resolve;
                     request.onerror = () => reject(request.error);
-                });
-                pending.add(operation);
-                operation.finally(() => pending.delete(operation));
+                }), relativePath);
             },
             rmSync(filePath, options = {}) {
                 const relativePath = projectRelative(filePath);
@@ -212,7 +225,20 @@
                 this.writeFileSync(destination, this.readFileSync(source));
             },
             realpathSync(filePath) { return normalizePath(filePath); },
-            async flush() { await Promise.all([...pending]); },
+            async flush() {
+                // Settled, not all: a rejection is already recorded in
+                // `failures`, and throwing here would hide the writes that did
+                // succeed. Report afterwards so the caller cannot mistake a
+                // failed save for a completed one.
+                await Promise.allSettled([...pending]);
+                if (failures.length === 0) return;
+                const failed = failures.splice(0, failures.length);
+                const names = failed.map(entry => entry.path).join(', ');
+                const error = new Error(tt('Could not save to browser storage: {names}', { names }));
+                error.failures = failed;
+                throw error;
+            },
+            hasPendingWriteFailures() { return failures.length > 0; },
             _applyStored(record) {
                 ensureParents(record.path);
                 contents.set(record.path, record.data);
@@ -320,7 +346,7 @@
 
     window.RPGReactorWebHost = {
         mode: 'web',
-        version: '0.95.0',
+        version: '0.96.0',
         projectRoot: PROJECT_ROOT,
         fs: null,
         path: createPathApi(),

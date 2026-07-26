@@ -442,10 +442,14 @@ class ShowChoicesCommandEditor {
             // format); the interpreter keys its branch state by indent, so a
             // 402 at indent 1 checked _branch[1] (never set) and skipped the
             // picked choice's body every time.
+            // The marker carries the choice text alongside its index. Only the
+            // index drives branching, but the text is what the command list and
+            // other tooling label the branch with, so a marker without it reads
+            // as an unnamed "Choice N".
             commands.push({
                 code: 402,
                 indent: 0,
-                parameters: [i]
+                parameters: [i, filteredChoices[i]]
             });
 
             // Placeholder for commands under this choice (empty for now)

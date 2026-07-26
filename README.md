@@ -1,10 +1,10 @@
 # RPG Reactor
 
-RPG Reactor 0.95.0 is an open-source, cross-platform RPG game editor and runtime for RPG Maker MV/MZ-compatible projects. RPG Reactor provides its own modern PIXI 8-based runtime while preserving compatibility with RPG Maker project data and targeting backwards compatibility with both RPG Maker MZ and MV plugins, including mixing plugins from both engines within a single project through complementary MZ and MV compatibility layers.
+RPG Reactor 0.96.0 is an open-source, cross-platform RPG game editor and runtime for RPG Maker MV/MZ-compatible projects. RPG Reactor provides its own modern PIXI 8-based runtime while preserving compatibility with RPG Maker project data and targeting backwards compatibility with both RPG Maker MZ and MV plugins, including mixing plugins from both engines within a single project through complementary MZ and MV compatibility layers.
 
 Use RPG Reactor to create, edit, playtest, and package 2D RPGs with familiar RPG Maker-style maps, events, database records, plugins, and deployment workflows, without depending on the original RPG Maker runtime or editor.
 
-Pre-built download binaries are available at <https://psychronic.itch.io/rpg-reactor>. The current development version is 0.95.0 and is not published yet; the latest tagged source release remains [0.94.8](https://github.com/Psychronic-Games/RPGReactor/releases/tag/v0.94.8).
+Pre-built download binaries are available at <https://psychronic.itch.io/rpg-reactor>. The current development version is 0.96.0 and is not published yet; the latest tagged source release is [0.95.0](https://github.com/Psychronic-Games/RPGReactor/releases/tag/v0.95.0).
 
 ## Repository Layout
 
@@ -24,7 +24,8 @@ RPGReactor/
 
 - [Editor README](editor/README.md): detailed feature list, source launch steps, project structure, shortcuts, and technical notes.
 - [Changelog](CHANGELOG.md): GitHub-facing release progress and links to the detailed editor changelog.
-- [RPG Reactor 0.95.0 draft overview](docs/devlogs/2026-07-18-rpg-reactor-0.95.0.md): current-cycle explanation, including source-audited localization, expanded database workspaces, complete Conditional Branch editing, safer large-map workflows, and restored MV/YEP save compatibility.
+- [RPG Reactor 0.96.0 draft overview](docs/devlogs/2026-07-25-rpg-reactor-0.96.0.md): current-cycle explanation of the deep correctness audit, the authored-data oracle, and the event-command and database fixes it produced.
+- [RPG Reactor 0.95.0 overview](docs/devlogs/2026-07-18-rpg-reactor-0.95.0.md): prior-cycle explanation, including source-audited localization, expanded database workspaces, complete Conditional Branch editing, safer large-map workflows, and restored MV/YEP save compatibility.
 - [Maintainer docs](docs/README.md): workflows that are useful for project maintenance but are not required for normal editor use.
 - [Release checklist](docs/RELEASE-CHECKLIST.md): exact maintainer commands for validated, signed GitHub and optional itch.io publication.
 
@@ -41,7 +42,15 @@ RPGReactor/
 - **Build & deploy**: one-click isolated playtests; cross-platform game packaging for Windows, macOS, Linux, and Web; optional Linux AppImages for games and the editor; configurable NW.js releases and runtime locales; optional staged PNG/OGG optimization; and an editor distribution builder with SHA-256 checksums.
 - **Source-audited 18-language localization** across editor-generated interface text, with locale-key and placeholder validation, Arabic right-to-left direction, and project-authored game content deliberately left untouched; plus a theme system with multiple color palettes in light and dark modes.
 
-## What's New in 0.95.0
+## What's New in 0.96.0
+
+- **A deep correctness audit of the whole codebase**: roughly forty verified bugs fixed, most of them silent — commands that rewrote themselves when reopened, records created without fields the engine reads, and editor maths that disagreed with the runtime. The bundled RPG Maker-authored projects are now used as an oracle: field sets, command parameter shapes and value types are derived from real authored data and checked in CI, so the editor cannot drift from the format it targets. Test coverage grew from 452 to 579.
+- **Event commands round-trip faithfully**: party-wide Change HP/MP/TP/EXP/Level/Parameter/State/Skill and Recover All keep their Entire Party target (and can now select it), Show Text keeps a Top window position, Fadeout BGM/BGS is authored in seconds instead of frames, plugin commands keep their readable name, choice branches record their text, Scroll Map gained Wait for Completion, and Set Event Location's exchange mode addresses the character the engine actually reads.
+- **New database records work in game**: newly created skills, weapons, items, states and animations were missing fields the runtime reads without checking — a new skill could not be used by anyone, a new weapon could not be equipped, and using a new item corrupted the user's TP. All templates now match what RPG Maker itself writes.
+- **Safer project data**: `Tilesets.json` and `System.json` are written atomically like the rest, deployed games no longer ship a duplicate copy of the database, and event names and notes are escaped before reaching the editor's own interface.
+- **Editor and runtime agree**: actor stat curves, EXP curves, tileset flag semantics and A1 waterfall rendering are checked against the runtime implementation, so the editor's previews describe what the game will do.
+
+### Previously in 0.95.0
 
 - **The editor speaks all 18 supported languages more completely**: a generated deep catalog and static source audit cover database, event-command, Forge, project, build, and Web-editor surfaces; tests enforce locale parity, Terms schemas, interpolation placeholders, and Arabic RTL behavior.
 - **The Database has room to work**: it now fills nearly the entire viewport with pane-owned scrolling. Types presents five dense lists together with multiselect Cut/Copy/Paste, context menus, ID-safe bulk clearing, Add, and confirmed maximum changes; Terms presents Basic Statuses, Parameters, Commands, and grouped Messages in one compact workspace. Both adapt in the Web editor.
@@ -149,7 +158,7 @@ cd editor
 npm test
 ```
 
-GitHub Actions runs the same suite from a clean checkout, including syntax, project scaffolding, runtime manifests, save safety, localization no-fallback checks, cross-instance clipboard transport, database and event-command serialization, map sampling and exact autotile placement, picture extensions, project lifecycle security, runtime compatibility, deployment, and release policy/signing gates. Current 0.95.0 validation completed with **350 passing tests and no failures**.
+GitHub Actions runs the same suite from a clean checkout, including syntax, project scaffolding, runtime manifests, save safety, localization no-fallback checks, cross-instance clipboard transport, database and event-command serialization, map sampling and exact autotile placement, picture extensions, project lifecycle security, runtime compatibility, deployment, and release policy/signing gates. Current 0.96.0 validation completed with **579 passing tests and no failures**.
 
 ## Runtime
 

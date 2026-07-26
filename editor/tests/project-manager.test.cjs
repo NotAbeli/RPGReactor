@@ -46,6 +46,70 @@ test('application version matches package metadata in every startup surface', ()
     }
 });
 
+// Mirrors the required list in build-scripts/build-worker.js validateProjectRuntime.
+const DEPLOYABLE_RUNTIME_FILES = [
+    'reactor_main.js', 'reactor_core.js', 'reactor_managers.js',
+    'reactor_objects.js', 'reactor_scenes.js', 'reactor_sprites.js', 'reactor_picture_extensions.js',
+    'reactor_windows.js', 'reactor_mv_compat.js', 'reactor_plugins.js',
+    path.join('libs', 'pixi.js'), path.join('libs', 'pixi_compat.js'),
+    path.join('libs', 'pako.min.js'), path.join('libs', 'lz-string.js'), path.join('libs', 'localforage.min.js'),
+    path.join('libs', 'effekseer.min.js'), path.join('libs', 'effekseer.wasm'),
+    path.join('libs', 'vorbisdecoder.js'),
+];
+
+test('the bundled Demo carries the canonical runtime byte for byte', () => {
+    // The Demo ships as the starter project and is opened in place, and
+    // installRuntime is a manual menu action — nothing refreshes its js/ for the
+    // user. When runtime/ moves ahead, the shipped Demo runs the older engine.
+    const runtimeRoot = path.join(workspaceRoot, 'runtime');
+    const demoJs = path.join(workspaceRoot, 'template', 'Demo', 'js');
+    const drifted = [];
+    const missing = [];
+
+    const walk = (relativeDir) => {
+        const sourceDir = path.join(runtimeRoot, relativeDir);
+        for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+            const relativePath = path.join(relativeDir, entry.name);
+            if (entry.isDirectory()) {
+                walk(relativePath);
+                continue;
+            }
+            // Each project owns its own plugin list; everything else is engine.
+            if (relativePath === 'reactor_plugins.js') continue;
+            const target = path.join(demoJs, relativePath);
+            if (!fs.existsSync(target)) {
+                missing.push(relativePath);
+            } else if (!fs.readFileSync(path.join(runtimeRoot, relativePath)).equals(fs.readFileSync(target))) {
+                drifted.push(relativePath);
+            }
+        }
+    };
+    walk('');
+
+    assert.deepEqual(missing, [], `copy these runtime files into template/Demo/js:\n${missing.join('\n')}`);
+    assert.deepEqual(drifted, [], `these Demo copies are behind runtime/:\n${drifted.join('\n')}`);
+});
+
+test('the bundled Demo satisfies the deployment runtime requirements', () => {
+    // validateProjectRuntime throws on any missing entry, so a gap here means
+    // Deploy Game fails on the flagship project that ships with every release.
+    const demoRoot = path.join(workspaceRoot, 'template', 'Demo');
+    assert.match(fs.readFileSync(path.join(demoRoot, 'index.html'), 'utf8'), /js\/reactor_main\.js/,
+        'the Demo boots the Reactor runtime, so deployment validates its runtime files');
+
+    const missing = DEPLOYABLE_RUNTIME_FILES.filter(
+        file => !fs.existsSync(path.join(demoRoot, 'js', file)));
+    assert.deepEqual(missing, [], `Deploy Game would reject the bundled Demo: missing ${missing.join(', ')}`);
+
+    // reactor_main.js is the loader manifest; anything it lists must be present.
+    const manifest = fs.readFileSync(path.join(demoRoot, 'js', 'reactor_main.js'), 'utf8');
+    const listed = Array.from(manifest.matchAll(/"js\/([^"]+\.js)"/g), match => match[1]);
+    assert.ok(listed.includes('reactor_picture_extensions.js'), 'the loader manifest lists the picture extensions');
+    assert.ok(listed.includes('libs/lz-string.js'), 'the loader manifest lists LZString');
+    const unloadable = listed.filter(file => !fs.existsSync(path.join(demoRoot, 'js', file)));
+    assert.deepEqual(unloadable, [], `the Demo loader would 404 on: ${unloadable.join(', ')}`);
+});
+
 test('runtime corescript files are present', () => {
     const runtimeRoot = path.join(workspaceRoot, 'runtime');
     const runtimeFiles = [

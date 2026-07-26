@@ -174,7 +174,7 @@ class EventEditor {
                     <label style="font-weight: bold; margin-right: 8px;">${this._t('event.name')}</label>
                     <input type="text"
                            class="event-name-input"
-                           value="${event.name || ''}"
+                           value="${rrEscapeHtml(event.name)}"
                            style="width: 200px; padding: 4px 8px;"
                            data-event-id="${event.id}">
                 </div>
@@ -199,7 +199,7 @@ class EventEditor {
             <label style="font-weight: bold; min-width: 80px; flex-shrink: 0;">${this._t('event.note')}</label>
             <textarea class="event-note-input"
                       style="flex: 1; padding: 4px 8px; min-height: 40px; resize: vertical; font-family: monospace; font-size: 11px; background: var(--color-bg-surface); color: var(--color-text); border: 1px solid var(--color-border-input);"
-                      data-event-id="${event.id}">${event.note || ''}</textarea>
+                      data-event-id="${event.id}">${rrEscapeHtml(event.note)}</textarea>
         `;
 
         header.appendChild(topRow);

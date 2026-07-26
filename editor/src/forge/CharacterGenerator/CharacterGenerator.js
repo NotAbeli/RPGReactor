@@ -3423,8 +3423,16 @@ class CharacterGenerator {
                 }
                 const indexed = frame.some(row => Array.isArray(row));
                 const blankRow = () => indexed ? new Array(w).fill(null) : ' '.repeat(w);
-                for (let i = 0; i < padTop; i++) frame.unshift(blankRow());
-                for (let i = 0; i < padBottom; i++) frame.push(blankRow());
+                // Pad from THIS frame's height, not from the sheet-wide
+                // maximum: a sheet-wide padTop/padBottom leaves any frame with
+                // fewer rows short of the target, so a sheet with unequal
+                // frame heights came out of "normalize" still unequal while
+                // the tool reported success.
+                const frameDy = Math.max(0, h - frame.length);
+                const frameTop = Math.floor(frameDy / 2);
+                const frameBottom = frameDy - frameTop;
+                for (let i = 0; i < frameTop; i++) frame.unshift(blankRow());
+                for (let i = 0; i < frameBottom; i++) frame.push(blankRow());
             }
         }
     }
@@ -3624,17 +3632,25 @@ ${sheetJs}
                     // Collect cell crops (full sheet or single cell) once so we
                     // can build a single shared palette of EVERY unique colour.
                     const cellCrops = [];
+                    const cellPixelW = Math.max(1, Math.round(crop.cellW));
+                    const cellPixelH = Math.max(1, Math.round(crop.cellH));
                     if (crop.sheetCols === 3 && crop.sheetRows === 4) {
                         for (let dir = 0; dir < 4; dir++) {
                             for (let frame = 0; frame < 3; frame++) {
+                                // Round the ORIGIN per cell but keep one shared
+                                // width and height. Rounding each boundary
+                                // independently makes adjacent cells differ by
+                                // a pixel whenever the sheet is not divisible
+                                // by 3x4, and the renderer left-aligns short
+                                // rows inside the canonical cell rather than
+                                // centring them — so the character jitters on
+                                // the middle walk frame.
                                 const x0 = Math.round(crop.x + frame * crop.cellW);
                                 const y0 = Math.round(crop.y + dir * crop.cellH);
-                                const x1 = Math.round(crop.x + (frame + 1) * crop.cellW);
-                                const y1 = Math.round(crop.y + (dir + 1) * crop.cellH);
                                 cellCrops.push({
                                     x: x0, y: y0,
-                                    w: Math.max(1, Math.min(source.width - x0, x1 - x0)),
-                                    h: Math.max(1, Math.min(source.height - y0, y1 - y0)),
+                                    w: Math.max(1, Math.min(source.width - x0, cellPixelW)),
+                                    h: Math.max(1, Math.min(source.height - y0, cellPixelH)),
                                     direction: dir, frame
                                 });
                             }

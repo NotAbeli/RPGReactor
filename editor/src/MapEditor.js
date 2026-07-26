@@ -479,7 +479,29 @@ class MapEditor {
         }
     }
 
+    /**
+     * A snapshot only fits the map it was taken from. Map Properties can resize
+     * the map between a paint and an undo, and the stored array is then sized
+     * for the old dimensions — restoring it would leave currentMap.data at the
+     * wrong length while width/height say otherwise, which renders as garbage
+     * and, once saved, writes a corrupt Map###.json. Discard stale snapshots
+     * rather than trusting them.
+     */
+    isUndoSnapshotValid(snapshot) {
+        const map = this.tilemapManager && this.tilemapManager.currentMap;
+        if (!map || !Array.isArray(snapshot)) return false;
+        return snapshot.length === map.width * map.height * 6;
+    }
+
+    dropStaleUndoStates() {
+        const before = this.undoStack.length + this.redoStack.length;
+        this.undoStack = this.undoStack.filter(state => this.isUndoSnapshotValid(state));
+        this.redoStack = this.redoStack.filter(state => this.isUndoSnapshotValid(state));
+        return before !== this.undoStack.length + this.redoStack.length;
+    }
+
     undo() {
+        if (this.dropStaleUndoStates()) this.notifyUndoStateChange();
         if (this.undoStack.length === 0) return;
 
         // Save current state to redo stack
@@ -502,6 +524,7 @@ class MapEditor {
     }
 
     redo() {
+        if (this.dropStaleUndoStates()) this.notifyUndoStateChange();
         if (this.redoStack.length === 0) return;
 
         // Save current state to undo stack
@@ -652,7 +675,14 @@ class MapEditor {
 
             // Eraser works independently of the active draw tool. Shape tools
             // apply on pointerup so the user can drag out the area first.
-            if (this.eraserMode && this.currentTool !== 'rectangle' && this.currentTool !== 'circle') {
+            // The eraser is a modifier on the active tool, not a tool of its
+            // own. Bucket still floods — eraseFillArea handles the erase — and
+            // the shape tools still apply on pointerup so the area can be
+            // dragged out first. Letting the eraser claim the click outright
+            // made the bucket behave like the pencil and left eraseFillArea
+            // unreachable.
+            if (this.eraserMode && this.currentTool !== 'rectangle' &&
+                this.currentTool !== 'circle' && this.currentTool !== 'fill') {
                 this.paintTile(tileX, tileY);
             } else if (this.currentTool === 'pencil') {
                 this.paintTile(tileX, tileY);
@@ -1736,8 +1766,8 @@ class MapEditor {
         // Flood fill algorithm (iterative)
         const stack = [{ x: startX, y: startY }];
         const visited = new Set();
-        const filledPositions = []; // Track positions for neighbor updates
         const affectedTiles = new Set(); // PERFORMANCE: Track tiles for incremental update
+        const reshapeSeeds = new Set(); // Only reconnect layers changed by this fill
 
         while (stack.length > 0) {
             const { x, y } = stack.pop();
@@ -1756,10 +1786,10 @@ class MapEditor {
 
             // If tile ID is 0 (transparent) or eraser mode, erase the tile instead of placing
             if (baseTileId === 0 || this.eraserMode) {
-                this.eraseTile(x, y, data, width, height, layerSize);
-                // Track all layers as potentially affected by erase
-                for (let layer = 0; layer <= 3; layer++) {
+                const erasedLayers = this.eraseTile(x, y, data, width, height, layerSize);
+                for (const layer of erasedLayers) {
                     affectedTiles.add(`${x},${y},${layer}`);
+                    reshapeSeeds.add(`${x},${y},${layer}`);
                 }
             } else {
                 // Check if this is an autotile (A1-A5)
@@ -1770,24 +1800,7 @@ class MapEditor {
                     // second A-slot, ground replaces layer 0 (the old fill
                     // stacked EVERYTHING to z1 — grass over grass at z1).
                     const basePos = y * width + x;
-                    const cls = this.classifyAutotile(baseTileId);
                     const actualPlacementLayer = this.getAutotilePlacementLayer(baseTileId, x, y);
-
-                    // Erase layers 1-3 (decorations spare existing A-tiles
-                    // there, matching the paint paths). Manual layer mode
-                    // writes ONLY to the selected z-slot and must never
-                    // clear the other layers.
-                    if (this.layerMode === 'auto') {
-                        for (let layer = 1; layer <= 3; layer++) {
-                            const layerIdx = layer * layerSize + basePos;
-                            if (layer === actualPlacementLayer) continue;
-                            const t = data[layerIdx];
-                            if (t > 0 && (!cls.isDecoration || t < 1536)) {
-                                data[layerIdx] = 0;
-                                affectedTiles.add(`${x},${y},${layer}`);
-                            }
-                        }
-                    }
 
                     // Write the base id only: the post-fill reshape pass
                     // recomputes every filled cell (and its border) against
@@ -1797,6 +1810,7 @@ class MapEditor {
                     const targetIdx = actualPlacementLayer * layerSize + basePos;
                     data[targetIdx] = baseTileId;
                     affectedTiles.add(`${x},${y},${actualPlacementLayer}`);
+                    reshapeSeeds.add(`${x},${y},${actualPlacementLayer}`);
                     if (actualPlacementLayer === 1) affectedTiles.add(`${x},${y},0`);
                 } else {
                     // For non-autotiles, calculate tile ID normally
@@ -1804,10 +1818,9 @@ class MapEditor {
                     // B-E tiles use the layering system (L1-L4)
                     data[index] = fillTileId;
                     affectedTiles.add(`${x},${y},${layerIndex}`);
+                    reshapeSeeds.add(`${x},${y},${layerIndex}`);
                 }
             }
-            filledPositions.push({ x, y });
-
             // Add adjacent tiles
             stack.push({ x: x + 1, y });
             stack.push({ x: x - 1, y });
@@ -1820,25 +1833,24 @@ class MapEditor {
         // yet-unfilled neighbors still held the old tile, so interiors come
         // out as isolated/edge variants until every cell is in place.
         const reshaped = new Set();
-        for (const pos of filledPositions) {
+        for (const seed of reshapeSeeds) {
+            const [seedX, seedY, layer] = seed.split(',').map(Number);
             for (let dy = -1; dy <= 1; dy++) {
                 for (let dx = -1; dx <= 1; dx++) {
-                    const nx = pos.x + dx;
-                    const ny = pos.y + dy;
+                    const nx = seedX + dx;
+                    const ny = seedY + dy;
                     if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
-                    const key = `${nx},${ny}`;
+                    const key = `${nx},${ny},${layer}`;
                     if (reshaped.has(key)) continue;
                     reshaped.add(key);
-                    for (let layer = 0; layer <= 3; layer++) {
-                        const idx = layer * layerSize + ny * width + nx;
-                        const t = data[idx];
-                        if (t >= 2048 && t < 8192) {
-                            const base = Math.floor((t - 2048) / 48) * 48 + 2048;
-                            const result = this.calculateAutotileShape(base, nx, ny, null, layer);
-                            if (result.tileId !== t) {
-                                data[idx] = result.tileId;
-                                affectedTiles.add(`${nx},${ny},${layer}`);
-                            }
+                    const idx = layer * layerSize + ny * width + nx;
+                    const t = data[idx];
+                    if (t >= 2048 && t < 8192) {
+                        const base = Math.floor((t - 2048) / 48) * 48 + 2048;
+                        const result = this.calculateAutotileShape(base, nx, ny, null, layer);
+                        if (result.tileId !== t) {
+                            data[idx] = result.tileId;
+                            affectedTiles.add(`${nx},${ny},${layer}`);
                         }
                     }
                 }

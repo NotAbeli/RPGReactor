@@ -3,6 +3,10 @@
 
 class RPGReactor {
     constructor() {
+        this.instanceBroker = typeof EditorInstanceBroker !== 'undefined'
+            ? EditorInstanceBroker.startForCurrentApp()
+            : null;
+
         // Core managers (data layer)
         this.projectManager = new ProjectManager();
         this.databaseManager = new DatabaseManager();
@@ -1155,13 +1159,19 @@ class RPGReactor {
         titlebar.id = 'compat-titlebar';
         titlebar.innerHTML = `
             <div class="compat-titlebar-icon"><img src="images/icon.png" alt=""></div>
-            <div class="compat-titlebar-title">RPG Reactor | Reactor One</div>
+            <div class="compat-titlebar-title"></div>
             <div class="compat-titlebar-controls">
                 <button type="button" data-window-action="minimize" title="${tt('Minimize')}">&minus;</button>
                 <button type="button" data-window-action="maximize" title="${tt('Maximize')}">□</button>
                 <button type="button" data-window-action="close" title="${tt('Close')}">×</button>
             </div>
         `;
+
+        // Seed from the real title rather than a literal: this titlebar used to
+        // ship the bundled demo's name and show it for every project, because
+        // nothing ever wrote to it after construction.
+        const label = titlebar.querySelector('.compat-titlebar-title');
+        if (label) label.textContent = document.title || 'RPG Reactor';
 
         document.body.insertBefore(titlebar, document.body.firstChild);
 

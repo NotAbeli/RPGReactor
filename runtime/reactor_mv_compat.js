@@ -710,6 +710,26 @@
             Game_Interpreter.prototype[name].__mvCharacterMirror = true;
         }
 
+        // The mirror only outranks `_characterId` while it is fresh. The map
+        // interpreter is one reused instance — setup() calls clear() for every
+        // event — and MZ's clear() resets `_characterId` but knows nothing
+        // about `_character`, so without this the previous event's character
+        // answers the next one's wait check. That character finished moving
+        // long ago, so any wait armed through the MZ contract alone (a plugin
+        // calling setWaitMode("route") after forcing a route, say) reports
+        // "not waiting" on its first tick and dissolves — the same failure the
+        // mirror exists to prevent, arriving from the opposite direction.
+        // Assign rather than redefine: the property is already non-enumerable,
+        // and creating it here would put a live character into save files.
+        if (Game_Interpreter.prototype.clear && !Game_Interpreter.prototype.clear.__mvCharacterMirror) {
+            const baseClear = Game_Interpreter.prototype.clear;
+            Game_Interpreter.prototype.clear = function() {
+                baseClear.apply(this, arguments);
+                if (this._character) this._character = null;
+            };
+            Game_Interpreter.prototype.clear.__mvCharacterMirror = true;
+        }
+
         if (!Game_Interpreter.prototype.updateWaitMode.__mvCharacterMirror) {
             const baseUpdateWaitMode = Game_Interpreter.prototype.updateWaitMode;
             Game_Interpreter.prototype.updateWaitMode = function() {
@@ -727,7 +747,13 @@
                         waiting = !!mvChar.isBalloonPlaying();
                     }
                     if (waiting !== null) {
-                        if (!waiting) this._waitMode = "";
+                        // Drop the mirror as the wait ends so it cannot answer
+                        // a later wait armed without it. The next 205/212/213
+                        // re-establishes it.
+                        if (!waiting) {
+                            this._waitMode = "";
+                            this._character = null;
+                        }
                         return waiting;
                     }
                 }
@@ -1747,17 +1773,50 @@
             origUpdate.apply(this, arguments);
         };
 
-        // Shared inert stand-in window (see alias getter below).
+        // Shared inert stand-in window (see alias getter below). `start` is
+        // included because MZ's startInput calls it on the choice, number and
+        // item windows without a null check.
         var noop = function() {};
         var mvInertWindow = {
             active: false, visible: false, openness: 0,
             open: noop, close: noop, show: noop, hide: noop,
-            activate: noop, deactivate: noop, refresh: noop,
+            activate: noop, deactivate: noop, refresh: noop, start: noop,
             update: noop, setHelpWindow: noop, select: noop, deselect: noop,
             isOpen: function() { return false; },
             isClosed: function() { return true; },
             isOpenAndActive: function() { return false; }
         };
+
+        // The MZ names need the same fallback as the MV ones below, because
+        // MZ's own message flow reads them directly: startInput() calls
+        // this._choiceListWindow.start() with no null check. Only the scene's
+        // message window gets these assigned through associateWindows, but
+        // plugins build extra Window_Message instances (measurement, backlog)
+        // and custom battle scenes never associate at all — those instances
+        // still run the normal update loop, so the first pending choice
+        // reached startInput with the field null and crashed the game
+        // (SSR: a choice during an LeTBS/ExtMesPack message). Resolving to the
+        // scene's real window keeps the choice answerable rather than merely
+        // not crashing; the inert stand-in is the last resort.
+        var mzSubWindows = {
+            _choiceListWindow: "__mvChoiceListWindow",
+            _numberInputWindow: "__mvNumberInputWindow",
+            _eventItemWindow: "__mvEventItemWindow"
+        };
+        Object.keys(mzSubWindows).forEach(function(mzName) {
+            if (Object.prototype.hasOwnProperty.call(P, mzName)) return;
+            var backing = mzSubWindows[mzName];
+            Object.defineProperty(P, mzName, {
+                get: function() {
+                    if (this[backing]) return this[backing];
+                    var scene = SceneManager._scene;
+                    if (scene && scene[mzName]) return scene[mzName];
+                    return mvInertWindow;
+                },
+                set: function(value) { this[backing] = value; },
+                configurable: true
+            });
+        });
 
         // MV field names for the MZ-injected sub-windows.
         var map = {
@@ -3958,6 +4017,23 @@
         };
     }
 
+    // MZ mirrors every animation played on an actor: createAnimationSprite runs
+    // `if (this.animationShouldMirror(targets[0])) mirror = !mirror`, and
+    // animationShouldMirror is `target.isActor()`. MV has no such rule — its
+    // rpg_sprites.js does not define animationShouldMirror at all — so MV
+    // animations are authored to play unmirrored on actors. Under MZ semantics
+    // every one of them renders reversed; it is only *visible* when the cells
+    // contain readable text (SSR's "Counter" animation reads backwards), but
+    // asymmetric effects are flipped too. MZ-authored games keep MZ's rule.
+    function installAnimationMirrorCompatibility() {
+        if (!global.Spriteset_Base || !Spriteset_Base.prototype.animationShouldMirror) return;
+        if (Spriteset_Base.prototype.animationShouldMirror.__mvNoAutoMirror) return;
+        Spriteset_Base.prototype.animationShouldMirror = function() {
+            return false;
+        };
+        Spriteset_Base.prototype.animationShouldMirror.__mvNoAutoMirror = true;
+    }
+
     function installBattleFieldOffsetCompatibility() {
         // MZ positions the battle field 24px higher than MV
         // (battleFieldOffsetY, to balance its bottom status window). MV
@@ -4303,6 +4379,7 @@
         installDamagePopupCompatibility();
         installBattleTurnFlowCompatibility();
         installBattleFieldOffsetCompatibility();
+        installAnimationMirrorCompatibility();
         installBattleInputGateCompatibility();
         installPromiseRejectionCompatibility();
     }

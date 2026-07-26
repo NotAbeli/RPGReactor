@@ -188,9 +188,14 @@ class SidebarResizer {
         }
     }
 
-    // Call this when sections are shown/hidden to update handle visibility
+    // Call this when sections are shown/hidden to update handle visibility.
+    // loadSavedSizes runs once at startup, before a project is open, and skips
+    // display:none sections — which every id-bearing section is at that point.
+    // Re-applying here is what makes the saved sizes survive, rather than being
+    // written to localStorage and then always discarded.
     refresh() {
         this.initializeSectionFlexValues();
+        this.loadSavedSizes();
         this.updateHandleVisibility();
     }
 

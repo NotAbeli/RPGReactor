@@ -62,7 +62,8 @@ class MessageCommandEditor {
         this.faceImage = command.parameters[0] || '';
         this.faceIndex = command.parameters[1] || 0;
         this.background = command.parameters[2] || 0;
-        this.positionType = command.parameters[3] || 2;
+        // 0 is Top, which is falsy — `||` silently rewrote it to Bottom.
+        this.positionType = command.parameters[3] ?? 2;
         this.speakerName = command.parameters[4] || '';
 
         // Set text lines from the 401 commands

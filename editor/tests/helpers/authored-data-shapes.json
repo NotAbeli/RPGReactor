@@ -1,0 +1,783 @@
+{
+ "_provenance": {
+  "description": "Field and parameter shapes observed in RPG Maker-authored project data. Regenerated with editor/tests/helpers/derive-authored-data-shapes.cjs.",
+  "projects": [
+   "Barebones",
+   "Complex",
+   "Demo",
+   "Star Shift Rebellion"
+  ]
+ },
+ "records": {
+  "actors": {
+   "sampled": 636,
+   "always": [
+    "battlerName",
+    "characterIndex",
+    "characterName",
+    "classId",
+    "equips",
+    "faceIndex",
+    "faceName",
+    "initialLevel",
+    "maxLevel",
+    "name",
+    "nickname",
+    "note",
+    "profile",
+    "traits"
+   ],
+   "everSeen": [
+    "battlerName",
+    "characterIndex",
+    "characterName",
+    "classId",
+    "equips",
+    "faceIndex",
+    "faceName",
+    "id",
+    "initialLevel",
+    "maxLevel",
+    "name",
+    "nickname",
+    "note",
+    "profile",
+    "traits"
+   ]
+  },
+  "classes": {
+   "sampled": 351,
+   "always": [
+    "expParams",
+    "learnings",
+    "name",
+    "note",
+    "params",
+    "traits"
+   ],
+   "everSeen": [
+    "expParams",
+    "id",
+    "learnings",
+    "name",
+    "note",
+    "params",
+    "traits"
+   ]
+  },
+  "skills": {
+   "sampled": 2270,
+   "always": [
+    "animationId",
+    "damage",
+    "description",
+    "effects",
+    "hitType",
+    "iconIndex",
+    "message1",
+    "message2",
+    "messageType",
+    "mpCost",
+    "name",
+    "note",
+    "occasion",
+    "repeats",
+    "requiredWtypeId1",
+    "requiredWtypeId2",
+    "scope",
+    "speed",
+    "stypeId",
+    "successRate",
+    "tpCost",
+    "tpGain"
+   ],
+   "everSeen": [
+    "animationId",
+    "damage",
+    "description",
+    "effects",
+    "hitType",
+    "iconIndex",
+    "id",
+    "message1",
+    "message2",
+    "messageType",
+    "mpCost",
+    "name",
+    "note",
+    "occasion",
+    "repeats",
+    "requiredWtypeId1",
+    "requiredWtypeId2",
+    "scope",
+    "speed",
+    "stypeId",
+    "successRate",
+    "tpCost",
+    "tpGain"
+   ]
+  },
+  "items": {
+   "sampled": 760,
+   "always": [
+    "animationId",
+    "consumable",
+    "damage",
+    "description",
+    "effects",
+    "hitType",
+    "iconIndex",
+    "itypeId",
+    "name",
+    "note",
+    "occasion",
+    "price",
+    "repeats",
+    "scope",
+    "speed",
+    "successRate",
+    "tpGain"
+   ],
+   "everSeen": [
+    "animationId",
+    "consumable",
+    "damage",
+    "description",
+    "effects",
+    "hitType",
+    "iconIndex",
+    "id",
+    "itypeId",
+    "name",
+    "note",
+    "occasion",
+    "price",
+    "repeats",
+    "scope",
+    "speed",
+    "successRate",
+    "tpGain"
+   ]
+  },
+  "weapons": {
+   "sampled": 650,
+   "always": [
+    "animationId",
+    "description",
+    "etypeId",
+    "iconIndex",
+    "name",
+    "note",
+    "params",
+    "price",
+    "traits",
+    "wtypeId"
+   ],
+   "everSeen": [
+    "animationId",
+    "description",
+    "etypeId",
+    "iconIndex",
+    "id",
+    "name",
+    "note",
+    "params",
+    "price",
+    "traits",
+    "wtypeId"
+   ]
+  },
+  "armors": {
+   "sampled": 730,
+   "always": [
+    "atypeId",
+    "description",
+    "etypeId",
+    "iconIndex",
+    "name",
+    "note",
+    "params",
+    "price",
+    "traits"
+   ],
+   "everSeen": [
+    "atypeId",
+    "description",
+    "etypeId",
+    "iconIndex",
+    "id",
+    "name",
+    "note",
+    "params",
+    "price",
+    "traits"
+   ]
+  },
+  "enemies": {
+   "sampled": 635,
+   "always": [
+    "actions",
+    "battlerHue",
+    "battlerName",
+    "dropItems",
+    "exp",
+    "gold",
+    "name",
+    "note",
+    "params",
+    "traits"
+   ],
+   "everSeen": [
+    "actions",
+    "battlerHue",
+    "battlerName",
+    "dropItems",
+    "exp",
+    "gold",
+    "id",
+    "name",
+    "note",
+    "params",
+    "traits"
+   ]
+  },
+  "troops": {
+   "sampled": 490,
+   "always": [
+    "members",
+    "name",
+    "pages"
+   ],
+   "everSeen": [
+    "id",
+    "members",
+    "name",
+    "pages"
+   ]
+  },
+  "states": {
+   "sampled": 720,
+   "always": [
+    "autoRemovalTiming",
+    "chanceByDamage",
+    "iconIndex",
+    "maxTurns",
+    "message1",
+    "message2",
+    "message3",
+    "message4",
+    "messageType",
+    "minTurns",
+    "motion",
+    "name",
+    "note",
+    "overlay",
+    "priority",
+    "removeAtBattleEnd",
+    "removeByDamage",
+    "removeByRestriction",
+    "removeByWalking",
+    "restriction",
+    "stepsToRemove",
+    "traits"
+   ],
+   "everSeen": [
+    "autoRemovalTiming",
+    "chanceByDamage",
+    "iconIndex",
+    "id",
+    "maxTurns",
+    "message1",
+    "message2",
+    "message3",
+    "message4",
+    "messageType",
+    "minTurns",
+    "motion",
+    "name",
+    "note",
+    "overlay",
+    "priority",
+    "releaseByDamage",
+    "removeAtBattleEnd",
+    "removeByDamage",
+    "removeByRestriction",
+    "removeByWalking",
+    "restriction",
+    "stepsToRemove",
+    "traits"
+   ]
+  },
+  "animations": {
+   "sampled": 648,
+   "always": [
+    "displayType",
+    "effectName",
+    "flashTimings",
+    "name",
+    "offsetX",
+    "offsetY",
+    "rotation",
+    "scale",
+    "soundTimings",
+    "speed"
+   ],
+   "everSeen": [
+    "alignBottom",
+    "displayType",
+    "effectName",
+    "flashTimings",
+    "id",
+    "name",
+    "offsetX",
+    "offsetY",
+    "rotation",
+    "scale",
+    "soundTimings",
+    "speed",
+    "timings"
+   ],
+   "note": "MZ-format only (records carrying effectName); MV-format animations use a different shape."
+  },
+  "tilesets": {
+   "sampled": 618,
+   "always": [
+    "flags",
+    "mode",
+    "name",
+    "note",
+    "tilesetNames"
+   ],
+   "everSeen": [
+    "flags",
+    "id",
+    "mode",
+    "name",
+    "note",
+    "tilesetNames"
+   ]
+  },
+  "commonEvents": {
+   "sampled": 583,
+   "always": [
+    "list",
+    "name",
+    "switchId",
+    "trigger"
+   ],
+   "everSeen": [
+    "id",
+    "list",
+    "name",
+    "switchId",
+    "trigger"
+   ]
+  }
+ },
+ "commandParameterLengths": {
+  "0": [
+   0
+  ],
+  "1": [
+   0
+  ],
+  "2": [
+   0
+  ],
+  "3": [
+   0
+  ],
+  "4": [
+   0
+  ],
+  "14": [
+   2
+  ],
+  "15": [
+   1
+  ],
+  "16": [
+   0
+  ],
+  "17": [
+   0
+  ],
+  "18": [
+   0
+  ],
+  "19": [
+   0
+  ],
+  "22": [
+   0
+  ],
+  "27": [
+   1
+  ],
+  "28": [
+   1
+  ],
+  "29": [
+   1
+  ],
+  "30": [
+   1
+  ],
+  "31": [
+   0
+  ],
+  "32": [
+   0
+  ],
+  "33": [
+   0
+  ],
+  "35": [
+   0
+  ],
+  "37": [
+   0
+  ],
+  "38": [
+   0
+  ],
+  "39": [
+   0
+  ],
+  "40": [
+   0
+  ],
+  "41": [
+   2
+  ],
+  "42": [
+   1
+  ],
+  "43": [
+   1
+  ],
+  "44": [
+   1
+  ],
+  "45": [
+   1
+  ],
+  "101": [
+   4,
+   5
+  ],
+  "102": [
+   2,
+   5
+  ],
+  "103": [
+   2
+  ],
+  "105": [
+   2
+  ],
+  "108": [
+   1
+  ],
+  "111": [
+   2,
+   3,
+   4,
+   5
+  ],
+  "112": [
+   0
+  ],
+  "113": [
+   0
+  ],
+  "115": [
+   0
+  ],
+  "117": [
+   1
+  ],
+  "118": [
+   1
+  ],
+  "119": [
+   1
+  ],
+  "121": [
+   3
+  ],
+  "122": [
+   5,
+   6,
+   7
+  ],
+  "123": [
+   2
+  ],
+  "124": [
+   1,
+   2
+  ],
+  "125": [
+   3
+  ],
+  "126": [
+   4
+  ],
+  "127": [
+   5
+  ],
+  "128": [
+   5
+  ],
+  "129": [
+   3
+  ],
+  "132": [
+   1
+  ],
+  "133": [
+   1
+  ],
+  "134": [
+   1
+  ],
+  "135": [
+   1
+  ],
+  "201": [
+   6
+  ],
+  "203": [
+   5
+  ],
+  "204": [
+   3,
+   4
+  ],
+  "205": [
+   2
+  ],
+  "211": [
+   1
+  ],
+  "212": [
+   3
+  ],
+  "213": [
+   3
+  ],
+  "214": [
+   0
+  ],
+  "216": [
+   1
+  ],
+  "217": [
+   0
+  ],
+  "221": [
+   0
+  ],
+  "222": [
+   0
+  ],
+  "223": [
+   3
+  ],
+  "224": [
+   3
+  ],
+  "225": [
+   4
+  ],
+  "230": [
+   1
+  ],
+  "231": [
+   10
+  ],
+  "232": [
+   12,
+   13
+  ],
+  "233": [
+   2
+  ],
+  "234": [
+   4
+  ],
+  "235": [
+   1
+  ],
+  "236": [
+   4
+  ],
+  "241": [
+   1
+  ],
+  "242": [
+   1
+  ],
+  "243": [
+   0
+  ],
+  "244": [
+   0
+  ],
+  "245": [
+   1
+  ],
+  "246": [
+   1
+  ],
+  "250": [
+   1
+  ],
+  "251": [
+   0
+  ],
+  "282": [
+   1
+  ],
+  "283": [
+   2
+  ],
+  "284": [
+   5
+  ],
+  "301": [
+   4
+  ],
+  "302": [
+   5
+  ],
+  "303": [
+   2
+  ],
+  "311": [
+   6
+  ],
+  "313": [
+   4
+  ],
+  "314": [
+   2
+  ],
+  "316": [
+   6
+  ],
+  "318": [
+   4
+  ],
+  "319": [
+   3
+  ],
+  "320": [
+   2
+  ],
+  "321": [
+   2,
+   3
+  ],
+  "322": [
+   6
+  ],
+  "331": [
+   5
+  ],
+  "333": [
+   3
+  ],
+  "334": [
+   1
+  ],
+  "335": [
+   1
+  ],
+  "336": [
+   2
+  ],
+  "337": [
+   3
+  ],
+  "339": [
+   4
+  ],
+  "340": [
+   0
+  ],
+  "351": [
+   0
+  ],
+  "352": [
+   0
+  ],
+  "353": [
+   0
+  ],
+  "354": [
+   0
+  ],
+  "355": [
+   1
+  ],
+  "356": [
+   1
+  ],
+  "357": [
+   4
+  ],
+  "401": [
+   1
+  ],
+  "402": [
+   2
+  ],
+  "403": [
+   2
+  ],
+  "404": [
+   0
+  ],
+  "405": [
+   1
+  ],
+  "408": [
+   1
+  ],
+  "411": [
+   0
+  ],
+  "412": [
+   0
+  ],
+  "413": [
+   0
+  ],
+  "505": [
+   1
+  ],
+  "601": [
+   0
+  ],
+  "602": [
+   0
+  ],
+  "603": [
+   0
+  ],
+  "604": [
+   0
+  ],
+  "605": [
+   4
+  ],
+  "655": [
+   1
+  ],
+  "657": [
+   1
+  ]
+ }
+}

@@ -32,7 +32,7 @@ test('release CLI config pins trusted NW.js and bundled Demo staging', () => {
     assert.match(worker, /prepareBundledStarter\(stageRoot\)/);
     assert.match(worker, /path\.join\('template', 'Demo'\)/);
     assert.match(worker, /releaseBuild = false/);
-    assert.match(worker, /if \(releaseBuild\) \{\s*await nativeRelease\.updateWindowsMetadata/s);
+    assert.match(worker, /if \(releaseBuild\) \{\s*const reseditPath = dependencyPath\('resedit'\);\s*if \(!reseditPath\)[\s\S]*?await nativeRelease\.updateWindowsMetadata/s);
     const interactiveManager = readRepo('editor/src/DistEditorManager.js');
     assert.match(interactiveManager, /releaseBuild: false/);
 });
@@ -153,12 +153,16 @@ test('tests do not depend on ignored private project fixtures', () => {
         const source = fs.readFileSync(path.join(__dirname, file), 'utf8');
         assert.doesNotMatch(source, /template[\\/]Demo|corpusPresent|corpusSkip/, file);
     }
+    // template/Demo is the one project the repository tracks (.gitignore
+    // re-includes it), so reaching it is fine and is how the bundled Demo gets
+    // checked. Reaching `template` without naming Demo would enumerate the
+    // private projects, which are absent in CI.
     for (const entry of fs.readdirSync(__dirname).filter(name => name.endsWith('.cjs'))) {
         if (entry === path.basename(__filename)) continue;
         const source = fs.readFileSync(path.join(__dirname, entry), 'utf8');
         assert.doesNotMatch(
             source,
-            /path\.(?:join|resolve)\(\s*repoRoot\s*,\s*['"](?:template|INSPIRATION|save)['"]/,
+            /path\.(?:join|resolve)\(\s*repoRoot\s*,\s*['"](?:template(?!['"]\s*,\s*['"]Demo['"])|INSPIRATION|save)['"]/,
             `${entry} references an ignored repository fixture`
         );
     }

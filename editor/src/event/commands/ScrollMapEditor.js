@@ -8,10 +8,11 @@ class ScrollMapEditor {
         this.modal = null;
         this.callback = null;
 
-        // Parameters: [direction, distance, speed]
+        // Parameters: [direction, distance, speed, wait]
         this.direction = 2; // 2=Down, 4=Left, 6=Right, 8=Up
         this.distance = 1; // Number of tiles
         this.speed = 4; // 1=slowest, 6=fastest
+        this.wait = false; // Hold the interpreter until the scroll finishes
     }
 
     show(command, callback) {
@@ -22,10 +23,15 @@ class ScrollMapEditor {
             this.direction = params[0] || 2;
             this.distance = params[1] || 1;
             this.speed = params[2] || 4;
+            // Commands authored before the wait flag existed have three
+            // parameters; treat the missing one as "don't wait" rather than
+            // letting it read as undefined and vanish on the next save.
+            this.wait = !!params[3];
         } else {
             this.direction = 2;
             this.distance = 1;
             this.speed = 4;
+            this.wait = false;
         }
 
         if (!this.modal) {
@@ -249,6 +255,27 @@ class ScrollMapEditor {
         speedRow.appendChild(speedSelect);
         content.appendChild(speedRow);
 
+        // Wait for Completion
+        const waitRow = document.createElement('div');
+        waitRow.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+
+        const waitCheckbox = document.createElement('input');
+        waitCheckbox.type = 'checkbox';
+        waitCheckbox.id = 'scroll-map-wait';
+        waitCheckbox.checked = this.wait;
+        waitCheckbox.addEventListener('change', (e) => {
+            this.wait = e.target.checked;
+        });
+
+        const waitLabel = document.createElement('label');
+        waitLabel.htmlFor = 'scroll-map-wait';
+        waitLabel.textContent = tt('Wait for Completion');
+        waitLabel.style.cssText = 'color: var(--color-text); font-size: 13px; cursor: pointer;';
+
+        waitRow.appendChild(waitCheckbox);
+        waitRow.appendChild(waitLabel);
+        content.appendChild(waitRow);
+
         container.appendChild(content);
 
         // Footer
@@ -293,7 +320,8 @@ class ScrollMapEditor {
             parameters: [
                 this.direction,
                 this.distance,
-                this.speed
+                this.speed,
+                this.wait
             ]
         };
     }

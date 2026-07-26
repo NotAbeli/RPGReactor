@@ -65,6 +65,17 @@ class ProjectController {
         const title = gameTitle ? `${appTitle} | ${gameTitle}` : appTitle;
         if (typeof document !== 'undefined') document.title = title;
         if (typeof nw !== 'undefined') nw.Window.get().title = title;
+        // Frameless compatibility mode (Wine/Proton) replaces the native
+        // titlebar with our own, which is not driven by document.title — it has
+        // to be written here or it keeps whatever it was built with.
+        ProjectController.updateCompatibilityTitlebar(title);
+    }
+
+    /** Mirror the window title into the compat titlebar, when one is present. */
+    static updateCompatibilityTitlebar(title) {
+        if (typeof document === 'undefined') return;
+        const label = document.querySelector('#compat-titlebar .compat-titlebar-title');
+        if (label) label.textContent = title;
     }
 
     getProjectLockPath(projectPath) {
@@ -1375,7 +1386,7 @@ class ProjectController {
 
         const menuItems = [
             { label: this._t('mapCtx.editMap'), action: () => this.editMap(mapId) },
-            { label: this._t('mapCtx.newMap'), action: () => this.createNewMap() },
+            { label: this._t('mapCtx.newMap'), action: () => this.createNewMap(mapId) },
             { label: this._t('mapCtx.loadSample'), action: () => this.loadSampleMap(), enabled: false },
             {
                 label: this._t(isInQuickAccess ? 'mapCtx.removeQuick' : 'mapCtx.addQuick'),
@@ -1531,7 +1542,7 @@ class ProjectController {
     }
 
     // Create new map
-    createNewMap() {
+    createNewMap(afterMapId = this.tilemapManager?.currentMap?.id ?? null) {
         const newMapId = this.getNextAvailableMapId();
         if (!newMapId) {
             alert(`${this._tt('Map')} ${this._tt('Max:')} ${globalThis.RR_LIMITS?.MAP_COUNT || 2000}`);
@@ -1567,7 +1578,7 @@ class ProjectController {
             events: []
         };
 
-        this.openMapPropertiesModal(newMap, true);
+        this.openMapPropertiesModal(newMap, true, afterMapId);
     }
 
     getNextMapId() {
@@ -1575,7 +1586,7 @@ class ProjectController {
     }
 
     // Open map properties modal
-    openMapPropertiesModal(mapData, isNewMap = false) {
+    openMapPropertiesModal(mapData, isNewMap = false, afterMapId = null) {
         const modal = document.getElementById('map-properties-modal');
         if (!modal) {
             return;
@@ -1584,6 +1595,7 @@ class ProjectController {
         // Store current map data and mode
         this.currentEditingMap = mapData;
         this.isCreatingNewMap = isNewMap;
+        this.newMapPlacementAnchorId = isNewMap ? afterMapId : null;
 
         // Update modal title
         const title = document.getElementById('map-properties-title');
@@ -1594,6 +1606,7 @@ class ProjectController {
 
         // Setup modal controls
         this.setupMapPropertiesModalControls();
+        this.setupMapResizeAnchorControls();
 
         // Show modal
         modal.style.display = 'flex';
@@ -1611,7 +1624,7 @@ class ProjectController {
 
         // Populate tileset dropdown
         this.populateTilesetDropdown();
-        document.getElementById('map-tileset-select').value = mapData.tilesetId || 1;
+        this.selectTilesetOption(document.getElementById('map-tileset-select'), mapData.tilesetId || 1);
 
         // BGM Settings
         const bgmCheckbox = document.getElementById('map-autoplay-bgm-checkbox');
@@ -1667,7 +1680,8 @@ class ProjectController {
         const battlebackCheckbox = document.getElementById('map-specify-battleback-checkbox');
         const battlebackPicker = document.getElementById('map-battleback-picker');
         battlebackCheckbox.checked = mapData.specifyBattleback || false;
-        battlebackPicker.style.display = battlebackCheckbox.checked ? 'flex' : 'none';
+        // 'grid' matches the element's own grid-template-columns; 'flex' ignored it.
+        battlebackPicker.style.display = battlebackCheckbox.checked ? 'grid' : 'none';
 
         this.populateBattlebackDropdowns();
         document.getElementById('map-battleback1-select').value = mapData.battleback1Name || '';
@@ -1718,6 +1732,34 @@ class ProjectController {
                 }
             });
         }
+
+        // A select with no options renders as an empty sliver. A project whose
+        // tilesets are all cleared still needs a control of normal height that
+        // says so, rather than a collapsed bar.
+        if (select.options.length === 0) {
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = this._t('common.none');
+            select.appendChild(placeholder);
+        }
+    }
+
+    /**
+     * Point the dropdown at `tilesetId`, falling back to the first real entry.
+     *
+     * Assigning a value with no matching option leaves selectedIndex at -1: the
+     * control then draws nothing and collapses to its padding, which reads as a
+     * broken widget. Maps reach that state whenever their tileset was cleared
+     * from the database, or when a new map defaults to id 1 in a project whose
+     * tilesets start higher up.
+     */
+    selectTilesetOption(select, tilesetId) {
+        if (!select) return '';
+        select.value = String(tilesetId ?? '');
+        if (select.selectedIndex < 0) {
+            select.selectedIndex = select.options.length > 0 ? 0 : -1;
+        }
+        return select.value;
     }
 
     populateAudioDropdown(selectId, type) {
@@ -2133,7 +2175,7 @@ class ProjectController {
         });
 
         document.getElementById('map-specify-battleback-checkbox').addEventListener('change', (e) => {
-            document.getElementById('map-battleback-picker').style.display = e.target.checked ? 'flex' : 'none';
+            document.getElementById('map-battleback-picker').style.display = e.target.checked ? 'grid' : 'none';
         });
 
         this.setupMapAudioPreviewControls('bgm');
@@ -2244,14 +2286,9 @@ class ProjectController {
             const newHeight = mapData.height;
 
             if (oldWidth !== newWidth || oldHeight !== newHeight) {
-                // Resize the data array, preserving existing tiles
-                mapData.data = this.resizeMapData(
-                    this.currentEditingMap.data,
-                    oldWidth,
-                    oldHeight,
-                    newWidth,
-                    newHeight
-                );
+                if (!await this.applyMapResize(mapData, this.currentEditingMap, newWidth, newHeight)) {
+                    return false;
+                }
             }
         }
 
@@ -2260,23 +2297,31 @@ class ProjectController {
             if (!this.currentProject.maps) {
                 this.currentProject.maps = [];
             }
+            // Insertion renumbers sibling order values, so a failed write has to
+            // restore the whole list rather than just drop the new entry —
+            // otherwise the map tree keeps a map that was never written to disk.
+            const mapInfosBeforeInsert = JSON.stringify(this.currentProject.maps || []);
+            const placement = this.getMapInsertPlacement(this.newMapPlacementAnchorId);
             this.currentProject.maps[mapData.id] = {
                 id: mapData.id,
                 expanded: true,
                 name: mapData.name,
-                order: this.currentProject.maps.length,
-                parentId: 0,
+                order: placement.order,
+                parentId: placement.parentId,
                 scrollX: 0,
                 scrollY: 0
             };
+            this.recalculateMapOrder(placement.parentId);
 
             // Save map file
             if (typeof nw !== 'undefined') {
                 if (!this.writeMapDataFile(mapData)) {
+                    this.currentProject.maps = JSON.parse(mapInfosBeforeInsert);
                     alert(this._tt('The new map file could not be saved.'));
                     return false;
                 }
                 if (!this.projectManager.saveMapInfos(this.currentProject.path, this.currentProject.maps)) {
+                    this.currentProject.maps = JSON.parse(mapInfosBeforeInsert);
                     alert(this._tt('The map list could not be saved.'));
                     return false;
                 }
@@ -2377,19 +2422,44 @@ class ProjectController {
         return encounters;
     }
 
-    resizeMapData(oldData, oldWidth, oldHeight, newWidth, newHeight) {
+    // Where existing content sits inside the resized map. Top-left keeps the
+    // old origin fixed, which is what RPG Maker always did and what every
+    // stored coordinate on this map already assumes.
+    static get MAP_RESIZE_ANCHORS() {
+        return {
+            'top-left': [0, 0], 'top': [0.5, 0], 'top-right': [1, 0],
+            'left': [0, 0.5], 'center': [0.5, 0.5], 'right': [1, 0.5],
+            'bottom-left': [0, 1], 'bottom': [0.5, 1], 'bottom-right': [1, 1]
+        };
+    }
+
+    computeResizeOffset(oldWidth, oldHeight, newWidth, newHeight, anchor = 'top-left') {
+        const factors = ProjectController.MAP_RESIZE_ANCHORS[anchor]
+            || ProjectController.MAP_RESIZE_ANCHORS['top-left'];
+        return {
+            offsetX: Math.round((newWidth - oldWidth) * factors[0]),
+            offsetY: Math.round((newHeight - oldHeight) * factors[1])
+        };
+    }
+
+    resizeMapData(oldData, oldWidth, oldHeight, newWidth, newHeight, offsetX = 0, offsetY = 0) {
         const numLayers = 6; // RPG Maker uses 6 layers
         const newSize = newWidth * newHeight * numLayers;
         const newData = new Array(newSize).fill(0);
 
-        // Copy tiles from old data to new data, layer by layer
+        // Walk the destination so any anchor works with one expression: each
+        // new cell pulls from the old cell the offset shifted it away from.
         for (let layer = 0; layer < numLayers; layer++) {
             const oldLayerOffset = layer * (oldWidth * oldHeight);
             const newLayerOffset = layer * (newWidth * newHeight);
 
-            for (let y = 0; y < Math.min(oldHeight, newHeight); y++) {
-                for (let x = 0; x < Math.min(oldWidth, newWidth); x++) {
-                    const oldIndex = oldLayerOffset + (y * oldWidth + x);
+            for (let y = 0; y < newHeight; y++) {
+                const sourceY = y - offsetY;
+                if (sourceY < 0 || sourceY >= oldHeight) continue;
+                for (let x = 0; x < newWidth; x++) {
+                    const sourceX = x - offsetX;
+                    if (sourceX < 0 || sourceX >= oldWidth) continue;
+                    const oldIndex = oldLayerOffset + (sourceY * oldWidth + sourceX);
                     const newIndex = newLayerOffset + (y * newWidth + x);
                     newData[newIndex] = oldData[oldIndex] || 0;
                 }
@@ -2397,6 +2467,401 @@ class ProjectController {
         }
 
         return newData;
+    }
+
+    // Events keep their IDs and move with the tiles they sit on. Anything the
+    // new bounds no longer contain is dropped — leaving it behind produces an
+    // event at coordinates the map does not have, invisible in the editor.
+    resizeMapEvents(events, newWidth, newHeight, offsetX = 0, offsetY = 0) {
+        const resized = [];
+        const lost = [];
+        if (!Array.isArray(events)) return { events, lost };
+
+        for (let index = 0; index < events.length; index++) {
+            const event = events[index];
+            if (!event) {
+                resized[index] = events[index] === undefined ? undefined : null;
+                continue;
+            }
+            const x = (Number(event.x) || 0) + offsetX;
+            const y = (Number(event.y) || 0) + offsetY;
+            if (x < 0 || x >= newWidth || y < 0 || y >= newHeight) {
+                lost.push({ id: event.id ?? index, name: event.name || '', x: event.x, y: event.y });
+                resized[index] = null;
+                continue;
+            }
+            resized[index] = { ...event, x, y };
+        }
+        return { events: resized, lost };
+    }
+
+    // Set Event Location with direct designation stores coordinates on this
+    // map, so it travels with the map's contents.
+    shiftEventLocationCommands(events, offsetX, offsetY) {
+        let shifted = 0;
+        if ((!offsetX && !offsetY) || !Array.isArray(events)) return shifted;
+        for (const event of events) {
+            for (const page of (event && event.pages) || []) {
+                for (const command of (page && page.list) || []) {
+                    if (!command || command.code !== 203) continue;
+                    const params = command.parameters;
+                    if (!Array.isArray(params) || params[1] !== 0) continue;
+                    params[2] = (Number(params[2]) || 0) + offsetX;
+                    params[3] = (Number(params[3]) || 0) + offsetY;
+                    shifted++;
+                }
+            }
+        }
+        return shifted;
+    }
+
+    countTilesOutsideResize(oldData, oldWidth, oldHeight, newWidth, newHeight, offsetX = 0, offsetY = 0) {
+        if (!Array.isArray(oldData)) return 0;
+        // The common case is growing the map, where the old rectangle lands
+        // wholly inside the new one. Skip scanning every plane for it — this
+        // runs on each keystroke in the size fields.
+        if (offsetX >= 0 && offsetY >= 0
+            && offsetX + oldWidth <= newWidth && offsetY + oldHeight <= newHeight) {
+            return 0;
+        }
+        let lost = 0;
+        for (let layer = 0; layer < 6; layer++) {
+            const layerOffset = layer * (oldWidth * oldHeight);
+            for (let y = 0; y < oldHeight; y++) {
+                const destY = y + offsetY;
+                for (let x = 0; x < oldWidth; x++) {
+                    const destX = x + offsetX;
+                    if (destX >= 0 && destX < newWidth && destY >= 0 && destY < newHeight) continue;
+                    if (oldData[layerOffset + (y * oldWidth + x)]) lost++;
+                }
+            }
+        }
+        return lost;
+    }
+
+    // Transfer Player and Set Vehicle Location store a literal destination on
+    // another map. Only direct designation carries coordinates we can adjust;
+    // variable designation resolves at runtime and is left alone.
+    collectMapReferencesInList(list, targetMapId, into = []) {
+        for (const command of Array.isArray(list) ? list : []) {
+            const params = command && command.parameters;
+            if (!Array.isArray(params)) continue;
+            if (command.code === 201 && params[0] === 0 && params[1] === targetMapId) {
+                into.push({ parameters: params, xIndex: 2, yIndex: 3, label: 'Transfer Player' });
+            } else if (command.code === 202 && params[1] === 0 && params[2] === targetMapId) {
+                into.push({ parameters: params, xIndex: 3, yIndex: 4, label: 'Set Vehicle Location' });
+            }
+        }
+        return into;
+    }
+
+    collectMapReferencesInEvents(events, targetMapId, into = []) {
+        for (const event of Array.isArray(events) ? events : []) {
+            for (const page of (event && event.pages) || []) {
+                this.collectMapReferencesInList(page && page.list, targetMapId, into);
+            }
+        }
+        return into;
+    }
+
+    applyMapReferenceOffsets(references, offsetX, offsetY) {
+        for (const reference of references || []) {
+            reference.parameters[reference.xIndex] = (Number(reference.parameters[reference.xIndex]) || 0) + offsetX;
+            reference.parameters[reference.yIndex] = (Number(reference.parameters[reference.yIndex]) || 0) + offsetY;
+        }
+        return (references || []).length;
+    }
+
+    // Player and vehicle start positions live in System.json, not the map.
+    collectSystemStartReferences(system, targetMapId, into = []) {
+        if (!system) return into;
+        if (system.startMapId === targetMapId) {
+            into.push({ parameters: system, xIndex: 'startX', yIndex: 'startY', label: 'Player start' });
+        }
+        for (const vehicle of ['boat', 'ship', 'airship']) {
+            const data = system[vehicle];
+            if (data && data.startMapId === targetMapId) {
+                into.push({ parameters: data, xIndex: 'startX', yIndex: 'startY', label: `${vehicle} start` });
+            }
+        }
+        return into;
+    }
+
+    // Reads every other map off disk, so it only runs when an anchor actually
+    // shifts content. Unreadable maps are reported rather than skipped
+    // silently — a map we cannot scan is a map we cannot promise is correct.
+    scanProjectForMapReferences(targetMapId) {
+        const report = { references: [], sources: [], unreadable: [] };
+        if (typeof nw === 'undefined' || !this.currentProject?.path) return report;
+        const fs = require('fs');
+        const path = require('path');
+
+        for (const info of this.currentProject.maps || []) {
+            if (!info || !info.id || info.id === targetMapId) continue;
+            const mapPath = path.join(this.currentProject.path, 'data', `Map${String(info.id).padStart(3, '0')}.json`);
+            if (!fs.existsSync(mapPath)) continue;
+            let mapData = null;
+            try {
+                mapData = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
+            } catch (error) {
+                report.unreadable.push(`${info.name || `Map ${info.id}`} (${error.message})`);
+                continue;
+            }
+            const found = this.collectMapReferencesInEvents(mapData.events, targetMapId);
+            if (found.length) {
+                report.references.push(...found);
+                report.sources.push({ kind: 'map', id: info.id, name: info.name || `Map ${info.id}`, count: found.length, path: mapPath, data: mapData });
+            }
+        }
+
+        const commonEvents = this.databaseManager?.data?.commonEvents || [];
+        let commonCount = 0;
+        for (const commonEvent of commonEvents) {
+            if (!commonEvent) continue;
+            const found = this.collectMapReferencesInList(commonEvent.list, targetMapId);
+            if (found.length) {
+                report.references.push(...found);
+                commonCount += found.length;
+            }
+        }
+        if (commonCount) report.sources.push({ kind: 'commonEvents', count: commonCount });
+
+        return report;
+    }
+
+    persistScannedMapReferences(report) {
+        if (typeof nw === 'undefined') return true;
+        const fs = require('fs');
+        let ok = true;
+        for (const source of report.sources || []) {
+            if (source.kind !== 'map') continue;
+            try {
+                this._writeFileAtomic(fs, source.path, JSON.stringify(source.data));
+            } catch (error) {
+                console.error('Could not update map references in', source.path, error);
+                ok = false;
+            }
+        }
+        return ok;
+    }
+
+    getSelectedMapResizeAnchor() {
+        const selected = document.getElementById('map-resize-anchor')?.querySelector('.map-anchor-cell.selected');
+        const anchor = selected?.dataset?.anchor;
+        return ProjectController.MAP_RESIZE_ANCHORS[anchor] ? anchor : 'top-left';
+    }
+
+    setupMapResizeAnchorControls() {
+        const row = document.getElementById('map-resize-anchor-row');
+        const grid = document.getElementById('map-resize-anchor');
+        if (!row || !grid) return;
+
+        // There is nothing to anchor until the map has content. Hiding the
+        // block lets the size fields take the full row, as they did before.
+        row.style.display = this.isCreatingNewMap ? 'none' : 'block';
+        if (this.isCreatingNewMap) {
+            this.updateMapResizeAnchorHint();
+            return;
+        }
+        // The column is only wide enough for a short label, so the full
+        // explanation lives on the control itself.
+        grid.title = this._t('mapProps.resizeAnchor');
+
+        const cells = Array.from(grid.querySelectorAll('.map-anchor-cell'));
+        for (const cell of cells) {
+            // Every open starts from the classic behavior rather than
+            // inheriting whatever the last resize used.
+            cell.classList.toggle('selected', cell.dataset.anchor === 'top-left');
+            if (cell.dataset.anchorBound) continue;
+            cell.addEventListener('click', () => {
+                for (const other of cells) other.classList.toggle('selected', other === cell);
+                this.updateMapResizeAnchorHint();
+            });
+            cell.dataset.anchorBound = 'true';
+        }
+
+        for (const id of ['map-width-input', 'map-height-input']) {
+            const input = document.getElementById(id);
+            if (!input || input.dataset.anchorBound) continue;
+            // Listeners read this.currentEditingMap rather than a captured map
+            // so they stay correct across every later modal open.
+            input.addEventListener('input', () => this.updateMapResizeAnchorHint());
+            input.dataset.anchorBound = 'true';
+        }
+
+        this.updateMapResizeAnchorHint();
+    }
+
+    updateMapResizeAnchorHint() {
+        const hint = document.getElementById('map-resize-anchor-hint');
+        const map = this.currentEditingMap;
+        if (!hint) return;
+        // Collapse the row entirely when there is nothing to say, rather than
+        // leaving an empty gap above Scroll Type.
+        const clear = () => {
+            hint.textContent = '';
+            hint.style.display = 'none';
+        };
+        if (!map || this.isCreatingNewMap) return clear();
+
+        const newWidth = parseInt(document.getElementById('map-width-input')?.value, 10) || 0;
+        const newHeight = parseInt(document.getElementById('map-height-input')?.value, 10) || 0;
+        if (newWidth <= 0 || newHeight <= 0 || (newWidth === map.width && newHeight === map.height)) {
+            return clear();
+        }
+
+        const analysis = this.analyzeMapResize(map, newWidth, newHeight, this.getSelectedMapResizeAnchor());
+        const parts = [];
+        if (analysis.shifts) {
+            parts.push(this._t('mapResize.contentMoves', {
+                x: this._signed(analysis.offsetX), y: this._signed(analysis.offsetY)
+            }));
+        }
+        if (analysis.tilesLost > 0) parts.push(this._t('mapResize.tilesRemoved', { count: analysis.tilesLost }));
+        if (analysis.eventsLost.length > 0) {
+            parts.push(this._t('mapResize.eventsDeleted', { count: analysis.eventsLost.length }));
+        }
+        hint.textContent = parts.length ? parts.join(' · ') : this._t('mapResize.nothingLost');
+        hint.style.display = 'block';
+    }
+
+    _signed(value) {
+        return `${value >= 0 ? '+' : ''}${value}`;
+    }
+
+    describeMapResizeLoss(analysis, oldWidth, oldHeight, newWidth, newHeight) {
+        const lines = [
+            this._t('mapResize.cropWarning', {
+                from: `${oldWidth}x${oldHeight}`, to: `${newWidth}x${newHeight}`
+            }),
+            ''
+        ];
+        if (analysis.tilesLost > 0) {
+            lines.push(this._t('mapResize.tilesRemoved', { count: analysis.tilesLost }));
+        }
+        if (analysis.eventsLost.length > 0) {
+            lines.push(this._t('mapResize.eventsDeleted', { count: analysis.eventsLost.length }));
+            for (const event of analysis.eventsLost.slice(0, 10)) {
+                lines.push(`  - #${event.id}${event.name ? ` ${event.name}` : ''} (${event.x}, ${event.y})`);
+            }
+            if (analysis.eventsLost.length > 10) {
+                lines.push(`  - ${this._t('mapResize.andMore', { count: analysis.eventsLost.length - 10 })}`);
+            }
+        }
+        lines.push('', this._t('mapResize.cannotUndo'));
+        return lines.join('\n');
+    }
+
+    describeMapReferenceUpdate(report, offsetX, offsetY) {
+        const lines = [
+            this._t('mapResize.contentMovesBy', { x: this._signed(offsetX), y: this._signed(offsetY) }),
+            ''
+        ];
+        if (report.references.length > 0) {
+            lines.push(this._t('mapResize.inboundFound', { count: report.references.length }));
+            for (const source of report.sources) {
+                lines.push(source.kind === 'commonEvents'
+                    ? `  - ${this._t('menu.commonEvents')}: ${source.count}`
+                    : `  - ${source.name}: ${source.count}`);
+            }
+            lines.push('', this._t('mapResize.inboundUpdate'));
+        }
+        if (report.unreadable.length > 0) {
+            lines.push('', this._t('mapResize.unreadableMaps'));
+            for (const name of report.unreadable.slice(0, 10)) lines.push(`  - ${name}`);
+        }
+        return lines.join('\n');
+    }
+
+    // Returns false when the user backs out, leaving the map untouched.
+    async applyMapResize(mapData, sourceMap, newWidth, newHeight) {
+        const oldWidth = Number(sourceMap.width) || 0;
+        const oldHeight = Number(sourceMap.height) || 0;
+        const anchor = this.getSelectedMapResizeAnchor();
+        const analysis = this.analyzeMapResize(sourceMap, newWidth, newHeight, anchor);
+        const { offsetX, offsetY } = analysis;
+
+        if (analysis.tilesLost > 0 || analysis.eventsLost.length > 0) {
+            if (!confirm(this.describeMapResizeLoss(analysis, oldWidth, oldHeight, newWidth, newHeight))) {
+                return false;
+            }
+        }
+
+        // Only an off-origin anchor moves content, so only then can coordinates
+        // stored outside this map stop pointing where the author meant.
+        let inbound = null;
+        if (analysis.shifts) {
+            const report = this.scanProjectForMapReferences(sourceMap.id);
+            if (report.references.length > 0 || report.unreadable.length > 0) {
+                if (confirm(this.describeMapReferenceUpdate(report, offsetX, offsetY))) {
+                    inbound = report;
+                }
+            }
+        }
+
+        // Paint snapshots taken at the old size cannot be replayed onto the new
+        // one; keeping them would let a later undo restore a wrong-length array.
+        if (this.mapEditor && this.mapEditor.clearUndoHistory) {
+            this.mapEditor.clearUndoHistory();
+        }
+        // Event history is equally stale: a resize moves events and deletes any
+        // the new bounds exclude, so undoing afterwards would put them back at
+        // coordinates the map no longer has.
+        if (this.eventManager && this.eventManager.clearUndoHistory) {
+            this.eventManager.clearUndoHistory();
+        }
+
+        mapData.data = this.resizeMapData(sourceMap.data, oldWidth, oldHeight, newWidth, newHeight, offsetX, offsetY);
+        const resized = this.resizeMapEvents(sourceMap.events, newWidth, newHeight, offsetX, offsetY);
+        mapData.events = resized.events;
+
+        if (analysis.shifts) {
+            this.shiftEventLocationCommands(mapData.events, offsetX, offsetY);
+            // A map can transfer into itself; those coordinates move too.
+            this.applyMapReferenceOffsets(
+                this.collectMapReferencesInEvents(mapData.events, sourceMap.id), offsetX, offsetY);
+
+            const system = this.databaseManager?.data?.system;
+            const systemStarts = this.collectSystemStartReferences(system, sourceMap.id);
+            if (systemStarts.length > 0) {
+                this.applyMapReferenceOffsets(systemStarts, offsetX, offsetY);
+                this.databaseManager.mutationGeneration = (this.databaseManager.mutationGeneration || 0) + 1;
+            }
+
+            if (inbound) {
+                this.applyMapReferenceOffsets(inbound.references, offsetX, offsetY);
+                if (!this.persistScannedMapReferences(inbound)) {
+                    alert(this._t('mapResize.updateFailed'));
+                }
+                if (inbound.sources.some(source => source.kind === 'commonEvents')) {
+                    this.databaseManager.mutationGeneration = (this.databaseManager.mutationGeneration || 0) + 1;
+                }
+            }
+
+            if ((systemStarts.length > 0 || inbound?.sources.some(s => s.kind === 'commonEvents'))
+                && this.databaseManager?.saveAllData && this.currentProject?.path) {
+                await this.databaseManager.saveAllData(this.currentProject.path);
+            }
+        }
+
+        return true;
+    }
+
+    analyzeMapResize(map, newWidth, newHeight, anchor = 'top-left') {
+        const oldWidth = Number(map?.width) || 0;
+        const oldHeight = Number(map?.height) || 0;
+        const { offsetX, offsetY } = this.computeResizeOffset(oldWidth, oldHeight, newWidth, newHeight, anchor);
+        const tilesLost = this.countTilesOutsideResize(
+            map?.data, oldWidth, oldHeight, newWidth, newHeight, offsetX, offsetY);
+        const { lost: eventsLost } = this.resizeMapEvents(map?.events, newWidth, newHeight, offsetX, offsetY);
+        return {
+            offsetX,
+            offsetY,
+            shifts: offsetX !== 0 || offsetY !== 0,
+            resized: oldWidth !== newWidth || oldHeight !== newHeight,
+            tilesLost,
+            eventsLost
+        };
     }
 
     // Placeholder methods for other context menu items
@@ -2494,7 +2959,7 @@ class ProjectController {
             }
 
             const sourceInfo = payload.mapInfo || {};
-            const placement = this.getMapPastePlacement(selectedMapId);
+            const placement = this.getMapInsertPlacement(selectedMapId);
             this.currentProject.maps[newMapId] = {
                 id: newMapId,
                 expanded: sourceInfo.expanded !== undefined ? sourceInfo.expanded : true,
@@ -2518,7 +2983,7 @@ class ProjectController {
         }
     }
 
-    getMapPastePlacement(selectedMapId) {
+    getMapInsertPlacement(selectedMapId) {
         const maps = this.currentProject?.maps || [];
         const selectedMap = selectedMapId ? maps[selectedMapId] : null;
         const parentId = selectedMap?.parentId ?? 0;

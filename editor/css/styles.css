@@ -2256,9 +2256,8 @@
 
         html.rr-web #html-menu-bar {
             max-width: 100vw;
-            overflow-x: auto;
-            overflow-y: hidden;
-            scrollbar-width: thin;
+            overflow: visible;
+            flex-wrap: wrap;
         }
 
         html.rr-web #html-menu-bar > * {
@@ -2615,3 +2614,55 @@
                 height: calc(100dvh - 16px) !important;
             }
         }
+
+/* Map properties: resize anchor picker. Nine cells showing where existing
+   content lands inside the new bounds; top-left reproduces the classic
+   RPG Maker behavior and stays the default. */
+.map-anchor-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--color-text-muted);
+    background-color: var(--color-bg-input);
+    border: 1px solid var(--color-border-input);
+    border-radius: 3px;
+}
+
+.map-anchor-cell:hover {
+    color: var(--color-text);
+    border-color: var(--color-accent-border-strong);
+}
+
+.map-anchor-cell.selected {
+    color: var(--color-text-strong);
+    background-color: var(--color-accent-tint-25);
+    border-color: var(--color-accent-bright);
+}
+
+/* Map Properties body: pack the panels into as many columns as the window
+   allows. CSS columns rather than grid because grid aligns rows — one tall
+   panel would then reserve empty space beside every shorter one. */
+.map-props-columns {
+    /* Two at most. General Settings is one indivisible tall panel, so a third
+       column cannot balance against it — it just strands a short panel on its
+       own with a gap beside it. Below ~700px this drops to one column. */
+    columns: 340px 2;
+    column-gap: 12px;
+}
+
+.map-props-columns > div {
+    /* Keep a panel whole; a section split across a column boundary is
+       unreadable and breaks the visual grouping. */
+    break-inside: avoid;
+    -webkit-column-break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 12px;
+}
+
+.map-props-columns > div:last-child {
+    margin-bottom: 0;
+}

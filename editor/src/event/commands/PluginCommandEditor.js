@@ -11,6 +11,7 @@ class PluginCommandEditor {
         this.callback = null;
         this.pluginName = '';
         this.commandName = '';
+        this.commandText = ''; // Display label stored in params[2]
         this.args = {};
 
         // Cached plugin data
@@ -49,6 +50,10 @@ class PluginCommandEditor {
                 this.classicText = '';
                 this.pluginName = params[0] || '';
                 this.commandName = params[1] || '';
+                // params[2] is the command's display label, taken from the
+                // plugin's @text annotation. Keep whatever the command already
+                // carries so reopening it cannot blank the label.
+                this.commandText = typeof params[2] === 'string' ? params[2] : '';
                 this.args = params[3] || {};
             }
         } else {
@@ -56,6 +61,7 @@ class PluginCommandEditor {
             this.classicText = '';
             this.pluginName = '';
             this.commandName = '';
+            this.commandText = '';
             this.args = {};
         }
 
@@ -589,6 +595,7 @@ class PluginCommandEditor {
         pluginSelect.addEventListener('change', (e) => {
             this.pluginName = e.target.value;
             this.commandName = '';
+            this.commandText = '';
             this.args = {};
             this.selectedPlugin = this.availablePlugins.find(p => p.name === this.pluginName);
             this.selectedCommand = null;
@@ -639,6 +646,7 @@ class PluginCommandEditor {
             commandSelect.addEventListener('change', (e) => {
                 this.commandName = e.target.value;
                 this.selectedCommand = commands.find(c => c.name === this.commandName);
+                this.commandText = (this.selectedCommand && this.selectedCommand.text) || '';
 
                 // Initialize args with defaults
                 this.args = {};
@@ -1023,6 +1031,19 @@ class PluginCommandEditor {
     /**
      * Build command from current data
      */
+    /**
+     * The label shown for this command in the event list. The plugin's own
+     * @text annotation wins, since the user may have picked a different command
+     * than the one that was loaded; the label already on the command is the
+     * fallback for plugins whose source is missing or unannotated.
+     */
+    displayLabel() {
+        const annotated = this.selectedCommand && this.selectedCommand.name === this.commandName
+            ? this.selectedCommand.text
+            : '';
+        return annotated || this.commandText || '';
+    }
+
     buildCommand() {
         if (this.classicMode) {
             return {
@@ -1037,7 +1058,7 @@ class PluginCommandEditor {
             parameters: [
                 this.pluginName,
                 this.commandName,
-                '', // params[2] is unused in MZ
+                this.displayLabel(),
                 this.args
             ]
         };

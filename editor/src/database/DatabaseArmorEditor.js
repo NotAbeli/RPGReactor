@@ -532,7 +532,7 @@ class DatabaseArmorEditor {
         console.log('DatabaseArmorEditor.refreshArmorDetail - Refreshing armor:', armor.id);
         console.log('DatabaseArmorEditor.refreshArmorDetail - Armor traits:', armor.traits);
 
-        const container = document.querySelector('.database-detail-panel');
+        const container = document.getElementById('database-detail');
         if (container) {
             console.log('DatabaseArmorEditor.refreshArmorDetail - Found container, clearing and rebuilding');
             container.innerHTML = '';

@@ -1193,9 +1193,9 @@ function buildWeb(stageRoot, stagingDir) {
                     const newExe = path.join(appDir, 'RPG Reactor.exe');
                     if (fs.existsSync(oldExe)) {
                         fs.copyFileSync(oldExe, newExe);
-                        const reseditPath = dependencyPath('resedit');
-                        if (!reseditPath) throw new Error('resedit is required to set Windows release metadata.');
                         if (releaseBuild) {
+                            const reseditPath = dependencyPath('resedit');
+                            if (!reseditPath) throw new Error('resedit is required to set Windows release metadata.');
                             await nativeRelease.updateWindowsMetadata(newExe, appVersion, reseditPath);
                         }
                         appendPackageToExecutable(newExe, executablePackage);

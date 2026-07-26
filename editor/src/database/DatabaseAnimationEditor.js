@@ -60,6 +60,18 @@ function RR_loadEffekseerEffectFromFile(context, effectPath, scale, onLoad, onEr
 }
 
 class DatabaseAnimationEditor {
+    /**
+     * Read a numeric input, keeping a deliberate zero.
+     *
+     * `parseInt(...) || fallback` silently rewrites 0, which matters for any
+     * control whose minimum is 0 — the SE volume slider goes to 0 for a silent
+     * timing, and that was being saved back as the default instead.
+     */
+    static readNumericInput(id, fallback, doc = document) {
+        const value = parseInt(doc.getElementById(id)?.value, 10);
+        return Number.isFinite(value) ? value : fallback;
+    }
+
     constructor(databaseManager, projectManager, commonUI, parentEditor) {
         this.databaseManager = databaseManager;
         this.projectManager = projectManager;
@@ -1700,7 +1712,7 @@ class DatabaseAnimationEditor {
         saveBtn?.addEventListener('click', () => {
             const frame = parseInt(document.getElementById('timing-frame').value) || 0;
             const seName = document.getElementById('timing-se-name').value;
-            const seVolume = parseInt(document.getElementById('timing-se-volume').value) || 90;
+            const seVolume = DatabaseAnimationEditor.readNumericInput('timing-se-volume', 90);
             const sePitch = parseInt(document.getElementById('timing-se-pitch').value) || 100;
             const flashType = parseInt(document.querySelector('input[name="flash-type"]:checked').value);
             const red = parseInt(redSlider.value);
@@ -1825,8 +1837,11 @@ class DatabaseAnimationEditor {
             const audioFile = RRAssetFiles.find(seFolder, seName, ['.ogg']);
             if (!audioFile) return;
             previewAudio = new Audio(RRAssetFiles.toUrl(audioFile.absolutePath));
-            previewAudio.volume = (parseInt(seVolumeSlider.value) || 90) / 100;
-            previewAudio.playbackRate = (parseInt(sePitchSlider.value) || 100) / 100;
+            // The volume slider is min="0" and 0 is a real setting, so a truthy
+            // default would preview a silent timing at almost full volume. The
+            // pitch slider is min="50", so it cannot reach a falsy value.
+            previewAudio.volume = DatabaseAnimationEditor.readNumericInput('timing-se-volume', 90) / 100;
+            previewAudio.playbackRate = (parseInt(sePitchSlider.value, 10) || 100) / 100;
             previewAudio.play().catch(err => console.warn('Failed to play SE preview:', err));
         });
 

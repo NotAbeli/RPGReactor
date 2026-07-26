@@ -19,7 +19,10 @@ class RecoverAllEditor {
         if (command && command.code === 314) {
             const params = command.parameters;
             this.actorSelect = params[0] || 0;
-            this.actorId = params[1] || 1;
+            // 0 means the entire party — Game_Interpreter.iterateActorId
+            // branches on `param === 0` — and 0 is falsy, so `||` collapsed
+            // every party-wide command onto actor 1.
+            this.actorId = params[1] ?? 1;
         } else {
             this.actorSelect = 0;
             this.actorId = 1;
@@ -167,6 +170,11 @@ class RecoverAllEditor {
             const select = document.createElement('select');
             select.style.cssText = 'padding:6px 10px; background-color:var(--color-bg-input); color:var(--color-text); border:1px solid var(--color-border-input); border-radius:3px; font-size:12px; flex:1;';
             const actors = this.databaseManager.data.actors || [];
+            const partyOption = document.createElement('option');
+            partyOption.value = 0;
+            partyOption.textContent = tt('Entire Party');
+            partyOption.selected = (this.actorId === 0);
+            select.appendChild(partyOption);
             for (let i = 1; i < actors.length; i++) {
                 if (!actors[i]) continue;
                 const option = document.createElement('option');

@@ -484,7 +484,7 @@ class DatabaseItemEditor {
     }
 
     refreshItemDetail(item) {
-        const container = document.querySelector('.database-detail-panel');
+        const container = document.getElementById('database-detail');
         if (container) {
             container.innerHTML = '';
             this.showItemDetail(container, item);

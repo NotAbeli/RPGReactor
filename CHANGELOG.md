@@ -4,9 +4,118 @@ All notable changes to RPG Reactor will be documented in this file.
 
 This root changelog summarizes public release progress for GitHub; larger releases group their fixes by theme. The detailed editor changelog lives at [`editor/CHANGELOG.md`](editor/CHANGELOG.md).
 
-## [Unreleased - 0.95.0]
+## [Unreleased - 0.96.0]
 
-Draft cycle overview: [RPG Reactor 0.95.0: A More Complete Editor](docs/devlogs/2026-07-18-rpg-reactor-0.95.0.md).
+0.95.1 was an internal development version and was never published; its changes ship in 0.96.0.
+
+### Added
+
+- Event editor: Conditional Branch, Show Choices, and Loop can be folded away with the arrow beside them, so a long event no longer has to be scrolled past in full. A folded block shows how many lines it is hiding, nested blocks remember their own state while an outer one is closed, and folding follows the block if you edit commands above it. Folds are remembered per event page and survive closing the editor or restarting, so a page comes back the way you left it. Everything starts expanded, and a page you have never folded stays that way.
+
+### Changed
+
+- Bumped the current development version to RPG Reactor 0.96.0.
+
+### Added
+
+- Map properties: resizing a map now warns before it discards anything. Shrinking a map tells you exactly how many tiles will be removed and lists the events that will be deleted, and nothing is changed unless you confirm. Previously both were discarded silently, and events outside the new bounds were left behind invisibly.
+- Map properties: a new anchor picker chooses which corner or edge your existing content stays attached to, so a map can grow from the top or left instead of only the bottom-right. Tiles and events move together, Set Event Location commands on the map follow, and the player and vehicle start positions are updated when they are on that map. Reactor also finds Transfer Player and Set Vehicle Location commands elsewhere in the project that jump to fixed coordinates on the resized map, and offers to update them so they still arrive in the right place. Top-left remains the default and behaves exactly as before.
+
+### Changed
+
+- Map Properties now sizes itself to its contents and rearranges to fit the window. Map Name and Display Name share a row, as do Tileset and Scroll Type, and the panels pack into two balanced columns, dropping to one on a narrow window. The dialog no longer reserves a fixed height with empty space below it, and the whole thing stays visible without scrolling even with the BGM, BGS, and Battleback sections expanded. The Note box can also be dragged taller.
+
+### Fixed
+
+- Database: skills, weapons, items, and states created in the editor were missing fields the game engine expects every record to have, and each one failed differently in play. A new **skill** could not be used by any actor. A new **weapon** never showed up in the equip list and could not be equipped. Using a new **item** in battle corrupted the user's TP for the rest of the fight. A new **state** showed no battler pose and no overlay graphic. Clearing an existing record produced the same incomplete shape. All four templates now match what RPG Maker itself writes, checked against the records in the bundled projects.
+
+- Event editor: the Scroll Map command had no "Wait for Completion" option, so an event could not wait for a scroll to finish. Worse, opening an imported command that already had it set and pressing OK quietly turned it off. The checkbox is now there and the setting is preserved.
+
+- The title bar showed "RPG Reactor | Reactor One" for every project instead of the project you had open. This only affected the Wine/Proton compatibility mode, where Reactor draws its own title bar — that one was built with the demo project's name baked in and never updated. It now tracks the open project.
+
+- Event commands: "Set Event Location → Exchange with another event" was showing and saving the wrong fields, so it swapped with the wrong event and lost the direction setting. It now matches what the game reads.
+
+- Map export: waterfall tiles came out garbled in "Save Map as Image" and in the map-stamp preview for two of the water types.
+
+- Map editor: choosing the eraser together with the bucket fill erased one tile at a time instead of flood-erasing. Flood erase now works.
+
+- Web editor: keyboard shortcuts (Ctrl+S, Ctrl+Z/Y, copy/cut/paste, Delete) did nothing in the browser version. All of them work now.
+
+- Audio player: turning looping off while a track was playing had no effect until the next track started.
+
+- Sidebar: the divider positions you set were saved but never restored.
+
+- Character Generator: imported sheets whose size isn't a clean multiple of 3x4 could jitter by a pixel on the middle walk frame, and "Normalize All Templates" said it had fixed the sheet when it hadn't. Both fixed.
+
+- Map screen: large or edge-anchored plugin windows (HUDs, banners) could vanish while still partly on screen, because the off-screen check looked at the window's corner instead of its full size. Windows that draw only through gauges, names or state icons could also disappear. Both fixed.
+
+- Event commands: opening any "Entire Party" command — Change HP/MP/TP/EXP/Level/Parameter/State/Skill or Recover All — and pressing OK silently retargeted it at the first actor only. Your inn and church heal events were affected. The setting is preserved now, and **Entire Party** is selectable in the dropdown, which it never was before.
+
+- Event commands: a Show Text set to appear at the **Top** of the screen jumped to the bottom if you reopened it and pressed OK.
+
+- Event commands: Fadeout BGM and Fadeout BGS were saved in the wrong unit, so the default "1 second" fade actually took a full minute in game, and a 5-second setting took five minutes. Existing commands imported from RPG Maker were displayed wrongly too.
+
+- Events: creating an event with a graphic from the **bottom half** of a B/C/D/E tileset page saved the wrong tile, so the event showed a different graphic than the one you picked.
+
+- Plugin Manager: adding certain plugins wrote incorrect default values into `plugins.js`, because settings belonging to a plugin's commands were being applied to the plugin's parameters.
+
+- Database → System: Victory ME, Defeat ME, Game Over ME and the Boat/Ship/Airship music were reading and writing the wrong place, so those six rows always showed "(None)" and picking a track did nothing in game. All eight rows now work.
+
+- Database: newly created animations played once in the middle of the enemy group instead of once per target on all-target skills.
+
+- Database: the Traits and Effects lists in the Skill, Item, Weapon, Armor and State editors never refreshed after you added, edited or deleted a row. Beyond looking stale, deleting twice in a row could remove an entry you hadn't selected.
+
+- Event pages: clearing the variable-threshold box on a page condition saved an empty value that the game read as zero, so the page could start running when it shouldn't. The field now keeps its previous value instead. Actor and Item conditions were also being saved as text rather than numbers, which could confuse plugins that read them.
+
+- The Demo project that ships with the editor was missing two of its startup scripts, which would have left it stuck on the loading spinner for anyone who installed a fresh copy. The files existed but had never been committed. Both are now included, and a test checks the whole startup list so it cannot happen again.
+
+- Tilesets: on some tiles, setting a terrain tag appeared to work in the editor but the game still read the old value. This affected tiles whose flags had been written by third-party tools, and Reactor was only clearing part of the value. The tag now applies, and the palette shows the number the game will actually use.
+
+- Web editor: assets stored in a folder named `project` (for example `img/pictures/project/`) failed to load, because the file lookup matched the wrong part of the path. Fixed.
+
+- Deployment: every released game included a complete second copy of the database. Battle Test leaves `Test_`-prefixed copies of all fourteen database files in `data/`, and the deployment step was copying them along with everything else — 15 MB of dead weight on one of the bundled projects, 13 MB on another, plus your saved test party. They are now skipped.
+
+- Database and battle test: `Tilesets.json` and `System.json` were written by overwriting the existing file in place, so a crash or power loss during the save could take out the old copy as well as the new one. Both now write to a temporary file and swap it in, which is what the rest of the editor already did.
+
+- Event editor: opening a plugin command and pressing OK erased its readable name, so `PSYCHRONIC_PTBS: Start PTBS Battle` became `PSYCHRONIC_PTBS: PTBS_StartBattle` in the event list — permanently, in the saved project. The name is now kept, taken from the plugin's own documentation when available, and the list shows it.
+
+- Event editor: choice branches showed as `Choice 1`, `Choice 2` instead of the choice text, because the text was never stored on the branch. New choice commands record it, and the list shows it.
+
+- Event editor: an event's Name and Note were written into the editor's own interface without escaping. A name or note containing HTML broke the fields it was displayed in, and because the editor runs with full system access, opening someone else's project with a crafted event name could have run their code on your machine. Both are now escaped, and a test checks every interface template for the same mistake.
+
+- Event editor: adding a Play BGM/BGS/ME/SE, Fadeout, or Stop SE command inside a Conditional Branch, Loop, or choice branch placed it outside that branch. In the editor it appeared at the wrong nesting level, and in game it played even when the branch condition was false — along with every command after it in that branch. Existing audio commands were unaffected; only newly added ones.
+
+- Animation timings: setting a sound effect's volume to 0 saved it as 90 instead. A silent timing is a legitimate setting and the slider goes down to 0, but the value was being treated as "nothing entered" and replaced with the default.
+
+- Web editor: a save that browser storage rejected — running out of space is the realistic case — was reported as successful. The file looked saved for the rest of the session and then reverted to its previous contents on reload. Saving now reports the failure and names the files that could not be written.
+
+- Undo after resizing a map could corrupt it. Painting, then changing the map size in Map Properties, then pressing Undo restored tile data sized for the old dimensions — the map rendered as garbage, and saving wrote that mismatched data to disk. Paint and event history are now cleared when a map is resized, and a restored snapshot that no longer fits the map is discarded rather than applied.
+- Copying between two open editors now writes the shared clipboard atomically, so a large copy cannot be read half-written by the other instance.
+
+- Tile palette: a tile holding only a thin sliver of art — the few pixels that continue an object from the tile above — could not be painted on its own. It counted as an empty tile, which switches the editor into erase mode, so painting with it rubbed tiles out instead of placing them. Selecting it together with the tile above worked, which is why it looked like the tile simply was not recognised. Genuinely empty tiles still switch to erase mode as before.
+
+- Map Properties: the Tileset dropdown could appear as an empty collapsed sliver until a tileset was picked. It happened whenever the map pointed at a tileset that no longer exists — a cleared database entry, or a new map defaulting to Tileset 1 in a project whose tilesets start higher up. The dropdown now selects the first available tileset instead of nothing, and a project with no tilesets at all shows a normal-height control reading "(None)".
+
+- Map Properties: the Battleback selectors were always visible, ignoring the Specify Battleback checkbox, and lost their two-column alignment when toggled.
+- Web editor: the textual File/Database/Plugins/Tools/Forge/Help menu now displays clickable dropdowns. Its web-only horizontal scroll container clipped every submenu outside the bar; the menu now wraps on narrow screens while preserving visible overflow. The separate icon toolbar retains horizontal scrolling.
+- Map tree: New Map from a map's context menu now inserts the map immediately after that target as a sibling at the same hierarchy level instead of appending it to the bottom of the root list. Creation without an explicit context target uses the currently highlighted map as its insertion anchor.
+- Map editor: Auto-layer paint bucket fills now preserve unrelated upper tile planes. Filling a lower floor beneath Layer 4 walls changes and reconnects only the resolved lower destination layer instead of clearing or reshaping the walls above it; explicit Layer 1-4 and eraser behavior remain unchanged.
+- Packaged editor: launching the Windows executable, macOS app, or Linux executable again now opens another isolated RPG Reactor process instead of routing the request back into the first instance. Repeated launches receive atomically leased Chromium profile slots, while existing project locks continue preventing two editors from writing the same project.
+- Windows editor deployment: interactive developer builds no longer require `resedit` while finalizing the executable. App-owned PE metadata remains mandatory for release builds, but SDK/normal developer packages can now complete from Linux-hosted NW.js workers as intended.
+- Database deletion: the toolbar Delete button now matches keyboard Delete and Cut by clearing records to blank templates in place. Tileset IDs, rows, and maximums remain stable even when clearing trailing records; macOS Backspace is accepted as Delete. Previously toolbar deletion stored hidden `null` slots, making packaged-user results appear different depending on input method. Opening any top-level list — Actors, Items, Skills, Weapons, Armors, Enemies, States, Troops, Classes, Animations, Common Events, and Tilesets — repairs those persisted hidden slots into visible blank same-ID records.
+- Localization: seven languages showed large parts of the editor in English. Chinese (Traditional and Simplified), Russian, Portuguese, German, French, and Greek inherited the English table, so roughly a third of the interface — the whole Effekseer Forge, event page fields, and toolbar tooltips — was never translated. All are now complete, and a new test fails the build when a key is added without translations instead of letting it quietly render in English.
+- Multiple editor launches: two launches starting at the same moment after a crash could both claim the same Chromium profile, which is exactly the collision the isolated-instance support exists to prevent. Slot takeover is now serialized so only one launch can claim a recovered slot.
+- Map tree: a new map whose file could not be written no longer stays in the map list. The list is restored to its previous contents and ordering, so a failed save cannot leave behind a map that does not exist on disk.
+- Bundled Demo: Deploy Game on the bundled Reactor One Demo failed with "Project runtime is incomplete". The Demo's engine files had fallen behind the current runtime and were missing the picture extensions and LZString entirely, so the Demo also ran an older engine than the editor shipped — without the level-999 support, gamepad input fixes, and save-path handling. Its runtime now matches the engine exactly.
+- Runtime performance: drawing to a bitmap no longer sends the whole image to the graphics card on every single operation. Anything that redraws text or images repeatedly — the victory aftermath EXP count-up most visibly — was uploading its entire window hundreds of times per frame; the uploads are now batched and sent once, just before drawing. This was the actual cause of the aftermath stutter.
+- Runtime performance: text colours are now read from the windowskin once per colour instead of on every use. Windows that redraw each frame — the victory aftermath EXP count-up most visibly — were performing thousands of one-pixel image reads per second, whose constant memory churn showed up as stuttering.
+- MV compatibility: battle animations played on party members are no longer mirrored. MZ flips every animation shown on an actor; MV never did, so MV animations are drawn to play as-is. The reversal was invisible on symmetrical effects but obvious on any animation containing words — Star Shift Rebellion's "Counter" animation read backwards. MZ-authored projects keep MZ's behavior.
+- MV compatibility: showing a choice could crash the game with "Cannot read properties of null (reading 'start')". Plugins and custom battle scenes create extra message windows that the scene never wires up, and a choice arriving on one of those had nowhere to go. Choices now fall back to the scene's real choice window, so they still appear and can be answered. Reported in Star Shift Rebellion.
+- MV compatibility: a Set Movement Route with Wait in one event could make a later event's move route finish instantly instead of waiting. The character being watched was remembered but never forgotten, so once an event ended, the next one could check the wrong character — one that had already stopped moving. Reported in Star Shift Rebellion as move routes running all at once.
+
+## [0.95.0] - 2026-07-20
+
+Cycle overview: [RPG Reactor 0.95.0: A More Complete Editor](docs/devlogs/2026-07-18-rpg-reactor-0.95.0.md).
 
 0.94.9 was an internal development version and was never published; its changes ship in 0.95.0.
 

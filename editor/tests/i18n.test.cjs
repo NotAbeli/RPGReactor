@@ -275,6 +275,65 @@ test('literal translations preserve interpolation placeholders', () => {
     }
 });
 
+// Product names and terms that established localizations legitimately keep
+// identical to English. Every other match is an untranslated key: locales built
+// from RR_ADDITIONAL_LOCALES inherit the English table, so a key added without a
+// translation renders in English instead of failing loudly.
+const IDENTICAL_TO_ENGLISH_BY_DESIGN = [
+    'app.title', 'about.version', 'about.steam', 'about.youtube',
+    'about.rarelyTypicalPlayers', 'common.ok'
+];
+
+const LOANWORDS_BY_LOCALE = {
+    es: ['event.actor', 'event.dir', 'event.normal', 'event.tile', 'event.variable', 'forge.tab.procedural', 'mapProps.tileset', 'mapProps.vol', 'menu.tilesets', 'options.editor', 'theme.cascadia.name', 'toolbar.tileset', 'toolbar.title.plugins', 'workspace.zoom'],
+    pt: ['audio.volume', 'event.item', 'event.normal', 'event.tile', 'forge.tab.procedural', 'mapProps.tileset', 'menu.classes', 'menu.tilesets', 'options.editor', 'toolbar.tileset', 'workspace.zoom'],
+    de: ['audio.me', 'audio.pause', 'db.system1', 'db.system2', 'efk.frame', 'efk.framesLabel', 'efk.pause', 'event.index', 'event.normal', 'event.parallel', 'event.position', 'event.variable', 'forge.frame', 'mapProps.pause', 'mapProps.tileset', 'menu.system', 'menu.tilesets', 'options.editor', 'options.palette', 'toolbar.tileset', 'workspace.zoom'],
+    fr: ['audio.pause', 'audio.volume', 'efk.orientation', 'efk.pause', 'event.conditions', 'event.image', 'event.normal', 'event.options', 'event.page', 'mapProps.note', 'mapProps.pause', 'menu.animations', 'menu.classes', 'menu.forge', 'menu.tilesets', 'menu.types', 'options.mode', 'options.palette', 'options.title'],
+    it: ['audio.volume', 'event.dir', 'event.pattern', 'event.tile', 'mapProps.loopX', 'mapProps.loopY', 'mapProps.tileset', 'mapProps.vol', 'menu.database', 'menu.file', 'options.editor', 'theme.cascadia.name', 'toolbar.tileset', 'toolbar.title.database', 'toolbar.title.playtest', 'workspace.zoom'],
+    pl: ['db.system1', 'db.system2', 'mapProps.tileset', 'menu.system', 'theme.cascadia.name', 'theme.ocean.name', 'toolbar.tileset'],
+    id: ['audio.pan', 'audio.pitch', 'audio.volume', 'efk.frame', 'event.item', 'event.normal', 'event.tile', 'forge.frame', 'mapProps.loopX', 'mapProps.loopY', 'mapProps.pan', 'mapProps.pitch', 'mapProps.tileset', 'mapProps.vol', 'menu.database', 'menu.file', 'options.editor', 'options.mode', 'theme.cascadia.name', 'toolbar.tileset', 'toolbar.title.database', 'workspace.zoom'],
+    vi: ['audio.pan', 'mapProps.pan', 'mapProps.tileset', 'theme.cascadia.name', 'toolbar.tileset'],
+    tr: ['event.normal', 'theme.cascadia.name']
+};
+
+test('no locale silently renders an untranslated English string', () => {
+    const { RR_LANGUAGES, RR_I18N_STRINGS } = loadI18nForTest();
+    const english = RR_I18N_STRINGS.en;
+    const englishKeys = Object.keys(english);
+    const untranslated = [];
+
+    for (const { id } of RR_LANGUAGES) {
+        if (id === 'en') continue;
+        const allowed = new Set([...IDENTICAL_TO_ENGLISH_BY_DESIGN, ...(LOANWORDS_BY_LOCALE[id] || [])]);
+        const table = RR_I18N_STRINGS[id] || {};
+        for (const key of englishKeys) {
+            // Digit- and symbol-only values carry no language to translate.
+            if (!/[a-zA-Z]/.test(String(english[key]))) continue;
+            if (table[key] === english[key] && !allowed.has(key)) {
+                untranslated.push(`${id}: ${key} = ${JSON.stringify(english[key])}`);
+            }
+        }
+    }
+
+    assert.deepEqual(untranslated, [],
+        `add translations, or list the key in LOANWORDS_BY_LOCALE if it is identical by design:\n${untranslated.join('\n')}`);
+});
+
+test('the English-fallback allowlist stays pruned', () => {
+    const { RR_I18N_STRINGS } = loadI18nForTest();
+    const english = RR_I18N_STRINGS.en;
+    const stale = [];
+
+    for (const [locale, keys] of Object.entries(LOANWORDS_BY_LOCALE)) {
+        for (const key of keys) {
+            if (RR_I18N_STRINGS[locale]?.[key] !== english[key]) stale.push(`${locale}: ${key}`);
+        }
+    }
+
+    assert.deepEqual(stale, [],
+        `these keys are now translated — remove them from LOANWORDS_BY_LOCALE:\n${stale.join('\n')}`);
+});
+
 test('Terms array labels are translated in every non-English locale', () => {
     const { RR_LANGUAGES, manager } = loadI18nForTest();
     const labels = [

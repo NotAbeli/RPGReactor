@@ -155,6 +155,85 @@ test('database maximum UI displays caps and lazy-loads continuous large lists', 
     assert.equal(editor.assetUrl(imagePath), pathToFileURL(imagePath).href);
 });
 
+test('Tileset Delete clears records in place and preserves every numbered slot', () => {
+    const sourcePath = path.join(repoRoot, 'src', 'DatabaseEditorUI.js');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+    const DatabaseEditorUI = loadBrowserClass(sourcePath, 'DatabaseEditorUI');
+    const ui = Object.create(DatabaseEditorUI.prototype);
+    ui.databaseManager = {
+        data: {
+            tilesets: [null, ...Array.from({ length: 15 }, (_, index) => ({
+                id: index + 1,
+                name: `Tileset ${index + 1}`,
+                tilesetNames: [],
+                flags: [],
+            }))],
+        },
+        mutationGeneration: 0,
+    };
+
+    for (const id of [1, 2, 3, 4, 5, 11, 12, 13, 14, 15]) {
+        const cleared = ui.clearDatabaseEntry('tilesets', id);
+        assert.equal(cleared.id, id);
+        assert.equal(cleared.name, '');
+        assert.equal(cleared.flags.length, 8192);
+    }
+
+    const saved = JSON.parse(JSON.stringify(ui.databaseManager.data.tilesets));
+    assert.equal(saved.length, 16, 'clearing trailing records does not reduce the maximum');
+    for (let id = 1; id <= 15; id++) {
+        assert.equal(saved[id].id, id, `slot ${id} retains its database ID`);
+        assert.notEqual(saved[id], null, `slot ${id} remains visible and addressable`);
+    }
+    assert.deepEqual(saved.slice(6, 11).map(entry => entry.name), [
+        'Tileset 6', 'Tileset 7', 'Tileset 8', 'Tileset 9', 'Tileset 10'
+    ]);
+    assert.equal(ui.databaseManager.mutationGeneration, 10);
+    ui.databaseManager.data.tilesets[2] = null;
+    ui.databaseManager.data.tilesets[14] = null;
+    assert.equal(ui.restoreNullDatabaseEntries('tilesets'), 2);
+    assert.equal(ui.databaseManager.data.tilesets[2].id, 2);
+    assert.equal(ui.databaseManager.data.tilesets[14].id, 14);
+    assert.equal(ui.databaseManager.data.tilesets.length, 16);
+    assert.match(source, /entries\.forEach\(entry => this\.clearDatabaseEntry\(type, entry\.id\)\)/);
+    assert.match(source, /event\.key === 'Delete' \|\| event\.key === 'Backspace'/);
+    assert.doesNotMatch(source, /deleteDatabaseEntry\(/);
+});
+
+test('opening any top-level list repairs persisted null slots, not just Tilesets', () => {
+    const sourcePath = path.join(repoRoot, 'src', 'DatabaseEditorUI.js');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+    const DatabaseEditorUI = loadBrowserClass(sourcePath, 'DatabaseEditorUI');
+    const ui = Object.create(DatabaseEditorUI.prototype);
+
+    // Deletion before 0.96.0 nulled slots in every list, so the repair cannot be
+    // wired to a single type. It runs once for `type` ahead of the open switch.
+    assert.match(source, /this\.cleanupDatabaseListChrome\(\);[\s\S]{0,400}?this\.restoreNullDatabaseEntries\(type\);[\s\S]{0,200}?switch\(type\)/);
+    assert.doesNotMatch(source, /restoreNullDatabaseEntries\('tilesets'\)/);
+
+    const damaged = ['actors', 'items', 'skills', 'weapons', 'armors', 'enemies', 'states', 'troops', 'classes', 'animations', 'commonEvents'];
+    ui.databaseManager = { data: {}, mutationGeneration: 0 };
+    for (const type of damaged) {
+        ui.databaseManager.data[type] = [null, { id: 1, name: 'Kept' }, null, { id: 3, name: 'Also kept' }];
+    }
+
+    for (const type of damaged) {
+        assert.equal(ui.restoreNullDatabaseEntries(type), 1, `${type} repairs its hidden slot`);
+        const entries = ui.databaseManager.data[type];
+        assert.equal(entries.length, 4, `${type} keeps its length`);
+        assert.equal(entries[0], null, `${type} preserves the reserved index 0`);
+        assert.equal(entries[2].id, 2, `${type} restores the slot with its own ID`);
+        assert.equal(entries[2].name, '', `${type} restores a blank, visible record`);
+        assert.equal(entries[1].name, 'Kept', `${type} leaves populated records untouched`);
+        assert.equal(entries[3].name, 'Also kept');
+    }
+
+    // A repaired list is already clean, so reopening it reports no further work.
+    assert.equal(ui.restoreNullDatabaseEntries('actors'), 0);
+    // Types with no backing array (System pages) must not throw on open.
+    assert.equal(ui.restoreNullDatabaseEntries('system1'), 0);
+});
+
 test('loop-driving database values clamp to their documented ranges', () => {
     const actorPath = path.join(repoRoot, 'src', 'database', 'DatabaseActorEditor.js');
     const skillPath = path.join(repoRoot, 'src', 'database', 'DatabaseSkillEditor.js');

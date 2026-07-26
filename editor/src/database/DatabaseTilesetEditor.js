@@ -3,6 +3,20 @@
 // Unified version combining standalone and database integration functionality
 
 class DatabaseTilesetEditor {
+    // Tilesets.json is the largest database file — each tileset carries an
+    // 8192-entry flags array — so a truncate-in-place write leaves the widest
+    // window in which a crash destroys the previous good copy along with the
+    // new one. Falls back to a plain write when the fs implementation has no
+    // renameSync (test mocks, web host shims).
+    _writeFileAtomic(fs, filePath, data, options) {
+        const atomic = (typeof window !== 'undefined' && window.RRWriteFileAtomicSync) || null;
+        if (atomic && fs && typeof fs.renameSync === 'function') {
+            atomic(fs, filePath, data, options);
+        } else {
+            fs.writeFileSync(filePath, data, options);
+        }
+    }
+
     constructor(app, projectPath, databaseManager, projectManager, commonUI, parentEditor) {
         // Support both old signature (app, projectPath, databaseManager)
         // and new signature (databaseManager, projectManager, commonUI, parentEditor)
@@ -606,7 +620,7 @@ class DatabaseTilesetEditor {
             jsonLines.push(']');
             const compactJson = jsonLines.join('\n');
 
-            this.fs.writeFileSync(tilesetsPath, compactJson);
+            this._writeFileAtomic(this.fs, tilesetsPath, compactJson);
             console.log('Tilesets.json saved successfully');
         } catch (error) {
             console.error('Error saving Tilesets.json:', error);
@@ -808,8 +822,10 @@ class DatabaseTilesetEditor {
                     ctx.fillText('⚠', px + this.tileSize - 12, py + this.tileSize - 12);
                 }
 
-                // Draw terrain tag (bits 12-15)
-                const terrainTag = (flag >> 12) & 0x0F;
+                // Draw terrain tag. Game_Map.terrainTag is `flags[tile] >> 12`
+                // with no mask, so read it the same way — masking here would
+                // show a plausible 0-15 for a flag the engine reads as garbage.
+                const terrainTag = flag >>> 12;
                 if (terrainTag > 0) {
                     ctx.fillStyle = 'rgba(100, 255, 100, 0.8)';
                     ctx.font = `${this.tileSize / 3}px Arial`;
@@ -2269,8 +2285,10 @@ class DatabaseTilesetEditor {
                     ctx.fillText('⚠', drawX + this.tileSize - 12, drawY + this.tileSize - 12);
                 }
 
-                // Draw terrain tag (bits 12-15)
-                const terrainTag = (flag >> 12) & 0x0F;
+                // Draw terrain tag. Game_Map.terrainTag is `flags[tile] >> 12`
+                // with no mask, so read it the same way — masking here would
+                // show a plausible 0-15 for a flag the engine reads as garbage.
+                const terrainTag = flag >>> 12;
                 if (terrainTag > 0) {
                     ctx.font = `bold ${this.tileSize / 3}px Arial`;
                     ctx.textAlign = 'right';
@@ -2422,9 +2440,16 @@ class DatabaseTilesetEditor {
 
             case 'terrain':
                 // Cycle terrain tag (bits 12-15) from 0-7
-                const currentTerrain = (oldFlag >> 12) & 0x0F;
+                const currentTerrain = (oldFlag >>> 12) & 0x0F;
                 const nextTerrain = (currentTerrain + 1) % 8; // Cycle 0→1→2→3→4→5→6→7→0
-                currentFlag = (oldFlag & ~0xF000) | (nextTerrain << 12);
+                // Clear everything from bit 12 up, not just bits 12-15. The
+                // engine reads the tag as an unmasked `flag >> 12`, so leaving
+                // higher bits set means the tag written here is not the tag the
+                // game sees — third-party tools have been observed writing
+                // 32-bit values into this array. Bits 0-11 carry every flag the
+                // engine defines (passage 0x0f, star 0x10, ladder 0x20,
+                // bush 0x40, counter 0x80, damage floor 0x100) and are kept.
+                currentFlag = (oldFlag & 0x0FFF) | (nextTerrain << 12);
                 break;
         }
 

@@ -437,6 +437,10 @@ class AudioPlayer {
 
     toggleLoop() {
         this.audioPlayer.loop = !this.audioPlayer.loop;
+        // The flag only reached a media element when a track started, so
+        // toggling mid-playback restyled the button and changed nothing.
+        const channel = this.getCurrentChannel();
+        if (channel && channel.audio) channel.audio.loop = this.audioPlayer.loop;
         this.updateLoopButton();
     }
 

@@ -798,6 +798,110 @@
     // texture, which won't render correctly until Phase 5. The shim keeps
     // construction from crashing so the rest of boot proceeds.
     // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // Deferred canvas -> GPU texture uploads.
+    //
+    // On v5, BaseTexture.update() was a dirty flag: the upload happened once, at
+    // bind time during render. On v8, GlTextureSystem subscribes to the source's
+    // "update" event, and onSourceUpdate performs a full, synchronous texImage2D
+    // of the entire canvas. Corescript ends EVERY Bitmap draw op with
+    // _baseTexture.update(), so a window redrawing its contents issues one
+    // whole-canvas GPU upload per draw call — a victory gauge count-up measured
+    // 326 uploads in a single frame (~106ms), while the canvas 2D work behind
+    // them totalled 0.4ms.
+    //
+    // Collect the sources and flush them from render() instead. Flushing at the
+    // top of EVERY render, rather than once per frame, is what keeps this safe:
+    // render-to-texture passes that run mid-update (MVNovaLighting paints its
+    // light map before Graphics renders) upload first too, so nothing is ever
+    // drawn from a stale texture.
+    // -------------------------------------------------------------------------
+    let pendingTextureUploads = null;
+
+    // Settable at runtime (PIXI.__reactorDeferTextureUploads = false) so a
+    // suspected batching regression can be A/B tested from the console without
+    // a rebuild.
+    PIXI.__reactorDeferTextureUploads = true;
+
+    function deferTextureUpload(source) {
+        if (!source || typeof source.update !== "function") return;
+        // Only v8 uploads synchronously from this event, and only v8 gets the
+        // render() flush hook below. Off v8 the call is already a cheap dirty
+        // flag, so keep it immediate rather than queueing work nothing drains.
+        if (!_isV8Pixi || !PIXI.__reactorDeferTextureUploads) {
+            source.update();
+            return;
+        }
+        // v8's update() does two jobs: reconcile the source's dimensions with
+        // its resource, then emit the event that uploads the pixels. Only the
+        // upload may be deferred — texture frames and UVs come from the source
+        // size, so a sprite built between a draw and the flush would sample
+        // stale dimensions. When the backing canvas has changed size, hand the
+        // whole thing to v8 rather than computing the new size here: getting
+        // that math wrong resizes the canvas, which clears it.
+        const resource = source.resource;
+        if (resource && resource.width !== undefined &&
+            (resource.width !== source.pixelWidth || resource.height !== source.pixelHeight)) {
+            source.update();
+            return;
+        }
+        if (!pendingTextureUploads) pendingTextureUploads = new Set();
+        pendingTextureUploads.add(source);
+    }
+
+    function flushTextureUploads() {
+        if (!pendingTextureUploads || pendingTextureUploads.size === 0) return;
+        // Swap first, so an update raised during the flush queues for the next
+        // one instead of mutating the set being iterated.
+        const sources = pendingTextureUploads;
+        pendingTextureUploads = null;
+        sources.forEach(function(source) {
+            try {
+                if (source && !source.destroyed && typeof source.update === "function") {
+                    source.update();
+                }
+            } catch (e) {
+                // A source can be destroyed between the draw and the flush.
+            }
+        });
+    }
+
+    PIXI.__reactorFlushTextureUploads = flushTextureUploads;
+    PIXI.__reactorPendingTextureUploads = function() {
+        return pendingTextureUploads ? pendingTextureUploads.size : 0;
+    };
+
+    // A queued upload must reach the GPU before its source is torn down.
+    // Window_Base.createContents() destroys the previous contents bitmap, and
+    // damage-popup plugins hand that bitmap to a sprite that is still on screen
+    // (VE_DamagePopup's drawSpriteText does move -> createContents -> drawTextEx
+    // -> sprite.bitmap = window.contents). Dropping the pending upload left
+    // those sprites sampling a texture whose pixels were never sent, which drew
+    // as scrambled leftovers — popups showing text from an unrelated draw.
+    if (_isV8Pixi && PIXI.TextureSource && PIXI.TextureSource.prototype &&
+        typeof PIXI.TextureSource.prototype.destroy === "function" &&
+        !PIXI.TextureSource.prototype.destroy.__reactorFlushesTextures) {
+        const _origDestroy = PIXI.TextureSource.prototype.destroy;
+        PIXI.TextureSource.prototype.destroy = function() {
+            if (pendingTextureUploads && pendingTextureUploads.has(this)) {
+                flushTextureUploads();
+            }
+            return _origDestroy.apply(this, arguments);
+        };
+        PIXI.TextureSource.prototype.destroy.__reactorFlushesTextures = true;
+    }
+
+    if (_isV8Pixi && PIXI.AbstractRenderer && PIXI.AbstractRenderer.prototype &&
+        typeof PIXI.AbstractRenderer.prototype.render === "function" &&
+        !PIXI.AbstractRenderer.prototype.render.__reactorFlushesTextures) {
+        const _origRender = PIXI.AbstractRenderer.prototype.render;
+        PIXI.AbstractRenderer.prototype.render = function() {
+            flushTextureUploads();
+            return _origRender.apply(this, arguments);
+        };
+        PIXI.AbstractRenderer.prototype.render.__reactorFlushesTextures = true;
+    }
+
     if (!PIXI.BaseTexture) {
         // In v5/v6/v7, baseTexture.resource was a CanvasResource/ImageResource
         // wrapper whose .source pointed to the raw HTMLCanvasElement / Image.
@@ -879,9 +983,7 @@
             }
             get source() { return this._textureSource; }
             update() {
-                if (this._textureSource && this._textureSource.update) {
-                    this._textureSource.update();
-                }
+                deferTextureUpload(this._textureSource);
             }
             destroy() {
                 if (this._textureSource && this._textureSource.destroy) {
@@ -1117,6 +1219,15 @@
                         get width() { return src.width; },
                         get height() { return src.height; },
                         update: function() {
+                            // Deliberately NOT deferred. Plugins that reach a
+                            // source through texture.baseTexture are managing
+                            // it themselves and may draw into it and then
+                            // immediately do their own GL work or read it
+                            // back; a deferred upload would hand them a
+                            // texture that has not been sent yet. The measured
+                            // cost was entirely in Bitmap.drawText/blt, which
+                            // go through the BaseTexture shim, so keeping this
+                            // path immediate costs nothing.
                             if (src && typeof src.update === "function") {
                                 src.update();
                             }
@@ -1186,6 +1297,9 @@
                 // is still 1x1) and never react when video metadata arrives.
                 const tex = new PIXI.Texture({ source: videoSource, dynamic: true });
                 videoSource.on("error", (e) => {
+                    const directSource = source.getAttribute && source.getAttribute("src");
+                    const childSource = source.querySelector && source.querySelector('source[src]:not([src=""])');
+                    if ((directSource === null || directSource === "") && !childSource) return;
                     console.error("pixi_compat: VideoSource error", e, source.error);
                 });
                 return tex;
@@ -1534,6 +1648,18 @@
             compatLog("pixi_compat: installed Sprite.allowChildren=true getter (suppresses addChild deprecation; v8 children-of-Sprite already render via Sprite.collectRenderablesSimple)");
         } catch (e) {
             console.warn("pixi_compat: failed to install Sprite.allowChildren shim", e);
+        }
+    }
+    if (PIXI.TilingSprite && PIXI.TilingSprite.prototype && PIXI.TextureSource) {
+        try {
+            Object.defineProperty(PIXI.TilingSprite.prototype, "allowChildren", {
+                configurable: true,
+                get: function() { return true; },
+                set: function(_v) { /* legacy parallax plugins use tiling sprites as parents */ }
+            });
+            compatLog("pixi_compat: installed TilingSprite.allowChildren=true getter (legacy video parallax children remain supported without v8 deprecation warnings)");
+        } catch (e) {
+            console.warn("pixi_compat: failed to install TilingSprite.allowChildren shim", e);
         }
     }
 

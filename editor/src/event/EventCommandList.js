@@ -27,6 +27,11 @@ class EventCommandList {
         this.currentPage = null;
         this.currentPageIndex = null;
         this.expandedPluginCommands = new Set(); // Track which plugin commands are expanded (by index)
+        // Collapsed block structures, keyed on the opening command OBJECT rather
+        // than its index: inserting or deleting commands elsewhere in the list
+        // shifts every index after it, but the object survives the splice, so a
+        // collapsed branch stays collapsed and no unrelated branch inherits it.
+        this.collapsedBlocks = new WeakSet();
 
         // Command editors
         this.audioEditor = new AudioCommandEditor(
@@ -426,6 +431,135 @@ class EventCommandList {
     /**
      * Render the command list for a page
      */
+    // Commands that open a nested body, mapped to the code that closes it.
+    // Conditional Branch/Else, Show Choices/When, and Loop are the structures
+    // that make a long common event unreadable.
+    static get BLOCK_STRUCTURES() {
+        return { 111: 412, 102: 404, 112: 413 };
+    }
+
+    /**
+     * Index of the command that closes the block opened at `openerIndex`, or -1.
+     * Matched on indent rather than by counting openers, so it agrees with the
+     * indent-aware structure parsing the editor already relies on.
+     */
+    static findBlockEndIndex(list, openerIndex) {
+        const opener = list && list[openerIndex];
+        if (!opener) return -1;
+        const endCode = EventCommandList.BLOCK_STRUCTURES[opener.code];
+        if (!endCode) return -1;
+        const indent = opener.indent || 0;
+        for (let i = openerIndex + 1; i < list.length; i++) {
+            const command = list[i];
+            if (!command) continue;
+            if ((command.indent || 0) < indent) break;
+            if (command.code === endCode && (command.indent || 0) === indent) return i;
+        }
+        return -1;
+    }
+
+    /** Identifies the page whose folds are being remembered. */
+    collapseScope() {
+        const editor = this.eventEditor || {};
+        const controller = editor.projectController || {};
+        const project = (controller.getCurrentProject
+            ? controller.getCurrentProject()
+            : controller.currentProject) || {};
+        const event = editor.currentEvent || {};
+        return {
+            projectPath: project.path || '',
+            kind: 'map',
+            mapId: controller.tilemapManager?.currentMap?.id ?? '',
+            eventId: event.id ?? '',
+            pageIndex: this.currentPageIndex ?? 0
+        };
+    }
+
+    /**
+     * Restore folds saved in a previous session. Done once per page rather than
+     * per render: the live state is the WeakSet, which tracks command objects
+     * through edits, while the stored keys are positional and only accurate as
+     * of the last save.
+     */
+    hydrateCollapsedBlocks(page) {
+        if (typeof EventCollapsePreferences === 'undefined' || !page || !Array.isArray(page.list)) return;
+        const scope = this.collapseScope();
+        const scopeId = EventCollapsePreferences.scopeId(scope);
+        if (!scopeId) return;
+        if (this._collapseScopeId === scopeId && this._collapseHydratedList === page.list) return;
+
+        this._collapseScopeId = scopeId;
+        this._collapseHydratedList = page.list;
+        this.collapsedBlocks = new WeakSet();
+
+        const stored = new Set(EventCollapsePreferences.load(scope));
+        if (stored.size === 0) return;
+        page.list.forEach((command, index) => {
+            if (!this.isBlockOpener(command)) return;
+            // A key that no longer matches the command at that index is stale;
+            // ignoring it leaves the block expanded, which is the safe default.
+            if (stored.has(EventCollapsePreferences.blockId(index, command))) {
+                this.collapsedBlocks.add(command);
+            }
+        });
+    }
+
+    /** Write the current folds back, using each block's position right now. */
+    persistCollapsedBlocks(page) {
+        if (typeof EventCollapsePreferences === 'undefined' || !page || !Array.isArray(page.list)) return;
+        const scope = this.collapseScope();
+        if (!EventCollapsePreferences.scopeId(scope)) return;
+        const ids = [];
+        page.list.forEach((command, index) => {
+            if (this.isBlockCollapsed(command)) {
+                ids.push(EventCollapsePreferences.blockId(index, command));
+            }
+        });
+        EventCollapsePreferences.save(scope, ids);
+    }
+
+    isBlockOpener(command) {
+        return !!(command && EventCommandList.BLOCK_STRUCTURES[command.code]);
+    }
+
+    isBlockCollapsed(command) {
+        return this.isBlockOpener(command) && this.collapsedBlocks.has(command);
+    }
+
+    toggleBlockCollapsed(command) {
+        if (!this.isBlockOpener(command)) return;
+        if (this.collapsedBlocks.has(command)) {
+            this.collapsedBlocks.delete(command);
+        } else {
+            this.collapsedBlocks.add(command);
+        }
+    }
+
+    /**
+     * Rows hidden by a collapsed ancestor. Scanning outermost-first means an
+     * inner block nested inside a collapsed one is skipped wholesale, so its own
+     * collapsed state is preserved for when the outer one reopens.
+     */
+    collapsedHiddenIndices(list) {
+        const hidden = new Set();
+        if (!Array.isArray(list)) return hidden;
+        for (let i = 0; i < list.length; i++) {
+            if (hidden.has(i)) continue;
+            const command = list[i];
+            if (!this.isBlockCollapsed(command)) continue;
+            const end = EventCommandList.findBlockEndIndex(list, i);
+            if (end < 0) continue;
+            for (let j = i + 1; j <= end; j++) hidden.add(j);
+        }
+        return hidden;
+    }
+
+    /** How many rows a collapsed block is hiding, for the summary badge. */
+    collapsedBlockSize(list, openerIndex) {
+        const end = EventCommandList.findBlockEndIndex(list, openerIndex);
+        return end < 0 ? 0 : end - openerIndex;
+    }
+
     renderCommandList(container, page, pageIndex) {
         // Store current page for keyboard shortcuts
         this.currentPage = page;
@@ -444,7 +578,11 @@ class EventCommandList {
         listContainer.className = 'command-list-container';
         listContainer.style.cssText = 'font-family: monospace; font-size: 12px;';
 
+        this.hydrateCollapsedBlocks(page);
+        const hiddenByCollapse = this.collapsedHiddenIndices(page.list);
+
         page.list.forEach((command, index) => {
+            if (hiddenByCollapse.has(index)) return;
             const commandDiv = this.createCommandItem(command, index, page, pageIndex);
             if (commandDiv) { // Only append if not null (hidden commands return null)
                 listContainer.appendChild(commandDiv);
@@ -562,6 +700,40 @@ class EventCommandList {
             }
         }
 
+        // Collapse toggle for block structures, in the same slot and with the
+        // same affordance as the plugin-command expander above.
+        const blockEndIndex = this.isBlockOpener(command)
+            ? EventCommandList.findBlockEndIndex(page.list, index)
+            : -1;
+        if (blockEndIndex >= 0) {
+            const collapsed = this.isBlockCollapsed(command);
+            const collapseBtn = document.createElement('span');
+            collapseBtn.className = 'command-collapse-toggle';
+            collapseBtn.dataset.collapsed = collapsed ? 'true' : 'false';
+            collapseBtn.style.cssText = `
+                color: var(--color-text-muted);
+                cursor: pointer;
+                user-select: none;
+                min-width: 16px;
+                text-align: center;
+            `;
+            collapseBtn.textContent = collapsed ? '▶' : '▼';
+            collapseBtn.title = this._t(collapsed ? 'event.expandBlock' : 'event.collapseBlock');
+            collapseBtn.addEventListener('click', (e) => {
+                // Without this the row's own click handler would also select or
+                // open the command being folded.
+                e.stopPropagation();
+                this.toggleBlockCollapsed(command);
+                this.persistCollapsedBlocks(page);
+                this.refreshCommandList(page, pageIndex);
+            });
+            contentDiv.appendChild(collapseBtn);
+        } else if (!isPluginCommand) {
+            const spacer = document.createElement('span');
+            spacer.style.cssText = 'min-width: 16px;';
+            contentDiv.appendChild(spacer);
+        }
+
         // Face icon (if present)
         if (commandInfo.faceIcon) {
             const faceCanvas = this.createFaceIcon(commandInfo.faceIcon);
@@ -588,6 +760,26 @@ class EventCommandList {
         }
 
         contentDiv.appendChild(descSpan);
+
+        // Say how much a folded block is hiding, so a collapsed branch is never
+        // mistaken for an empty one.
+        if (blockEndIndex >= 0 && this.isBlockCollapsed(command)) {
+            const hiddenCount = this.collapsedBlockSize(page.list, index);
+            const badge = document.createElement('span');
+            badge.className = 'command-collapse-badge';
+            badge.style.cssText = `
+                color: var(--color-text-muted);
+                background: var(--color-bg-panel);
+                border: 1px solid var(--color-border);
+                border-radius: 10px;
+                padding: 0 8px;
+                font-size: 11px;
+                white-space: nowrap;
+                flex: 0 0 auto;
+            `;
+            badge.textContent = this._t('event.collapsedLines', { count: hiddenCount });
+            contentDiv.appendChild(badge);
+        }
 
         div.appendChild(contentDiv);
 
@@ -1175,9 +1367,12 @@ class EventCommandList {
                 description = params[0] || '';
                 break;
             case 402: {
-                // When [Choice N]
+                // When [Choice N] — the marker stores the choice text, so show
+                // that rather than a bare ordinal. Markers written before the
+                // text was recorded fall back to the index.
                 const choiceIndex = params[0];
-                description = `${tt('Choice')} ${choiceIndex + 1}`;
+                const choiceText = typeof params[1] === 'string' ? params[1].trim() : '';
+                description = choiceText || `${tt('Choice')} ${choiceIndex + 1}`;
                 break;
             }
             case 403:
@@ -1588,7 +1783,7 @@ class EventCommandList {
                 break;
             case 242: // Fadeout BGM
             case 246: // Fadeout BGS
-                description = `${(params[0] || 60) / 60}s`;
+                description = `${params[0] ?? 1}s`;
                 break;
             case 251: // Stop SE
                 description = '';
@@ -1651,7 +1846,11 @@ class EventCommandList {
             case 357: {
                 // Plugin Command (356 = MV, 357 = MZ)
                 const pluginName = params[0] || '';
-                const commandName = params[1] || '';
+                // 357 stores the command's display label in params[2]; prefer it
+                // over the internal command name, which is what the plugin's own
+                // documentation and the engine's editor both show.
+                const label = code === 357 && typeof params[2] === 'string' ? params[2].trim() : '';
+                const commandName = label || params[1] || '';
                 if (pluginName && commandName) {
                     description = `${pluginName}: ${commandName}`;
                 } else if (pluginName) {
@@ -2974,7 +3173,13 @@ class EventCommandList {
             if ([241, 242, 245, 246, 249, 250, 251].includes(code)) {
                 this.audioEditor.show(null, code, (editedCommand) => {
                     if (editedCommand) {
-                        page.list.splice(insertIndex, 0, editedCommand);
+                        // The editor builds new audio commands at indent 0. Left
+                        // unrebased inside a branch body the runtime's
+                        // skipBranch — `while (next.indent > this._indent)` —
+                        // stops on it, so the command and everything after it in
+                        // the body run even when the condition is false.
+                        page.list.splice(insertIndex, 0,
+                            this._rebaseInsertIndent([editedCommand], baseIndent)[0]);
                         this.selectedIndices = [insertIndex];
                         this.refreshCommandList(page, pageIndex);
                     }

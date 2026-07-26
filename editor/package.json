@@ -1,6 +1,6 @@
 {
   "name": "rpg-reactor",
-  "version": "0.95.0",
+  "version": "0.96.0",
   "private": true,
   "description": "An open-source, cross-platform RPG game engine",
   "main": "index.html",
@@ -28,7 +28,6 @@
     "show": true
   },
   "name_for_display": "RPG Reactor",
-  "single-instance": false,
   "chromium-args": "--enable-logging --disable-direct-composition --force-device-scale-factor=1 --window-size=1280,720 --class=rpg-reactor",
   "webkit": {
     "plugin": true

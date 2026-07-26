@@ -400,7 +400,10 @@ class UIManager {
     }
 
     setupKeyboardShortcuts() {
-        if (typeof nw === 'undefined') return;
+        // Only the F5/F11/F12 branches below need NW.js. Returning early on
+        // its absence also removed Ctrl+S, Ctrl+Z/Y, Ctrl+C/X/V and Delete,
+        // which left the web editor with no keyboard shortcuts at all.
+        const hasNw = typeof nw !== 'undefined';
 
         // Keyboard shortcuts
         window.addEventListener('keydown', (e) => {
@@ -418,6 +421,7 @@ class UIManager {
                 !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
                 e.preventDefault();
                 e.stopPropagation();
+                if (!hasNw) return false;
                 if (!e.repeat) nw.Window.get().toggleFullscreen();
                 return false;
             }
@@ -426,6 +430,7 @@ class UIManager {
             if (e.keyCode === 123 || e.key === 'F12') { // 123 is keyCode for F12
                 e.preventDefault();
                 e.stopPropagation();
+                if (!hasNw) return false;
                 const win = nw.Window.get();
                 try {
                     if (typeof win.isDevToolsOpen === 'function' && win.isDevToolsOpen()) {
@@ -848,7 +853,8 @@ class UIManager {
     }
 
     reloadApplicationIgnoringCache() {
-        const win = nw.Window.get();
+        // F5 is offered in the browser build too, where nw is absent.
+        const win = typeof nw !== 'undefined' ? nw.Window.get() : null;
         if (win && typeof win.reloadIgnoringCache === 'function') {
             win.reloadIgnoringCache();
         } else {

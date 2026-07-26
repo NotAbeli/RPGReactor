@@ -66,7 +66,17 @@ class ReactorClipboard {
 
         try {
             const fs = require('fs');
-            fs.writeFileSync(filePath, text, 'utf8');
+            // Another editor instance may read this file at any moment, and a
+            // whole-map envelope is large enough to be caught mid-write. A
+            // truncate-in-place write would hand that instance a partial file
+            // and break the paste; rename-over always presents the complete old
+            // or new contents. Falls back when no atomic helper is loaded.
+            const atomic = (typeof window !== 'undefined' && window.RRWriteFileAtomicSync) || null;
+            if (atomic && typeof fs.renameSync === 'function') {
+                atomic(fs, filePath, text, 'utf8');
+            } else {
+                fs.writeFileSync(filePath, text, 'utf8');
+            }
             return true;
         } catch (error) {
             console.warn('Shared clipboard file write failed:', error);

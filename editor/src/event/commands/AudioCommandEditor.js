@@ -180,7 +180,9 @@ class AudioCommandEditor {
             return {
                 code: code,
                 indent: 0,
-                parameters: [60] // 60 frames = 1 second
+                // AudioManager.fadeOutBgm passes this straight to WebAudio's
+                // linearRampToValueAtTime, which takes seconds.
+                parameters: [1]
             };
         } else if (!type.hasParams) {
             // Stop SE has no parameters
@@ -1047,13 +1049,13 @@ class AudioCommandEditor {
         const tt = text => window.I18n ? window.I18n.tText(text) : text;
         return this.createSliderControl(
             tt('Duration (seconds):'),
-            (this.command.parameters[0] || 60) / 60,
+            this.command.parameters[0] ?? 1,
             0,
             10,
             0.1,
             's',
             (value) => {
-                this.command.parameters[0] = Math.round(parseFloat(value) * 60);
+                this.command.parameters[0] = parseFloat(value);
             }
         );
     }

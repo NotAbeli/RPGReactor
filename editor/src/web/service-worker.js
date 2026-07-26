@@ -42,12 +42,24 @@ function contentType(pathname) {
     }[extension] || 'application/octet-stream';
 }
 
+/**
+ * The virtual project root sits directly under the worker's own scope. Anchor
+ * on that rather than searching the path for a "/project/" segment: an asset in
+ * a folder the game itself names `project` contains the marker too, and
+ * matching that occurrence resolved the request to the wrong file.
+ */
+function projectRelativePath(url) {
+    const scope = new URL(self.registration.scope);
+    if (url.origin !== scope.origin) return null;
+    const prefix = `${scope.pathname.replace(/\/*$/, '/')}project/`;
+    if (!url.pathname.startsWith(prefix)) return null;
+    return decodeURIComponent(url.pathname.slice(prefix.length));
+}
+
 self.addEventListener('fetch', event => {
-    const url = new URL(event.request.url);
-    const marker = '/project/';
-    const index = url.pathname.lastIndexOf(marker);
-    if (index < 0 || event.request.method !== 'GET') return;
-    const relativePath = decodeURIComponent(url.pathname.slice(index + marker.length));
+    if (event.request.method !== 'GET') return;
+    const relativePath = projectRelativePath(new URL(event.request.url));
+    if (relativePath === null) return;
     event.respondWith((async () => {
         try {
             const record = await storedFile(relativePath);

@@ -2759,10 +2759,11 @@ class TilemapManager {
                     bx += 0; // waterSurfaceIndex=0, *2
                 } else {
                     bx += 6;
-                    // Only E-type waterfalls (tx=4-7) use waterfall table
-                    if (Math.floor(tx / 4) === 1) {
-                        autotileTable = this.WATERFALL_AUTOTILE_TABLE;
-                    }
+                    // Every odd A1 kind uses the waterfall table — the runtime
+                    // and both sibling render paths do this unconditionally.
+                    // Gating on tx skipped kinds 9 and 11, which then sampled
+                    // the floor table's rects and drew the wrong art.
+                    autotileTable = this.WATERFALL_AUTOTILE_TABLE;
                 }
             }
         } else if (this.isTileA2(tileId)) {
@@ -2815,93 +2816,5 @@ class TilemapManager {
                 // Failed to draw autotile sub-tile
             }
         }
-    }
-
-    /**
-     * OLD BROKEN METHOD - keeping as backup but not used
-     */
-    async generateMapThumbnail_OLD(mapId, maxWidth = 400, maxHeight = 300) {
-        if (!this.fs || !this.path) {
-            throw new Error('File system not available');
-        }
-
-        // Load map data
-        const mapFile = `Map${String(mapId).padStart(3, '0')}.json`;
-        const mapPath = this.path.join(this.projectPath, 'data', mapFile);
-
-        let mapData;
-        try {
-            const mapJson = this.fs.readFileSync(mapPath, 'utf8');
-            mapData = JSON.parse(mapJson);
-            mapData.id = mapId;
-        } catch (error) {
-            throw new Error(`Failed to load map ${mapId}: ${error.message}`);
-        }
-
-        // Load tileset data
-        const tilesetId = mapData.tilesetId;
-        const tilesets = this.databaseManager.getTilesets();
-        const tileset = tilesets[tilesetId];
-
-        if (!tileset) {
-            throw new Error(`Tileset ${tilesetId} not found`);
-        }
-
-        // Load tileset images
-        const tilesetImages = {};
-        const tilesetNames = ['A1', 'A2', 'A3', 'A4', 'A5', 'B', 'C', 'D', 'E'];
-
-        for (const name of tilesetNames) {
-            const imageName = tileset[`tileset${name}Name`];
-            if (imageName && imageName.trim() !== '') {
-                const imagePath = this.path.join(this.projectPath, 'img', 'tilesets', imageName + '.png');
-                if (this.fs.existsSync(imagePath)) {
-                    const img = new Image();
-                    img.src = this.assetUrl(imagePath);
-                    await new Promise((resolve, reject) => {
-                        img.onload = resolve;
-                        img.onerror = reject;
-                    });
-                    tilesetImages[name] = img;
-                }
-            }
-        }
-
-        // Calculate thumbnail size maintaining aspect ratio
-        const mapPixelWidth = mapData.width * this.TILE_SIZE;
-        const mapPixelHeight = mapData.height * this.TILE_SIZE;
-
-        const scale = Math.min(maxWidth / mapPixelWidth, maxHeight / mapPixelHeight, 1);
-        const thumbWidth = Math.floor(mapPixelWidth * scale);
-        const thumbHeight = Math.floor(mapPixelHeight * scale);
-
-        // Create thumbnail canvas
-        const canvas = document.createElement('canvas');
-        canvas.width = thumbWidth;
-        canvas.height = thumbHeight;
-        const ctx = canvas.getContext('2d');
-
-        // Scale context for rendering
-        ctx.scale(scale, scale);
-
-        // Render map layers
-        const data = mapData.data;
-        const width = mapData.width;
-        const height = mapData.height;
-
-        for (let layerIndex = 0; layerIndex < 4; layerIndex++) {
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    const index = (layerIndex * height * width) + (y * width) + x;
-                    const tileId = data[index];
-
-                    if (tileId > 0) {
-                        this.drawTileToCanvas(ctx, tileId, x * this.TILE_SIZE, y * this.TILE_SIZE, this.TILE_SIZE, tilesetImages);
-                    }
-                }
-            }
-        }
-
-        return canvas;
     }
 }

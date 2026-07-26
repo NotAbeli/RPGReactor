@@ -1823,12 +1823,41 @@ function ColorManager() {
 
 ColorManager.loadWindowskin = function() {
     this._windowskin = ImageManager.loadSystem("Window");
+    this.clearTextColorCache();
 };
 
-ColorManager.textColor = function(n) {
+ColorManager.clearTextColorCache = function() {
+    this._textColorCache = null;
+    this._textColorCacheSkin = null;
+};
+
+ColorManager.readTextColor = function(n) {
     const px = 96 + (n % 8) * 12 + 6;
     const py = 144 + Math.floor(n / 8) * 12 + 6;
     return this._windowskin.getPixel(px, py);
+};
+
+// Each read is a getImageData allocation plus string building, and windows
+// that redraw every frame ask for many colors per row — the victory gauge
+// count-up alone runs about ten per actor per frame, which is enough steady
+// allocation to show up as periodic hitching. The palette is fixed once the
+// skin has loaded, so cache per skin instance; swapping skins (or reloading
+// one) replaces the instance and drops the cache with it.
+ColorManager.textColor = function(n) {
+    const windowskin = this._windowskin;
+    if (!windowskin || !windowskin.isReady()) {
+        return this.readTextColor(n);
+    }
+    if (this._textColorCacheSkin !== windowskin) {
+        this._textColorCacheSkin = windowskin;
+        this._textColorCache = new Map();
+    }
+    let color = this._textColorCache.get(n);
+    if (color === undefined) {
+        color = this.readTextColor(n);
+        this._textColorCache.set(n, color);
+    }
+    return color;
 };
 
 ColorManager.normalColor = function() {

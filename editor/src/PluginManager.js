@@ -2997,6 +2997,15 @@ class PluginManager {
         for (const line of lines) {
             const normalized = this.normalizeAnnotationLine(line);
 
+            // A @command or @arg block starts plugin-command metadata, whose
+            // own @default lines belong to the command argument, not to the
+            // last plugin parameter. Without this reset they overwrite it —
+            // parsePluginParameterMetadata already guards the same way.
+            if (normalized.match(/^@command\s+/) || normalized.match(/^@arg\s+/)) {
+                currentParam = null;
+                continue;
+            }
+
             // @param defines a new parameter - capture everything including spaces
             const paramMatch = normalized.match(/^@param\s*(.*)/);
             if (paramMatch) {

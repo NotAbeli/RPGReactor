@@ -134,7 +134,7 @@ test('DatabaseManager addEntry stops at the database maximum', () => {
     assert.equal(manager.data.animations.length, 1001);
 });
 
-test('map allocation supports IDs above 1000, reuses holes, and bounds live map count', () => {
+test('map allocation and insertion preserve IDs, sibling hierarchy, and local ordering', () => {
     const ProjectController = loadBrowserClass('ProjectController.js', 'ProjectController');
     const controller = Object.create(ProjectController.prototype);
     controller.currentProject = { maps: [null] };
@@ -159,7 +159,7 @@ test('map allocation supports IDs above 1000, reuses holes, and bounds live map 
         { id: 3, name: 'Child A', parentId: 1, order: 0 },
         { id: 4, name: 'Child B', parentId: 1, order: 1 }
     ];
-    const rootPlacement = controller.getMapPastePlacement(1);
+    const rootPlacement = controller.getMapInsertPlacement(1);
     assert.deepEqual({ ...rootPlacement }, { parentId: 0, order: 0.5 });
     controller.currentProject.maps[5] = { id: 5, parentId: rootPlacement.parentId, order: rootPlacement.order };
     controller.recalculateMapOrder(0);
@@ -168,7 +168,7 @@ test('map allocation supports IDs above 1000, reuses holes, and bounds live map 
         [1, 5, 2]
     );
 
-    const childPlacement = controller.getMapPastePlacement(3);
+    const childPlacement = controller.getMapInsertPlacement(3);
     assert.deepEqual({ ...childPlacement }, { parentId: 1, order: 0.5 });
     controller.currentProject.maps[6] = { id: 6, parentId: childPlacement.parentId, order: childPlacement.order };
     controller.recalculateMapOrder(1);
@@ -177,8 +177,77 @@ test('map allocation supports IDs above 1000, reuses holes, and bounds live map 
         [3, 6, 4]
     );
 
-    const fallbackPlacement = controller.getMapPastePlacement(null);
+    const fallbackPlacement = controller.getMapInsertPlacement(null);
     assert.deepEqual({ ...fallbackPlacement }, { parentId: 0, order: 3 });
+
+    let modalArgs = null;
+    controller.openMapPropertiesModal = (...args) => { modalArgs = args; };
+    controller.tilemapManager = { currentMap: { id: 3 } };
+    controller.createNewMap();
+    assert.equal(modalArgs[1], true);
+    assert.equal(modalArgs[2], 3, 'toolbar New Map defaults to the highlighted map');
+    controller.createNewMap(2);
+    assert.equal(modalArgs[2], 2, 'context-menu New Map preserves its explicit target');
+
+    const source = fs.readFileSync(path.join(editorRoot, 'src', 'ProjectController.js'), 'utf8');
+    assert.match(source, /mapCtx\.newMap'\), action: \(\) => this\.createNewMap\(mapId\)/);
+    assert.match(source, /const placement = this\.getMapInsertPlacement\(this\.newMapPlacementAnchorId\)/);
+    assert.match(source, /parentId: placement\.parentId/);
+    assert.match(source, /this\.recalculateMapOrder\(placement\.parentId\)/);
+});
+
+test('a new map that cannot be written leaves no entry in the map tree', async () => {
+    const ProjectController = loadBrowserClass('ProjectController.js', 'ProjectController', {
+        document: { getElementById: () => ({ value: '10', checked: false }) },
+        alert: () => {}
+    });
+
+    function makeController() {
+        const controller = Object.create(ProjectController.prototype);
+        controller.currentProject = {
+            path: '/tmp/does-not-matter',
+            maps: [
+                null,
+                { id: 1, name: 'Town', parentId: 0, order: 0 },
+                { id: 2, name: 'Field', parentId: 0, order: 1 },
+                { id: 3, name: 'Cave', parentId: 0, order: 2 }
+            ]
+        };
+        controller.currentEditingMap = { id: 4, data: [1], events: [] };
+        controller.isCreatingNewMap = true;
+        controller.newMapPlacementAnchorId = 1;
+        controller.getEncounterListFromForm = () => [];
+        controller.renderMapsList = () => {};
+        controller.uiManager = { updateStatus: () => {} };
+        controller.projectManager = { saveMapInfos: () => true };
+        controller.writeMapDataFile = () => true;
+        return controller;
+    }
+
+    const beforeInsert = JSON.stringify(makeController().currentProject.maps);
+    // The map file itself fails to write.
+        const mapFileFails = makeController();
+        mapFileFails.writeMapDataFile = () => false;
+        assert.equal(await mapFileFails.saveMapProperties(), false);
+        assert.equal(JSON.stringify(mapFileFails.currentProject.maps), beforeInsert,
+            'a failed map write leaves the map list exactly as it was');
+
+        // The map file writes, but MapInfos does not.
+        const mapInfosFails = makeController();
+        mapInfosFails.projectManager = { saveMapInfos: () => false };
+        assert.equal(await mapInfosFails.saveMapProperties(), false);
+        assert.equal(JSON.stringify(mapInfosFails.currentProject.maps), beforeInsert,
+            'a failed MapInfos write rolls back the inserted entry and sibling order');
+
+        // The success path still inserts after the anchor and renumbers siblings.
+        const succeeds = makeController();
+        await succeeds.saveMapProperties();
+        assert.equal(succeeds.currentProject.maps[4].id, 4, 'a successful save keeps the new map');
+        assert.deepEqual(
+            succeeds.currentProject.maps.filter(Boolean).sort((a, b) => a.order - b.order).map(map => map.id),
+        [1, 4, 2, 3],
+        'the new map lands directly after its anchor'
+    );
 });
 
 test('TilemapManager snapshots persisted map data and only clears dirty state after a successful save', () => {

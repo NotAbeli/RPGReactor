@@ -71,7 +71,7 @@ curl --fail --location https://dl.nwjs.io/v0.107.0/SHASUMS256.txt
 
 ## 3. Clean-Checkout Validation
 
-Start from the commit intended for `vX.Y.Z`. Replace `0.95.0` below with the
+Start from the commit intended for `vX.Y.Z`. Replace `0.96.0` below with the
 exact `editor/package.json` version.
 
 ```bash
@@ -89,7 +89,7 @@ cd ..
 git diff --check
 git diff --exit-code
 test -z "$(git status --porcelain=v1 --untracked-files=all)"
-node -e "const p=require('./editor/package.json'); if(p.version!=='0.95.0') process.exit(1)"
+node -e "const p=require('./editor/package.json'); if(p.version!=='0.96.0') process.exit(1)"
 ```
 
 The test suite statically rejects hard dependencies on ignored local projects.
@@ -104,7 +104,7 @@ verification:
 
 ```bash
 gh workflow run release-candidate.yml \
-  -f version=0.95.0 \
+  -f version=0.96.0 \
   -f publishable=false
 gh run list --workflow release-candidate.yml --limit 5
 ```
@@ -113,13 +113,13 @@ The equivalent local command may only build the host platform:
 
 ```bash
 node editor/build-scripts/release-editor.cjs \
-  --target linux --mode candidate --version 0.95.0 \
+  --target linux --mode candidate --version 0.96.0 \
   --output-root "$PWD/dist-editor/releases"
 ```
 
 Use targets `linux`, `windows`, `macos`, and `web`. Desktop targets are rejected
 on non-matching hosts. Each target gets a fresh
-`dist-editor/releases/v0.95.0/<target>/` directory and an
+`dist-editor/releases/v0.96.0/<target>/` directory and an
 `artifact-manifest-<target>.json` containing byte sizes and SHA-256 hashes.
 
 ## 5. Publishable Candidate
@@ -127,11 +127,11 @@ on non-matching hosts. Each target gets a fresh
 Create the tag on the exact validated commit, then run the signed candidate:
 
 ```bash
-git tag -s v0.95.0 -m "RPG Reactor 0.95.0"
-git push origin v0.95.0
+git tag -s v0.96.0 -m "RPG Reactor 0.96.0"
+git push origin v0.96.0
 gh workflow run release-candidate.yml \
-  --ref v0.95.0 \
-  -f version=0.95.0 \
+  --ref v0.96.0 \
+  -f version=0.96.0 \
   -f publishable=true
 gh run list --workflow release-candidate.yml --limit 5
 gh run watch RUN_ID
@@ -158,7 +158,7 @@ sha256sum /tmp/rpg-reactor-candidate/*/*
 
 Inspect every `artifact-manifest-*.json` and confirm:
 
-- `version` is `0.95.0`, `nwjsVersion` is `0.107.0`, and `sourceCommit` is the tag commit.
+- `version` is `0.96.0`, `nwjsVersion` is `0.107.0`, and `sourceCommit` is the tag commit.
 - `mode` is `publish`; Windows/macOS have `signed: true`.
 - `releaseBuild` is true and `starter` is `bundled-demo`.
 - Every listed size and SHA-256 matches the adjacent file.
@@ -183,11 +183,12 @@ xcrun stapler validate "RPG Reactor.app"
 On each actual target OS, extract into a new directory and perform these tests:
 
 1. Launch the editor without a console error or signing warning.
-2. Confirm About/package version is `0.95.0`.
+2. Confirm About/package version is `0.96.0`.
 3. Open the bundled Reactor One Demo and verify its maps, database, plugins, music, images, and effects are present.
 4. Create and save a new project outside the extracted application directory.
 5. Playtest that project using the package's internal NW.js runtime.
 6. Close and reopen the project, then make one desktop deployment.
+7. Launch the packaged editor twice and confirm two independent editor processes open with different `nw.App.dataPath` values; closing either process must leave the other running.
 7. Open the Web ZIP over HTTPS or localhost, edit Reactor One, reload, and confirm browser persistence and Playtest.
 
 Do not continue if Windows signature status, macOS notarization, starter
@@ -202,7 +203,7 @@ artifacts, verifies all manifests against the checked-out tag, and calls
 
 ```bash
 gh workflow run release.yml \
-  -f version=0.95.0 \
+  -f version=0.96.0 \
   -f candidate_run_id=RUN_ID \
   -f publish_itch=false
 gh run watch RELEASE_RUN_ID
@@ -233,15 +234,15 @@ Release as a draft or delete it and use the itch dashboard to select the prior
 build on each channel. Do not reuse the version or silently replace assets.
 
 ```bash
-gh release delete v0.95.0 --yes
+gh release delete v0.96.0 --yes
 ```
 
 If the tag points to the wrong commit, delete the remote tag only after the
 Release is removed and before announcing the version:
 
 ```bash
-git push origin :refs/tags/v0.95.0
-git tag -d v0.95.0
+git push origin :refs/tags/v0.96.0
+git tag -d v0.96.0
 ```
 
 Correct the source, increment the version, rerun the complete checklist, and

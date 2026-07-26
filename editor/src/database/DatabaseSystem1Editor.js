@@ -4,6 +4,38 @@
  */
 
 class DatabaseSystem1Editor {
+    /**
+     * System.json does not store these eight under a uniform `<type>Bgm` key.
+     * Title and Battle are BGM; Victory, Defeat and Game Over are ME (and Game
+     * Over is spelled `gameoverMe`, lowercase); the three vehicles nest their
+     * BGM inside the vehicle object. Synthesising `<type>Bgm` read six empty
+     * slots and wrote six keys the engine never looks at.
+     */
+    static resolveMusicSlot(system, type) {
+        const direct = {
+            title: 'titleBgm', battle: 'battleBgm',
+            victory: 'victoryMe', defeat: 'defeatMe', gameOver: 'gameoverMe'
+        }[type];
+        if (direct) {
+            return {
+                get: () => system[direct] || {},
+                ensure: () => (system[direct] = system[direct]
+                    || { name: '', volume: 90, pitch: 100, pan: 0 })
+            };
+        }
+        if (['boat', 'ship', 'airship'].includes(type)) {
+            return {
+                get: () => (system[type] && system[type].bgm) || {},
+                ensure: () => {
+                    if (!system[type]) system[type] = {};
+                    return (system[type].bgm = system[type].bgm
+                        || { name: '', volume: 90, pitch: 100, pan: 0 });
+                }
+            };
+        }
+        return null;
+    }
+
     constructor(databaseManager, projectManager, commonUI, parentEditor) {
         this.databaseManager = databaseManager;
         this.projectManager = projectManager;
@@ -554,7 +586,7 @@ class DatabaseSystem1Editor {
 
         let musicRows = '';
         musicTypes.forEach((type, idx) => {
-            const bgm = system[`${type}Bgm`] || {};
+            const bgm = DatabaseSystem1Editor.resolveMusicSlot(system, type)?.get() || {};
             musicRows += `
                 <tr class="music-row" data-music-type="${type}" style="cursor: pointer;">
                     <td>${tt(musicLabels[idx])}</td>
@@ -1117,7 +1149,7 @@ class DatabaseSystem1Editor {
 
         // Get current selection and parameters
         if (audioType === 'bgm') {
-            const bgm = system[`${identifier}Bgm`] || {};
+            const bgm = DatabaseSystem1Editor.resolveMusicSlot(system, identifier)?.get() || {};
             selectedFile = bgm.name || '';
             currentVolume = bgm.volume !== undefined ? bgm.volume : 90;
             currentPitch = bgm.pitch !== undefined ? bgm.pitch : 100;
@@ -1546,13 +1578,14 @@ class DatabaseSystem1Editor {
         okBtn.onclick = () => {
             // Update system data with file name and audio parameters
             if (audioType === 'bgm') {
-                if (!system[`${identifier}Bgm`]) {
-                    system[`${identifier}Bgm`] = { name: '', volume: 90, pitch: 100, pan: 0 };
+                const slot = DatabaseSystem1Editor.resolveMusicSlot(system, identifier);
+                if (slot) {
+                    const target = slot.ensure();
+                    target.name = selectedFile;
+                    target.volume = currentVolume;
+                    target.pitch = currentPitch;
+                    target.pan = currentPan;
                 }
-                system[`${identifier}Bgm`].name = selectedFile;
-                system[`${identifier}Bgm`].volume = currentVolume;
-                system[`${identifier}Bgm`].pitch = currentPitch;
-                system[`${identifier}Bgm`].pan = currentPan;
             } else {
                 if (!system.sounds) {
                     system.sounds = [];

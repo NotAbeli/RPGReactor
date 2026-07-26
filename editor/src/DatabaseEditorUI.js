@@ -306,6 +306,11 @@ class DatabaseEditorUI {
         console.log('Opening database:', type);
         this.cleanupDatabaseListChrome();
 
+        // Editors before 0.96.0 stored deletions as null slots in any top-level
+        // list, which then read back as hidden gaps. Repair them on open; types
+        // without a backing array or template are skipped.
+        this.restoreNullDatabaseEntries(type);
+
         // Get data based on type
         let data, title;
         switch(type) {
@@ -648,13 +653,14 @@ class DatabaseEditorUI {
             if (!confirm(this._t('db.deleteConfirm', { name: `${entries[0].name || tt('this entry')}${suffix}` }))) return;
             snapshotForUndo();
             listSession.mutationGeneration++;
-            entries.forEach(entry => this.deleteDatabaseEntry(type, entry.id));
+            entries.forEach(entry => this.clearDatabaseEntry(type, entry.id));
             refreshData();
             selectedIds.clear();
             focusedId = null;
             selectionAnchorId = null;
             refreshList();
             detailEl.innerHTML = this._selectEntryMarkup();
+            this.updateStatus(this._t('db.entryCleared'));
         };
         buttonBar.appendChild(addBtn);
         buttonBar.appendChild(deleteBtn);
@@ -713,18 +719,13 @@ class DatabaseEditorUI {
                 listEl.querySelector(`[data-entry-id="${next.id}"]`)?.scrollIntoView({ block: 'nearest' });
                 return;
             }
-            if (event.key === 'Delete') {
+            if (event.key === 'Delete' || event.key === 'Backspace') {
                 const entries = getSelectedEntries();
                 if (entries.length === 0) return;
                 event.preventDefault();
                 snapshotForUndo();
                 listSession.mutationGeneration++;
-                const template = this.getDefaultTemplates()[type];
-                entries.forEach(entry => {
-                    const blank = { ...JSON.parse(JSON.stringify(template)), id: entry.id, name: '' };
-                    this.databaseManager.data[type][entry.id] = blank;
-                });
-                this._markDatabaseMutation();
+                entries.forEach(entry => this.clearDatabaseEntry(type, entry.id));
                 refreshData();
                 refreshList();
                 detailEl.innerHTML = this._selectEntryMarkup();
@@ -1011,15 +1012,12 @@ class DatabaseEditorUI {
 
         if (this._snapshotForUndo) this._snapshotForUndo();
         if (session) session.mutationGeneration++;
-        const template = this.getDefaultTemplates()[type];
-        if (template) {
+        if (this.getDefaultTemplates()[type]) {
             entries.forEach(entry => {
-                const blank = { ...JSON.parse(JSON.stringify(template)), id: entry.id, name: '' };
-                this.databaseManager.data[type][entry.id] = blank;
+                const blank = this.clearDatabaseEntry(type, entry.id);
                 const idx = data.findIndex(candidate => candidate?.id === entry.id);
-                if (idx >= 0) data[idx] = blank;
+                if (idx >= 0 && blank) data[idx] = blank;
             });
-            this._markDatabaseMutation();
         }
         if (session?.type === type) session.selectIds(entries.map(entry => entry.id), entries[0].id, false);
         populateList(searchInput.value, false, { preserveScroll: true });
@@ -1307,14 +1305,28 @@ class DatabaseEditorUI {
         return {
             actors: { name: 'New Actor', nickname: '', classId: 1, initialLevel: 1, maxLevel: 99, profile: '', characterName: '', characterIndex: 0, faceName: '', faceIndex: 0, battlerName: '', equips: [0,0,0,0,0], traits: [], note: '' },
             classes: { name: 'New Class', expParams: [30,20,30,30], params: Array.from({ length: 8 }, () => [1, 1]), learnings: [], traits: [], note: '' },
-            skills: { name: 'New Skill', iconIndex: 0, description: '', stypeId: 1, scope: 1, occasion: 1, mpCost: 0, tpCost: 0, tpGain: 0, hitType: 0, animationId: 0, speed: 0, successRate: 100, repeats: 1, message1: '', message2: '', message3: '', message4: '', damage: { type: 0, elementId: -1, formula: '0', variance: 20, critical: false }, effects: [], note: '' },
-            items: { name: 'New Item', iconIndex: 0, description: '', itypeId: 1, price: 0, consumable: true, scope: 0, occasion: 0, speed: 0, successRate: 100, repeats: 1, hitType: 0, animationId: 0, damage: { type: 0, elementId: -1, formula: '0', variance: 20, critical: false }, effects: [], note: '' },
-            weapons: { name: 'New Weapon', iconIndex: 0, description: '', wtypeId: 1, price: 0, params: [0,0,0,0,0,0,0,0], traits: [], animationId: 0, note: '' },
+            // requiredWtypeId1/2 are compared with === 0, so leaving them off
+            // makes Game_Actor.isSkillWtypeOk reject the skill outright.
+            skills: { name: 'New Skill', iconIndex: 0, description: '', stypeId: 1, scope: 1, occasion: 1, mpCost: 0, tpCost: 0, tpGain: 0, hitType: 0, animationId: 0, speed: 0, successRate: 100, repeats: 1, requiredWtypeId1: 0, requiredWtypeId2: 0, messageType: 1, message1: '', message2: '', damage: { type: 0, elementId: -1, formula: '0', variance: 20, critical: false }, effects: [], note: '' },
+            // tpGain feeds Math.floor(item.tpGain * tcr); undefined turns the
+            // user's TP into NaN for the rest of the battle.
+            items: { name: 'New Item', iconIndex: 0, description: '', itypeId: 1, price: 0, consumable: true, scope: 0, occasion: 0, speed: 0, successRate: 100, repeats: 1, tpGain: 0, hitType: 0, animationId: 0, damage: { type: 0, elementId: -1, formula: '0', variance: 20, critical: false }, effects: [], note: '' },
+            // etypeId is what equipSlots() matches against, so a weapon without
+            // one never appears in the equip list and changeEquip refuses it.
+            weapons: { name: 'New Weapon', iconIndex: 0, description: '', wtypeId: 1, etypeId: 1, price: 0, params: [0,0,0,0,0,0,0,0], traits: [], animationId: 0, note: '' },
             armors: { name: 'New Armor', iconIndex: 0, description: '', atypeId: 1, etypeId: 2, price: 0, params: [0,0,0,0,0,0,0,0], traits: [], note: '' },
             enemies: { name: 'New Enemy', battlerName: '', battlerHue: 0, params: [100,0,10,10,10,10,10,10], exp: 0, gold: 0, dropItems: [{kind:0,dataId:1,denominator:1},{kind:0,dataId:1,denominator:1},{kind:0,dataId:1,denominator:1}], actions: [{skillId:1,conditionType:0,conditionParam1:0,conditionParam2:0,rating:5}], traits: [], note: '' },
             troops: { name: 'New Troop', members: [], pages: [], note: '' },
-            states: { name: 'New State', iconIndex: 0, restriction: 0, priority: 50, removeAtBattleEnd: false, removeByRestriction: false, autoRemovalTiming: 0, minTurns: 1, maxTurns: 1, removeByDamage: false, chanceByDamage: 100, removeByWalking: false, stepsToRemove: 100, traits: [], note: '', message1: '', message2: '', message3: '', message4: '' },
-            animations: { name: 'New Animation', flashTimings: [], soundTimings: [], effectName: '', offsetX: 0, offsetY: 0, rotation: { x: 0, y: 0, z: 0 }, scale: 100, speed: 100 },
+            // motion and overlay index the battler's state pose and overlay
+            // sheet; without them stateMotionIndex/stateOverlayIndex hand the
+            // sprites undefined and the state shows nothing at all.
+            states: { name: 'New State', iconIndex: 0, restriction: 0, priority: 50, motion: 0, overlay: 0, removeAtBattleEnd: false, removeByRestriction: false, autoRemovalTiming: 0, minTurns: 1, maxTurns: 1, removeByDamage: false, chanceByDamage: 100, removeByWalking: false, stepsToRemove: 100, traits: [], note: '', messageType: 1, message1: '', message2: '', message3: '', message4: '' },
+            // displayType drives Spriteset_Base.isAnimationForEach, which tests
+            // it with a strict === 0. Absent, that is false, so a new animation
+            // on an all-targets skill plays once at the group centroid while
+            // the editor dropdown claims per-target. Every MZ-format authored
+            // animation carries it.
+            animations: { name: 'New Animation', flashTimings: [], soundTimings: [], effectName: '', displayType: 0, offsetX: 0, offsetY: 0, rotation: { x: 0, y: 0, z: 0 }, scale: 100, speed: 100 },
             tilesets: { name: 'New Tileset', mode: 0, tilesetNames: ['', '', '', '', '', '', '', '', ''], flags: new Array(8192).fill(0), note: '' },
             commonEvents: { name: 'New Common Event', trigger: 0, switchId: 1, list: [{code:0,indent:0,parameters:[]}] }
         };
@@ -1341,11 +1353,35 @@ class DatabaseEditorUI {
         return this.databaseManager.addEntry(type, { ...template });
     }
 
-    /**
-     * Delete a database entry
-     */
-    deleteDatabaseEntry(type, id) {
-        this.databaseManager.deleteEntry(type, id);
+    clearDatabaseEntry(type, id) {
+        const entries = this.databaseManager?.data?.[type];
+        if (!entries || !Number.isInteger(id) || id <= 0 || id >= entries.length) return null;
+        const blank = this.createBlankDatabaseEntry(type, id);
+        if (!blank) return null;
+        entries[id] = blank;
+        this._markDatabaseMutation();
+        return blank;
+    }
+
+    createBlankDatabaseEntry(type, id) {
+        const template = this.getDefaultTemplates()[type];
+        if (!template) return null;
+        return { ...JSON.parse(JSON.stringify(template)), id, name: '' };
+    }
+
+    restoreNullDatabaseEntries(type) {
+        const entries = this.databaseManager?.data?.[type];
+        if (!entries) return 0;
+        let restored = 0;
+        for (let id = 1; id < entries.length; id++) {
+            if (entries[id] !== null) continue;
+            const blank = this.createBlankDatabaseEntry(type, id);
+            if (!blank) break;
+            entries[id] = blank;
+            restored++;
+        }
+        if (restored > 0) this._markDatabaseMutation();
+        return restored;
     }
 
     /**

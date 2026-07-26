@@ -857,6 +857,14 @@ Graphics._onTick = function(deltaTime) {
                     : 1);
         const tUpdate = prof ? performance.now() : 0;
         this._tickHandler(dt);
+        // Send any batched canvas->GPU uploads now that the frame's drawing is
+        // done. pixi_compat also flushes from render(), but plugins that do
+        // their own GL work outside a PIXI render pass (LeTBS/MOG popups,
+        // Effekseer) would otherwise sample a texture whose pixels had not
+        // been uploaded yet.
+        if (window.PIXI && PIXI.__reactorFlushTextureUploads) {
+            PIXI.__reactorFlushTextureUploads();
+        }
         if (prof) prof.phase("update", performance.now() - tUpdate);
     }
     if (this._canRender()) {
@@ -1025,7 +1033,29 @@ ReactorProfiler._install = function() {
         [window.Tilemap, "_sortChildren", "tileSort"],
         [window.Bitmap, "_onLoad", "imgDecode"],
         [window.Window_Base, "update", "windows"],
-        [window.Sprite_Character, "update", "charSprites"]
+        [window.Sprite_Character, "update", "charSprites"],
+        // Battle-scene counterparts. Without these the whole battle update
+        // tree lands in the unattributed remainder of "update": the "windows"
+        // phase only covers Window_Base's own update body, so a subclass that
+        // redraws its contents from its own update (victory gauge count-ups)
+        // was invisible.
+        [window.Scene_Battle, "update", "sceneBattle"],
+        [window.Spriteset_Battle, "update", "spritesetBattle"],
+        // Content drawing, which windows perform outside their update body.
+        // getPixel is called out separately because every text colour lookup
+        // goes through it and allocates a one-pixel ImageData.
+        [window.Window_Base, "drawTextEx", "drawTextEx"],
+        [window.Bitmap, "drawText", "bitmapDrawText"],
+        // Split drawText so its cost is attributable: outlining strokes the
+        // glyph path and is typically several times the cost of the fill.
+        // Whatever bitmapDrawText has left over after these two is the
+        // per-call overhead — font parsing, save/restore, and the texture
+        // update every draw op issues.
+        [window.Bitmap, "_drawTextOutline", "textOutline"],
+        [window.Bitmap, "_drawTextBody", "textBody"],
+        [window.Bitmap, "getPixel", "bitmapGetPixel"],
+        [window.Bitmap, "blt", "bitmapBlt"],
+        [window.Bitmap, "gradientFillRect", "bitmapGradient"]
     ];
     for (const [klass, method, phaseName] of targets) {
         this._wrap(klass && klass.prototype, method, phaseName);

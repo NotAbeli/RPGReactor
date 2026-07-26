@@ -941,7 +941,14 @@ class EventManager {
             // A5 tiles start at 1536
             return 1536 + (y * 8 + x);
         } else if (layer === 'B' || layer === 'C' || layer === 'D' || layer === 'E') {
-            // Regular tiles B-E
+            // B-E sheets are 8 tiles wide but the palette shows them as a
+            // 16-wide split, handing back x in 0..15 for the right half.
+            // Fold that back the way MapEditor.getBaseTileIdFromPalettePosition
+            // does, or every right-half tile resolves to a different tile's id.
+            if (x >= 8) {
+                x -= 8;
+                y += 16;
+            }
             const tileIndex = y * 8 + x;
 
             if (layer === 'B') {

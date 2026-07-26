@@ -788,8 +788,14 @@ class TilesetPaletteViewer {
                 sctx.drawImage(img,
                     tile.x * tileSize, tile.y * tileSize, tileSize, tileSize,
                     0, 0, tileSize, tileSize);
-                // Sample the center area of the tile
-                const data = sctx.getImageData(12, 12, 24, 24).data;
+                // Sample the WHOLE tile. Reading only the centre 24x24 left a
+                // 12px border unexamined, so a tile carrying just a thin sliver
+                // of art — the few rows that continue an object from the tile
+                // above — read as fully transparent and armed the eraser, and
+                // painting with it wiped tiles instead of placing them. The
+                // source rect is drawn 1:1 into a cleared scratch canvas, so
+                // there is no neighbouring-tile bleed to crop away.
+                const data = sctx.getImageData(0, 0, tileSize, tileSize).data;
                 for (let i = 3; i < data.length; i += 4) {
                     if (data[i] > 0) {
                         // Found a non-transparent pixel

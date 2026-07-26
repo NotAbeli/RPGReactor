@@ -858,12 +858,8 @@ class EventPageEditor {
                 const pageIndex = parseInt(e.target.dataset.pageIndex);
                 const page = this.parentEditor.currentEvent.pages[pageIndex];
 
-                let value = e.target.value;
-                if (e.target.type === 'number') {
-                    value = parseInt(value);
-                }
-
-                page.conditions[field] = value;
+                page.conditions[field] = EventPageEditor.readConditionValue(
+                    field, e.target.value, page.conditions[field]);
             });
         });
     }
@@ -926,6 +922,26 @@ class EventPageEditor {
                 }
             });
         });
+    }
+
+    /**
+     * Every page condition except the self-switch letter is a number in
+     * authored data. Keying the conversion off the element type instead got
+     * both wrong: a `<select>` reports type "select-one", so actorId and itemId
+     * were stored as strings, and clearing a number input produced NaN, which
+     * serialises to null — the runtime then compares the variable against null,
+     * i.e. against zero, and the page starts meeting a condition it should not.
+     */
+    static get NUMERIC_CONDITIONS() {
+        return ['actorId', 'itemId', 'switch1Id', 'switch2Id', 'variableId', 'variableValue'];
+    }
+
+    static readConditionValue(field, rawValue, currentValue) {
+        if (!EventPageEditor.NUMERIC_CONDITIONS.includes(field)) return rawValue;
+        const parsed = parseInt(rawValue, 10);
+        // An empty or unparseable field keeps what was there rather than
+        // writing a value the engine cannot compare against.
+        return Number.isFinite(parsed) ? parsed : (currentValue ?? 0);
     }
 
     /**

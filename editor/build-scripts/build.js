@@ -84,6 +84,17 @@ const EXCLUDED = new Set([
     path.join('data', 'nul'),
 ]);
 
+// Battle Test writes a full Test_-prefixed copy of every database file into
+// data/ and never removes it. Those files are regenerated on the next battle
+// test and are never read outside btest mode, so shipping them only bloats the
+// release (13-15 MB on a mature project) and leaks the developer's test party.
+function isStagingExcluded(relPath) {
+    if (EXCLUDED.has(relPath)) return true;
+    if (/^rpgmaker-runtime-backup(-\d+)?\.zip$/.test(relPath)) return true;
+    return relPath === path.join('data', path.basename(relPath))
+        && /^Test_.*\.json$/.test(path.basename(relPath));
+}
+
 /**
  * Recursively copy a directory, skipping excluded paths.
  */
@@ -96,7 +107,7 @@ function copyDirFiltered(src, dest, relBase) {
     for (const entry of entries) {
         const relPath = path.join(relBase, entry.name);
 
-        if (EXCLUDED.has(relPath) || /^rpgmaker-runtime-backup(-\d+)?\.zip$/.test(relPath)) {
+        if (isStagingExcluded(relPath)) {
             console.log(`  [skip] ${relPath}`);
             continue;
         }

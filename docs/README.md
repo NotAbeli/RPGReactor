@@ -2,6 +2,7 @@
 
 This folder contains release notes, audit history, and maintainer workflows that are not required for normal RPG Reactor editor use.
 
+- [Deep Audit Backlog — 2026-07-25](AUDIT-BACKLOG-2026-07-25.md): open items from the 0.96.0 file-by-file correctness audit that need a project-owner decision rather than a code change.
 - [Deep Audit Backlog — 2026-07-13](AUDIT-BACKLOG-2026-07-13.md): cleared historical record of the seven-subsystem audit findings and their 0.95.0 disposition.
 - [Release Checklist](RELEASE-CHECKLIST.md): clean validation, signed candidate production, artifact inspection, GitHub/itch publication, rollback, and post-release checks.
 
@@ -9,10 +10,11 @@ Release progress for GitHub visitors is tracked in the root [`CHANGELOG.md`](../
 
 Current unpublished cycle draft:
 
-- [RPG Reactor 0.95.0: A More Complete Editor](devlogs/2026-07-18-rpg-reactor-0.95.0.md)
+- [RPG Reactor 0.96.0: A Deep Correctness Audit](devlogs/2026-07-25-rpg-reactor-0.96.0.md)
 
 Published release explanations (one devlog per release):
 
+- [RPG Reactor 0.95.0: A More Complete Editor](devlogs/2026-07-18-rpg-reactor-0.95.0.md)
 - [RPG Reactor 0.94.8: Big Maps Without the Wait](devlogs/2026-07-13-rpg-reactor-0.94.8.md)
 - [RPG Reactor 0.94.7: Map Editing You Can Trust](devlogs/2026-07-13-rpg-reactor-0.94.7.md)
 - [RPG Reactor 0.94.5: The Performance Release](devlogs/2026-07-12-rpg-reactor-0.94.5.md)

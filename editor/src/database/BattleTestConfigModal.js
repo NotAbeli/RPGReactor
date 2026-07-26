@@ -5,6 +5,19 @@
  */
 
 class BattleTestConfigModal {
+    // System.json holds the whole game configuration — terms, starting party,
+    // vehicles, boot map — so a partial write bricks the project. Falls back to
+    // a plain write when the fs implementation has no renameSync (test mocks,
+    // web host shims).
+    _writeFileAtomic(fs, filePath, data, options) {
+        const atomic = (typeof window !== 'undefined' && window.RRWriteFileAtomicSync) || null;
+        if (atomic && fs && typeof fs.renameSync === 'function') {
+            atomic(fs, filePath, data, options);
+        } else {
+            fs.writeFileSync(filePath, data, options);
+        }
+    }
+
     constructor(databaseManager, project, troopId, battleback1Name, battleback2Name, playtestManager) {
         this.databaseManager = databaseManager;
         this.project = project;
@@ -570,7 +583,7 @@ class BattleTestConfigModal {
 
         try {
             for (const [filename, data] of testFiles) {
-                fs.writeFileSync(path.join(dataDir, 'Test_' + filename), JSON.stringify(data));
+                this._writeFileAtomic(fs, path.join(dataDir, 'Test_' + filename), JSON.stringify(data));
             }
         } catch (e) {
             alert(`${this._t('Failed to write test data:')} ${e.message}`);
@@ -579,7 +592,7 @@ class BattleTestConfigModal {
 
         // Also save normal System.json so testTroopId persists
         try {
-            fs.writeFileSync(path.join(dataDir, 'System.json'), JSON.stringify(system, null, 2));
+            this._writeFileAtomic(fs, path.join(dataDir, 'System.json'), JSON.stringify(system, null, 2));
         } catch (e) {
             // Non-fatal, test files are what matter
         }

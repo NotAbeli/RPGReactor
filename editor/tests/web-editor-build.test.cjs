@@ -9,6 +9,13 @@ const { Worker } = require('node:worker_threads');
 
 const editorRoot = path.resolve(__dirname, '..');
 const read = relativePath => fs.readFileSync(path.join(editorRoot, relativePath), 'utf8');
+const appVersion = JSON.parse(read('package.json')).version;
+
+function webMenuRule(styles) {
+    const match = styles.match(/html\.rr-web #html-menu-bar\s*\{([^}]*)\}/);
+    assert.ok(match, 'web menu-bar rule is present');
+    return match[1];
+}
 
 function runWebDistribution(outputDir) {
     return new Promise((resolve, reject) => {
@@ -55,7 +62,7 @@ test('web distribution uses the bundled Demo, staged runtime, and current artifa
         const result = await runWebDistribution(outputDir);
         assert.equal(result.success, true);
 
-        const archive = path.join(outputDir, 'RPGReactor-v0.95.0-web.zip');
+        const archive = path.join(outputDir, `RPGReactor-v${appVersion}-web.zip`);
         const firstHash = crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex');
         const archivedManagers = execFileSync('unzip', ['-p', archive, 'project/js/reactor_managers.js']);
         assert.deepEqual(archivedManagers, fs.readFileSync(path.resolve(editorRoot, '..', 'runtime', 'reactor_managers.js')));
@@ -73,9 +80,15 @@ test('web distribution uses the bundled Demo, staged runtime, and current artifa
         assert.match(notices, /stb_vorbis Basis/);
         assert.match(notices, /Vitaly Puzrin and Andrei Tuputcyn/);
         assert.match(notices, /ALTERNATIVE B - Public Domain/);
+        const webHtml = execFileSync('unzip', ['-p', archive, 'index.html'], { encoding: 'utf8' });
+        const webStyles = execFileSync('unzip', ['-p', archive, 'css/styles.css'], { encoding: 'utf8' });
+        assert.match(webHtml, /id="html-menu-bar"/);
+        assert.match(webHtml, /id="submenu-file"/);
+        assert.match(webMenuRule(webStyles), /overflow:\s*visible/);
+        assert.match(webMenuRule(webStyles), /flex-wrap:\s*wrap/);
 
         const sums = fs.readFileSync(path.join(outputDir, 'SHA256SUMS.txt'), 'utf8');
-        assert.match(sums, /RPGReactor-v0\.95\.0-web\.zip/);
+        assert.ok(sums.includes(path.basename(archive)));
         assert.doesNotMatch(sums, /stale-from-previous-run/);
         assert.equal(fs.existsSync(staleArchive), true, 'unrelated old output is not deleted or checksummed');
 
@@ -129,4 +142,8 @@ test('Web editor applies responsive layout without changing desktop sizing', () 
     assert.match(styles, /@media \(max-width: 600px\)/);
     assert.match(styles, /@media \(max-height: 650px\)/);
     assert.doesNotMatch(styles, /(?<!rr-web )#editor-ui\s*\{\s*flex-direction:\s*column/);
+    const menuRule = webMenuRule(styles);
+    assert.match(menuRule, /overflow:\s*visible/);
+    assert.match(menuRule, /flex-wrap:\s*wrap/);
+    assert.doesNotMatch(menuRule, /overflow-[xy]:/);
 });
