@@ -288,6 +288,7 @@ const RR_I18N_STRINGS = {
         'toolbar.title.layer3': 'Layer 3',
         'toolbar.title.layer4': 'Layer 4',
         'toolbar.title.animateAutotiles': 'Toggle A1 Autotile Animation',
+        'toolbar.title.map3DView': 'Show the map in 3D',
         'toolbar.title.eventManager': 'Event Manager',
         'toolbar.title.database': 'Database',
         'toolbar.title.plugins': 'Plugins',
@@ -8006,16 +8007,19 @@ RR_EVENT_SECTION_NAMES['tr'] = {
 const RR_EDITOR_PREFERENCE_TRANSLATIONS = {
     ja: {
         'toolbar.title.animateAutotiles': 'A1オートタイルアニメーションを切り替え',
+        'toolbar.title.map3DView': 'マップを3Dで表示',
         'options.editor': 'エディター', 'options.animateAutotiles': 'A1オートタイルをアニメーション',
         'options.animateAutotilesNote': 'マップエディターでA1の水面と滝のアニメーションをプレビューします。'
     },
     es: {
         'toolbar.title.animateAutotiles': 'Alternar animación de autotiles A1',
+        'toolbar.title.map3DView': 'Ver el mapa en 3D',
         'options.editor': 'Editor', 'options.animateAutotiles': 'Animar autotiles A1',
         'options.animateAutotilesNote': 'Muestra la animación de agua y cascadas A1 en el editor de mapas.'
     },
     'zh-Hant': {
         'toolbar.title.animateAutotiles': '切換 A1 自動圖塊動畫',
+        'toolbar.title.map3DView': '以 3D 顯示地圖',
         'options.editor': '編輯器', 'options.animateAutotiles': '播放 A1 自動圖塊動畫',
         'options.animateAutotilesNote': '在地圖編輯器中預覽 A1 水面與瀑布動畫。',
         'theme.gold.name': '預設', 'theme.gold.description': '經典黑底金色的高級編輯器',
@@ -8028,6 +8032,7 @@ const RR_EDITOR_PREFERENCE_TRANSLATIONS = {
     },
     'zh-Hans': {
         'toolbar.title.animateAutotiles': '切换 A1 自动图块动画',
+        'toolbar.title.map3DView': '以 3D 显示地图',
         'options.editor': '编辑器', 'options.animateAutotiles': '播放 A1 自动图块动画',
         'options.animateAutotilesNote': '在地图编辑器中预览 A1 水面和瀑布动画。',
         'theme.gold.name': '默认', 'theme.gold.description': '经典黑底金色的高级编辑器',
@@ -8040,6 +8045,7 @@ const RR_EDITOR_PREFERENCE_TRANSLATIONS = {
     },
     ru: {
         'toolbar.title.animateAutotiles': 'Переключить анимацию автотайлов A1',
+        'toolbar.title.map3DView': 'Показать карту в 3D',
         'options.editor': 'Редактор', 'options.animateAutotiles': 'Анимировать автотайлы A1',
         'options.animateAutotilesNote': 'Показывать анимацию воды и водопадов A1 в редакторе карт.',
         'theme.gold.name': 'По умолчанию', 'theme.gold.description': 'Классический премиальный редактор: золото на чёрном',
@@ -8052,6 +8058,7 @@ const RR_EDITOR_PREFERENCE_TRANSLATIONS = {
     },
     pt: {
         'toolbar.title.animateAutotiles': 'Alternar animação de autotiles A1',
+        'toolbar.title.map3DView': 'Ver o mapa em 3D',
         'options.editor': 'Editor', 'options.animateAutotiles': 'Animar autotiles A1',
         'options.animateAutotilesNote': 'Pré-visualiza a animação de água e cascatas A1 no editor de mapas.',
         'theme.gold.name': 'Padrão', 'theme.gold.description': 'Editor premium clássico em dourado sobre preto',
@@ -8064,6 +8071,7 @@ const RR_EDITOR_PREFERENCE_TRANSLATIONS = {
     },
     de: {
         'toolbar.title.animateAutotiles': 'A1-Autotile-Animation umschalten',
+        'toolbar.title.map3DView': 'Karte in 3D anzeigen',
         'options.editor': 'Editor', 'options.animateAutotiles': 'A1-Autotiles animieren',
         'options.animateAutotilesNote': 'Zeigt die A1-Wasser- und Wasserfallanimation im Karteneditor an.',
         'theme.gold.name': 'Standard', 'theme.gold.description': 'Klassischer Premium-Editor in Gold auf Schwarz',
@@ -8076,6 +8084,7 @@ const RR_EDITOR_PREFERENCE_TRANSLATIONS = {
     },
     fr: {
         'toolbar.title.animateAutotiles': 'Activer ou désactiver l’animation des autotiles A1',
+        'toolbar.title.map3DView': 'Afficher la carte en 3D',
         'options.editor': 'Éditeur', 'options.animateAutotiles': 'Animer les autotiles A1',
         'options.animateAutotilesNote': 'Prévisualise l’animation de l’eau et des cascades A1 dans l’éditeur de cartes.',
         'theme.gold.name': 'Par défaut', 'theme.gold.description': 'Éditeur premium classique doré sur noir',
@@ -8088,6 +8097,7 @@ const RR_EDITOR_PREFERENCE_TRANSLATIONS = {
     },
     el: {
         'toolbar.title.animateAutotiles': 'Εναλλαγή κίνησης αυτόματων πλακιδίων A1',
+        'toolbar.title.map3DView': 'Προβολή χάρτη σε 3D',
         'options.editor': 'Επεξεργαστής', 'options.animateAutotiles': 'Κίνηση αυτόματων πλακιδίων A1',
         'options.animateAutotilesNote': 'Προεπισκόπηση της κίνησης νερού και καταρρακτών A1 στον επεξεργαστή χαρτών.',
         'theme.gold.name': 'Προεπιλογή', 'theme.gold.description': 'Κλασικός premium επεξεργαστής με χρυσό σε μαύρο',
@@ -8100,41 +8110,49 @@ const RR_EDITOR_PREFERENCE_TRANSLATIONS = {
     },
     ko: {
         'toolbar.title.animateAutotiles': 'A1 오토타일 애니메이션 전환',
+        'toolbar.title.map3DView': '맵을 3D로 보기',
         'options.editor': '에디터', 'options.animateAutotiles': 'A1 오토타일 애니메이션',
         'options.animateAutotilesNote': '맵 에디터에서 A1 물과 폭포 애니메이션을 미리 봅니다.'
     },
     ar: {
         'toolbar.title.animateAutotiles': 'تبديل حركة البلاطات التلقائية A1',
+        'toolbar.title.map3DView': 'عرض الخريطة بشكل ثلاثي الأبعاد',
         'options.editor': 'المحرر', 'options.animateAutotiles': 'تحريك البلاطات التلقائية A1',
         'options.animateAutotilesNote': 'معاينة حركة مياه وشلالات A1 في محرر الخرائط.'
     },
     it: {
         'toolbar.title.animateAutotiles': 'Attiva o disattiva l’animazione autotile A1',
+        'toolbar.title.map3DView': 'Mostra la mappa in 3D',
         'options.editor': 'Editor', 'options.animateAutotiles': 'Anima autotile A1',
         'options.animateAutotilesNote': 'Mostra l’anteprima dell’acqua e delle cascate A1 nell’editor delle mappe.'
     },
     pl: {
         'toolbar.title.animateAutotiles': 'Przełącz animację autotile A1',
+        'toolbar.title.map3DView': 'Pokaż mapę w 3D',
         'options.editor': 'Edytor', 'options.animateAutotiles': 'Animuj autotile A1',
         'options.animateAutotilesNote': 'Wyświetla animację wody i wodospadów A1 w edytorze map.'
     },
     id: {
         'toolbar.title.animateAutotiles': 'Aktifkan animasi autotile A1',
+        'toolbar.title.map3DView': 'Tampilkan peta dalam 3D',
         'options.editor': 'Editor', 'options.animateAutotiles': 'Animasikan autotile A1',
         'options.animateAutotilesNote': 'Pratinjau animasi air dan air terjun A1 di editor peta.'
     },
     vi: {
         'toolbar.title.animateAutotiles': 'Bật hoặc tắt hoạt ảnh autotile A1',
+        'toolbar.title.map3DView': 'Xem bản đồ ở chế độ 3D',
         'options.editor': 'Trình biên tập', 'options.animateAutotiles': 'Tạo hoạt ảnh autotile A1',
         'options.animateAutotilesNote': 'Xem trước hoạt ảnh nước và thác nước A1 trong trình biên tập bản đồ.'
     },
     th: {
         'toolbar.title.animateAutotiles': 'สลับแอนิเมชันออโต้ไทล์ A1',
+        'toolbar.title.map3DView': 'แสดงแผนที่แบบ 3 มิติ',
         'options.editor': 'ตัวแก้ไข', 'options.animateAutotiles': 'แสดงแอนิเมชันออโต้ไทล์ A1',
         'options.animateAutotilesNote': 'ดูตัวอย่างแอนิเมชันน้ำและน้ำตก A1 ในตัวแก้ไขแผนที่'
     },
     tr: {
         'toolbar.title.animateAutotiles': 'A1 otomatik karo animasyonunu aç/kapat',
+        'toolbar.title.map3DView': 'Haritayı 3B göster',
         'options.editor': 'Düzenleyici', 'options.animateAutotiles': 'A1 otomatik karolarını canlandır',
         'options.animateAutotilesNote': 'Harita düzenleyicisinde A1 su ve şelale animasyonlarını önizler.'
     }

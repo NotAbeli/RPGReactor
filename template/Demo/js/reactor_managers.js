@@ -209,6 +209,7 @@ DataManager.isDatabaseLoaded = function() {
 };
 
 DataManager.loadMapData = function(mapId) {
+    this._mapSidecarPending = false;
     if (mapId > 0) {
         const filename = "Map%1.json".format(mapId.padZero(3));
         this._lastMapSrc = filename;
@@ -216,6 +217,42 @@ DataManager.loadMapData = function(mapId) {
     } else {
         this.makeEmptyMap();
     }
+};
+
+/**
+ * Fetch a 3D map's sidecar, if it declares itself one.
+ *
+ * The map note is the switch and the sidecar is the data: only a map carrying
+ * <3d> is asked for one, so a project with no 3D maps issues no extra requests
+ * and pays nothing for the feature. A missing or unreadable sidecar is not an
+ * error — the map renders flat at elevation 0, which is exactly the state an
+ * existing 2D map is in before any elevation has been painted.
+ */
+DataManager.loadMapSidecar = function(mapData) {
+    this._mapSidecarPending = false;
+    if (!mapData || !mapData.meta || !mapData.meta["3d"]) return;
+    if (!this._lastMapSrc || typeof Reactor3D === "undefined") return;
+
+    const filename = this._lastMapSrc.replace(/\.json$/, Reactor3D.SIDECAR_SUFFIX);
+    const url = "data/" + filename;
+    const xhr = new XMLHttpRequest();
+    this._mapSidecarPending = true;
+    xhr.open("GET", url);
+    xhr.overrideMimeType("application/json");
+    xhr.onload = () => {
+        if (xhr.status < 400) {
+            try {
+                mapData.reactor3d = JSON.parse(xhr.responseText);
+            } catch (e) {
+                console.error(`Reactor3D: ${filename} is not valid JSON.`, e);
+            }
+        }
+        this._mapSidecarPending = false;
+    };
+    xhr.onerror = () => {
+        this._mapSidecarPending = false;
+    };
+    xhr.send();
 };
 
 DataManager.makeEmptyMap = function() {
@@ -230,13 +267,16 @@ DataManager.makeEmptyMap = function() {
 DataManager.isMapLoaded = function() {
     this.checkError();
     if (!$dataMap) this._checkStalledDataFiles();
-    return !!$dataMap;
+    // The sidecar decides which renderer the scene builds, so it has to be in
+    // hand before the map counts as loaded.
+    return !!$dataMap && !this._mapSidecarPending;
 };
 
 DataManager.onLoad = function(object) {
     if (this.isMapObject(object)) {
         this.extractMetadata(object);
         this.extractArrayMetadata(object.events);
+        this.loadMapSidecar(object);
     } else {
         this.extractArrayMetadata(object);
     }

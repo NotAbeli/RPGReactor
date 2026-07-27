@@ -189,11 +189,6 @@ class DatabaseEditorUI {
             this.animationEditor._currentEffekseerStop = null;
         }
 
-        const tilesetEditorContainer = document.getElementById('tileset-editor-main-container');
-        if (tilesetEditorContainer && tilesetEditorContainer.style.display !== 'none') {
-            tilesetEditorContainer.style.display = 'none';
-        }
-
         if (this._listKeyHandler) {
             document.removeEventListener('keydown', this._listKeyHandler);
             this._listKeyHandler = null;

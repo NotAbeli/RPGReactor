@@ -288,13 +288,114 @@ class TilemapManager {
                     // PIXI v8 defaults to proper alpha handling for PNG files
                     textures[idx] = texture;
                 }).catch(err => {
-                    // Failed to load tileset image (file missing or corrupt)
+                    // An empty slot is skipped above, so reaching here means a
+                    // sheet the tileset actually names could not be loaded.
+                    // Swallowing it silently leaves every tile drawn from that
+                    // sheet rendering as nothing, with no clue why.
+                    console.warn(
+                        `Tileset sheet ${idx} ("${name}") failed to load from ${fileUrl}:`,
+                        err && err.message ? err.message : err);
                 })
             );
         }
 
         await Promise.all(promises);
         return textures;
+    }
+
+    /** Sheet slot a tile id is drawn from, matching the engine's own mapping. */
+    setNumberForTileId(tileId) {
+        if (this.isTileA1(tileId)) return 0;
+        if (this.isTileA2(tileId)) return 1;
+        if (this.isTileA3(tileId)) return 2;
+        if (this.isTileA4(tileId)) return 3;
+        if (this.isTileA5(tileId)) return 4;
+        if (tileId <= 0 || tileId >= this.TILE_ID_A5) return -1;
+        return 5 + Math.floor(tileId / 256);
+    }
+
+    /** True if any tile currently on the map is drawn from one of these slots. */
+    mapUsesSheets(slots) {
+        const map = this.currentMap;
+        if (!map || !Array.isArray(map.data)) return false;
+        const wanted = new Set(slots);
+        // Only the four tile planes; shadow (4) and region (5) are not sheets.
+        const planeCells = map.width * map.height * 4;
+        for (let i = 0; i < planeCells; i++) {
+            const tileId = map.data[i];
+            if (tileId > 0 && wanted.has(this.setNumberForTileId(tileId))) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Rebind tileset sheets after the database rewrites them, without reloading
+     * the map.
+     *
+     * `currentTileset` is captured when the map opens, so a sheet assigned
+     * afterwards is absent from the array `loadTilesetImages` walks and its
+     * texture never loads — every tile painted from it then draws nothing.
+     *
+     * Only the slots whose filename actually changed are reloaded, and the
+     * repaint is skipped entirely unless a tile currently on the map is drawn
+     * from one of them. Assigning a sheet to a previously empty slot — the
+     * common case — therefore costs one image load and no repaint at all. An
+     * earlier version called `renderMap()` unconditionally on every tileset
+     * save, which froze large maps.
+     */
+    async refreshTilesetImages(tileset) {
+        const next = tileset || this.currentTileset;
+        if (!next || !Array.isArray(next.tilesetNames)) return false;
+
+        const previousNames = (this.currentTileset && this.currentTileset.tilesetNames) || [];
+        const nextNames = next.tilesetNames;
+        const changed = [];
+        for (let i = 0; i < Math.max(previousNames.length, nextNames.length); i++) {
+            if ((previousNames[i] || '') !== (nextNames[i] || '')) changed.push(i);
+        }
+
+        this.currentTileset = next;
+        if (changed.length === 0) return false;
+
+        const imgPath = this.path.join(this.projectPath, 'img', 'tilesets');
+        await Promise.all(changed.map(index => {
+            const name = nextNames[index];
+            if (!name) {
+                delete this.tilesetTextures[index];
+                return Promise.resolve();
+            }
+            const fileUrl = this.assetUrl(this.path.join(imgPath, name + '.png'));
+            return PIXI.Assets.load(fileUrl).then(texture => {
+                texture.source.style.addressMode = 'clamp-to-edge';
+                texture.source.style.scaleMode = 'nearest';
+                this.tilesetTextures[index] = texture;
+            }).catch(err => {
+                delete this.tilesetTextures[index];
+                console.warn(
+                    `Tileset sheet ${index} ("${name}") failed to load from ${fileUrl}:`,
+                    err && err.message ? err.message : err);
+            });
+        }));
+
+        // Per-tile textures are cut from the sheets and keyed by slot, so the
+        // entries belonging to a replaced sheet have to go. Everything else
+        // stays, which is what keeps this cheap.
+        const changedSlots = new Set(changed);
+        for (const cache of [this.textureCache, this.a1AnimationCache]) {
+            for (const key in cache) {
+                const parts = key.split('_');
+                const slot = Number(parts[0] === 'auto' ? parts[1] : parts[0]);
+                if (!changedSlots.has(slot)) continue;
+                if (cache[key] && cache[key].destroy) cache[key].destroy(false);
+                delete cache[key];
+            }
+        }
+        if (changedSlots.has(0)) this._a2DecorKinds = null;
+
+        if (this.mapUsesSheets(changed)) {
+            this.renderMap();
+        }
+        return true;
     }
 
     createTilemapContainer() {
@@ -1925,7 +2026,10 @@ class TilemapManager {
             // C: 256-511 -> setNumber 6
             // D: 512-767 -> setNumber 7
             // E: 768-1023 -> setNumber 8
-            // Tiles above 1023 might be region/collision markers, ignore them
+            // F: 1024-1279 -> setNumber 9, G: 1280-1535 -> setNumber 10
+            // (Reactor's added sheets, in the band MZ leaves unallocated
+            // between E and A5). Anything from 1536 up is an A-layer tile and
+            // was handled above, so reaching here with one means a bad id.
             if (tileId >= 1536) {
                 return; // Don't render invalid tile IDs
             }

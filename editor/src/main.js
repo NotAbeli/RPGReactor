@@ -263,6 +263,40 @@ class RPGReactor {
         });
         this.applyAutotileAnimationPreference(this.optionsManager.getAnimateAutotiles());
 
+        // 3D map viewport
+        this.mapEditor3D = new MapEditor3D(this.projectController);
+        this.projectController.mapEditor3D = this.mapEditor3D;
+        // Double-clicking a cube opens the same editor the 2D map opens, so
+        // events are editable from the 3D view rather than only visible in it.
+        this.mapEditor3D.onEventActivated = (event) => {
+            if (this.eventManager) this.eventManager.editEvent(event);
+        };
+        this.mapEditor3D.onEventSelected = (event) => {
+            // Route it through the event manager so the events panel and the
+            // 2D map highlight follow a pick made in 3D, the same way they
+            // follow one made anywhere else.
+            if (event && this.eventManager) this.eventManager.selectEventById(event.id);
+            this.uiManager.updateStatus(event
+                ? `${String(event.id).padStart(3, '0')}: ${event.name || ''}`
+                : '');
+        };
+        this.mapEditor3D.onEventContextMenu = (event, clientX, clientY) => {
+            if (this.eventManager) {
+                this.eventManager.showContextMenu(clientX, clientY, event.x, event.y, event);
+            }
+        };
+        window.addEventListener('rr-map-3d-view-changed', (event) => {
+            this.applyMap3DViewPreference(event.detail.enabled);
+        });
+        document.getElementById('map-3d-view')?.addEventListener('change', (event) => {
+            this.optionsManager.setMap3DView(event.currentTarget.checked);
+        });
+        // Reflect the stored preference in the checkbox, but do not build the
+        // scene here: there is no map open yet, and three.js should not be
+        // parsed until a viewport actually needs it.
+        const map3DCheckbox = document.getElementById('map-3d-view');
+        if (map3DCheckbox) map3DCheckbox.checked = this.optionsManager.getMap3DView();
+
         // Initialize Forge tool suite (character generator etc.)
         this.forgeManager = new ForgeManager(this.projectController);
 
@@ -345,6 +379,26 @@ class RPGReactor {
 
         const checkbox = document.getElementById('map-autotile-animation');
         if (checkbox) checkbox.checked = next;
+    }
+
+    /**
+     * Switch the map canvas between 2D and 3D.
+     *
+     * The checkbox is put back to whatever actually happened rather than what
+     * was asked for: three.js or the runtime directory can be missing in a
+     * partial install, and a ticked box over a 2D canvas would be a lie.
+     */
+    async applyMap3DViewPreference(enabled) {
+        if (!this.mapEditor3D) return;
+        const active = await this.mapEditor3D.setEnabled(enabled === true);
+
+        const checkbox = document.getElementById('map-3d-view');
+        if (checkbox) checkbox.checked = active;
+        if (enabled && !active) {
+            this.uiManager.updateStatus(
+                this.mapEditor3D.lastError || (window.I18n ? window.I18n.tText('3D view unavailable') : '3D view unavailable'));
+            this.optionsManager.settings.map3DView = false;
+        }
     }
 
     // Playtest orchestration
@@ -703,60 +757,6 @@ class RPGReactor {
     }
 
     // ==========================================
-    // TILESET EDITOR
-    // ==========================================
-    showTilesetEditor() {
-        // Hide database viewer
-        const viewer = document.getElementById('database-viewer');
-        viewer.classList.remove('active');
-
-        // Get or create the tileset editor container
-        let editorContainer = document.getElementById('tileset-editor-main-container');
-        if (!editorContainer) {
-            editorContainer = document.createElement('div');
-            editorContainer.id = 'tileset-editor-main-container';
-            editorContainer.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 10000; background-color: var(--color-bg-surface); display: none;';
-            document.body.appendChild(editorContainer);
-        }
-
-        // Show the container
-        editorContainer.style.display = 'flex';
-
-        // Initialize tileset editor if not already done
-        if (!this.tilesetEditor) {
-            const project = this.projectController.getCurrentProject();
-            this.tilesetEditor = new TilesetEditor(
-                this.tilemapManager.app,
-                project.path,
-                this.databaseManager
-            );
-
-            // Initialize the UI
-            this.tilesetEditor.initializeUI(editorContainer);
-            this.tilesetEditor.setupEventListeners();
-            this.tilesetEditor.loadTilesets();
-
-            // Set up close callback
-            this.tilesetEditor.onClose = () => {
-                this.closeTilesetEditor();
-            };
-        }
-    }
-
-    closeTilesetEditor() {
-        // Hide the tileset editor container
-        const editorContainer = document.getElementById('tileset-editor-main-container');
-        if (editorContainer) {
-            editorContainer.style.display = 'none';
-        }
-
-        // Show database viewer with tilesets
-        this.openDatabase('tilesets');
-    }
-
-
-
-    // ==========================================
     // DATABASE UI - Delegated to DatabaseEditorUI
     // ==========================================
 
@@ -772,8 +772,6 @@ class RPGReactor {
                     updateStatus: (msg) => this.updateStatus(msg),
                     getRendererApp: () => this.tilemapManager?.app || null,
                     getTilemapManager: () => this.projectController.getTilemapManager(),
-                    showTilesetEditor: () => this.showTilesetEditor(),
-                    closeTilesetEditor: () => this.closeTilesetEditor(),
                     showTypesEditor: () => this.showTypesEditor(),
                     showTermsEditor: () => this.showTermsEditor()
                 }
@@ -797,8 +795,6 @@ class RPGReactor {
                     updateStatus: (msg) => this.updateStatus(msg),
                     getRendererApp: () => this.tilemapManager?.app || null,
                     getTilemapManager: () => this.projectController.getTilemapManager(),
-                    showTilesetEditor: () => this.showTilesetEditor(),
-                    closeTilesetEditor: () => this.closeTilesetEditor(),
                     showTypesEditor: () => this.showTypesEditor(),
                     showTermsEditor: () => this.showTermsEditor()
                 }

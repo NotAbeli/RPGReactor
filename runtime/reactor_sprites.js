@@ -425,13 +425,48 @@ Sprite_Character.prototype.createHalfBodySprites = function() {
 };
 
 Sprite_Character.prototype.updatePosition = function() {
+    if (this.updateReactor3DPosition()) return;
     this.x = this._character.screenX();
     this.y = this._character.screenY();
     this.z = this._character.screenZ();
 };
 
+/**
+ * Place the sprite by projecting its grid cell through the 3D camera.
+ *
+ * Characters stay ordinary 2D sprites over the 3D ground — the HD-2D
+ * arrangement — so their position cannot come from the 2D scroll, which knows
+ * nothing about the camera's pitch. Returns false in 2D, leaving the stock path
+ * untouched.
+ *
+ * The sprite's anchor is its feet, so the projected point is the base of the
+ * cell rather than its centre in Y.
+ */
+Sprite_Character.prototype.updateReactor3DPosition = function() {
+    if (typeof Reactor3D === "undefined") return false;
+    const viewport = Reactor3D.viewport();
+    const camera = viewport && viewport.camera();
+    if (!camera || !Reactor3D.shouldRender3D($dataMap)) return false;
+
+    const character = this._character;
+    const gx = character._realX;
+    const gy = character._realY;
+    const ground = Reactor3D.elevationAt($dataMap, Math.round(gx), Math.round(gy));
+    const point = Reactor3D.projectToScreen(camera, gx + 0.5, ground, gy + 0.5);
+    if (!point) return false;
+
+    this.x = point.x;
+    this.y = point.y;
+    // Painter's order along the view direction: further cells draw first, so a
+    // character behind a taller one is overlapped rather than punched through.
+    this.z = character.screenZ();
+    this._reactor3dBehindCamera = !point.visible;
+    return true;
+};
+
 Sprite_Character.prototype.updateOther = function() {
     this.opacity = this._character.opacity();
+    if (this._reactor3dBehindCamera) this.opacity = 0;
     this.blendMode = this._character.blendMode();
     this._bushDepth = this._character.bushDepth();
 };
@@ -3662,6 +3697,7 @@ Spriteset_Map.prototype.createLowerLayer = function() {
 
 Spriteset_Map.prototype.update = function() {
     Spriteset_Base.prototype.update.call(this);
+    this.updateReactor3D();
     this.updateTileset();
     this.updateParallax();
     this.updateTilemap();
@@ -3822,6 +3858,14 @@ Spriteset_Map.prototype._rrWindowDormant = function(child, minX, maxX, minY, max
 // change.
 Spriteset_Map.prototype.destroy = function(options) {
     this.removeAllBalloons();
+    // Geometry, materials and textures are GPU allocations the collector cannot
+    // reclaim; leaving them behind leaks a whole map's worth per transfer. The
+    // viewport itself outlives the map and is only hidden.
+    if (this._reactor3d) {
+        this._reactor3d.scene.destroy();
+        this._reactor3d.viewport.setVisible(false);
+        this._reactor3d = null;
+    }
     if (this._rrCullHolder) {
         for (const child of this._rrCullHolder.children.slice()) {
             this.addChild(child);
@@ -3857,6 +3901,63 @@ Spriteset_Map.prototype.createTilemap = function() {
     this._effectsContainer = tilemap;
     this._tilemap = tilemap;
     this.loadTileset();
+    this.createReactor3D();
+};
+
+/**
+ * Swap the ground for a 3D scene, keeping everything else as it is.
+ *
+ * The Tilemap object stays: characters, the shadow sprite, the destination
+ * marker and every plugin-authored sprite parent to it, and the effects
+ * container is it. Only its two ground layers are hidden, so what disappears is
+ * the drawn tiles rather than the machinery around them. The 3D ground renders
+ * on its own canvas underneath, which is what leaves character sprites as
+ * ordinary PIXI sprites drawn over it — the HD-2D arrangement, and the reason
+ * plugins that touch Sprite_Character keep working.
+ */
+Spriteset_Map.prototype.createReactor3D = function() {
+    this._reactor3d = null;
+    if (typeof Reactor3D === "undefined") return;
+    if (!Reactor3D.shouldRender3D($dataMap)) return;
+
+    const viewport = Reactor3D.acquireViewport();
+    if (!viewport) return;
+
+    const scene = new Reactor3D.MapScene($dataMap, this._tilemap.bitmaps);
+    const settings = ($dataMap.reactor3d && $dataMap.reactor3d.camera) || {};
+    const camera = Reactor3D.createCamera(settings);
+    viewport.setScene(scene.scene(), camera);
+    viewport.setVisible(true);
+
+    this._reactor3d = { viewport, scene, camera, settings };
+    this._tilemap.lowerLayerVisible = false;
+    if (this._tilemap._lowerLayer) this._tilemap._lowerLayer.visible = false;
+    if (this._tilemap._upperLayer) this._tilemap._upperLayer.visible = false;
+};
+
+Spriteset_Map.prototype.reactor3D = function() {
+    return this._reactor3d;
+};
+
+/**
+ * Follow the player and draw the 3D pass.
+ *
+ * Runs before the 2D updates so character sprites, which project through this
+ * camera, read a camera already aimed at this frame's position rather than the
+ * previous one — otherwise they trail the ground by a frame while scrolling.
+ */
+Spriteset_Map.prototype.updateReactor3D = function() {
+    const state = this._reactor3d;
+    if (!state) return;
+
+    // _realX/_realY interpolate between cells, so the camera glides rather than
+    // stepping a whole tile at a time.
+    const focusX = $gamePlayer ? $gamePlayer._realX : 0;
+    const focusY = $gamePlayer ? $gamePlayer._realY : 0;
+    const focusHeight = Reactor3D.elevationAt($dataMap, Math.round(focusX), Math.round(focusY));
+
+    Reactor3D.aimCamera(state.camera, { x: focusX, y: focusHeight, z: focusY }, state.settings);
+    state.viewport.render();
 };
 
 Spriteset_Map.prototype.loadTileset = function() {

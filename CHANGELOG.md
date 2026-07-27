@@ -10,22 +10,48 @@ This root changelog summarizes public release progress for GitHub; larger releas
 
 ### Added
 
+- **3D maps (HD-2D).** A map can be drawn in 3D: the ground lies flat, walls and buildings stand up, and characters stay as 2D sprites moving on the grid. It is opt-in per map — a map is 3D only if its note contains `<3d>` — and nothing else changes. Event commands, passability, regions and movement keep working on the same grid, and `Map###.json` stays standard RPG Maker data; elevation and camera live in a `Map###.r3d.json` beside it. A project with no 3D maps behaves exactly as before and never downloads the 3D library. Battles are still 2D.
+
+- **Tileset 3D shapes.** Which tiles stand up cannot be derived from map data — a shop wall and a cliff face are both simply impassable — so it is authored. The tileset editor has a new **3D Shape** mode beside passability and terrain: click a tile to cycle it through **Flat**, **Upright** and **Scenery**. Upright treats a column of tiles as one picture and stands it at full height, which suits a building drawn as a single tall prop; Scenery raises the ground instead, which suits a forest or a mountain range, where the same tile repeats across an area. Autotiles are classified once and apply to all their shapes. Stored per tileset in `Tilesets.r3d.json`; a project that never classifies a tile never gets the file, and an unclassified map renders flat rather than guessing.
+
+- **A 3D view in the map editor.** A **3D** checkbox beside the A1 toggle swaps the map canvas for a 3D view of the same map. Drag to orbit, Shift or right-drag to pan, scroll to zoom, and double-click empty space to put the whole map back in view. Events appear as their character graphic on a standing sprite with number and name above, or a coloured cube when they have no graphic. Click to select, double-click to edit, right-click for the same menu the 2D map gives you; selection stays in step with the events panel in both directions. A1 water animates, following the same A1 checkbox as the 2D canvas.
+
+- **Painting works in 3D.** With tiles selected in the palette, dragging paints them exactly as in 2D — same brush, same autotiles, same undo — and the tile under the cursor is reported in the map bar. Without a selection, dragging orbits instead; Ctrl always orbits. Painting shares one implementation with the 2D canvas, so the two views cannot drift apart.
+
+
+- Two more tileset sheets, **F** and **G**, giving 512 extra tiles on top of B–E's 1,024. They work exactly like B–E — same grid, same passability, ladder, counter and terrain tag settings, same layer stacking — and appear as tabs in the tile palette and slots in the tileset database. They use a range of tile numbers RPG Maker leaves empty, so importing an MZ or MV project can never conflict with them, and a project that doesn't use them saves exactly the same data as before. Maps that do use them still save in the standard format; only the two new sheets would be missing if the project were opened in RPG Maker itself.
+
 - Event editor: Conditional Branch, Show Choices, and Loop can be folded away with the arrow beside them, so a long event no longer has to be scrolled past in full. A folded block shows how many lines it is hiding, nested blocks remember their own state while an outer one is closed, and folding follows the block if you edit commands above it. Folds are remembered per event page and survive closing the editor or restarting, so a page comes back the way you left it. Everything starts expanded, and a page you have never folded stays that way.
+- Map properties: resizing a map now warns before it discards anything. Shrinking a map tells you exactly how many tiles will be removed and lists the events that will be deleted, and nothing is changed unless you confirm. Previously both were discarded silently, and events outside the new bounds were left behind invisibly.
+- Map properties: a new anchor picker chooses which corner or edge your existing content stays attached to, so a map can grow from the top or left instead of only the bottom-right. Tiles and events move together, Set Event Location commands on the map follow, and the player and vehicle start positions are updated when they are on that map. Reactor also finds Transfer Player and Set Vehicle Location commands elsewhere in the project that jump to fixed coordinates on the resized map, and offers to update them so they still arrive in the right place. Top-left remains the default and behaves exactly as before.
+
+### Removed
+
+- An old tileset editor screen that could never actually open — it tried to build itself from a class that no longer exists, and nothing in the editor linked to it. About 1,300 lines went with it, including a passability overlay that read its markings from the wrong tiles on every sheet. The tileset editor you use in the Database is unaffected.
 
 ### Changed
 
 - Bumped the current development version to RPG Reactor 0.96.0.
-
-### Added
-
-- Map properties: resizing a map now warns before it discards anything. Shrinking a map tells you exactly how many tiles will be removed and lists the events that will be deleted, and nothing is changed unless you confirm. Previously both were discarded silently, and events outside the new bounds were left behind invisibly.
-- Map properties: a new anchor picker chooses which corner or edge your existing content stays attached to, so a map can grow from the top or left instead of only the bottom-right. Tiles and events move together, Set Event Location commands on the map follow, and the player and vehicle start positions are updated when they are on that map. Reactor also finds Transfer Player and Set Vehicle Location commands elsewhere in the project that jump to fixed coordinates on the resized map, and offers to update them so they still arrive in the right place. Top-left remains the default and behaves exactly as before.
-
-### Changed
-
+- The tileset screen in the Database shows all eleven layer slots without scrolling, and an unassigned layer now offers a **Choose Image** button where its tiles would be, instead of empty space. Double-clicking a layer row still works as before.
+- Picking a tileset image uses the same modal styling as the rest of the editor, with a proper header and footer, and its file list is searchable like the other image pickers. It opens on the layer's current sheet, offers **(None)** at the top to clear a layer, and Escape, the close button, the footer, and clicking outside all dismiss it.
+- Every tileset layer row has a **+** button that opens the picker for that slot, so a sheet can be swapped without hunting for the double-click.
+- Every marking in the tileset editor is readable over any artwork. They are drawn straight onto the tiles, so a pale marker on pale ground — or a red X on red brickwork — could disappear into it. The O, X, star, damage and terrain-tag markings now carry a dark outline; the four-direction arrows and blocked dots, the ladder, the bush and the counter bar carry a dark edge. Colours are unchanged, just less washed out.
+- Assigning or changing a tileset image now updates the map and the tile palette straight away instead of needing the editor restarted. Only the sheets that actually changed are reloaded, and the map is only redrawn if something on it uses them — adding a new sheet costs nothing.
+- Map editing previews are cheaper: the preview used to create a fresh drawing object for every tile under the cursor, every time the mouse moved, on top of a layer type PIXI no longer supports for this. Most noticeable when dragging a large stamp or a wide circle brush across a big map.
+- Map Properties now says which map you are editing: the header reads **Map Properties | 0211: Canite City** instead of just "Map Properties", and it updates as you type in the Map Name field. Renaming still only takes effect when you press OK.
+- The Tileset dropdown in Map Properties now shows each tileset's number beside its name, so you can tell which database entry you are picking. It matches the numbering the Change Tileset event command already used.
 - Map Properties now sizes itself to its contents and rearranges to fit the window. Map Name and Display Name share a row, as do Tileset and Scroll Type, and the panels pack into two balanced columns, dropping to one on a narrow window. The dialog no longer reserves a fixed height with empty space below it, and the whole thing stays visible without scrolling even with the BGM, BGS, and Battleback sections expanded. The Note box can also be dragged taller.
 
 ### Fixed
+
+- Painting a wall autotile against the edge of the map cut off its end. A wall one tile in from the edge drew its finished edge; the same wall pushed right up against the boundary lost it. Reactor was treating everything off the map as more of the same tile, which is correct for ground and roofs — they carry on past the edge without drawing a border — but wrong for walls, which RPG Maker closes off. Checked against the maps in the bundled projects: of the 8,455 wall autotiles sitting on a map edge, 91% store the capped shape.
+
+- Right-clicking a single autotile now picks the *kind*, so painting with it continues the pattern and works out its own corners and ends. It used to copy that exact piece, so picking the middle of a wall and painting produced a row of middle pieces with no ends. Right-dragging an area still copies it exactly, which is what makes it useful for duplicating a finished piece of map.
+
+
+- Tile palette: switching to a different tileset layer kept the tiles you had selected on the previous one. The palette showed nothing highlighted, so it looked like no tiles were selected, but clicking the map painted the old layer's tiles anyway. Switching layers now clears the selection to match what the palette is showing.
+
+- Tileset layers F and G painted as an eraser. They appeared correctly in the palette and the hover preview, but placing one wiped the tiles under it instead. The map editor holds two separate routines for turning a palette click into a tile number, and only one of them had been taught about the new sheets; the other returned tile 0, which is what "empty" means, so painting rubbed tiles out. Both now share one definition.
 
 - Database: skills, weapons, items, and states created in the editor were missing fields the game engine expects every record to have, and each one failed differently in play. A new **skill** could not be used by any actor. A new **weapon** never showed up in the equip list and could not be equipped. Using a new **item** in battle corrupted the user's TP for the rest of the fight. A new **state** showed no battler pose and no overlay graphic. Clearing an existing record produced the same incomplete shape. All four templates now match what RPG Maker itself writes, checked against the records in the bundled projects.
 
@@ -208,7 +234,7 @@ Every remaining Medium and Low finding from the 2026-07-13 deep audit is fixed i
 
 The original deferred findings and their resolutions are preserved in [docs/AUDIT-BACKLOG-2026-07-13.md](docs/AUDIT-BACKLOG-2026-07-13.md); all are fixed.
 
-Current 0.95.0 validation: **350 passing tests and no failures**.
+Validation at the 0.95.0 release: **350 passing tests and no failures**.
 
 ## [0.94.8] - 2026-07-13
 

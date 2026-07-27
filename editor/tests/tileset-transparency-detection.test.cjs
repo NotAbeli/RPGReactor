@@ -6,6 +6,10 @@ const vm = require('node:vm');
 
 const editorRoot = path.resolve(__dirname, '..');
 const viewerSource = fs.readFileSync(path.join(editorRoot, 'src', 'TilesetPaletteViewer.js'), 'utf8');
+// TilesetPaletteViewer reads the shared sheet table as a global, the way
+// index.html supplies it.
+const sheetsSource = fs.readFileSync(
+    path.join(editorRoot, 'src', 'utils', 'TilesetSheets.js'), 'utf8');
 
 const TILE = 48;
 
@@ -38,7 +42,7 @@ function makeEnvironment(opaqueRows) {
         querySelector: () => null,
         querySelectorAll: () => []
     };
-    const TilesetPaletteViewer = vm.runInNewContext(`${viewerSource}\nTilesetPaletteViewer;`, {
+    const TilesetPaletteViewer = vm.runInNewContext(`${sheetsSource}\n${viewerSource}\nTilesetPaletteViewer;`, {
         console, process, require, nw: {}, window: {}, document: documentStub
     });
     const viewer = Object.create(TilesetPaletteViewer.prototype);

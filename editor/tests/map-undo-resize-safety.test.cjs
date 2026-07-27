@@ -6,9 +6,15 @@ const vm = require('node:vm');
 
 const editorRoot = path.resolve(__dirname, '..');
 
+// Editor sources that read shared utils expect them as globals, the way
+// index.html loads them. Prepend rather than stub so the tests exercise the
+// real table.
+const sharedUtilSource = fs.readFileSync(
+    path.join(editorRoot, 'src', 'utils', 'TilesetSheets.js'), 'utf8');
+
 function loadClass(file, className) {
     const source = fs.readFileSync(path.join(editorRoot, 'src', file), 'utf8');
-    return vm.runInNewContext(`${source}\n${className};`, {
+    return vm.runInNewContext(`${sharedUtilSource}\n${source}\n${className};`, {
         console, process, require, nw: {}, window: {},
         document: { createElement: () => ({ style: {}, getContext: () => null }), getElementById: () => null }
     });

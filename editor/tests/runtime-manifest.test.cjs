@@ -94,3 +94,34 @@ test('bundled LZString decodes a fixed stock-MV save payload', () => {
     assert.equal(context.LZString.compressToBase64(unicodeJson), stockMvBase64);
     assert.equal(context.LZString.decompressFromBase64(stockMvBase64), unicodeJson);
 });
+
+test('the build preflights require every script the runtime actually boots', () => {
+    // `scriptUrls` is what Main waits for, so a project missing any of them
+    // fails to boot. A preflight that does not check for a file cannot warn
+    // about it: `reactor_3d.js` was added to the manifest and to every project,
+    // but not to these lists, so a project that lost it would have passed
+    // validation and then died at load.
+    const manifest = readRuntimeManifest(path.join(runtimeRoot, 'reactor_main.js'));
+    const booted = manifest.scripts
+        .filter(url => !url.startsWith('js/libs/'))
+        .map(url => url.slice('js/'.length));
+
+    const editorRoot = path.join(workspaceRoot, 'editor');
+    for (const file of ['build.js', 'build-worker.js', 'dist-editor-worker.js']) {
+        const source = fs.readFileSync(path.join(editorRoot, 'build-scripts', file), 'utf8');
+        for (const script of booted) {
+            assert.ok(source.includes(`'${script}'`),
+                `${file} preflights ${script}`);
+        }
+    }
+});
+
+test('three.js is deliberately absent from the boot manifest', () => {
+    // It is ~2 MB and only a 3D map needs it, so `Reactor3D.ensureLoaded`
+    // fetches it on demand. Adding it here would charge every project for a
+    // feature most never use.
+    const manifest = readRuntimeManifest(path.join(runtimeRoot, 'reactor_main.js'));
+    assert.equal(manifest.scripts.includes('js/libs/three.js'), false);
+    assert.equal(fs.existsSync(path.join(runtimeRoot, 'libs', 'three.js')), true,
+        'but it does ship in the runtime bundle');
+});

@@ -79,7 +79,10 @@ test('the editor reads the tag exactly as the engine does', () => {
     assert.doesNotMatch(editorSource, /const terrainTag = \(flag >> 12\) & 0x0F;/,
         'no masked terrain read remains');
     const reads = editorSource.match(/const terrainTag = flag >>> 12;/g) || [];
-    assert.equal(reads.length, 2, 'both palette renderers read it the engine way');
+    // One renderer, since the unreachable standalone editor UI (which carried
+    // the second, and a flag-offset table that disagreed with this one on every
+    // sheet) was removed.
+    assert.equal(reads.length, 1, 'the palette renderer reads it the engine way');
 });
 
 test('the write clears the whole high half, not just one nibble', () => {

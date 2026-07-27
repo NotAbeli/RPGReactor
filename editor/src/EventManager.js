@@ -760,6 +760,7 @@ class EventManager {
     selectEvent(event) {
         const previousEvent = this.selectedEvent;
         this.selectedEvent = event;
+        this.notifyEventSelected(event);
 
         // Update selected tile coordinates for yellow highlight
         if (event) {
@@ -801,6 +802,20 @@ class EventManager {
     }
 
     // Select an event by ID
+    /**
+     * Announce the current selection.
+     *
+     * Announced rather than pushed at the 3D viewport directly: selection is
+     * driven from the map, the events panel and the editor itself, and each of
+     * those already funnels through `selectEvent`.
+     */
+    notifyEventSelected(event) {
+        if (typeof document === 'undefined' || typeof CustomEvent !== 'function') return;
+        document.dispatchEvent(new CustomEvent('rr-event-selected', {
+            detail: { eventId: event ? event.id : null }
+        }));
+    }
+
     selectEventById(eventId) {
         if (!this.currentMap || !this.currentMap.events) return;
 

@@ -4,15 +4,22 @@ RPG Reactor-owned code is MIT-licensed. Bundled third-party components retain
 their respective licenses as recorded in `THIRD_PARTY_NOTICES.md`; the project
 does not claim one uniform license for third-party or user/project content.
 
-The 0.96.0 development cycle is not a feature release. It is a sustained,
-file-by-file correctness audit of the editor, the runtime, the build tooling and
-the asset generators, together with the test infrastructure needed to keep the
-results from regressing. Roughly forty verified bugs were fixed. Most were
-silent: commands that quietly rewrote themselves when reopened, records created
-without fields the engine reads unconditionally, and editor arithmetic that
-disagreed with the runtime performing the same calculation. Test coverage grew
-from 452 to 579 passing tests. This document remains a draft until 0.96.0 is
-tagged and published.
+The 0.96.0 cycle began as a correctness audit and ended up carrying the largest
+feature Reactor has taken on: a 3D renderer for ordinary RPG Maker maps.
+
+The audit came first and remains the larger share of the work — a sustained,
+file-by-file pass over the editor, the runtime, the build tooling and the asset
+generators, with the test infrastructure needed to keep the results from
+regressing. Roughly forty verified bugs were fixed, most of them silent:
+commands that quietly rewrote themselves when reopened, records created without
+fields the engine reads unconditionally, and editor arithmetic that disagreed
+with the runtime performing the same calculation.
+
+Then came tileset sheets F and G, and after them the HD-2D work described below.
+Test coverage grew from 452 to 777 passing tests. Two editing features also
+landed — collapsible event blocks and a non-destructive map resize — alongside
+localization, performance and MV-compatibility work. This document remains a
+draft until 0.96.0 is tagged and published.
 
 ## The bundled projects became an oracle
 
@@ -140,6 +147,140 @@ had been fixed on the save path earlier in the cycle, but the *preview* path
 still carried it: dragging the volume to silence and pressing Play previewed at
 90%. A file-wide sweep for the same shape now runs as a test, with an explicit
 allowlist for the two sliders whose range cannot reach zero.
+
+## Long event pages fold to their structure
+
+Conditional Branch, Show Choices and Loop collapse from the arrow beside them,
+with a badge showing the hidden line count so a folded row is never mistaken for
+an empty branch.
+
+Two decisions made it trustworthy. `findBlockEndIndex` matches a block's
+terminator on indent rather than by counting openers, so a nested branch that
+closes first cannot be read as the outer block's end. And fold state lives in a
+`WeakSet` keyed on the opening command **object**, not its index — inserting a
+command earlier in the page shifts every later index, which would leave the fold
+on an unrelated command.
+
+Persistence cannot use object identity, since commands are rebuilt from JSON on
+load, so stored entries pin `index:code:indent`. A page edited since its fold
+was saved fails to match and renders expanded rather than folding whatever moved
+into that slot. Folds are scoped per project, map, event and page, and a fully
+expanded page deletes its record, which keeps "everything open" the real default.
+
+## Resizing a map stopped being destructive
+
+Changing a map's dimensions discarded tiles and events silently, and events
+outside the new bounds were not removed — they were left at coordinates the map
+no longer had, invisible to the editor but still in the file.
+
+`analyzeMapResize` now counts the tiles and names the events that would be lost,
+and `saveMapProperties` changes nothing until that is confirmed. Stranded events
+are removed.
+
+The anchor picker came out of the same work: a nine-cell control chooses which
+corner or edge content keeps, so a map can grow from the top or left.
+`computeResizeOffset` turns the anchor into a tile offset that `resizeMapData`
+walks, so one expression serves every anchor, and `top-left` is a zero offset —
+byte-identical to the old behaviour. Events move with tiles, Set Event Location
+commands on the map shift, `System.json` starts update, and Transfer Player and
+Set Vehicle Location commands elsewhere that target the map are found and
+offered for adjustment. Variable-designation commands resolve at runtime and are
+left alone.
+
+Map Properties was rebuilt to hold it: a fixed `85vh` regardless of content
+became content-sized, with panels packed into two CSS multi-column columns. Two,
+not three — General Settings is one indivisible tall panel, so a third column
+strands a short panel beside a full-height gap.
+
+## Beside the audit
+
+Seven languages were showing large parts of the editor in English. Chinese
+(Traditional and Simplified), Russian, Portuguese, German, French and Greek
+inherited the English table, leaving roughly a third of the interface
+untranslated — the entire Effekseer Forge, event page fields, toolbar tooltips.
+All are complete, and the build now fails when a key ships without translations.
+
+Two runtime defects shared one symptom. Drawing to a bitmap uploaded the whole
+canvas to the graphics card on every draw operation, and window text colours
+were re-read from the windowskin a pixel at a time on every use. Anything
+redrawing text each frame paid both — the victory aftermath EXP count-up most
+visibly. Uploads are batched and colours cached; that was the aftermath stutter.
+
+Three MV compatibility fixes came from `Star Shift Rebellion`. MV animations on
+actors are no longer mirrored (MZ flips them, MV never did — obvious on any
+animation containing words), a choice arriving on a plugin-created message
+window falls back to the scene's real choice window instead of crashing on null,
+and a Set Movement Route with Wait no longer finishes a later event's route
+instantly by watching a character that had already stopped.
+
+## HD-2D: a 3D view of an ordinary map
+
+The 3D renderer is a *view*. `Game_Map`, `Game_Character`, passability, regions
+and the event interpreter are untouched and keep operating on the same
+`width * height * 6` planes; nothing in the 3D path feeds back into game logic.
+`Map###.json` is never rewritten, so a 3D map remains valid RPG Maker data
+describing its 2D footprint, with elevation and camera in a `Map###.r3d.json`
+sidecar. Three.js is fetched on first entry to a 3D map and appears in no
+manifest, so a project with no 3D maps never downloads it. Compositing is by
+stacked canvases — the arrangement the runtime already ships for Effekseer —
+so PIXI keeps drawing windows, pictures, weather and plugin sprites unchanged.
+
+### Classification is authored, because it cannot be derived
+
+The first version guessed which tiles stand up from the 2D flags: impassable, or
+draws-above-characters. That is wrong in both directions, and a world map shows
+why. Mountains and forests are impassable, so they stood on end; and because a
+standing run is drawn as a single plane at its southern edge, everything behind
+that plane vanished. The same map gained scenery the author never placed and
+lost scenery they did.
+
+So it is authored, per tileset — a tile is the same kind of thing wherever it is
+painted — in `Tilesets.r3d.json`. Guessing is now off by default; an
+unclassified map renders flat, which is at least the map the author drew.
+
+Three classes were needed, not two. **Upright** collapses a column of cells into
+one facade as tall as the run, which is correct for a building drawn as a single
+perspective prop — one bundled tileset draws towers fifty-one tiles high that
+way. Applying that to terrain produced a fifty-eight tile wall of trees, because
+a forest is the same tile repeated over an *area* rather than one tall picture.
+**Scenery** raises the ground it sits on instead and takes its cliff faces from
+the existing wall code, so a mountain range reads as a mass.
+
+### The corpus settled the autotile edge rule
+
+A user reported that a wall autotile painted against the map edge lost its end
+cap, while the same wall one tile inward kept it. Reactor treated everything off
+the map as more of the same tile, for every autotile. The authored maps in the
+bundled projects decided it: of 8,455 wall autotiles sitting on a map edge,
+91.3% store the capped shape and 2.4% the connected one — while 82.9% of the
+83,674 floor autotiles on an edge store shape 0, the fully connected interior.
+Ground and roofs run on past the edge; walls are closed off. The fix is scoped
+to walls, and the counts are recorded in the test as the reason.
+
+### A module that only worked inside a running game
+
+Two defects shared one cause, and it is the lesson worth keeping. The geometry
+builder read MZ's autotile shape tables from the global `Tilemap`, and the tile
+classification from an XHR relative to the running game. Neither exists in the
+editor. The tables silently degraded to `null`, and every autotile fell back to
+blitting the top-left corner of its block: on a world map, 63,620 interior tiles
+that should have been seamless rendered as a grid of bordered squares. The
+classification simply never loaded, so every wall was guessed, rejected by the
+height cap for being too tall, and then laid flat on the floor as ground texture.
+
+A test had pinned the first of these as correct. It was named "without the
+tables an autotile still draws something" and asserted the whole-tile fallback —
+the bug, written down as the contract. The tables now ship inside the module,
+extracted from `reactor_core.js` and pinned against it, and the editor hands the
+runtime its classification directly.
+
+The renderer was developed against a software rasteriser that runs the same
+geometry and camera code offline, and against the editor itself driven by an
+NW.js harness. Both earned their place. A numeric check reported no missing
+ground while the picture plainly showed holes; rendering the sky in magenta
+proved the quads existed and their texture was transparent, which located the
+real fault — a lookup taking the top of a cell's layer stack, usually a
+see-through decoration, where it wanted the floor at the bottom.
 
 ## Deferred, and recorded rather than silently fixed
 

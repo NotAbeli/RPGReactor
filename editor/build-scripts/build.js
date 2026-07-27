@@ -125,7 +125,7 @@ function copyDirFiltered(src, dest, relBase) {
 
 function validateProjectRuntime(root) {
     const required = [
-        'reactor_main.js', 'reactor_core.js', 'reactor_managers.js',
+        'reactor_main.js', 'reactor_core.js', 'reactor_3d.js', 'reactor_managers.js',
         'reactor_objects.js', 'reactor_scenes.js', 'reactor_sprites.js', 'reactor_picture_extensions.js',
         'reactor_windows.js', 'reactor_mv_compat.js', 'reactor_plugins.js',
         path.join('libs', 'pixi.js'), path.join('libs', 'pixi_compat.js'),

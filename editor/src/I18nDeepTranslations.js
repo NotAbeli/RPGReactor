@@ -1391,7 +1391,7 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "No {part} selected": "選ばれていない{part}",
     "Nodes connected by edges with light pulses traveling along them. Choose ring or grid topology. Edges generated deterministically.": "エッジでつながれたノードは、その上を光のパルスで走っている。リングトポロジーかグリッドトポロジーを選びましょう。エッジは決定論的に生成されます。",
     "Noise burst with a slow filter sweep down.": "ノイズはフィルターをゆっくりと下に掃くと爆発します。",
-    "Normal (B-E)": "ノーマル(B-E)",
+    "Normal (B-G)": "ノーマル(B-G)",
     "Normal (Recommended)": "ノーマル(推奨)",
     "Normal Slot": "ノーマルスロット",
     "Normal Tiles": "通常のタイル",
@@ -2412,7 +2412,10 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "▷ Comment": "▷ コメント",
     "▷ Scrolling Text": "▷ スクロールテキスト",
     "▷ Text": "▷ 本文",
-    "★ (Above)": "★ (上)"
+    "★ (Above)": "★ (上)",
+    "3D Shape": "3D形状",
+    "3D view unavailable": "3Dビューを利用できません",
+    "Drag to paint or orbit · Shift or right-drag to pan · Scroll to zoom · Double-click empty space to re-frame": "ドラッグで描画または回転 · Shiftまたは右ドラッグで平行移動 · スクロールでズーム · 空白部分をダブルクリックで全体表示"
   },
   "es": {
     "%1 = \"EXP\" term from Basic": "%1 = término \"EXP\" del Básico",
@@ -3804,7 +3807,7 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "No {part} selected": "No se selecciona ningún {part}",
     "Nodes connected by edges with light pulses traveling along them. Choose ring or grid topology. Edges generated deterministically.": "Nodos conectados por bordes con pulsos de luz que viajan a lo largo de ellos. Elige topología de anillo o de cuadrícula. Aristas generadas de forma determinista.",
     "Noise burst with a slow filter sweep down.": "El estallido de ruido con un barrido lento del filtro hacia abajo.",
-    "Normal (B-E)": "Normal (B-E)",
+    "Normal (B-G)": "Normal (B-G)",
     "Normal (Recommended)": "Normal (recomendado)",
     "Normal Slot": "Ranura normal",
     "Normal Tiles": "Fichas normales",
@@ -4825,7 +4828,10 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "▷ Comment": "▷ Comentario",
     "▷ Scrolling Text": "▷ Texto en desplauso",
     "▷ Text": "▷ Texto",
-    "★ (Above)": "★ (Arriba)"
+    "★ (Above)": "★ (Arriba)",
+    "3D Shape": "Forma 3D",
+    "3D view unavailable": "Vista 3D no disponible",
+    "Drag to paint or orbit · Shift or right-drag to pan · Scroll to zoom · Double-click empty space to re-frame": "Arrastra para pintar u orbitar · Mayús o clic derecho para desplazar · Rueda para zoom · Doble clic en vacío para encuadrar"
   },
   "zh-Hant": {
     "%1 = \"EXP\" term from Basic": "%1 = Basic 中的「經驗」詞",
@@ -6217,7 +6223,7 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "No {part} selected": "未被選{part}",
     "Nodes connected by edges with light pulses traveling along them. Choose ring or grid topology. Edges generated deterministically.": "節點由邊緣連接，並有光脈衝沿著邊緣移動。選擇環形拓撲或格狀拓撲。邊是確定性產生的。",
     "Noise burst with a slow filter sweep down.": "噪音隨著緩慢的濾波掃過而爆發。",
-    "Normal (B-E)": "普通（B-E）",
+    "Normal (B-G)": "普通（B-G）",
     "Normal (Recommended)": "普通難度（推薦）",
     "Normal Slot": "正常時段",
     "Normal Tiles": "普通牌塊",
@@ -7238,7 +7244,10 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "▷ Comment": "▷ 評論",
     "▷ Scrolling Text": "▷ 滾動文字",
     "▷ Text": "▷ 文字",
-    "★ (Above)": "★ （上圖）"
+    "★ (Above)": "★ （上圖）",
+    "3D Shape": "3D形狀",
+    "3D view unavailable": "無法使用 3D 檢視",
+    "Drag to paint or orbit · Shift or right-drag to pan · Scroll to zoom · Double-click empty space to re-frame": "拖曳繪製或旋轉 · Shift 或右鍵拖曳平移 · 滾輪縮放 · 雙擊空白處重新取景"
   },
   "zh-Hans": {
     "%1 = \"EXP\" term from Basic": "%1 = Basic 中的“经验”术语",
@@ -8630,7 +8639,7 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "No {part} selected": "未被选中{part}",
     "Nodes connected by edges with light pulses traveling along them. Choose ring or grid topology. Edges generated deterministically.": "节点通过边缘连接，沿其上传递光脉冲。选择环形拓扑或网格拓扑。边是确定性生成的。",
     "Noise burst with a slow filter sweep down.": "噪音爆发时会用滤波器缓慢扫下。",
-    "Normal (B-E)": "普通（B-E）",
+    "Normal (B-G)": "普通（B-G）",
     "Normal (Recommended)": "普通（推荐）",
     "Normal Slot": "普通时段",
     "Normal Tiles": "普通地块",
@@ -9651,7 +9660,10 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "▷ Comment": "▷ 评论",
     "▷ Scrolling Text": "▷ 滚动文本",
     "▷ Text": "▷ 正文",
-    "★ (Above)": "★ （上图）"
+    "★ (Above)": "★ （上图）",
+    "3D Shape": "3D形状",
+    "3D view unavailable": "无法使用 3D 视图",
+    "Drag to paint or orbit · Shift or right-drag to pan · Scroll to zoom · Double-click empty space to re-frame": "拖动绘制或旋转 · Shift 或右键拖动平移 · 滚轮缩放 · 双击空白处重新取景"
   },
   "ru": {
     "%1 = \"EXP\" term from Basic": "%1 = термин «EXP» из Basic",
@@ -11043,7 +11055,7 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "No {part} selected": "Не выбран {part}",
     "Nodes connected by edges with light pulses traveling along them. Choose ring or grid topology. Edges generated deterministically.": "Узлы, соединённые рёбрами, по которым проходят световые импульсы. Выберите кольцевую или сетчатую топологию. Рёбра генерируются детерминированно.",
     "Noise burst with a slow filter sweep down.": "Шумовой всплеск с медленным фильтром вниз.",
-    "Normal (B-E)": "Нормальный (B-E)",
+    "Normal (B-G)": "Нормальный (B-G)",
     "Normal (Recommended)": "Нормальное (рекомендуют)",
     "Normal Slot": "Обычный слот",
     "Normal Tiles": "Обычные плитки",
@@ -12064,7 +12076,10 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "▷ Comment": "▷ Комментарий",
     "▷ Scrolling Text": "▷ Прокручиваемый текст",
     "▷ Text": "▷ Текст",
-    "★ (Above)": "★ (Выше)"
+    "★ (Above)": "★ (Выше)",
+    "3D Shape": "3D-форма",
+    "3D view unavailable": "3D-вид недоступен",
+    "Drag to paint or orbit · Shift or right-drag to pan · Scroll to zoom · Double-click empty space to re-frame": "Перетаскивание — рисование или поворот · Shift или ПКМ — сдвиг · Колесо — масштаб · Двойной щелчок по пустому месту — вписать карту"
   },
   "pt": {
     "%1 = \"EXP\" term from Basic": "%1 = termo \"EXP\" do Básico",
@@ -13456,7 +13471,7 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "No {part} selected": "Nenhuma {part} selecionada",
     "Nodes connected by edges with light pulses traveling along them. Choose ring or grid topology. Edges generated deterministically.": "Nós conectados por arestas com pulsos de luz viajando ao longo deles. Escolha topologia de anel ou grade. Arestas geradas deterministicamente.",
     "Noise burst with a slow filter sweep down.": "Explosão de ruído com uma varredura lenta do filtro para baixo.",
-    "Normal (B-E)": "Normal (B-E)",
+    "Normal (B-G)": "Normal (B-G)",
     "Normal (Recommended)": "Normal (Recomendado)",
     "Normal Slot": "Slot normal",
     "Normal Tiles": "Peças Normais",
@@ -14477,7 +14492,10 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "▷ Comment": "▷ Comentário",
     "▷ Scrolling Text": "▷ Texto rolando",
     "▷ Text": "▷ Texto",
-    "★ (Above)": "★ (Acima)"
+    "★ (Above)": "★ (Acima)",
+    "3D Shape": "Forma 3D",
+    "3D view unavailable": "Vista 3D indisponível",
+    "Drag to paint or orbit · Shift or right-drag to pan · Scroll to zoom · Double-click empty space to re-frame": "Arraste para pintar ou orbitar · Shift ou botão direito para deslocar · Rolagem para zoom · Duplo clique no vazio para enquadrar"
   },
   "de": {
     "%1 = \"EXP\" term from Basic": "%1 = \"EXP\"-Begriff aus Basic",
@@ -15869,7 +15887,7 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "No {part} selected": "Kein {part} ausgewählt",
     "Nodes connected by edges with light pulses traveling along them. Choose ring or grid topology. Edges generated deterministically.": "Knoten, die durch Kanten verbunden sind, deren Lichtimpulse entlang von ihnen reisen. Wähle Ring- oder Gittertopologie. Kanten werden deterministisch erzeugt.",
     "Noise burst with a slow filter sweep down.": "Das Rauschen brach mit einem langsamen Filter-Sweep nach unten aus.",
-    "Normal (B-E)": "Normal (B-E)",
+    "Normal (B-G)": "Normal (B-G)",
     "Normal (Recommended)": "Normal (Empfohlen)",
     "Normal Slot": "Normaler Slot",
     "Normal Tiles": "Normale Kacheln",
@@ -16890,7 +16908,10 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "▷ Comment": "▷ Kommentar",
     "▷ Scrolling Text": "▷ Scrollender Text",
     "▷ Text": "▷ Text",
-    "★ (Above)": "★ (Oben)"
+    "★ (Above)": "★ (Oben)",
+    "3D Shape": "3D-Form",
+    "3D view unavailable": "3D-Ansicht nicht verfügbar",
+    "Drag to paint or orbit · Shift or right-drag to pan · Scroll to zoom · Double-click empty space to re-frame": "Ziehen zum Malen oder Drehen · Umschalt oder Rechtsziehen zum Verschieben · Scrollen zum Zoomen · Doppelklick ins Leere zum Einpassen"
   },
   "fr": {
     "%1 = \"EXP\" term from Basic": "%1 = terme « EXP » du Basic",
@@ -18282,7 +18303,7 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "No {part} selected": "Aucun {part} sélectionné",
     "Nodes connected by edges with light pulses traveling along them. Choose ring or grid topology. Edges generated deterministically.": "Les nœuds sont reliés par des arêtes avec des impulsions lumineuses circulant le long d’eux. Choisissez la topologie en anneau ou en grille. Les arêtes sont générées de manière déterministe.",
     "Noise burst with a slow filter sweep down.": "Le bruit explose avec un balayage lent du filtre vers le bas.",
-    "Normal (B-E)": "Normal (B-E)",
+    "Normal (B-G)": "Normal (B-G)",
     "Normal (Recommended)": "Normal (recommandé)",
     "Normal Slot": "Emplacement normal",
     "Normal Tiles": "Tuiles normales",
@@ -19303,7 +19324,10 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "▷ Comment": "▷ Commentaire",
     "▷ Scrolling Text": "▷ Texte défilant",
     "▷ Text": "▷ Texte",
-    "★ (Above)": "★ (Ci-dessus)"
+    "★ (Above)": "★ (Ci-dessus)",
+    "3D Shape": "Forme 3D",
+    "3D view unavailable": "Vue 3D indisponible",
+    "Drag to paint or orbit · Shift or right-drag to pan · Scroll to zoom · Double-click empty space to re-frame": "Glisser pour peindre ou pivoter · Maj ou clic droit pour déplacer · Molette pour zoomer · Double-clic dans le vide pour recadrer"
   },
   "el": {
     "%1 = \"EXP\" term from Basic": "%1 = Όρος \"EXP\" από το Basic",
@@ -20695,7 +20719,7 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "No {part} selected": "Δεν έχει επιλεγεί {part}",
     "Nodes connected by edges with light pulses traveling along them. Choose ring or grid topology. Edges generated deterministically.": "Κόμβοι που συνδέονται με άκρες με παλμούς φωτός που ταξιδεύουν κατά μήκος τους. Επιλέξτε τοπολογία δακτυλίου ή πλέγματος. Ακμές που δημιουργούνται ντετερμινιστικά.",
     "Noise burst with a slow filter sweep down.": "Ο θόρυβος ξέσπασε με ένα αργό σκούπισμα του φίλτρου.",
-    "Normal (B-E)": "Κανονικό (Β-Ε)",
+    "Normal (B-G)": "Κανονικό (B-G)",
     "Normal (Recommended)": "Κανονικό (Συνιστάται)",
     "Normal Slot": "Κανονική υποδοχή",
     "Normal Tiles": "Κανονικά πλακάκια",
@@ -21716,7 +21740,10 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "▷ Comment": "▷ Σχόλιο",
     "▷ Scrolling Text": "▷ Κύλιση κειμένου",
     "▷ Text": "▷ Κείμενο",
-    "★ (Above)": "★ (Πάνω)"
+    "★ (Above)": "★ (Πάνω)",
+    "3D Shape": "Σχήμα 3D",
+    "3D view unavailable": "Η προβολή 3D δεν είναι διαθέσιμη",
+    "Drag to paint or orbit · Shift or right-drag to pan · Scroll to zoom · Double-click empty space to re-frame": "Σύρετε για ζωγραφική ή περιστροφή · Shift ή δεξί σύρσιμο για μετακίνηση · Κύλιση για ζουμ · Διπλό κλικ στο κενό για επαναπλαισίωση"
   },
   "ko": {
     "%1 = \"EXP\" term from Basic": "%1 = Basic에서 나온 \"EXP\" 용어",
@@ -23108,7 +23135,7 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "No {part} selected": "선택된 {part} 없습니다",
     "Nodes connected by edges with light pulses traveling along them. Choose ring or grid topology. Edges generated deterministically.": "가장자리로 연결된 노드들, 그 위를 따라 빛의 펄스가 흐르는 것. 링 토폴로지 또는 그리드 토폴로지를 선택하세요. 결정론적으로 생성된 간선들.",
     "Noise burst with a slow filter sweep down.": "천천히 필터를 쓸어 내려가며 노이즈가 터져 나왔다.",
-    "Normal (B-E)": "일반(B-E)",
+    "Normal (B-G)": "일반(B-G)",
     "Normal (Recommended)": "노멀 (추천)",
     "Normal Slot": "일반 슬롯",
     "Normal Tiles": "일반 타일",
@@ -24129,7 +24156,10 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "▷ Comment": "▷ 댓글",
     "▷ Scrolling Text": "▷ 스크롤 텍스트",
     "▷ Text": "▷ 본문",
-    "★ (Above)": "★ (위)"
+    "★ (Above)": "★ (위)",
+    "3D Shape": "3D 형태",
+    "3D view unavailable": "3D 보기를 사용할 수 없습니다",
+    "Drag to paint or orbit · Shift or right-drag to pan · Scroll to zoom · Double-click empty space to re-frame": "드래그로 그리기 또는 회전 · Shift 또는 오른쪽 드래그로 이동 · 스크롤로 확대 · 빈 곳 더블클릭으로 전체 보기"
   },
   "ar": {
     "%1 = \"EXP\" term from Basic": "%1 = مصطلح \"EXP\" من اللغة الأساسية",
@@ -25521,7 +25551,7 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "No {part} selected": "لا {part} تم اختياره",
     "Nodes connected by edges with light pulses traveling along them. Choose ring or grid topology. Edges generated deterministically.": "العقد متصلة بحواف مع نبضات ضوء تمر على طولها. اختر طوبولوجيا الحلقات أو الشبكة. الحواف مولدة بشكل حتمي.",
     "Noise burst with a slow filter sweep down.": "انفجر الضوضاء مع تمرير بطيء للفلتر.",
-    "Normal (B-E)": "نورمال (B-E)",
+    "Normal (B-G)": "نورمال (B-G)",
     "Normal (Recommended)": "طبيعي (موصى به)",
     "Normal Slot": "الفتحة العادية",
     "Normal Tiles": "البلاطات العادية",
@@ -26542,7 +26572,10 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "▷ Comment": "▷ تعليق",
     "▷ Scrolling Text": "▷ النص المتنقل",
     "▷ Text": "▷ النص",
-    "★ (Above)": "★ (أعلاه)"
+    "★ (Above)": "★ (أعلاه)",
+    "3D Shape": "شكل ثلاثي الأبعاد",
+    "3D view unavailable": "العرض ثلاثي الأبعاد غير متاح",
+    "Drag to paint or orbit · Shift or right-drag to pan · Scroll to zoom · Double-click empty space to re-frame": "اسحب للرسم أو الدوران · Shift أو السحب بالزر الأيمن للتحريك · التمرير للتكبير · انقر نقرًا مزدوجًا على فراغ لإعادة التأطير"
   },
   "it": {
     "%1 = \"EXP\" term from Basic": "%1 = termine \"EXP\" dal Basic",
@@ -27934,7 +27967,7 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "No {part} selected": "Nessun {part} selezionato",
     "Nodes connected by edges with light pulses traveling along them. Choose ring or grid topology. Edges generated deterministically.": "Nodi collegati da spigoli con impulsi di luce che viaggiano lungo di essi. Scegli la topologia ad anello o griglia. Archi generati deterministicamente.",
     "Noise burst with a slow filter sweep down.": "Scoppio di rumore con una lenta spazzolata del filtro.",
-    "Normal (B-E)": "Normale (B-E)",
+    "Normal (B-G)": "Normale (B-G)",
     "Normal (Recommended)": "Normale (Consigliato)",
     "Normal Slot": "Slot normale",
     "Normal Tiles": "Tessere normali",
@@ -28955,7 +28988,10 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "▷ Comment": "▷ Commento",
     "▷ Scrolling Text": "▷ Testo a scorrimento",
     "▷ Text": "▷ Testo",
-    "★ (Above)": "★ (Sopra)"
+    "★ (Above)": "★ (Sopra)",
+    "3D Shape": "Forma 3D",
+    "3D view unavailable": "Vista 3D non disponibile",
+    "Drag to paint or orbit · Shift or right-drag to pan · Scroll to zoom · Double-click empty space to re-frame": "Trascina per dipingere o orbitare · Maiusc o trascinamento destro per spostare · Rotella per zoom · Doppio clic nel vuoto per inquadrare"
   },
   "pl": {
     "%1 = \"EXP\" term from Basic": "%1 = termin \"EXP\" z Basic",
@@ -30347,7 +30383,7 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "No {part} selected": "Nie wybrał {part}",
     "Nodes connected by edges with light pulses traveling along them. Choose ring or grid topology. Edges generated deterministically.": "Węzły połączone krawędziami, a wzdłuż nich przemieszczają się impulsy świetlne. Wybierz topologię pierścieniową lub siatkową. Krawędzie generowane deterministycznie.",
     "Noise burst with a slow filter sweep down.": "Szum wybucha powolnym przesuwaniem filtra w dół.",
-    "Normal (B-E)": "Normalny (B-E)",
+    "Normal (B-G)": "Normalny (B-G)",
     "Normal (Recommended)": "Normalne (zalecane)",
     "Normal Slot": "Normalny slot",
     "Normal Tiles": "Normalne kafelki",
@@ -31368,7 +31404,10 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "▷ Comment": "▷ Komentarz",
     "▷ Scrolling Text": "▷ Przewijający tekst",
     "▷ Text": "▷ Tekst",
-    "★ (Above)": "★ (Powyżej)"
+    "★ (Above)": "★ (Powyżej)",
+    "3D Shape": "Kształt 3D",
+    "3D view unavailable": "Widok 3D niedostępny",
+    "Drag to paint or orbit · Shift or right-drag to pan · Scroll to zoom · Double-click empty space to re-frame": "Przeciągnij, aby malować lub obracać · Shift lub prawy przycisk, aby przesuwać · Kółko, aby przybliżać · Dwuklik w pustce, aby dopasować"
   },
   "id": {
     "%1 = \"EXP\" term from Basic": "%1 = istilah \"EXP\" dari Dasar",
@@ -32760,7 +32799,7 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "No {part} selected": "Tidak ada {part} yang dipilih",
     "Nodes connected by edges with light pulses traveling along them. Choose ring or grid topology. Edges generated deterministically.": "Node yang dihubungkan oleh tepi dengan pulsa cahaya yang bergerak di sepanjang mereka. Pilih topologi cincin atau kisi. Tepi dihasilkan secara deterministik.",
     "Noise burst with a slow filter sweep down.": "Kebisingan meledak dengan sapuan filter yang lambat.",
-    "Normal (B-E)": "Normal (B-E)",
+    "Normal (B-G)": "Normal (B-G)",
     "Normal (Recommended)": "Normal (Direkomendasikan)",
     "Normal Slot": "Slot normal",
     "Normal Tiles": "Ubin Normal",
@@ -33781,7 +33820,10 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "▷ Comment": "▷ Komentar",
     "▷ Scrolling Text": "▷ Menggulir Teks",
     "▷ Text": "▷ Teks",
-    "★ (Above)": "★ (Atas)"
+    "★ (Above)": "★ (Atas)",
+    "3D Shape": "Bentuk 3D",
+    "3D view unavailable": "Tampilan 3D tidak tersedia",
+    "Drag to paint or orbit · Shift or right-drag to pan · Scroll to zoom · Double-click empty space to re-frame": "Seret untuk melukis atau memutar · Shift atau seret kanan untuk menggeser · Gulir untuk zoom · Klik ganda area kosong untuk membingkai ulang"
   },
   "vi": {
     "%1 = \"EXP\" term from Basic": "%1 = thuật ngữ \"EXP\" từ Basic",
@@ -35173,7 +35215,7 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "No {part} selected": "Không có {part} nào được chọn",
     "Nodes connected by edges with light pulses traveling along them. Choose ring or grid topology. Edges generated deterministically.": "Các nút được kết nối bằng các cạnh với các xung ánh sáng truyền dọc theo chúng. Chọn cấu trúc liên kết vòng hoặc lưới. Các cạnh được tạo ra một cách xác định.",
     "Noise burst with a slow filter sweep down.": "Tiếng ồn bùng nổ với bộ lọc quét chậm.",
-    "Normal (B-E)": "Bình thường (BE)",
+    "Normal (B-G)": "Bình thường (B-G)",
     "Normal (Recommended)": "Bình thường (Khuyến nghị)",
     "Normal Slot": "Vị trí bình thường",
     "Normal Tiles": "Gạch bình thường",
@@ -36194,7 +36236,10 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "▷ Comment": "▷ Bình luận",
     "▷ Scrolling Text": "▷ Cuộn văn bản",
     "▷ Text": "▷ Văn bản",
-    "★ (Above)": "★ (Trên)"
+    "★ (Above)": "★ (Trên)",
+    "3D Shape": "Hình dạng 3D",
+    "3D view unavailable": "Không dùng được chế độ xem 3D",
+    "Drag to paint or orbit · Shift or right-drag to pan · Scroll to zoom · Double-click empty space to re-frame": "Kéo để vẽ hoặc xoay · Shift hoặc kéo chuột phải để di chuyển · Cuộn để thu phóng · Nhấp đúp vùng trống để canh lại khung"
   },
   "th": {
     "%1 = \"EXP\" term from Basic": "%1 = คํา \"EXP\" จากพื้นฐาน",
@@ -37586,7 +37631,7 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "No {part} selected": "ไม่มี{part}ที่เลือก",
     "Nodes connected by edges with light pulses traveling along them. Choose ring or grid topology. Edges generated deterministically.": "โหนดเชื่อมต่อด้วยขอบที่มีพัลส์แสงเคลื่อนที่ไปตามโหนด เลือกโทโพโลยีแบบวงแหวนหรือแบบกริด ขอบที่สร้างขึ้นอย่างกําหนด",
     "Noise burst with a slow filter sweep down.": "เสียงรบกวนระเบิดด้วยการกวาดตัวกรองช้าลง",
-    "Normal (B-E)": "ปกติ (BE)",
+    "Normal (B-G)": "ปกติ (B-G)",
     "Normal (Recommended)": "ปกติ (แนะนํา)",
     "Normal Slot": "สล็อตปกติ",
     "Normal Tiles": "กระเบื้องปกติ",
@@ -38607,7 +38652,10 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "▷ Comment": "▷ แสดงความคิดเห็น",
     "▷ Scrolling Text": "▷ เลื่อนข้อความ",
     "▷ Text": "▷ ข้อความ",
-    "★ (Above)": "★ (ด้านบน)"
+    "★ (Above)": "★ (ด้านบน)",
+    "3D Shape": "รูปทรง 3 มิติ",
+    "3D view unavailable": "ไม่สามารถใช้มุมมอง 3 มิติ",
+    "Drag to paint or orbit · Shift or right-drag to pan · Scroll to zoom · Double-click empty space to re-frame": "ลากเพื่อวาดหรือหมุน · Shift หรือลากคลิกขวาเพื่อเลื่อน · เลื่อนล้อเพื่อซูม · ดับเบิลคลิกพื้นที่ว่างเพื่อจัดกรอบใหม่"
   },
   "tr": {
     "%1 = \"EXP\" term from Basic": "%1 = Basic'ten \"EXP\" terimi",
@@ -39999,7 +40047,7 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "No {part} selected": "Hiçbir {part} seçilmedi",
     "Nodes connected by edges with light pulses traveling along them. Choose ring or grid topology. Edges generated deterministically.": "Kenarlarla bağlı düğümler ve ışık darbeleri üzerlerinden geçiyor. Halka veya ızgara topolojisini seçin. Kenarlar deterministik olarak üretilirdi.",
     "Noise burst with a slow filter sweep down.": "Yavaş bir filtre taramasıyla gürültü patladı.",
-    "Normal (B-E)": "Normal (B-E)",
+    "Normal (B-G)": "Normal (B-G)",
     "Normal (Recommended)": "Normal (Tavsiye edilir)",
     "Normal Slot": "Normal Yuva",
     "Normal Tiles": "Normal Karolar",
@@ -41020,6 +41068,9 @@ globalThis.RR_DEEP_TEXT_TRANSLATIONS = {
     "▷ Comment": "▷ Yorum",
     "▷ Scrolling Text": "▷ Kaydıran Metin",
     "▷ Text": "▷ Metin",
-    "★ (Above)": "★ (Yukarıda)"
+    "★ (Above)": "★ (Yukarıda)",
+    "3D Shape": "3B Şekil",
+    "3D view unavailable": "3B görünüm kullanılamıyor",
+    "Drag to paint or orbit · Shift or right-drag to pan · Scroll to zoom · Double-click empty space to re-frame": "Boyamak veya döndürmek için sürükleyin · Kaydırmak için Shift veya sağ tıkla sürükleyin · Yakınlaştırmak için kaydırın · Çerçevelemek için boşluğa çift tıklayın"
   }
 };

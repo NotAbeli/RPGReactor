@@ -570,7 +570,8 @@
             white-space: nowrap;
         }
 
-        .map-autotile-animation {
+        .map-autotile-animation,
+        .map-3d-view {
             display: inline-flex;
             align-items: center;
             gap: 4px;
@@ -579,7 +580,8 @@
             user-select: none;
         }
 
-        .map-autotile-animation input {
+        .map-autotile-animation input,
+        .map-3d-view input {
             width: 12px;
             height: 12px;
             margin: 0;
@@ -2666,3 +2668,27 @@
 .map-props-columns > div:last-child {
     margin-bottom: 0;
 }
+
+        /* The 3D viewport's control note. Fades on its own — it is a hint, not
+           a message, and it must never sit over the map competing with it. */
+        .map-3d-hint {
+            position: absolute;
+            left: 50%;
+            bottom: 18px;
+            transform: translateX(-50%);
+            z-index: 6;
+            padding: 6px 14px;
+            border-radius: 14px;
+            background-color: rgba(0, 0, 0, 0.62);
+            border: 1px solid var(--color-border);
+            color: var(--color-text);
+            font-size: 11px;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 1;
+            transition: opacity 1.2s ease 4s;
+        }
+
+        .map-3d-hint.is-fading {
+            opacity: 0;
+        }

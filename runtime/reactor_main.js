@@ -11,6 +11,10 @@ const scriptUrls = [
     "js/libs/effekseer.min.js",
     "js/libs/vorbisdecoder.js",
     "js/reactor_core.js",
+    // Small; declares the namespace and reads map mode. three.js itself is
+    // ~2 MB and loads on demand from Reactor3D.ensureLoaded(), so a project
+    // with no 3D maps never downloads it.
+    "js/reactor_3d.js",
     "js/reactor_managers.js",
     "js/reactor_objects.js",
     "js/reactor_scenes.js",

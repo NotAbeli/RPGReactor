@@ -680,9 +680,15 @@ Scene_Map.prototype.create = function() {
 
 Scene_Map.prototype.isReady = function() {
     if (!this._mapLoaded && DataManager.isMapLoaded()) {
+        // three.js is fetched the first time a 3D map is entered, so the scene
+        // waits for it here rather than building a spriteset that would have to
+        // decide its renderer again later. A 2D map, or a failed load, reports
+        // ready immediately.
+        if (typeof Reactor3D !== "undefined") Reactor3D.beginPrepare($dataMap);
         this.onMapLoaded();
         this._mapLoaded = true;
     }
+    if (typeof Reactor3D !== "undefined" && !Reactor3D.isPrepared()) return false;
     return this._mapLoaded && Scene_Message.prototype.isReady.call(this);
 };
 

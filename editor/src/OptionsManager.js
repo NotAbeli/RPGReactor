@@ -106,6 +106,25 @@ class OptionsManager {
         }));
     }
 
+    /**
+     * Whether the map canvas shows the 3D view.
+     *
+     * Off by default and stored like every other preference, so an editor that
+     * has never been switched into 3D never loads three.js at all.
+     */
+    getMap3DView() {
+        return this.settings.map3DView === true;
+    }
+
+    setMap3DView(enabled) {
+        const next = enabled === true;
+        this.settings.map3DView = next;
+        this._saveSettings();
+        window.dispatchEvent(new CustomEvent('rr-map-3d-view-changed', {
+            detail: { enabled: next }
+        }));
+    }
+
     _languageFlagHtml(languageId) {
         const svgByLanguage = {
             en: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 16"><rect width="24" height="16" fill="#fff"/><path stroke="#b22234" stroke-width="1.23" d="M0 .6h24M0 3.1h24M0 5.5h24M0 8h24M0 10.5h24M0 12.9h24M0 15.4h24"/><rect width="10.5" height="8.6" fill="#3c3b6e"/></svg>',

@@ -16,6 +16,7 @@ RPG Reactor 0.96.0 is an open-source, cross-platform RPG game editor and runtime
 - **Region painting**: 256 distinct regions for gameplay triggers and restrictions
 - **Map management**: Copy, paste, delete, and export whole maps from the map tree, including cross-instance map data, `MapInfos.json` entries, compatible tileset database references, and full-size PNG image output; pasted maps are inserted immediately after the selected map at the same hierarchy level
 - **Map audio preview**: Preview autoplay BGM/BGS directly from Map Properties with Play/Pause/Stop controls and volume/pitch/pan settings
+- **Non-destructive resizing**: Changing a map's size reports the tiles and names the events that fall outside the new bounds, and makes no change until confirmed. A nine-cell anchor picker chooses which corner or edge content keeps, so a map can grow from the top or left; tiles and events move together, Set Event Location and `System.json` starts follow, and Transfer Player / Set Vehicle Location commands elsewhere that target the map are offered for adjustment. Top-left is the default and byte-identical to the previous behavior
 - **Performance optimized**: Viewport culling and lazy-loading for large maps
 
 ### Event System
@@ -42,6 +43,7 @@ RPG Reactor 0.96.0 is an open-source, cross-platform RPG game editor and runtime
    - Custom script and plugin command execution
 - **Portable advanced commands**: Stock-compatible forms stay ordinary stock command arrays. Reactor-only structured forms use syntax-checked, strictly versioned Script metadata and stock MV/MZ fallback bodies; modified or unknown tags remain normal Script commands rather than being reinterpreted
 - **RPG Maker-style Game Data**: Control Variables opens a nested selector with database names, actor/enemy/character properties, party data, Other data, and every Last Action Data operand while preserving stock command parameters
+- **Collapsible block structures**: Conditional Branch, Show Choices, and Loop fold from the arrow beside them, badged with the hidden line count. Nested blocks keep their own state, folds track the command rather than its position so edits above a block don't strand them, and fold state persists per project/map/event/page across restarts
 - **Copy/paste support**: Exchange whole events, event pages, command blocks shared across map/Common/Troop events, troop battle pages, and movement-route command selections between RPG Reactor instances
 - **Find/search**: Locate events across your project
 
@@ -202,7 +204,16 @@ Composable character sprite generator for actor walking sprites and generated ou
 - **Parts (PNG) tab**: Layers user-supplied PNG sprite-sheet parts from the active project's `forge/character_generator/styles/<style>/parts/` folder with draggable ordering
 
 #### Sound Effect Generator
-Procedural SFX generator for impacts, UI clicks, and stingers.
+Procedural sfxr-style SFX and instrument generator built on Web Audio. Bakes straight to the project's `audio/se/` folder, so a sound effect never has to be sourced outside the editor.
+
+- **Two modes**: **Sound** builds a single one-shot effect; **Pattern** is a 16-step piano-roll sequencer (rows = pitch, columns = 16th notes at a settable BPM) for stingers and jingles
+- **Archetype library**: 29 seeds — 20 RPG SFX (hits, lasers, explosions, pickups, footsteps, doors, the four magic elements, UI blips), 8 tuned instruments (Piano, Bass, Pluck, KS Pluck, Pad, Bell, Strings, Brass), and a blank Custom starter
+- **Synthesis graph**: source (oscillator, noise, or Karplus-Strong) with optional detuned sub-osc → highpass → resonant lowpass with sweep → distortion → ADSR → tremolo → dry/convolution-reverb split, rebuilt per play so every parameter is live
+- **Waveforms**: Sine, Square (variable duty), Sawtooth, Triangle, Noise, and Karplus (Pluck), a physically modelled string
+- **27 parameters** in six groups — Source, Envelope, Pitch, Modulation, Filter, Texture — each with an inline description
+- **Randomize**: each archetype declares `lockedParams`, so the values defining its identity (a Laser's waveform, an Explosion's highpass) hold steady and a roll stays recognizably that sound
+- **Live visualizers**: waveform, envelope, and pitch canvases redraw as sliders move, before playback
+- **Export**: 16-bit PCM mono WAV, defaulting to `audio/se/<name>.wav`. Presets and pattern state persist per project under `forge/sound_effect_generator/`
 
 ### Theming
 
@@ -392,7 +403,7 @@ Database shortcuts are scoped to the active database section. The Types workspac
 
 ### Tests
 
-The Node test suite covers project creation/import and version metadata, generated-project validity, runtime manifests, local Markdown links, all 18 localization dictionaries and no-fallback labels, cross-instance map/database/event clipboard transport, database batch/scroll behavior and trait/effect reference remapping, persisted A1 animation control, exact Shift autotile placement, database limits and Types/Terms behavior, complete Conditional Branch and nested-structure round trips, advanced Control Variables and Game Data operands, stock Loop insertion, dynamic event calls, extended input conditions, dynamic/extended Picture commands, transactional event creation/editing, visual start locations, Magic Skills, searchable Plugin Help, nested plugin-parameter serialization, MV saves and visual compatibility, recursive/Unicode assets, project lock and atomic-write safety, package preflights, preview cleanup, deployment/runtime acquisition, release policy/signing gates, Forge generation, editor/Web distribution, Effekseer format/model round trips, all 106 recipes at default/extreme/swept values, composition, and real-WASM playback. Current validation is 350 passing tests with no failures.
+The Node test suite covers project creation/import and version metadata, generated-project validity, runtime manifests, local Markdown links, all 18 localization dictionaries and no-fallback labels, cross-instance map/database/event clipboard transport, database batch/scroll behavior and trait/effect reference remapping, persisted A1 animation control, exact Shift autotile placement, database limits and Types/Terms behavior, complete Conditional Branch and nested-structure round trips, advanced Control Variables and Game Data operands, stock Loop insertion, dynamic event calls, extended input conditions, dynamic/extended Picture commands, transactional event creation/editing, visual start locations, Magic Skills, searchable Plugin Help, nested plugin-parameter serialization, MV saves and visual compatibility, recursive/Unicode assets, project lock and atomic-write safety, package preflights, preview cleanup, deployment/runtime acquisition, release policy/signing gates, Forge generation, editor/Web distribution, Effekseer format/model round trips, all 106 recipes at default/extreme/swept values, composition, and real-WASM playback. Two sweeps also run every invocation against shapes derived from the bundled RPG Maker-authored projects (vendored in `tests/helpers/authored-data-shapes.json`): each command editor's emitted parameter count versus the highest `params[n]` the matching `Game_Interpreter.commandNNN` reads, and each new-record template versus the fields authored records always carry. Current validation is 777 passing tests with no failures.
 
 ```bash
 cd editor

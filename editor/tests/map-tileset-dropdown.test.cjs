@@ -79,7 +79,7 @@ test('a map pointing at a cleared tileset selects a real one instead of nothing'
     assert.notEqual(select.selectedIndex, -1,
             'an unmatched id must not leave the control blank and collapsed');
     assert.equal(chosen, '2', 'it falls back to the first available tileset');
-    assert.equal(select.options[select.selectedIndex].textContent, 'Ja Overworld');
+    assert.equal(select.options[select.selectedIndex].textContent, '0002: Ja Overworld');
 });
 
 test('a valid id still selects exactly that tileset', () => {
@@ -92,7 +92,7 @@ test('a valid id still selects exactly that tileset', () => {
     controller.populateTilesetDropdown();
     const select = controller.__select;
     assert.equal(controller.selectTilesetOption(select, 3), '3');
-    assert.equal(select.options[select.selectedIndex].textContent, 'Dungeon');
+    assert.equal(select.options[select.selectedIndex].textContent, '0003: Dungeon');
 });
 
 test('a project with no tilesets still renders a normal-height control', () => {
@@ -112,4 +112,51 @@ test('the select declares a height floor so it cannot collapse visually', () => 
     const style = html.slice(at).match(/style="([^"]*)"/)[1];
     assert.match(style, /min-height:\s*\d+px/,
     'an empty select would otherwise shrink to its padding');
+});
+
+test('each option leads with the tileset id, zero padded', () => {
+    // The database lists tilesets by number, so the map's dropdown has to name
+    // the same identifier or the two cannot be matched up.
+    const controller = controllerWith([
+        null,
+        { id: 1, name: 'Overworld' },
+        { id: 12, name: 'Inside' },
+        { id: 211, name: 'Canite City' },
+        { id: 1000, name: 'Last Slot' }
+    ]);
+    controller.populateTilesetDropdown();
+    const labels = controller.__select.options.map(option => option.textContent);
+    assert.deepEqual(labels, [
+        '0001: Overworld',
+        '0012: Inside',
+        '0211: Canite City',
+        '1000: Last Slot'
+    ], 'ids pad to four digits, matching the Change Tileset picker; 1000 is not truncated');
+});
+
+test('a nameless tileset still shows its id', () => {
+    const controller = controllerWith([null, { id: 7, name: '' }]);
+    controller.populateTilesetDropdown();
+    // The old label fell back to "Tileset 7", which would now read "007: Tileset 7".
+    assert.equal(controller.__select.options[0].textContent, '0007: common.unnamed');
+});
+
+test('the option value stays the bare id the map record stores', () => {
+    const controller = controllerWith([null, { id: 4, name: 'Ship' }]);
+    controller.populateTilesetDropdown();
+    assert.equal(controller.__select.options[0].value, '4',
+        'the id prefix is presentation only and must not leak into the saved value');
+});
+
+test('both tileset pickers label the same database entry identically', () => {
+    // A tileset numbered here and numbered differently in the Change Tileset
+    // command would read as two different records.
+    const changeTileset = fs.readFileSync(
+        path.join(editorRoot, 'src', 'event', 'commands', 'ChangeTilesetEditor.js'), 'utf8');
+    const controllerSrc = fs.readFileSync(
+        path.join(editorRoot, 'src', 'ProjectController.js'), 'utf8');
+    assert.match(changeTileset, /padStart\(4, '0'\)/);
+    const at = controllerSrc.indexOf('populateTilesetDropdown() {');
+    const body = controllerSrc.slice(at, controllerSrc.indexOf('\n    selectTilesetOption', at));
+    assert.match(body, /padStart\(4, '0'\)/);
 });

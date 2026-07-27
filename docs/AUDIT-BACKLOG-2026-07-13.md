@@ -5,13 +5,13 @@ Findings from the seven-subsystem code audit that were **verified but deferred**
 allows). The ~25 highest-value verified findings were fixed the same day — see
 the 0.95.0 changelog.
 
-**Status: CLEARED in the 0.95.0 development cycle.** Every finding below is
-resolved in the current cycle. See the
+**Status: CLEARED in the 0.95.0 development cycle.** Every finding below was
+resolved and shipped in 0.95.0. See the
 [root changelog](../CHANGELOG.md), the detailed
-[editor changelog](../editor/CHANGELOG.md), the draft
+[editor changelog](../editor/CHANGELOG.md), and the
 [0.95.0 devlog](devlogs/2026-07-18-rpg-reactor-0.95.0.md). The original finding
-language is preserved below as a historical record. Current validation is
-350 passing Node tests with no failures; 0.95.0 has not been tagged or published.
+language is preserved below as a historical record. Validation at the close of
+that cycle was 350 passing Node tests with no failures.
 
 ## Disposition notes
 
@@ -54,7 +54,7 @@ language is preserved below as a historical record. Current validation is
 
 The entries in this section intentionally retain their original present-tense
 problem statements and proposed fixes. The cleared status and disposition
-notes above describe the current cycle result.
+notes above describe how each was resolved in 0.95.0.
 
 - **Audio command editor commits on Cancel** — it mutates the live command
   object (`this.command.parameters[0].volume = ...`) with no clone/revert.

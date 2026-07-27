@@ -1286,6 +1286,8 @@ class ProjectController {
                 this.onMapLoaded();
             }
 
+            this.refreshMap3DView();
+
             return true;
         } else {
             this.uiManager.updateStatus(`Failed to load map ${mapId}`);
@@ -1328,6 +1330,20 @@ class ProjectController {
         return this.tilemapManager;
     }
 
+    /**
+     * Rebuild the 3D viewport, when one is showing.
+     *
+     * Called after a map loads and after edits land, so the 3D view follows the
+     * map instead of freezing on whatever was open when it was switched on.
+     * A no-op — and free — while the viewport is off.
+     */
+    refreshMap3DView() {
+        if (!this.mapEditor3D?.isEnabled?.()) return;
+        this.mapEditor3D.rebuild().catch(error => {
+            console.error('Failed to rebuild the 3D view:', error);
+        });
+    }
+
     getRegionManager() {
         return this.regionManager;
     }
@@ -1344,8 +1360,60 @@ class ProjectController {
         this.mapEditor = mapEditor;
     }
 
+    /**
+     * Rebind both tileset surfaces after the database rewrites Tilesets.json.
+     *
+     * Neither reloads on its own: the palette reads the file when a map opens
+     * and the map canvas captures its tileset record at the same moment, so
+     * assigning a sheet had no visible effect until the editor was restarted,
+     * and tiles painted from a newly added sheet rendered nothing.
+     *
+     * The map canvas reloads only the slots that changed and repaints only if
+     * the map actually uses them; the palette re-reads the file, which is cheap
+     * because it renders one sheet at a time.
+     */
+    async refreshTilesetSurfaces(tilesetId = null) {
+        const mapData = this.tilemapManager?.currentMap;
+        if (!mapData) return false;
+
+        const mapTilesetId = mapData.tilesetId || 1;
+        // A save against some other tileset cannot affect what is on screen.
+        if (tilesetId != null && Number(tilesetId) !== Number(mapTilesetId)) return false;
+
+        const tileset = this.databaseManager?.data?.tilesets?.[mapTilesetId];
+        if (tileset && this.tilemapManager?.refreshTilesetImages) {
+            await this.tilemapManager.refreshTilesetImages(tileset);
+        }
+        if (this.tilesetPaletteViewer?.loadTilesetForMap) {
+            await this.tilesetPaletteViewer.loadTilesetForMap(mapData);
+        }
+        return true;
+    }
+
+    /**
+     * Listen once for tileset saves, coalescing bursts.
+     *
+     * The tileset editor announces a save on every flag edit as well as on an
+     * image assignment, so a few seconds of clicking passability emits a stream
+     * of these. Without the delay each one would re-read the file and diff the
+     * sheets.
+     */
+    installTilesetSaveListener() {
+        if (this._tilesetSavedHandler || typeof document === 'undefined') return;
+        this._tilesetSavedHandler = event => {
+            const tilesetId = event?.detail?.tilesetId ?? null;
+            if (this._tilesetSavedTimer) clearTimeout(this._tilesetSavedTimer);
+            this._tilesetSavedTimer = setTimeout(() => {
+                this._tilesetSavedTimer = null;
+                this.refreshTilesetSurfaces(tilesetId);
+            }, 150);
+        };
+        document.addEventListener('rr-tileset-saved', this._tilesetSavedHandler);
+    }
+
     setTilesetPaletteViewer(viewer) {
         this.tilesetPaletteViewer = viewer;
+        this.installTilesetSaveListener();
     }
 
     _t(key, params) {
@@ -1597,10 +1665,6 @@ class ProjectController {
         this.isCreatingNewMap = isNewMap;
         this.newMapPlacementAnchorId = isNewMap ? afterMapId : null;
 
-        // Update modal title
-        const title = document.getElementById('map-properties-title');
-        title.textContent = isNewMap ? this._t('mapCtx.newMap') : this._t('mapProps.title');
-
         // Populate form fields
         this.populateMapPropertiesForm(mapData);
 
@@ -1608,8 +1672,41 @@ class ProjectController {
         this.setupMapPropertiesModalControls();
         this.setupMapResizeAnchorControls();
 
+        // The heading names the map being edited, so it is composed after the
+        // form is populated and re-composed as the name field is edited.
+        this.updateMapPropertiesTitle();
+
         // Show modal
         modal.style.display = 'flex';
+    }
+
+    /**
+     * Compose the Map Properties heading as `<base> | <id>: <name>`.
+     *
+     * The name is read from the live input rather than the map record so the
+     * heading follows edits in General Settings before they are committed —
+     * Cancel discards them, and the heading never claims a rename that was not
+     * saved. Written through `textContent`, so an authored map name containing
+     * markup cannot reach the editor's own interface as HTML.
+     */
+    updateMapPropertiesTitle() {
+        const title = document.getElementById('map-properties-title');
+        if (!title) return;
+
+        const base = this.isCreatingNewMap ? this._t('mapCtx.newMap') : this._t('mapProps.title');
+        const mapData = this.currentEditingMap;
+        if (!mapData) {
+            title.textContent = base;
+            return;
+        }
+
+        const nameInput = document.getElementById('map-name-input');
+        const name = (nameInput ? nameInput.value : mapData.name) || this._t('common.unnamed');
+        // A map without an id is not a state the modal reaches today, but the
+        // heading degrades to the name rather than printing a padded "000".
+        title.textContent = Number.isFinite(mapData.id)
+            ? `${base} | ${String(mapData.id).padStart(3, '0')}: ${name}`
+            : `${base} | ${name}`;
     }
 
     populateMapPropertiesForm(mapData) {
@@ -1725,9 +1822,15 @@ class ProjectController {
             select.innerHTML = '';
             tilesets.forEach((tileset, index) => {
                 if (tileset && index > 0) { // Skip index 0 (null)
+                    const tilesetId = tileset.id || index;
                     const option = document.createElement('option');
-                    option.value = tileset.id || index;
-                    option.textContent = tileset.name || `${this._tt('Tileset')} ${tileset.id || index}`;
+                    option.value = tilesetId;
+                    // Lead with the database id so a tileset can be matched to
+                    // its numbered row. Four digits, matching the Change
+                    // Tileset command's picker — both list the same database
+                    // and would otherwise label the same entry differently.
+                    option.textContent = `${String(tilesetId).padStart(4, '0')}: ` +
+                        (tileset.name || this._t('common.unnamed'));
                     select.appendChild(option);
                 }
             });
@@ -2126,6 +2229,28 @@ class ProjectController {
         list.appendChild(row);
     }
 
+    /**
+     * Bind a Map Properties listener exactly once per element and event type.
+     *
+     * The modal is reopened by re-showing the same document nodes, so an
+     * unconditional `addEventListener` on each open stacks another handler and
+     * one interaction then runs all of them. The modal's buttons dodge this by
+     * clone-and-replace, but that is not available to controls whose live value
+     * has already been populated — cloning restores the value attribute and
+     * discards what was just written in. Rebinding by stored reference works
+     * for both cases.
+     */
+    _bindMapPropertiesListener(elementId, type, handler) {
+        const element = document.getElementById(elementId);
+        if (!element) return;
+        if (!this._mapPropertiesHandlers) this._mapPropertiesHandlers = {};
+        const key = `${elementId}:${type}`;
+        const previous = this._mapPropertiesHandlers[key];
+        if (previous) element.removeEventListener(type, previous);
+        this._mapPropertiesHandlers[key] = handler;
+        element.addEventListener(type, handler);
+    }
+
     setupMapPropertiesModalControls() {
         // Remove old event listeners by cloning buttons
         const oldOkBtn = document.getElementById('map-properties-ok-btn');
@@ -2163,18 +2288,22 @@ class ProjectController {
             this.addEncounterRow();
         });
 
+        // Keep the heading in step with the name field.
+        this._bindMapPropertiesListener('map-name-input', 'input',
+            () => this.updateMapPropertiesTitle());
+
         // Toggle checkboxes
-        document.getElementById('map-autoplay-bgm-checkbox').addEventListener('change', (e) => {
+        this._bindMapPropertiesListener('map-autoplay-bgm-checkbox', 'change', (e) => {
             document.getElementById('map-bgm-picker').style.display = e.target.checked ? 'block' : 'none';
             if (!e.target.checked) this.stopMapAudioPreview('bgm');
         });
 
-        document.getElementById('map-autoplay-bgs-checkbox').addEventListener('change', (e) => {
+        this._bindMapPropertiesListener('map-autoplay-bgs-checkbox', 'change', (e) => {
             document.getElementById('map-bgs-picker').style.display = e.target.checked ? 'block' : 'none';
             if (!e.target.checked) this.stopMapAudioPreview('bgs');
         });
 
-        document.getElementById('map-specify-battleback-checkbox').addEventListener('change', (e) => {
+        this._bindMapPropertiesListener('map-specify-battleback-checkbox', 'change', (e) => {
             document.getElementById('map-battleback-picker').style.display = e.target.checked ? 'grid' : 'none';
         });
 

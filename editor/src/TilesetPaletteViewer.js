@@ -71,6 +71,8 @@ class TilesetPaletteViewer {
                     ${this.createLayerTab('C')}
                     ${this.createLayerTab('D')}
                     ${this.createLayerTab('E')}
+                    ${this.createLayerTab('F')}
+                    ${this.createLayerTab('G')}
                     ${this.createLayerTab('R', '📍')} <!-- Regions tab -->
                 </div>
 
@@ -157,7 +159,7 @@ class TilesetPaletteViewer {
                 }
 
                 // Adjust for split layout on B-E layers only (not autotiles A1-A4 or A5)
-                const isSplitLayer = ['B', 'C', 'D', 'E'].includes(actualLayer);
+                const isSplitLayer = RRTilesetSheets.isNormalSheetKey(actualLayer);
                 if (isSplitLayer) {
                     // Calculate half height based on actual image height
                     const img = this.tilesetTextures[actualLayer];
@@ -214,7 +216,7 @@ class TilesetPaletteViewer {
                     }
 
                     // Adjust for split layout on B-E layers only (not autotiles A1-A4 or A5)
-                    const isSplitLayer = ['B', 'C', 'D', 'E'].includes(actualLayer);
+                    const isSplitLayer = RRTilesetSheets.isNormalSheetKey(actualLayer);
                     if (isSplitLayer) {
                         // Calculate half height based on actual image height
                         const img = this.tilesetTextures[actualLayer];
@@ -242,6 +244,24 @@ class TilesetPaletteViewer {
     }
 
     selectLayer(layerName) {
+        // A selection belongs to the sheet it was made on: its coordinates are
+        // positions on that sheet, and painting resolves them against the tile
+        // ids of whichever layer each entry names. Carrying one across a switch
+        // left the palette drawing no highlight — the new sheet has nothing
+        // selected — while a click still painted the previous sheet's tiles.
+        if (layerName !== this.currentLayer) {
+            this.selectedTiles = [];
+            const info = document.getElementById('selection-info');
+            if (info) {
+                const tt = text => (typeof window !== 'undefined' && window.I18n)
+                    ? window.I18n.tText(text) : text;
+                info.innerHTML = `<div>${tt('No tiles selected')}</div>`;
+            }
+            // Drop any hover preview built from the old selection; without a
+            // selection nothing rebuilds it until the pointer moves again.
+            this.mapEditor?.hideTilePreview?.();
+        }
+
         this.currentLayer = layerName;
 
         // Update tab styles
@@ -358,13 +378,11 @@ class TilesetPaletteViewer {
     }
 
     getLayerKeyFromIndex(index) {
-        const layers = ['A1', 'A2', 'A3', 'A4', 'A5', 'B', 'C', 'D', 'E'];
-        return layers[index] || 'A1';
+        return RRTilesetSheets.keyFromIndex(index) || 'A1';
     }
 
     getIndexFromLayerKey(layerKey) {
-        const layers = ['A1', 'A2', 'A3', 'A4', 'A5', 'B', 'C', 'D', 'E'];
-        return layers.indexOf(layerKey);
+        return RRTilesetSheets.indexFromKey(layerKey);
     }
 
     renderCurrentLayer() {
@@ -778,7 +796,7 @@ class TilesetPaletteViewer {
 
         for (const tile of this.selectedTiles) {
             const layer = tile.layer || this.currentLayer;
-            if (!['B', 'C', 'D', 'E', 'A5'].includes(layer)) return false;
+            if (!RRTilesetSheets.isNormalSheetKey(layer) && layer !== 'A5') return false;
 
             const img = this.tilesetTextures[layer];
             if (!img || !img.width) return false;
@@ -836,7 +854,7 @@ class TilesetPaletteViewer {
         // For split layout (B-E layers only, not autotiles A1-A4 or A5), need to handle tiles from right half (x >= 8)
         // These are drawn in the bottom half of the canvas
         const actualLayer = layer || this.currentLayer;
-        const isSplitLayer = ['B', 'C', 'D', 'E'].includes(actualLayer);
+        const isSplitLayer = RRTilesetSheets.isNormalSheetKey(actualLayer);
 
         if (isSplitLayer && x >= 8) {
             // Right half of original image (x 8-15) displays in bottom half

@@ -140,8 +140,9 @@ test('database maximum UI displays caps and lazy-loads continuous large lists', 
     assert.match(source, /copyListEntries\(entries, type\)/);
     assert.match(source, /pastedEntries\.map\(entry => entry\.id\)/);
     assert.match(source, /case 'tilesets':[\s\S]*data = this\.databaseManager\.getTilesets\(\)/);
-    assert.match(tilesets, /filteredTilesets\.slice\(renderedCount, end\)/);
-    assert.match(tilesets, /populateTilesetList\(searchInput\.value, true\)/);
+    // Tilesets lazy-load through the generic list above, like every other type.
+    // A second tileset-only copy of that batching lived in the unreachable
+    // standalone editor UI and was removed with it.
     assert.doesNotMatch(tilesets, /(?:img|imgEl)\.src = 'file:\/\/' \+/);
     assert.match(tilesets, /new DatabaseTilesetEditor\(\s*this\.databaseManager,\s*this\.projectManager/);
     assert.match(animations, /animation\.speed = clampInput\(speedInput, 100, 1, 1000\)/);

@@ -81,7 +81,10 @@ class DatabaseManager {
             tilesets: [],
             commonEvents: [],
             system: null,
-            mapInfos: []
+            mapInfos: [],
+            // Per-tile 3D classification. Not one of the dataFiles: those are
+            // the MZ database format, and this is ours, stored beside them.
+            tileset3d: null
         };
 
         // Initialize Node.js modules if running in NW.js
@@ -118,6 +121,7 @@ class DatabaseManager {
             for (const [key, filename] of this.dataFiles) {
                 loaded[key] = await this.loadJSON(dataPath, filename);
             }
+            loaded.tileset3d = await this.loadTileset3D(projectPath);
             Object.assign(this.data, loaded);
             this.projectPath = projectPath;
             this.dataGeneration++;
@@ -150,6 +154,67 @@ class DatabaseManager {
         return JSON.stringify(data);
     }
 
+    /**
+     * The per-tile 3D classification module, when the page has loaded it.
+     *
+     * Absent in the web host and in tests that exercise the database alone, and
+     * a project without classification behaves exactly as it did, so every
+     * caller here treats a missing module as "nothing to do".
+     */
+    tileset3DClasses() {
+        return (typeof globalThis !== 'undefined' && globalThis.RRTileset3DClass) || null;
+    }
+
+    /** The live classification store, created empty on first use. */
+    getTileset3D() {
+        const classes = this.tileset3DClasses();
+        if (!classes) return null;
+        if (!this.data.tileset3d) this.data.tileset3d = classes.create();
+        return this.data.tileset3d;
+    }
+
+    async loadTileset3D(projectPath) {
+        const classes = this.tileset3DClasses();
+        if (!classes || !this.fs || !this.path) return null;
+        const filePath = this.path.join(projectPath, 'data', classes.FILENAME);
+        if (!this.fs.existsSync(filePath)) return classes.create();
+        try {
+            return classes.normalize(await this._readJsonWithRetry(filePath));
+        } catch (error) {
+            // A damaged sidecar must not stop the database from opening: the
+            // runtime falls back to its flag heuristic for anything it cannot
+            // read, so the cost is a worse-looking 3D map, not a dead editor.
+            console.error(`Error loading ${classes.FILENAME}:`, error);
+            return classes.create();
+        }
+    }
+
+    async saveTileset3D(projectPath) {
+        const classes = this.tileset3DClasses();
+        if (!classes || !this.fs || !this.path) return true;
+        const filePath = this.path.join(projectPath, 'data', classes.FILENAME);
+        // A project that never classifies a tile gains no file. One that had
+        // classes and then cleared them keeps an empty file rather than a stale
+        // one — deleting a file the author may have in version control is not
+        // this function's call to make.
+        const store = this.data.tileset3d;
+        if (classes.isEmpty(store) && !this.fs.existsSync(filePath)) {
+            // Nothing to write, but the save still happened: without this the
+            // baseline stays unset and the first classification never registers
+            // as unsaved work.
+            this.captureSavedState('tileset3d');
+            return true;
+        }
+        try {
+            this._writeFileAtomic(this.fs, filePath, JSON.stringify(classes.normalize(store)));
+            this.captureSavedState('tileset3d');
+            return true;
+        } catch (error) {
+            console.error(`Error saving ${classes.FILENAME}:`, error);
+            return false;
+        }
+    }
+
     captureSavedState(dataKey = null) {
         const entries = dataKey
             ? this.dataFiles.filter(([key]) => key === dataKey)
@@ -157,12 +222,22 @@ class DatabaseManager {
         for (const [key] of entries) {
             this.savedState[key] = this.serialize(this.data[key]);
         }
+        if (!dataKey || dataKey === 'tileset3d') {
+            this.savedState.tileset3d = this.serialize(this.data.tileset3d || null);
+        }
     }
 
     getDirtyKeys() {
-        return this.dataFiles
+        const dirty = this.dataFiles
             .filter(([key]) => this.savedState[key] !== undefined && this.serialize(this.data[key]) !== this.savedState[key])
             .map(([key]) => key);
+        // Classification lives outside dataFiles but is still unsaved work, and
+        // the close-without-saving prompt reads this list.
+        if (this.savedState.tileset3d !== undefined
+            && this.serialize(this.data.tileset3d || null) !== this.savedState.tileset3d) {
+            dirty.push('tileset3d');
+        }
+        return dirty;
     }
 
     isDirty() {
@@ -453,6 +528,9 @@ class DatabaseManager {
             if (!await this.saveJSON(projectPath, filename, this.data[key], { skipVersionBump: true })) {
                 failed.push(filename);
             }
+        }
+        if (!await this.saveTileset3D(projectPath)) {
+            failed.push(this.tileset3DClasses()?.FILENAME || 'Tilesets.r3d.json');
         }
         if (failed.length) console.error(`Failed to save database files: ${failed.join(', ')}`);
         return failed.length === 0;

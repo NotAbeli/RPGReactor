@@ -13,6 +13,7 @@ class MapEditor {
         this.isDrawing = false;
         this.drawStart = null;
         this.previewLayer = null;
+        this.previewGraphics = null;
         this.tilePreviewContainer = null; // Container for tile placement preview
         this.lastMousePos = null; // Track mouse position for quadrant calculation
         this.shadowPaintMode = null; // 'add' or 'remove' - set on first click, maintained during drag
@@ -141,7 +142,7 @@ class MapEditor {
         const ctx = canvas.getContext('2d');
         if (!ctx) return null;
         ctx.imageSmoothingEnabled = false;
-        const keys = ['A1', 'A2', 'A3', 'A4', 'A5', 'B', 'C', 'D', 'E'];
+        const keys = RRTilesetSheets.SHEET_KEYS;
         const images = keys.map(key => this.tilesetPaletteViewer?.tilesetTextures?.[key] || null);
         const layerSize = stamp.width * stamp.height;
 
@@ -197,28 +198,91 @@ class MapEditor {
         const maxX = Math.max(0, Math.min(map.width - 1, Math.max(start.x, current.x)));
         const minY = Math.max(0, Math.min(map.height - 1, Math.min(start.y, current.y)));
         const maxY = Math.max(0, Math.min(map.height - 1, Math.max(start.y, current.y)));
-        this.previewLayer.clear();
-        this.previewLayer.removeChildren();
-        this.previewLayer.rect(
+        this._resetPreviewLayer();
+        this.previewGraphics.rect(
             minX * this.tilemapManager.TILE_WIDTH,
             minY * this.tilemapManager.TILE_HEIGHT,
             (maxX - minX + 1) * this.tilemapManager.TILE_WIDTH,
             (maxY - minY + 1) * this.tilemapManager.TILE_HEIGHT
         );
-        this.previewLayer.fill({ color: 0x5bc0de, alpha: 0.18 });
-        this.previewLayer.stroke({ width: 2, color: 0xffffff, alpha: 0.95 });
+        this.previewGraphics.fill({ color: 0x5bc0de, alpha: 0.18 });
+        this.previewGraphics.stroke({ width: 2, color: 0xffffff, alpha: 0.95 });
     }
 
     finishMapSampling() {
         if (!this.mapSampleDrag || !this.tilemapManager.currentMap) return;
-        const stamp = this.captureMapStamp(
-            this.tilemapManager.currentMap,
-            this.mapSampleDrag.start,
-            this.mapSampleDrag.current
-        );
+        const { start, current } = this.mapSampleDrag;
         this.mapSampleDrag = null;
         this.clearPreview();
-        this.activateMapStamp(stamp);
+
+        // Picking a single autotile takes the kind, not the exact piece.
+        //
+        // A stamp is pasted verbatim, which is right for a sampled area but
+        // wrong for one tile: picking the middle of a wall and painting with it
+        // laid down middle-of-wall pieces everywhere, with no ends and no
+        // corners, because the shape travelled with the tile. Selecting the
+        // kind instead makes it paint like any autotile chosen from the
+        // palette. A dragged area keeps its shapes, which is what makes it
+        // useful for copying a finished piece of map.
+        if (start.x === current.x && start.y === current.y
+            && this.selectPickedAutotile(start.x, start.y)) {
+            return;
+        }
+
+        this.activateMapStamp(this.captureMapStamp(
+            this.tilemapManager.currentMap, start, current));
+    }
+
+    /**
+     * Point the palette at the autotile kind under a picked cell.
+     *
+     * Returns false when the cell holds no autotile, leaving the caller to fall
+     * back to a verbatim stamp.
+     */
+    selectPickedAutotile(x, y) {
+        const map = this.tilemapManager.currentMap;
+        const palette = this.tilesetPaletteViewer;
+        if (!map || !palette) return false;
+
+        const layerSize = map.width * map.height;
+        for (let layer = 3; layer >= 0; layer--) {
+            const tileId = map.data[layer * layerSize + y * map.width + x] || 0;
+            if (tileId < 2048 || tileId >= 8192) continue;
+
+            const position = this.palettePositionForTile(tileId);
+            if (!position) return false;
+
+            this.clearMapStamp();
+            palette.selectedTiles = [position];
+            palette.currentLayer = 'A';
+            if (this.shadowPenMode) this.setShadowPenMode(false);
+            if (this.eraserMode) this.setEraserMode(false);
+            this.setTool('pencil', { preserveMapStamp: true });
+            if (typeof palette.renderCurrentLayer === 'function') palette.renderCurrentLayer();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Where a tile id sits in the palette — the inverse of
+     * `getBaseTileIdFromPalettePosition`, so a picked tile can be selected as
+     * if it had been clicked there.
+     */
+    palettePositionForTile(tileId) {
+        const autotiles = [
+            { layer: 'A4', base: 5888 },
+            { layer: 'A3', base: 4352 },
+            { layer: 'A2', base: 2816 },
+            { layer: 'A1', base: 2048 }
+        ];
+        for (const band of autotiles) {
+            if (tileId >= band.base) {
+                const kind = Math.floor((tileId - band.base) / 48);
+                return { x: kind % 8, y: Math.floor(kind / 8), layer: band.layer };
+            }
+        }
+        return null;
     }
 
     paintMapStamp(x, y) {
@@ -243,7 +307,8 @@ class MapEditor {
             if (this.previewLayer.parent) {
                 this.previewLayer.parent.removeChild(this.previewLayer);
             }
-            this.previewLayer.destroy();
+            this.previewLayer.destroy({ children: true });
+            this.previewGraphics = null;
         }
         if (this.tilePreviewContainer) {
             if (this.tilePreviewContainer.parent) {
@@ -253,7 +318,14 @@ class MapEditor {
         }
 
         // Create a layer for drawing previews (rectangles, circles)
-        this.previewLayer = new PIXI.Graphics();
+        // previewLayer is a Container, not a Graphics. It is used as a parent
+        // (tile sprites and per-tile borders are added to it on every pointer
+        // move), and PIXI v8 deprecated parenting to a Graphics: each addChild
+        // ran a deprecation path, and the node does not batch like a container.
+        // Vector drawing moved to a dedicated child, previewGraphics.
+        this.previewLayer = new PIXI.Container();
+        this.previewGraphics = new PIXI.Graphics();
+        this.previewLayer.addChild(this.previewGraphics);
         this.previewLayer.zIndex = 1000; // Ensure preview is on top
         this.tilemapManager.container.addChild(this.previewLayer);
 
@@ -450,9 +522,24 @@ class MapEditor {
             }
 
             this.notifyUndoStateChange();
+            this.notifyMapEdited();
         }
 
         this.activeEditState = null;
+    }
+
+    /**
+     * Announce that the map's tile data changed.
+     *
+     * Announced rather than pushed to the 3D viewport directly: the map editor
+     * has no business knowing what else is looking at the map, and this fires
+     * once per completed stroke rather than once per painted tile.
+     */
+    notifyMapEdited() {
+        if (typeof document === 'undefined' || typeof CustomEvent !== 'function') return;
+        document.dispatchEvent(new CustomEvent('rr-map-edited', {
+            detail: { mapId: this.tilemapManager?.currentMap?.id }
+        }));
     }
 
     cancelEditState() {
@@ -521,6 +608,7 @@ class MapEditor {
 
         // Notify about undo state change
         this.notifyUndoStateChange();
+        this.notifyMapEdited();
     }
 
     redo() {
@@ -544,6 +632,7 @@ class MapEditor {
 
         // Notify about undo state change
         this.notifyUndoStateChange();
+        this.notifyMapEdited();
     }
 
     canUndo() {
@@ -1887,8 +1976,7 @@ class MapEditor {
         };
 
         // Clear previous preview
-        this.previewLayer.clear();
-        this.previewLayer.removeChildren();
+        this._resetPreviewLayer();
 
         const tileWidth = this.tilemapManager.TILE_WIDTH;
         const tileHeight = this.tilemapManager.TILE_HEIGHT;
@@ -1900,13 +1988,13 @@ class MapEditor {
             const maxY = Math.max(start.y, current.y);
 
             // Draw outline of rectangle
-            this.previewLayer.rect(
+            this.previewGraphics.rect(
                 minX * tileWidth,
                 minY * tileHeight,
                 (maxX - minX + 1) * tileWidth,
                 (maxY - minY + 1) * tileHeight
             );
-            this.previewLayer.stroke({ width: 2, color: 0xffffff, alpha: 0.8 });
+            this.previewGraphics.stroke({ width: 2, color: 0xffffff, alpha: 0.8 });
 
             if (this.eraserMode) {
                 return;
@@ -1918,13 +2006,13 @@ class MapEditor {
                 if (this.regionManager && this.regionManager.selectedTiles &&
                     this.regionManager.selectedTiles.length > 0) {
                     const color = this.regionManager.regionColors[this.regionManager.selectedRegion];
-                    this.previewLayer.rect(
+                    this.previewGraphics.rect(
                         minX * tileWidth,
                         minY * tileHeight,
                         (maxX - minX + 1) * tileWidth,
                         (maxY - minY + 1) * tileHeight
                     );
-                    this.previewLayer.fill({ color: color, alpha: 0.4 });
+                    this.previewGraphics.fill({ color: color, alpha: 0.4 });
                 }
                 return;
             }
@@ -1985,10 +2073,8 @@ class MapEditor {
                     for (let x = minX; x <= maxX; x++) {
                         const dist = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
                         if (dist <= radius) {
-                            const borderGraphics = new PIXI.Graphics();
-                            borderGraphics.rect(x * tileWidth, y * tileHeight, tileWidth, tileHeight);
-                            borderGraphics.stroke({ width: 2, color: 0xffffff, alpha: 0.8 });
-                            this.previewLayer.addChild(borderGraphics);
+                            this.previewGraphics.rect(x * tileWidth, y * tileHeight, tileWidth, tileHeight);
+                            this.previewGraphics.stroke({ width: 2, color: 0xffffff, alpha: 0.8 });
                         }
                     }
                 }
@@ -2010,12 +2096,12 @@ class MapEditor {
                         for (let x = minX; x <= maxX; x++) {
                             const dist = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
                             if (dist <= radius) {
-                                this.previewLayer.rect(x * tileWidth, y * tileHeight, tileWidth, tileHeight);
+                                this.previewGraphics.rect(x * tileWidth, y * tileHeight, tileWidth, tileHeight);
                             }
                         }
                     }
-                    this.previewLayer.fill({ color: color, alpha: 0.4 });
-                    this.previewLayer.stroke({ width: 1, color: 0xffffff, alpha: 0.5 });
+                    this.previewGraphics.fill({ color: color, alpha: 0.4 });
+                    this.previewGraphics.stroke({ width: 1, color: 0xffffff, alpha: 0.5 });
                 }
                 return;
             }
@@ -2072,15 +2158,13 @@ class MapEditor {
 
                     // Draw borders around each tile in the "boxy circle"
                     for (const tilePos of tilesInCircle) {
-                        const borderGraphics = new PIXI.Graphics();
-                        borderGraphics.rect(
+                        this.previewGraphics.rect(
                             tilePos.x * tileWidth,
                             tilePos.y * tileHeight,
                             tileWidth,
                             tileHeight
                         );
-                        borderGraphics.stroke({ width: 2, color: 0xffffff, alpha: 0.8 });
-                        this.previewLayer.addChild(borderGraphics);
+                        this.previewGraphics.stroke({ width: 2, color: 0xffffff, alpha: 0.8 });
                     }
                 }
             } catch (e) {
@@ -2092,8 +2176,7 @@ class MapEditor {
     clearPreview() {
         this._lastShapePreview = null;
         if (this.previewLayer) {
-            this.previewLayer.clear();
-            this.previewLayer.removeChildren();
+            this._resetPreviewLayer();
         }
     }
 
@@ -2109,11 +2192,11 @@ class MapEditor {
         const tilesetTexture = this.tilesetPaletteViewer.tilesetTextures[tileLayer];
         if (!tilesetTexture) return;
 
-        // Draw a background border (add first so it renders behind the sprite)
-        const borderGraphics = new PIXI.Graphics();
-        borderGraphics.rect(mapX * tileWidth, mapY * tileHeight, tileWidth, tileHeight);
-        borderGraphics.fill({ color: 0xffffff, alpha: 0.3 }); // White semi-transparent background
-        this.previewLayer.addChild(borderGraphics);
+        // Backing plate. previewGraphics is the layer's first child, so it
+        // already renders behind every sprite added after it — no per-tile
+        // Graphics object is needed to get the ordering right.
+        this.previewGraphics.rect(mapX * tileWidth, mapY * tileHeight, tileWidth, tileHeight);
+        this.previewGraphics.fill({ color: 0xffffff, alpha: 0.3 }); // White semi-transparent background
 
         // For autotiles with preview pattern, calculate proper shape based on neighbors in pattern
         if (previewPattern && ['A1', 'A2', 'A3', 'A4'].includes(tileLayer)) {
@@ -2680,7 +2763,7 @@ class MapEditor {
             // A5 layer - direct mapping
             srcX = x * tileSize;
             srcY = y * tileSize;
-        } else if (['B', 'C', 'D', 'E'].includes(layer)) {
+        } else if (RRTilesetSheets.isNormalSheetKey(layer)) {
             // Regular tiles - handle split layout
             // For split layers, x >= 8 means right half of original image
             if (x >= 8) {
@@ -2708,6 +2791,35 @@ class MapEditor {
             return newTexture;
         } catch (error) {
             return null;
+        }
+    }
+
+    /**
+     * Clear the preview: wipe the vector drawing and drop the tile sprites.
+     *
+     * `previewLayer.removeChildren()` cannot be used directly any more, because
+     * `previewGraphics` is itself a child and removing it would silently kill
+     * every rectangle and outline drawn afterwards. The sprites and per-tile
+     * borders are rebuilt from scratch on each pointer move, so they are
+     * destroyed rather than merely detached — previously they were removed and
+     * left to the garbage collector, which on a large map meant a fresh
+     * Graphics per tile per mouse movement.
+     */
+    _resetPreviewLayer() {
+        if (this.previewGraphics && !this.previewGraphics.destroyed) {
+            this.previewGraphics.clear();
+        }
+        if (!this.previewLayer || this.previewLayer.destroyed) return;
+
+        for (let i = this.previewLayer.children.length - 1; i >= 0; i--) {
+            const child = this.previewLayer.children[i];
+            if (child === this.previewGraphics) continue;
+            this.previewLayer.removeChild(child);
+            // Textures here are shared with the tileset caches, so the sprite
+            // goes but the texture it points at must not.
+            if (child && !child.destroyed && child.destroy) {
+                child.destroy({ children: true, texture: false, textureSource: false });
+            }
         }
     }
 
@@ -2985,7 +3097,9 @@ class MapEditor {
             'B': 1,  // B tiles go on layer 1 (above A layer)
             'C': 2,  // C tiles go on layer 2 (above B layer)
             'D': 3,  // D tiles go on layer 3 (above C layer)
-            'E': 3   // E tiles also go on layer 3 (or use findAvailableLayer to stack)
+            'E': 3,  // E tiles also go on layer 3 (or use findAvailableLayer to stack)
+            'F': 3,  // F and G are Reactor's added sheets; they behave like E
+            'G': 3
         };
         return layerMap[layerKey] ?? 0;
     }
@@ -3000,7 +3114,12 @@ class MapEditor {
         }
 
         switch (layer) {
-            case 'B': {
+            case 'B':
+            case 'C':
+            case 'D':
+            case 'E':
+            case 'F':
+            case 'G': {
                 // Palette click handler gives coordinates in 16-tile-wide space (x can be 0-15)
                 // But tile IDs use 8-tile-per-row system for RPG Maker MZ compatibility
                 // Convert: if x >= 8, move to bottom half
@@ -3009,31 +3128,9 @@ class MapEditor {
                     y += 16; // Move to bottom half (assumes 16 rows per half)
                 }
                 const tilesPerRow = 8;
-                return y * tilesPerRow + x; // B starts at 0
-            }
-            case 'C': {
-                if (x >= 8) {
-                    x -= 8;
-                    y += 16;
-                }
-                const tilesPerRow = 8;
-                return 256 + (y * tilesPerRow + x); // C starts at 256
-            }
-            case 'D': {
-                if (x >= 8) {
-                    x -= 8;
-                    y += 16;
-                }
-                const tilesPerRow = 8;
-                return 512 + (y * tilesPerRow + x); // D starts at 512
-            }
-            case 'E': {
-                if (x >= 8) {
-                    x -= 8;
-                    y += 16;
-                }
-                const tilesPerRow = 8;
-                return 768 + (y * tilesPerRow + x); // E starts at 768
+                // B 0, C 256, D 512, E 768, F 1024, G 1280.
+                const base = RRTilesetSheets.baseTileIdForSheet(RRTilesetSheets.indexFromKey(layer));
+                return base + (y * tilesPerRow + x);
             }
             case 'A5': {
                 const tilesPerRow = 8;
@@ -3080,37 +3177,23 @@ class MapEditor {
     // Used when we need to determine placement layer before calculating shape
     getBaseTileIdFromPalettePosition(x, y, layer) {
         switch (layer) {
-            case 'B': {
+            case 'B':
+            case 'C':
+            case 'D':
+            case 'E':
+            case 'F':
+            case 'G': {
                 if (x >= 8) {
                     x -= 8;
                     y += 16;
                 }
                 const tilesPerRow = 8;
-                return y * tilesPerRow + x;
-            }
-            case 'C': {
-                if (x >= 8) {
-                    x -= 8;
-                    y += 16;
-                }
-                const tilesPerRow = 8;
-                return 256 + (y * tilesPerRow + x);
-            }
-            case 'D': {
-                if (x >= 8) {
-                    x -= 8;
-                    y += 16;
-                }
-                const tilesPerRow = 8;
-                return 512 + (y * tilesPerRow + x);
-            }
-            case 'E': {
-                if (x >= 8) {
-                    x -= 8;
-                    y += 16;
-                }
-                const tilesPerRow = 8;
-                return 768 + (y * tilesPerRow + x);
+                // B 0, C 256, D 512, E 768, F 1024, G 1280. Omitting a sheet
+                // here fell through to the default and returned 0, and painting
+                // tile id 0 erases — so a missing case silently rubbed tiles
+                // out instead of placing them.
+                const base = RRTilesetSheets.baseTileIdForSheet(RRTilesetSheets.indexFromKey(layer));
+                return base + (y * tilesPerRow + x);
             }
             case 'A5': {
                 const tilesPerRow = 8;
@@ -3209,6 +3292,21 @@ class MapEditor {
     }
 
     // Calculate wall autotile shape (A3/A4 - only uses 4 cardinal directions, 16 shapes)
+    /**
+     * Whether an autotile uses the 16-shape wall system.
+     *
+     * A3 is walls throughout; A4 alternates roof rows and wall rows, eight
+     * kinds to a row.
+     */
+    isWallAutotile(baseTileId) {
+        if (baseTileId >= 4352 && baseTileId < 5888) return true;
+        if (baseTileId >= 5888 && baseTileId < 8192) {
+            const kind = Math.floor((baseTileId - 5888) / 48);
+            return Math.floor(kind / 8) % 2 === 1;
+        }
+        return false;
+    }
+
     calculateWallAutotileShape(baseTileId, x, y, previewPattern = null) {
         if (!this.tilemapManager.currentMap) return { tileId: baseTileId, shape: 0 };
 
@@ -3428,11 +3526,19 @@ class MapEditor {
             return true;
         }
 
-        // Out-of-bounds counts as "same kind" for ALL autotiles — the MZ
-        // editor continues cliffs/roofs/ground seamlessly off the map edge
-        // (corpus-verified: edge roofs/walls store fully-connected shapes).
+        // Off the map edge, floors and walls part company.
+        //
+        // Ground and roofs run on seamlessly, so out-of-bounds counts as the
+        // same kind and no border is drawn. Walls are capped instead: MZ closes
+        // them off at the edge. Checked against the authored maps in the
+        // bundled projects — of 8,455 wall autotiles sitting on a map edge,
+        // 91.3% store the capped shape and 2.4% the connected one, while 82.9%
+        // of the 83,674 floor autotiles on an edge store shape 0, the fully
+        // connected interior. Treating walls like floors swallowed the end cap,
+        // so a wall painted against the edge lost its finished edge.
         if (x < 0 || x >= width || y < 0 || y >= height) {
-            return baseTileId >= 2048 && baseTileId < 8192;
+            if (baseTileId < 2048 || baseTileId >= 8192) return false;
+            return !this.isWallAutotile(baseTileId);
         }
 
         // Only check autotiles (A1-A4 range: 2048-8191)
@@ -3828,8 +3934,9 @@ class MapEditor {
             this._mapPointerHandlersContainer = null;
         }
         if (this.previewLayer) {
-            this.previewLayer.destroy();
+            this.previewLayer.destroy({ children: true });
             this.previewLayer = null;
+            this.previewGraphics = null;
         }
         if (this.tilePreviewContainer) {
             this.tilePreviewContainer.destroy({ children: true });
