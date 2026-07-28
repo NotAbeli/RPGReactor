@@ -2,9 +2,28 @@
 // Displays tileset layers as tabs with tile graphics for map editing
 
 class TilesetPaletteViewer {
-    constructor(app, projectPath) {
+    /** Re-read the project's tile size; the database loads after we are built. */
+    refreshTileMetrics() {
+        const metrics = (typeof RRTileMetrics !== 'undefined' && RRTileMetrics)
+            || (typeof window !== 'undefined' && window.RRTileMetrics);
+        const system = this.databaseManager && typeof this.databaseManager.getSystem === 'function'
+            ? this.databaseManager.getSystem()
+            : null;
+        const size = metrics ? metrics.tileSizeOf(system) : 48;
+        if (size === this.tileSize) return false;
+        this.tileSize = size;
+        return true;
+    }
+
+    constructor(app, projectPath, databaseManager = null) {
         this.app = app;
         this.projectPath = projectPath;
+        this.databaseManager = databaseManager;
+        // MZ projects choose 48, 32, 24 or 16 and record it in System.json.
+        // Every measurement below that is in pixels reads this rather than
+        // assuming 48; the 48s in tile-id arithmetic are the format's
+        // shapes-per-autotile-kind and stay where they are.
+        this.tileSize = 48;
         this.fs = null;
         this.path = null;
         this.currentTileset = null;
@@ -145,8 +164,8 @@ class TilesetPaletteViewer {
                 const canvasX = (e.clientX - rect.left) * scaleX;
                 const canvasY = (e.clientY - rect.top) * scaleY;
 
-                let x = Math.floor(canvasX / 48); // 48px per tile
-                let y = Math.floor(canvasY / 48);
+                let x = Math.floor(canvasX / this.tileSize);
+                let y = Math.floor(canvasY / this.tileSize);
                 let actualLayer = this.currentLayer;
 
                 // Handle merged 'A' layer - determine which sub-layer was clicked
@@ -154,7 +173,7 @@ class TilesetPaletteViewer {
                     const clickResult = this.getSubLayerFromY(canvasY);
                     if (clickResult) {
                         actualLayer = clickResult.layer;
-                        y = Math.floor((canvasY - clickResult.startY) / 48);
+                        y = Math.floor((canvasY - clickResult.startY) / this.tileSize);
                     }
                 }
 
@@ -163,7 +182,7 @@ class TilesetPaletteViewer {
                 if (isSplitLayer) {
                     // Calculate half height based on actual image height
                     const img = this.tilesetTextures[actualLayer];
-                    const halfHeight = img ? (img.height / 48) : 16; // Image height in tiles
+                    const halfHeight = img ? (img.height / this.tileSize) : 16; // Image height in tiles
                     if (y >= halfHeight) {
                         // Clicked on bottom half - adjust x coordinate
                         x += 8; // Add 8 tiles (384px / 48px)
@@ -187,8 +206,8 @@ class TilesetPaletteViewer {
                     const canvasX = (e.clientX - rect.left) * scaleX;
                     const canvasY = (e.clientY - rect.top) * scaleY;
 
-                    let x = Math.floor(canvasX / 48);
-                    let y = Math.floor(canvasY / 48);
+                    let x = Math.floor(canvasX / this.tileSize);
+                    let y = Math.floor(canvasY / this.tileSize);
                     let actualLayer = this.currentLayer;
 
                     // Merged 'A' layer: the selection rectangle lives in ONE
@@ -205,12 +224,12 @@ class TilesetPaletteViewer {
                             const clampedY = Math.min(
                                 Math.max(canvasY, startInfo.startY),
                                 startInfo.startY + startInfo.height - 1);
-                            y = Math.floor((clampedY - startInfo.startY) / 48);
+                            y = Math.floor((clampedY - startInfo.startY) / this.tileSize);
                         } else {
                             const clickResult = this.getSubLayerFromY(canvasY);
                             if (clickResult) {
                                 actualLayer = clickResult.layer;
-                                y = Math.floor((canvasY - clickResult.startY) / 48);
+                                y = Math.floor((canvasY - clickResult.startY) / this.tileSize);
                             }
                         }
                     }
@@ -220,7 +239,7 @@ class TilesetPaletteViewer {
                     if (isSplitLayer) {
                         // Calculate half height based on actual image height
                         const img = this.tilesetTextures[actualLayer];
-                        const halfHeight = img ? (img.height / 48) : 16; // Image height in tiles
+                        const halfHeight = img ? (img.height / this.tileSize) : 16; // Image height in tiles
                         if (y >= halfHeight) {
                             x += 8;
                             y -= halfHeight;
@@ -506,11 +525,11 @@ class TilesetPaletteViewer {
 
             let height;
             if (layer === 'A1') {
-                height = 2 * 48; // 2 rows (8 cols × 2 rows)
+                height = 2 * this.tileSize; // 2 rows (8 cols x 2 rows)
             } else if (layer === 'A2' || layer === 'A3') {
-                height = 4 * 48; // 4 rows each
+                height = 4 * this.tileSize; // 4 rows each
             } else if (layer === 'A4') {
-                height = 6 * 48; // 6 rows
+                height = 6 * this.tileSize; // 6 rows
             } else if (layer === 'A5') {
                 height = img.height; // Full A5 height
             }
@@ -562,7 +581,7 @@ class TilesetPaletteViewer {
 
     renderAutotilePalette(ctx, img, layer) {
         const canvas = ctx.canvas;
-        const tileSize = 48; // Each preview tile is 48x48
+        const tileSize = this.tileSize;
 
         // Autotile palette layout:
         // A1: 16 kinds (8 cols × 2 rows - water types + waterfalls spread horizontally)
@@ -679,7 +698,7 @@ class TilesetPaletteViewer {
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.lineWidth = 1;
 
-        const tileSize = 48 * scale; // RPG Maker uses 48px tiles
+        const tileSize = this.tileSize * scale;
 
         // Draw vertical lines
         for (let x = 0; x <= width * scale; x += tileSize) {
@@ -786,7 +805,7 @@ class TilesetPaletteViewer {
         // (B–E and A5); autotile grids (A1–A4) are rendered previews whose
         // grid cells don't correspond to sheet cells, and a wrong
         // "transparent" verdict would arm the eraser on a real tile.
-        const tileSize = 48;
+        const tileSize = this.tileSize;
         if (!this._transparencyScratch) {
             this._transparencyScratch = document.createElement('canvas');
             this._transparencyScratch.width = tileSize;
@@ -837,7 +856,7 @@ class TilesetPaletteViewer {
 
         const ctx = canvas.getContext('2d');
         const scale = 1;
-        const tileSize = 48 * scale;
+        const tileSize = this.tileSize * scale;
 
         // Convert original image coordinates to canvas coordinates
         let canvasX = x;
@@ -847,7 +866,7 @@ class TilesetPaletteViewer {
         if (this.currentLayer === 'A' && layer && this.mergedALayerOffsets) {
             const sublayerInfo = this.mergedALayerOffsets.find(info => info.layer === layer);
             if (sublayerInfo) {
-                canvasY = y + (sublayerInfo.startY / 48); // Add sublayer offset in tiles
+                canvasY = y + (sublayerInfo.startY / this.tileSize); // Add sublayer offset in tiles
             }
         }
 
@@ -859,7 +878,7 @@ class TilesetPaletteViewer {
         if (isSplitLayer && x >= 8) {
             // Right half of original image (x 8-15) displays in bottom half
             const img = this.tilesetTextures[actualLayer];
-            const halfHeight = img ? (img.height / 48) : 16; // Image height in tiles
+            const halfHeight = img ? (img.height / this.tileSize) : 16; // Image height in tiles
             canvasX = x - 8;  // Map x 8-15 to canvas x 0-7
             canvasY = y + halfHeight; // Offset down by the image height
         }
@@ -931,3 +950,5 @@ class TilesetPaletteViewer {
         }
     }
 }
+
+TilesetPaletteViewer.prototype.tileSize = 48;

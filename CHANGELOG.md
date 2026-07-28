@@ -8,7 +8,13 @@ This root changelog summarizes public release progress for GitHub; larger releas
 
 ### Fixed
 
+- Projects that use a tile size other than 48 rendered as a mosaic of the wrong art. RPG Maker MZ lets a project choose 48, 32, 24 or 16 pixels and records the choice in `System.json`, and Reactor's own Database has always offered the setting — but the editor's map view, tile palette and tileset editor were written when 48 was the only answer, and sampled every sheet in 48-pixel steps regardless. On a 32-pixel project each read landed one and a half tiles further along than it should and the error accumulated, so the map drew as repeating fragments of unrelated tiles. The game itself was fine: the runtime already read the setting. All three surfaces read it now.
+
 - The web editor did not start at all. It stopped on `Node module "os" is unavailable in RPG Reactor Web` before drawing anything. The component that launches extra editor windows on desktop asked for `os` and `child_process` while being constructed, and the web build has neither — it already knew to decline once it saw they were missing, but it never got that far, because asking was itself the error. It now asks in a way that can come back empty.
+
+### Changed
+
+- The current development version is 0.97.0.
 
 Next up is the unfinished 3D work listed under 0.96.0: wall tops, the forest
 arrangement, parallax and sky, and incremental rebuild while painting.

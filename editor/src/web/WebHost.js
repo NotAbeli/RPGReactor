@@ -346,7 +346,7 @@
 
     window.RPGReactorWebHost = {
         mode: 'web',
-        version: '0.96.0',
+        version: '0.97.0',
         projectRoot: PROJECT_ROOT,
         fs: null,
         path: createPathApi(),

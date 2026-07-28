@@ -54,9 +54,11 @@ class DatabaseTilesetEditor {
         this.selectedDirection = null; // For 4-dir passage: 'down', 'left', 'right', 'up'
         this.selectedTerrain = 0; // For terrain tag: 0-7
         this.currentTab = 'A'; // Current layer tab: 'A', 'B', 'C', 'D', 'E', 'F', 'G'
-        this.tileSize = 48;
         this.selectedTile = null; // Currently selected tile { x, y } for highlighting
         this.imageCache = new Map(); // Cache rendered tileset images to avoid redrawing
+        // Sheets are laid out in whatever size the project chose, so the
+        // editor samples them in that step rather than assuming 48.
+        this.tileSize = this.readTileSize();
         this.currentCanvas = null; // Store current canvas to update without recreating
         this.tabCanvases = []; // Canvases of a multi-layer tab, for whole-view repaints
 
@@ -214,6 +216,16 @@ class DatabaseTilesetEditor {
     }
 
     /** The 3D classification module, absent on hosts that never loaded it. */
+    /** The project's tile size, from System.json; 48 when it says nothing. */
+    readTileSize() {
+        const metrics = (typeof RRTileMetrics !== 'undefined' && RRTileMetrics)
+            || (typeof window !== 'undefined' && window.RRTileMetrics);
+        const system = this.databaseManager && typeof this.databaseManager.getSystem === 'function'
+            ? this.databaseManager.getSystem()
+            : null;
+        return metrics ? metrics.tileSizeOf(system) : 48;
+    }
+
     tileset3DClasses() {
         return (typeof window !== 'undefined' && window.RRTileset3DClass) || null;
     }
@@ -2554,7 +2566,8 @@ class DatabaseTilesetEditor {
         const origin = classes.sheetCell(object.tile);
         const image = this.sheetImageFor(origin.setNumber);
         if (!image) return null;
-        return { image, size: 48, stepped: true, sx: origin.col * 48, sy: origin.row * 48 };
+        const cell = this.tileSize;
+        return { image, size: cell, stepped: true, sx: origin.col * cell, sy: origin.row * cell };
     }
 
     /**

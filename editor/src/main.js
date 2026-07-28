@@ -616,8 +616,14 @@ class RPGReactor {
             this.tilemapManager = this.projectController.getTilemapManager();
             this.tilesetPaletteViewer = new TilesetPaletteViewer(
                 this.tilemapManager.app,
-                project.path
+                project.path,
+                this.databaseManager
             );
+            // The database has loaded by now, so both surfaces can pick up a
+            // project's tile size. They are built before it and would otherwise
+            // keep the 48 they started with.
+            this.tilesetPaletteViewer.refreshTileMetrics();
+            this.tilemapManager.refreshTileMetrics();
             this.projectController.setTilesetPaletteViewer(this.tilesetPaletteViewer);
 
             // Initialize the UI only once

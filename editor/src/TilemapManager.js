@@ -40,10 +40,17 @@ class TilemapManager {
             this.path = require('path');
         }
 
-        // Tilemap constants (RPG Maker MZ compatible)
-        this.TILE_WIDTH = 48;
-        this.TILE_HEIGHT = 48;
-        this.TILE_SIZE = 48;  // Tiles are square (48x48)
+        // Tilemap constants (RPG Maker MZ compatible).
+        //
+        // The pixel size comes from the project: MZ offers 48, 32, 24 and 16
+        // and records the choice in System.json. Assuming 48 sampled a
+        // 32-pixel project's sheets in 48-pixel steps, so every tile drew the
+        // wrong art. The 48s in the tile-id arithmetic elsewhere are a
+        // different number entirely — 48 shapes per autotile kind — and are
+        // fixed by the format.
+        this.TILE_SIZE = this.readTileSize();
+        this.TILE_WIDTH = this.TILE_SIZE;
+        this.TILE_HEIGHT = this.TILE_SIZE;
         this.TILESET_COLS = 8;  // A1-A5 tiles are 8 columns wide
         this.TILESET_ROWS_PER_SHEET = 16;
 
@@ -160,6 +167,39 @@ class TilemapManager {
             [[2, 0], [1, 0], [2, 1], [1, 1]], [[0, 0], [1, 0], [0, 1], [1, 1]],
             [[2, 0], [3, 0], [2, 1], [3, 1]], [[0, 0], [3, 0], [0, 1], [3, 1]]
         ];
+    }
+
+    /**
+     * The project's tile size in pixels, from System.json.
+     *
+     * Read rather than cached at module load because the Database can change
+     * it, and read defensively because the manager is built before the
+     * database has necessarily finished loading.
+     */
+    readTileSize() {
+        const metrics = (typeof RRTileMetrics !== 'undefined' && RRTileMetrics)
+            || (typeof window !== 'undefined' && window.RRTileMetrics);
+        if (!metrics) return 48;
+        const system = this.databaseManager && typeof this.databaseManager.getSystem === 'function'
+            ? this.databaseManager.getSystem()
+            : null;
+        return metrics.tileSizeOf(system);
+    }
+
+    /**
+     * Re-read the tile size, reporting whether it moved.
+     *
+     * Called when a project or its database loads, since the manager is
+     * constructed first and would otherwise keep whatever default it started
+     * with for the life of the project.
+     */
+    refreshTileMetrics() {
+        const size = this.readTileSize();
+        if (size === this.TILE_SIZE) return false;
+        this.TILE_SIZE = size;
+        this.TILE_WIDTH = size;
+        this.TILE_HEIGHT = size;
+        return true;
     }
 
     async loadMap(mapId) {
@@ -1492,7 +1532,7 @@ class TilemapManager {
 
         const { width, height, data } = this.currentMap;
         const layerSize = width * height;
-        const tileSize = 48;
+        const tileSize = this.TILE_SIZE;
 
         // Render semi-transparent highlights for all tiles on this layer
         for (let y = 0; y < height; y++) {
@@ -1712,7 +1752,7 @@ class TilemapManager {
 
     // Render checkerboard background for transparency visualization
     renderCheckerboard(mapWidth, mapHeight) {
-        const tileSize = 48; // Size of each checkerboard square
+        const tileSize = this.TILE_SIZE; // Size of each checkerboard square
         const pixelWidth = mapWidth * this.TILE_WIDTH;
         const pixelHeight = mapHeight * this.TILE_HEIGHT;
 
@@ -2587,7 +2627,7 @@ class TilemapManager {
             }
 
             // Set canvas size to map size
-            const tileSize = 48;
+            const tileSize = this.TILE_SIZE;
             targetCanvas.width = width * tileSize;
             targetCanvas.height = height * tileSize;
 
