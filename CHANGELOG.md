@@ -4,6 +4,11 @@ All notable changes to RPG Reactor will be documented in this file.
 
 This root changelog summarizes public release progress for GitHub; larger releases group their fixes by theme. The detailed editor changelog lives at [`editor/CHANGELOG.md`](editor/CHANGELOG.md).
 
+## [Unreleased - 0.97.0]
+
+Nothing yet. Next up is the unfinished 3D work listed under 0.96.0: wall tops,
+the forest arrangement, parallax and sky, and incremental rebuild while painting.
+
 ## [0.96.0] - 2026-07-27
 
 0.95.1 was an internal development version and was never published; its changes ship in 0.96.0.
