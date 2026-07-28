@@ -1,11 +1,30 @@
+/**
+ * A Node module, or null where there is no such thing.
+ *
+ * The web build supplies `fs`, `path` and `url` and throws for everything else,
+ * which is the right answer for code that needs them — but this broker only
+ * launches extra desktop windows, so its dependencies are optional by nature
+ * and asking for them must not be fatal. Requiring `os` in the constructor
+ * threw before `start` could decline, and took the whole web editor down at
+ * boot with it.
+ */
+function optionalModule(name) {
+    if (typeof require !== 'function') return null;
+    try {
+        return require(name);
+    } catch (error) {
+        return null;
+    }
+}
+
 class EditorInstanceBroker {
     constructor(options = {}) {
         this.app = options.app || (typeof nw !== 'undefined' ? nw.App : null);
         this.process = options.process || (typeof process !== 'undefined' ? process : null);
-        this.fs = options.fs || (typeof require === 'function' ? require('fs') : null);
-        this.path = options.path || (typeof require === 'function' ? require('path') : null);
-        this.os = options.os || (typeof require === 'function' ? require('os') : null);
-        this.spawn = options.spawn || (typeof require === 'function' ? require('child_process').spawn : null);
+        this.fs = options.fs || optionalModule('fs');
+        this.path = options.path || optionalModule('path');
+        this.os = options.os || optionalModule('os');
+        this.spawn = options.spawn || optionalModule('child_process')?.spawn || null;
         this.slotCount = options.slotCount || 32;
         this.logger = options.logger || console;
         this.started = false;

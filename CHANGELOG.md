@@ -6,8 +6,12 @@ This root changelog summarizes public release progress for GitHub; larger releas
 
 ## [Unreleased - 0.97.0]
 
-Nothing yet. Next up is the unfinished 3D work listed under 0.96.0: wall tops,
-the forest arrangement, parallax and sky, and incremental rebuild while painting.
+### Fixed
+
+- The web editor did not start at all. It stopped on `Node module "os" is unavailable in RPG Reactor Web` before drawing anything. The component that launches extra editor windows on desktop asked for `os` and `child_process` while being constructed, and the web build has neither — it already knew to decline once it saw they were missing, but it never got that far, because asking was itself the error. It now asks in a way that can come back empty.
+
+Next up is the unfinished 3D work listed under 0.96.0: wall tops, the forest
+arrangement, parallax and sky, and incremental rebuild while painting.
 
 ## [0.96.0] - 2026-07-27
 

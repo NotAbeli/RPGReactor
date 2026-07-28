@@ -229,3 +229,38 @@ test('editor startup loads the launch broker and avoids deprecated manifest flag
     assert.match(main, /EditorInstanceBroker\.startForCurrentApp\(\)/);
     assert.equal('single-instance' in manifest, false);
 });
+
+test('the web build survives having no os or child_process', () => {
+    // The web host supplies fs, path and url and throws for anything else,
+    // which is right for code that needs them. This broker only launches extra
+    // desktop windows, so its modules are optional by nature — but it required
+    // `os` in its constructor, which threw before `start` could decline and
+    // took the whole web editor down at boot:
+    //
+    //   Uncaught Error: Node module "os" is unavailable in RPG Reactor Web.
+    //       at new EditorInstanceBroker
+    //       at EditorInstanceBroker.startForCurrentApp
+    //       at new RPGReactor
+    const source = fs.readFileSync(
+        path.join(editorRoot, 'src', 'EditorInstanceBroker.js'), 'utf8');
+    const webRequire = name => {
+        if (name === 'fs') return { readFileSync() {} };
+        if (name === 'path') return { join() {} };
+        throw new Error(`Node module "${name}" is unavailable in RPG Reactor Web.`);
+    };
+    // eslint-disable-next-line no-new-func
+    const load = new Function('require', 'module', 'window',
+        `${source}; return EditorInstanceBroker;`);
+    const WebBroker = load(webRequire, undefined, undefined);
+
+    let broker = null;
+    assert.doesNotThrow(() => { broker = WebBroker.startForCurrentApp({}); },
+        'constructing it must not throw where the modules are absent');
+    assert.equal(broker, null, 'and it declines to start rather than half-starting');
+
+    // The modules it could not have are null rather than undefined-by-accident.
+    const bare = new WebBroker({});
+    assert.equal(bare.os, null);
+    assert.equal(bare.spawn, null);
+    assert.equal(bare.start(), false, 'start stays the guard it always was');
+});

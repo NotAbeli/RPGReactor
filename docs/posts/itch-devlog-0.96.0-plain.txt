@@ -1,0 +1,23 @@
+RPG Reactor 0.96 is out, and your maps can be 3D now.
+
+RPG Reactor is a free, open source editor and game engine that reads and writes RPG Maker MV and MZ projects. Open a project you already have, keep your plugins, keep your data.
+
+Your existing maps, in 3D:
+
+Put <3d> in a map’s note and that same map renders in three dimensions. Ground lies flat, walls and buildings stand up, characters stay as 2D sprites on the same grid. Events, passability and movement all work exactly as before, and your map files are never touched.
+
+You can build in it too. Tick the 3D box in the map editor and orbit, pan, zoom and paint straight into the 3D view, with the brush, autotiles and undo you already use.
+
+More room to work:
+
+Two new tileset sheets, F and G, giving you 512 extra tiles. They use tile numbers RPG Maker leaves empty, so importing an existing project can never clash with them.
+
+Steadier underneath:
+
+We spent this cycle checking Reactor's behaviour against real RPG Maker projects and fixing what didn't match. A lot of it was quiet stuff you would never have caught yourself, from event commands changing when you opened them to new database entries not quite working in game. Resizing a map is safer now too, and it can grow from any corner.
+
+Where 3D is going:
+
+It's early days. Terrain needs a bit of hand authoring to look its best, forests read as cover rather than individual trees, and there's no sky yet. Battles are still 2D. It's all opt in per map, so 2D projects are untouched.
+
+Free and open source. Give it a go.
