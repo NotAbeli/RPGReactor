@@ -246,6 +246,232 @@ a forest is the same tile repeated over an *area* rather than one tall picture.
 **Scenery** raises the ground it sits on instead and takes its cliff faces from
 the existing wall code, so a mountain range reads as a mass.
 
+### The star flag is a lower bound, not a partition
+
+A structure on the world map stood up as one flat cut-out hinged along its
+bottom edge, which from an angle reads as card folded off the floor. The obvious
+fix was to hinge at the star flag instead — MZ's ★ means "draws above the
+character", so stand the starred rows and lay the rest flat — and the art itself
+refuted it. The gantry beside the crater is three rows tall and **only its top
+row is starred**, because that is the only row that has to overlap a character
+standing behind it. Its legs are unstarred and would have lain on the ground
+while the top hovered.
+
+So ★ says "this tile is tall" and its absence says nothing at all. It cannot
+locate where an object meets the ground, and no other flag can either. Which
+means the fix was never a smarter hinge: it was to stop building a fixed plane.
+Standing art turns to face the camera now, about the world's up axis, so there
+is no wrong angle to be caught at and no need to know which way the object faces.
+
+### An object has to turn as one thing
+
+Cut-outs that turn fixed the folding and broke something else, which the user
+spotted before I did: each column pivoted about its own centre, so a five-wide
+structure came apart into five cards fanning towards the camera. Turning is only
+correct for a whole object.
+
+Grouping by plain adjacency then merged 408 cells of unrelated props across 44
+by 27 tiles into one heap, because on a world map the props are dense enough to
+form a chain across the region. What separates one picture from two is that a
+picture's pieces are adjacent *on the sheet in the same direction* as on the
+map: a tile one cell east is one cell east in the art. That test is exact, and
+it takes the largest object on the map down to the 7x7 it was drawn as.
+
+Walls are excluded. A wall belongs to a building and faces a particular way, so
+it stays a fixed plane; swinging it to the camera would rotate the building.
+
+Where the object turns matters as much as that it turns as one, because the
+anchor is what its position reads as. Three points were tried. The southern
+edge put a five-wide structure over its cells from the south and a tile clear of
+them from the east. The footprint centre stopped the drift and started the base
+hanging above the ground in front of it. The middle of the southern row — the
+cell the art is drawn standing in — keeps the drift to half a tile and plants
+the bottom edge.
+
+### A wall is a mass
+
+Surveying maps other than the one being reported on found the largest error of
+the lot. A labyrinth of 4,800 wall autotiles rendered, from above, as bare floor
+with a few slivers on it — the maze simply was not there — and obliquely a block
+of wall eight cells deep stacked into an eight-tile tower.
+
+Walls had been cut-outs, one per column, standing on the run's southern face.
+That is the wrong shape entirely. A walled area is solid: raise the ground it
+covers and the corridors are carved out of it, the vertical faces come from the
+cliff code, and the overhead view is the map you drew. The rule that a prop is a
+picture and terrain is a mass turns out to cover architecture too.
+
+### Some things cannot be inferred, and the fix is to stop trying
+
+The object grouping used a test that felt airtight: two cells belong to one
+picture when they are adjacent on the map *and* adjacent the same way on the
+sheet. It survived every map in the project — and the user spotted the hole by
+reading the rule rather than by looking at a render. Put an ice mountain in
+sheet columns 0-1 and a rock mountain in columns 2-3, paint them side by side,
+and every neighbouring pair passes: one step apart on the map, one step apart on
+the sheet. The two weld into a single four-wide object. A six-line synthetic
+case reproduces it; none of the 491 objects on the world map does, which is
+exactly why inference is dangerous — it had been right everywhere I had looked.
+
+So objects are declared now. Shift-click two corners in the tileset editor and
+those tiles are one thing. It also reaches the case adjacency never could:
+autotile terrain, where every cell genuinely is its own tile and there is no
+grouping to infer at all.
+
+The second half is a separate flag, because it answers a separate question. A
+tile's 3D class says what a loose tile is. A tile's *role* says what it does
+inside the object it belongs to — stands, or lies flat. That is what lets a
+launch pad stay on the ground while its towers stand, which no amount of reading
+the passability flags could ever have told us.
+
+### Height and the axis are different questions
+
+The anchor of a standing cut-out does two jobs, and treating them as one cost
+three rounds of getting it wrong. It is the point the billboard turns about, and
+it is where the object's base meets the ground.
+
+Anchoring on the southern *edge* put a five-wide structure a tile clear of its
+own cells from the east. Moving to the footprint centre fixed that and left the
+base hanging above the ground in front at a low camera — so the anchor went to
+the middle of the southern row, which looked like a decent compromise and was
+not one: a deep object then swung around its own front edge as the camera went
+round, orbiting instead of turning on the spot.
+
+They are separate. The axis is the middle of the footprint, because that is
+where the object is. The height is the ground at the object's southern row,
+because that is the ground it faces. Once the lean was gone, nothing tied them
+together at all.
+
+### The lean was the drift
+
+Two complaints that sounded separate — objects sliding off their cells as the
+camera orbits, and everything sitting slightly above the ground — turned out to
+be one mechanism, and the arithmetic says so without a screenshot. A cut-out
+leaning back towards the camera displaces its art horizontally from its anchor
+by its height times the horizontal part of its up axis. At three quarters lean
+and a 45 degree camera, the top of a six-tile object sits 3.4 tiles from the
+point it stands on, and a quarter turn of the camera moves it 4.8 tiles. Upright,
+that number is exactly zero at every angle.
+
+The lean existed to stop cut-outs going edge-on as the camera climbs. That is a
+real problem and it belongs to the camera: the orbit now stops at 72 degrees.
+HD-2D games do not offer the overhead angle either, and this is why. The event
+sprites in this same viewport had been yaw-only from the start, with a comment
+saying exactly that; the tile cut-outs should have followed them.
+
+### Overhead is where a billboard model is decided
+
+Turning about the world's up axis is the conservative choice and it is wrong.
+It holds while the camera is low, and as the pitch steepens every cut-out
+approaches edge-on together, so a forest thins to slivers and from directly
+overhead a wooded map renders as bare ground.
+
+Facing the camera squarely — tilt included — fixes that and breaks the other
+end: from directly above the cut-out lies flat, which reproduces the 2D map
+exactly and stops the trees standing up, and standing up is the point.
+
+So it leans part of the way, three quarters by default. Nothing is ever edge-on
+and nothing ever lies down; overhead you look at foreshortened trees instead of
+at their tops. The same compromise settled the canopy. Dropping the tiling art
+from the floor was right from a low camera and wrong from above, where the 2D
+canopy is unbroken and cut-outs alone left bare ground showing through — so the
+art stays on the floor and the cut-outs stand on it, dense enough that little of
+it shows from ground level.
+
+Comparing the two views of the same region side by side is what settled both.
+Neither was arguable once the 2D render and the 3D render were stacked.
+
+Then a ground-level screenshot killed the canopy-on-the-floor half of it. The
+tiling art of a terrain *is* that terrain seen from above, so drawing it flat
+and standing cut-outs on it draws every cell twice, and the second copy shows as
+a mat of canopy around the feet of the trees growing out of it.
+
+The obvious repair was to use the autotile rule in three dimensions: a shape is
+decided by which neighbours carry the same terrain, so cap the interior of a
+mass with the tiling art and stand cut-outs only on its border, where the
+silhouette is. Overhead it was ideal. From the ground it was terraces — a fringe
+of trees with a flat brown plateau behind them — because a wood needs relief all
+the way through, not only at its edge. So every cell stands its own cut-outs and
+nothing lies flat. The border test is kept; the edge is still where the
+silhouette lives, and something will want it.
+
+### A forest is trees, and the tileset already drew one
+
+Even classified correctly, a forest painted as a repeating texture has no good
+reading in 3D. Extrude it and you get a wall of bark; raise it and you get a
+plateau of bark. Both are wrong in the same way: tiling art is the *inside* of a
+mass and has no silhouette of its own.
+
+The answer was sitting in the tileset. Paint one isolated cell of a forest
+autotile and MZ draws a single tree — that is shape 46, the shape with no
+neighbours. A range gives a single peak. On a B–E sheet the same pairing is
+there by convention: the tiling art at the bottom of an object block, the single
+object drawn above it in the same columns. So foliage stands *that* on every
+cell and leaves the ground flat underneath.
+
+One detail cost a render to find. A lone variant is usually drawn over a block
+rather than a single tile — the tree in `Infernis_World_B` fills 2x2 — so
+pointing at its first tile alone stood up the top-left quarter of each tree, and
+a hillside came out as a field of spikes. The stand-in records its span.
+
+One tree per cell was still wrong, and for a reason no amount of better art
+fixes: dead centre on every square, the eye finds the grid instantly and reads
+an orchard. A cell carries a few instead, each scaled a little differently and
+nudged off centre by a hash of its position — scattered, but the same scatter
+every rebuild, because trees that jump when you paint elsewhere are worse than
+trees in rows. The floor rises a fraction of a tile under a wood so it sits on
+the land rather than being painted onto it, and the tiling art is no longer laid
+flat as well: the ground already under it *is* the forest floor.
+
+### Write the shader and you inherit nothing
+
+The cut-outs came out darker than the same art lying flat beside them. A
+`ShaderMaterial` gets what you write and nothing else: three.js converts a texel
+from the texture's colour space to the screen's through a chunk the built-in
+materials include, and mixes in fog through several more. Skipping them cost
+both — the colour and the distance fade the editor's fog was supposed to give.
+
+The fix was to stop writing a shader. `MeshBasicMaterial` with an
+`onBeforeCompile` that replaces one chunk keeps every other chunk the flat tiles
+use, which is the only way a tree is reliably the same colour as the ground it
+stands on.
+
+### Having three classes was not enough; something had to choose between them
+
+Scenery existed and the world map still came up as a wall of bark, because the
+project's classification file had been filled in from the tileset flags and the
+flags cannot tell a shopfront from a forest. Both are impassable. Every forest
+tile came out upright, and an *authored* upright is exempt from the facade cap
+on purpose — a tileset may draw a tower fifty tiles tall as one prop — so a
+58x39 forest stood up as facades sixteen tiles high. Two thirds of everything
+standing on that map was terrain.
+
+What separates them is not in the tileset at all, it is in how the maps are
+painted. A building is one picture spread across its cells, so inside its
+footprint the tiles are nearly all distinct. A forest is a handful of tiles
+repeated over covered ground. `derive-tileset-3d-classes.cjs` judges every
+placement in a 5x5 neighbourhood on that basis and writes the file.
+
+Two things it got wrong first, both worth keeping. Judging by connected region
+let a crater painted at the edge of a forest join that region and inherit its
+verdict, so the crater rose a tile on a plinth of its own; the neighbourhood is
+local and does not carry that contagion. And asking each tile to recur on its
+own split the canopy — its rows are separate ids — raising four of them and
+leaving the other four flat, a forest in corduroy. Repetition has to be measured
+across the neighbourhood, not per tile.
+
+The flags still decide one thing: whether a B-E tile is an object at all.
+Blocking the way or drawing above the character both mean it is a thing in the
+world rather than a marking on the floor, and a thing in the world stands up.
+
+Reading only the star flag was the mistake, and it took a ground-level
+screenshot to see it. ★ is set where a character can walk *behind* something,
+so everything a character walks in front of — a lone tree, a mountain, a landed
+ship — was left lying flat on the map while the forest beside it stood. Pits are
+the one case the wider rule gets wrong, since a pit blocks the way like an
+object and is a hole in the ground; that is a click in the 3D Shape editor,
+once per tileset, which is what authored classification is for.
+
 ### The corpus settled the autotile edge rule
 
 A user reported that a wall autotile painted against the map edge lost its end

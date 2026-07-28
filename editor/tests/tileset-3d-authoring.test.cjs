@@ -247,7 +247,8 @@ test('clicking a tile cycles it through every class and back to automatic', () =
     const editor = tilesetEditor();
     const tileIndex = 1029;
 
-    for (const expected of [classes.GROUND, classes.UPRIGHT, classes.SCENERY, classes.AUTO]) {
+    for (const expected of [classes.GROUND, classes.UPRIGHT, classes.SCENERY,
+        classes.FOLIAGE, classes.AUTO]) {
         editor.cycleTile3DClass(tileIndex);
         assert.equal(classes.classOf(editor._tileset3d, 4, tileIndex), expected);
     }
@@ -333,4 +334,266 @@ test('the database owns the store whenever there is one', () => {
     editor.cycleTile3DClass(1029);
     assert.equal(classes.classOf(store, 4, 1029), classes.GROUND);
     assert.equal(classes.isEmpty(editor._tileset3d), true, 'the standalone store stays unused');
+});
+
+test('every flag mode button carries an icon', () => {
+    // The modes were told apart by a couple of ASCII characters, and half of
+    // them had none at all.
+    const source = fs.readFileSync(
+        path.join(editorRoot, 'src', 'database', 'DatabaseTilesetEditor.js'), 'utf8');
+    const start = source.indexOf('    static flagIcon(mode) {');
+    assert.ok(start > 0, 'flagIcon exists');
+    const end = source.indexOf('\n    }\n', start) + 6;
+    // eslint-disable-next-line no-new-func
+    const holder = new Function(`return class X {${source.slice(start, end)}}`)();
+
+    for (const mode of ['passability', '4dir', 'ladder', 'bush', 'counter',
+        'damage', 'terrain', 'tile3d']) {
+        const svg = holder.flagIcon(mode);
+        assert.match(svg, /^<svg /, `${mode} has an icon`);
+        assert.match(svg, /viewBox="0 0 24 24"/, `${mode} shares the grid`);
+        // currentColor, so a selected button's icon follows its label.
+        assert.match(svg, /stroke="currentColor"/, `${mode} takes the button's colour`);
+        assert.ok(svg.length < 700, `${mode} stays simple enough to read at 16px`);
+    }
+    assert.equal(holder.flagIcon('nonexistent'), '', 'an unknown mode gets nothing');
+
+    // And each button actually renders one.
+    for (const mode of ['passability', '4dir', 'damage', 'tile3d']) {
+        assert.match(source, new RegExp(`flagIcon\\('${mode}'\\)`), `${mode} button uses it`);
+    }
+});
+
+test('every flag mode explains its own marks', () => {
+    // The overlays draw a lot of small glyphs and none of them announce
+    // themselves; the key sits in the margin the sheet already left empty.
+    const source = fs.readFileSync(
+        path.join(editorRoot, 'src', 'database', 'DatabaseTilesetEditor.js'), 'utf8');
+    // flagKey delegates to flagKeyRows, so both come across, and the class
+    // keeps its own name because the one calls the other through it.
+    const rowsStart = source.indexOf('    static flagKeyRows(mode) {');
+    const keyStart = source.indexOf('    static flagKey(mode) {');
+    assert.ok(rowsStart > 0 && keyStart > rowsStart, 'flagKey and flagKeyRows exist');
+    const body = source.slice(rowsStart, source.indexOf('\n    }\n', keyStart) + 6);
+    // eslint-disable-next-line no-new-func
+    const holder = new Function(`class DatabaseTilesetEditor {${body}}
+        return DatabaseTilesetEditor;`)();
+
+    for (const mode of ['passability', '4dir', 'ladder', 'bush', 'counter',
+        'damage', 'terrain', 'tile3d']) {
+        assert.match(holder.flagKey(mode), /Key/, `${mode} has a key`);
+    }
+    const shape = holder.flagKey('tile3d');
+    for (const label of ['Flat', 'Upright', 'Scenery', 'Foliage', 'declared 3D object']) {
+        assert.ok(shape.includes(label), `the 3D key explains ${label}`);
+    }
+    // Every row draws its mark with the same code the tile overlay uses, so
+    // the key cannot say one thing while the sheet shows another.
+    for (const [mark] of holder.flagKeyRows('tile3d')) {
+        assert.ok(shape.includes(`data-mark="${mark}"`), `${mark} has a drawn swatch`);
+    }
+    for (const mode of ['ladder', 'bush', 'counter']) {
+        assert.match(holder.flagKey(mode), /data-mark="/, `${mode} draws its glyph, not a blank tint`);
+    }
+    assert.equal(holder.flagKey('nonexistent'), '', 'an unknown mode gets no panel');
+
+    // The tools are a palette, not a cycle: Select looks without changing.
+    assert.match(source, /static tile3dTools\(\)/);
+    assert.match(source, /\['select', 'Select'/);
+    assert.match(source, /this\.tile3dTool \|\| 'select'/);
+    assert.match(source, /drawKeyMark\(/, 'the marks are drawn, not tinted squares');
+
+    // The panels have somewhere to live, and are drawn when the mode changes.
+    assert.match(source, /id="flag-mode-key"/);
+    assert.match(source, /id="tile3d-preview"/);
+    assert.match(source, /this\.refreshFlagKey\(\);/);
+    assert.match(source, /this\.refreshTile3DPreview\(\);/);
+});
+
+test('the 3D preview draws the selected tile', () => {
+    // It went blank once already, and nothing caught it: the panel is built
+    // from a string and drawn into afterwards, so both halves need exercising.
+    const editor = tilesetEditor();
+    const classes = editor.tileset3DClasses();
+    editor.currentEditMode = 'tile3d';
+    editor._preview3dTile = 1029;
+
+    const calls = [];
+    const ctx = new Proxy({}, {
+        get: (target, name) => {
+            if (name === 'canvas') return { width: 146, height: 146 };
+            return (...args) => calls.push({ name: String(name), args });
+        },
+        set: () => true
+    });
+    const canvas = { width: 146, height: 146, getContext: () => ctx, addEventListener() {} };
+    // An autotile draws from the rendered palette rather than from a sheet,
+    // because the A tabs show one composed cell per kind. Addressing it as a
+    // sheet drew nothing at all.
+    // From the cached base render, not the tab canvas: the tab has the flag
+    // overlay painted onto it, so copying a cell from there carried the class
+    // chevron into the preview as though it were part of the art.
+    editor.currentTileset.tilesetNames[1] = 'A2Sheet';
+    editor.imageCache.set('1_A2Sheet', { width: 384, height: 384 });
+    editor._preview3dCell = { imageIndex: 1, x: 1, y: 0 };
+    const autotile = editor.previewArtSource({ tile: 2816 + 48, w: 1, h: 1, roles: 'S' });
+    assert.ok(autotile && autotile.image, 'an autotile finds art to draw');
+    assert.equal(autotile.stepped, false, 'and does not step through sheet cells');
+    assert.equal(autotile.image.width, 384, 'it is the unmarked render');
+
+    // A5 sits on the A tab and is not an autotile: whole tiles, eight to a
+    // row, so it addresses its sheet like B-G and can be part of an object.
+    assert.equal(classes.isPictureTile(1536 + 9), true);
+    assert.equal(classes.isPictureTile(2816), false);
+    const a5 = classes.sheetCell(1536 + 9);
+    assert.equal(a5.setNumber, 4);
+    assert.equal(a5.col, 1);
+    assert.equal(a5.row, 1);
+    assert.equal(classes.tileAtCell(4, 1, 1), 1536 + 9, 'and addresses back');
+
+    editor.drawTile3DPreview(canvas, { tile: 1029, w: 2, h: 2, roles: 'SSFF' });
+    assert.ok(calls.some(call => call.name === 'clearRect'), 'the pane is cleared');
+    assert.ok(calls.some(call => call.name === 'fill'), 'the ground is drawn');
+    // Four cells: two standing, two flat. Without the sheet loaded each falls
+    // back to a placeholder box rather than drawing nothing at all.
+    const pieces = calls.filter(call => call.name === 'fillRect' || call.name === 'drawImage');
+    assert.equal(pieces.length, 4, 'one piece per cell of the object');
+
+    // Turning moves the ground under the object. It cannot move the standing
+    // art, which is a cut-out that spins to face the camera and so looks the
+    // same from every side — the ground is what makes the turn legible.
+    const groundBefore = JSON.stringify(calls.filter(c => c.name === 'lineTo').map(c => c.args));
+    const flatBefore = JSON.stringify(pieces.slice(0, 2).map(call => call.args));
+    calls.length = 0;
+    editor._preview3dYaw = 70;
+    editor.drawTile3DPreview(canvas, { tile: 1029, w: 2, h: 2, roles: 'SSFF' });
+    const turned = calls.filter(call => call.name === 'fillRect' || call.name === 'drawImage');
+    assert.equal(turned.length, 4, 'still one piece per cell');
+    assert.notEqual(JSON.stringify(calls.filter(c => c.name === 'lineTo').map(c => c.args)),
+        groundBefore, 'the ground has turned');
+    assert.notEqual(JSON.stringify(turned.slice(0, 2).map(call => call.args)), flatBefore,
+        'and the pieces lying on it have turned with it');
+    assert.ok(classes, 'the store is available to the editor');
+});
+
+test('a drag applies the tool over the whole rectangle', () => {
+    // Declaring an object is a rectangle by definition, and counting corners
+    // one click at a time was the wrong shape for it.
+    const editor = tilesetEditor();
+    const classes = editor.tileset3DClasses();
+    const store = editor.tileset3DStore();
+    editor.currentEditMode = 'tile3d';
+
+    // Away from tile 0, which is the engine's "no tile" and cannot be art.
+    editor.tile3dTool = 'upright';
+    editor.applyTile3DTool({ imageIndex: 5, from: { x: 1, y: 1 }, to: { x: 2, y: 2 } }, 5, 8);
+    for (const tile of [9, 10, 17, 18]) {
+        assert.equal(classes.classOf(store, editor.currentTileset.id, tile), classes.UPRIGHT,
+            `tile ${tile} was painted`);
+    }
+
+    editor.tile3dTool = 'object';
+    editor.applyTile3DTool({ imageIndex: 5, from: { x: 2, y: 2 }, to: { x: 1, y: 1 } }, 5, 8);
+    const declared = classes.objectAt(store, editor.currentTileset.id, 18);
+    assert.ok(declared, 'a backwards drag declares the same rectangle');
+    assert.equal(declared.object.w, 2);
+    assert.equal(declared.object.h, 2);
+
+    editor.tile3dTool = 'erase';
+    editor.applyTile3DTool({ imageIndex: 5, from: { x: 1, y: 1 }, to: { x: 1, y: 1 } }, 5, 8);
+    assert.equal(classes.objectAt(store, editor.currentTileset.id, 18), null,
+        'and Remove undeclares it');
+
+    editor.tile3dTool = 'select';
+    editor._preview3dTile = null;
+    editor.applyTile3DTool({ imageIndex: 5, from: { x: 4, y: 0 }, to: { x: 4, y: 0 } }, 5, 8);
+    assert.equal(editor._preview3dTile, 4, 'Select only selects');
+    assert.equal(classes.classOf(store, editor.currentTileset.id, 4), classes.AUTO,
+        'and changes nothing');
+});
+
+test('autotiles take a 3D class, and say so when asked for an object', () => {
+    // The A tabs index by autotile *kind*, 48 flag slots apart, so a class
+    // painted there has to land on the kind's base id or the runtime reads an
+    // untouched slot. Declaring an object there is meaningless — an autotile id
+    // is a corner arrangement, not a place in a drawing — and saying nothing at
+    // all just looks broken.
+    const editor = tilesetEditor();
+    const classes = editor.tileset3DClasses();
+    const store = editor.tileset3DStore();
+    editor.currentEditMode = 'tile3d';
+
+    // A2 tab (imageIndex 1), second kind along: 2816 + 48.
+    const a2Kind = editor.getTileIndexForImage(1, 1, 0, 8);
+    assert.equal(a2Kind, 2816 + 48, 'the A2 palette indexes by kind');
+
+    editor.tile3dTool = 'foliage';
+    editor.applyTile3DTool({ imageIndex: 1, from: { x: 1, y: 0 }, to: { x: 1, y: 0 } }, 1, 8);
+    assert.equal(classes.classOf(store, editor.currentTileset.id, a2Kind), classes.FOLIAGE,
+        'the class lands on the autotile kind');
+    // And every shape of that kind reads it back, which is what the map does.
+    assert.equal(classes.classOf(store, editor.currentTileset.id, a2Kind + 17), classes.FOLIAGE);
+
+    editor.tile3dTool = 'object';
+    editor.applyTile3DTool({ imageIndex: 1, from: { x: 1, y: 0 }, to: { x: 2, y: 1 } }, 1, 8);
+    assert.equal(classes.objectAt(store, editor.currentTileset.id, a2Kind), null,
+        'no object is declared over autotiles');
+    assert.equal(classes.classOf(store, editor.currentTileset.id, a2Kind), classes.FOLIAGE,
+        'and the class it already had is left alone');
+});
+
+test('a stray click cannot undo an object', () => {
+    // Redeclaring one cell of a 2x2 replaced it with a 1x1, so a single
+    // misplaced click destroyed the grouping.
+    const editor = tilesetEditor();
+    const classes = editor.tileset3DClasses();
+    const store = editor.tileset3DStore();
+    editor.currentEditMode = 'tile3d';
+    editor.tile3dTool = 'object';
+
+    editor.applyTile3DTool({ imageIndex: 5, from: { x: 1, y: 1 }, to: { x: 2, y: 2 } }, 5, 8);
+    const declared = classes.objectAt(store, editor.currentTileset.id, 9);
+    assert.equal(declared.object.w, 2, 'declared 2x2');
+
+    editor.applyTile3DTool({ imageIndex: 5, from: { x: 2, y: 2 }, to: { x: 2, y: 2 } }, 5, 8);
+    const after = classes.objectAt(store, editor.currentTileset.id, 9);
+    assert.equal(after.object.w, 2, 'a one-tile click inside it changes nothing');
+    assert.equal(classes.objectList(store, editor.currentTileset.id).length, 1);
+
+    // Selecting inside an object selects the object, not the square clicked.
+    editor.tile3dTool = 'select';
+    editor.applyTile3DTool({ imageIndex: 5, from: { x: 2, y: 2 }, to: { x: 2, y: 2 } }, 5, 8);
+    // Field by field: the editor is evaluated in its own context, so its
+    // object literals do not share a prototype with this file's.
+    const rect = editor.selected3dRect;
+    assert.equal(rect.x, 1);
+    assert.equal(rect.y, 1);
+    assert.equal(rect.w, 2);
+    assert.equal(rect.h, 2);
+});
+
+test('A5 declares objects; only A1-A4 cannot', () => {
+    // A5 sits on the A tab and looks like the autotiles, but it is whole tiles
+    // in an eight-wide grid — exactly like B-G — so a wall drawn across two of
+    // its cells is as much one object as a wall on the B sheet.
+    const editor = tilesetEditor();
+    const classes = editor.tileset3DClasses();
+    const store = editor.tileset3DStore();
+    editor.currentEditMode = 'tile3d';
+    editor.tile3dTool = 'object';
+
+    // A5 is imageIndex 4, and its palette indexes straight into 1536+.
+    const a5 = editor.getTileIndexForImage(4, 1, 1, 8);
+    assert.ok(a5 >= 1536 && a5 < 2048, 'the A5 palette indexes into the A5 band');
+
+    editor.applyTile3DTool({ imageIndex: 4, from: { x: 1, y: 1 }, to: { x: 2, y: 2 } }, 4, 8);
+    const declared = classes.objectAt(store, editor.currentTileset.id, a5);
+    assert.ok(declared, 'A5 tiles group into an object');
+    assert.equal(declared.object.w, 2);
+    assert.equal(declared.object.h, 2);
+
+    // A1-A4 still refuse, because their ids are corner arrangements.
+    editor.applyTile3DTool({ imageIndex: 1, from: { x: 0, y: 0 }, to: { x: 1, y: 1 } }, 1, 8);
+    assert.equal(classes.objectAt(store, editor.currentTileset.id,
+        editor.getTileIndexForImage(1, 0, 0, 8)), null);
 });

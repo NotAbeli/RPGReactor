@@ -20,6 +20,16 @@ function mapWith(width, height, layers) {
 
 const flat = () => 0;
 
+/** The y of each vertex, quad by quad. */
+const quadsOf = group => {
+    const quads = [];
+    for (let q = 0; q < group.positions.length / 3; q += 4) {
+        quads.push([0, 1, 2, 3].map(i => group.positions[(q + i) * 3 + 1]));
+    }
+    return quads;
+};
+const isFlat = ys => Math.min(...ys) === Math.max(...ys);
+
 test('sheet addressing matches the 2D renderer exactly', () => {
     // A tile showing one image in 2D and another in 3D is miserable to chase
     // visually, so the arithmetic is pinned against the 2D expression itself.
@@ -576,52 +586,37 @@ test('scenery is never guessed, only authored', () => {
     }
 });
 
-test('a standing object is never capped with a horizontal slab', () => {
-    // Boxing a facade — sides plus a lid — is wrong for cut-out art. The lid
-    // laid the tile flat across the whole cell, so a spire or a jagged roof
-    // grew a horizontal shelf that ignored its silhouette, and a side smeared
-    // one column of pixels across the depth. Depth is a second upright plane
-    // crossing the first, so every face stays an alpha-tested cut-out.
+test('a standing object is one cut-out that turns to face the camera', () => {
+    // It used to be a fixed plane, plus a second plane crossing it so that the
+    // object did not vanish to a line when seen edge-on. A cut-out that turns
+    // is never seen edge-on, so the crossing plane is gone — and with it the
+    // seam it drew through the middle of the art at an angle.
     const built = Geometry.build(mapWith(1, 1, { 0: [1] }), {
         elevationAt: flat,
         isUpright: () => true,
         isAuthored: () => true
     });
-    const positions = built.groups[0].positions;
-    for (let q = 0; q < positions.length / 3; q += 4) {
-        const ys = [0, 1, 2, 3].map(i => positions[(q + i) * 3 + 1]);
-        assert.notEqual(Math.min(...ys), Math.max(...ys),
-            'no face lies flat: every one spans a height');
-    }
+    assert.equal(built.quads, 1, 'one face, no crossing plane');
+
+    const group = built.groups[0];
+    assert.equal(group.billboard, true, 'it is carried as a billboard');
+    assert.ok(group.offsets, 'and carries the corner offsets the shader needs');
+
+    // Every vertex of the quad shares the anchor; the corner lives in `offset`.
+    const positions = Array.from(group.positions);
+    assert.deepEqual(positions.slice(0, 3), positions.slice(3, 6),
+        'all four vertices sit on the same anchor');
+    const ys = [0, 1, 2, 3].map(i => group.offsets[i * 2 + 1]);
+    assert.notEqual(Math.min(...ys), Math.max(...ys), 'and the offsets span a height');
 });
 
-test('the crossing plane runs at right angles to the face', () => {
-    const built = Geometry.build(mapWith(1, 1, { 0: [1] }), {
-        elevationAt: flat,
-        isUpright: () => true,
-        isAuthored: () => true
-    });
-    assert.equal(built.quads, 2, 'the face and one plane crossing it');
-
-    const positions = built.groups[0].positions;
-    const constantAxis = q => {
-        const xs = [0, 1, 2, 3].map(i => positions[(q + i) * 3]);
-        const zs = [0, 1, 2, 3].map(i => positions[(q + i) * 3 + 2]);
-        return Math.min(...xs) === Math.max(...xs) ? 'x' : (Math.min(...zs) === Math.max(...zs) ? 'z' : '?');
-    };
-    assert.deepEqual([constantAxis(0), constantAxis(4)].sort(), ['x', 'z']);
-});
-
-test('the crossing plane is dropped where a neighbour continues the wall', () => {
-    // Inside a wide building the crossing planes would be buried and still
-    // drawn, so they are culled exactly where the sides used to be.
+test('each column of a wide object is its own cut-out', () => {
     const wide = Geometry.build(mapWith(3, 1, { 0: [1, 1, 1] }), {
         elevationAt: flat,
         isUpright: () => true,
         isAuthored: () => true
     });
-    // Three faces; only the two outer columns cross, the middle one is enclosed.
-    assert.equal(wide.quads, 3 + 0);
+    assert.equal(wide.quads, 3);
 });
 
 test('a building stands on a floor rather than over a hole', () => {
@@ -642,7 +637,10 @@ test('a building stands on a floor rather than over a hole', () => {
     });
     const groundY = 0;
     let groundQuads = 0;
-    const positions = built.groups.flatMap(g => Array.from(g.positions));
+    // Only the static groups: a billboard's vertices all sit on its anchor, so
+    // it would read as flat on this test's terms without being flat at all.
+    const positions = built.groups.filter(g => !g.billboard)
+        .flatMap(g => Array.from(g.positions));
     for (let q = 0; q < positions.length / 3; q += 4) {
         const ys = [0, 1, 2, 3].map(i => positions[(q + i) * 3 + 1]);
         if (ys.every(y => y === groundY)) groundQuads++;
@@ -674,4 +672,251 @@ test('a floor is found in a neighbouring column when its own has none', () => {
     const map = mapWith(2, 1, { 0: [700, 1] });
     const run = { x: 0, northY: 0, southY: 0 };
     assert.equal(Geometry.nearestGround(map, run, id => id === 700), 1);
+});
+
+test('foliage stands several scattered cut-outs on a floor it lifts', () => {
+    // Standing the tiling art up gave a wall of bark, and raising the ground
+    // gave a plateau of it. A forest is neither: it is one thing drawn many
+    // times. One per cell dead centre reads as an orchard, so each cell gets
+    // several, nudged off centre, on a floor that rises a little so the wood
+    // sits on the land instead of being painted onto it.
+    const map = mapWith(2, 2, { 0: [500, 500, 500, 500] });
+    const built = Geometry.build(map, {
+        elevationAt: flat,
+        isUpright: () => false,
+        isFoliage: id => id === 500,
+        standInFor: () => 900,
+        foliageDensity: 2,
+        foliageLift: 0.3
+    });
+
+    const ground = built.groups.filter(group => !group.billboard);
+    const cutouts = built.groups.filter(group => group.billboard);
+    assert.equal(cutouts[0].positions.length / 3, 4 * 4 * 2, 'two cut-outs per cell');
+
+    // The lift gives the wood an edge, so the rim carries wall faces. Nothing
+    // lies flat: the tiling art is not drawn a second time under the cut-outs.
+    const quads = ground.flatMap(quadsOf);
+    assert.equal(quads.filter(isFlat).length, 0, 'no second copy laid on the floor');
+    assert.ok(quads.length > 0, 'and the lifted edge is walled');
+
+    // Scattered, and the same scatter every time: trees that jump when you
+    // paint elsewhere on the map are worse than trees in rows.
+    const anchors = new Set();
+    for (let i = 0; i < cutouts[0].positions.length; i += 3) {
+        anchors.add(`${cutouts[0].positions[i]},${cutouts[0].positions[i + 2]}`);
+    }
+    assert.equal(anchors.size, 8, 'no two of the eight share a position');
+    const again = Geometry.build(map, {
+        elevationAt: flat, isFoliage: id => id === 500, standInFor: () => 900,
+        foliageDensity: 2, foliageLift: 0.3
+    });
+    assert.deepEqual(Array.from(again.groups.find(g => g.billboard).positions),
+        Array.from(cutouts[0].positions), 'and it rebuilds identically');
+});
+
+test('a wood is drawn once, as cut-outs, not also as a mat under them', () => {
+    // The tiling art of a terrain is that terrain seen from above, so laying it
+    // flat as well as standing cut-outs on it draws every cell twice — and at
+    // ground level the second copy shows as a mat of canopy around the feet of
+    // the trees growing out of it.
+    const map = mapWith(1, 1, { 0: [1], 1: [500] });
+    const built = Geometry.build(map, {
+        elevationAt: flat,
+        isFoliage: id => id === 500,
+        standInFor: () => 900,
+        foliageDensity: 1
+    });
+    const flatQuads = built.groups.filter(group => !group.billboard)
+        .flatMap(quadsOf).filter(isFlat);
+    assert.equal(flatQuads.length, 1, 'only the ground the wood grows on');
+    assert.ok(built.groups.some(group => group.billboard), 'and the cut-out standing on it');
+});
+
+test('a cut-out is drawn one cell wide and as tall as its art in proportion', () => {
+    // The lone variant of a forest is often drawn over a 2x2 block. Sampling
+    // only its first tile drew the top-left quarter of every tree.
+    const map = mapWith(1, 1, { 0: [500] });
+    const built = Geometry.build(map, {
+        elevationAt: flat,
+        isFoliage: id => id === 500,
+        standInFor: () => ({ tileId: 900, w: 2, h: 4 }),
+        foliageHeight: 1,
+        foliageDensity: 1,
+        foliageSpread: 0
+    });
+
+    const cutout = built.groups.find(group => group.billboard);
+    const xs = [0, 1, 2, 3].map(i => cutout.offsets[i * 2]);
+    const ys = [0, 1, 2, 3].map(i => cutout.offsets[i * 2 + 1]);
+    const wide = Math.max(...xs) - Math.min(...xs);
+    const high = Math.max(...ys) - Math.min(...ys);
+    // Sizes vary a little per tree, so the proportion is what is pinned.
+    assert.ok(Math.abs(high / wide - 2) < 1e-6, 'twice as tall as wide, as the art is');
+    assert.ok(wide > 0.5 && wide < 1.5, 'and about a cell wide');
+    assert.equal(Math.min(...ys), 0, 'standing on the ground rather than sunk into it');
+});
+
+test('a cut-out samples the whole span of its stand-in', () => {
+    const map = mapWith(1, 1, { 0: [500] });
+    const one = Geometry.build(map, {
+        elevationAt: flat, isFoliage: id => id === 500, standInFor: () => 900
+    });
+    const block = Geometry.build(map, {
+        elevationAt: flat, isFoliage: id => id === 500,
+        standInFor: () => ({ tileId: 900, w: 2, h: 2 })
+    });
+    const spanOf = built => {
+        const uvs = built.groups.find(group => group.billboard).uvs;
+        const us = [0, 1, 2, 3].map(i => uvs[i * 2]);
+        return Math.max(...us) - Math.min(...us);
+    };
+    assert.ok(spanOf(block) > spanOf(one) * 1.9,
+        'a two-tile-wide stand-in reads two tiles of the sheet');
+});
+
+test('an object is anchored on the middle of its footprint', () => {
+    // The anchor is the point the cut-out turns about, so it is also where the
+    // object appears to be. On the southern edge a wide structure sat over its
+    // cells from the south and a tile clear of them from the east, and a deep
+    // one swung around its own front edge as the camera moved.
+    // Columns 8-10, rows 9-11 of a B sheet: one drawing, three tiles square.
+    // The ids have to be laid out on the sheet the way they are on the map, or
+    // they are not pieces of one picture and do not group.
+    const art = [200, 201, 202, 208, 209, 210, 216, 217, 218];
+    const map = mapWith(5, 4, {
+        0: [
+            0, art[0], art[1], art[2], 0,
+            0, art[3], art[4], art[5], 0,
+            0, art[6], art[7], art[8], 0,
+            0, 1, 1, 1, 0
+        ]
+    });
+    const built = Geometry.build(map, {
+        elevationAt: flat,
+        isUpright: id => art.includes(id),
+        isAuthored: () => true
+    });
+
+    const group = built.groups.find(g => g.billboard);
+    const anchors = new Set();
+    for (let i = 0; i < group.positions.length; i += 3) {
+        anchors.add(`${group.positions[i]},${group.positions[i + 1]},${group.positions[i + 2]}`);
+    }
+    assert.equal(anchors.size, 1, 'the whole object turns about one point');
+    // Columns 1-3 and rows 0-2: the middle of the footprint is x 2.5, z 1.5.
+    assert.equal(Array.from(anchors)[0], '2.5,0,1.5');
+
+    // Its lowest corner sits on the ground rather than above it.
+    const ys = [];
+    for (let i = 1; i < group.offsets.length; i += 2) ys.push(group.offsets[i]);
+    assert.equal(Math.min(...ys), 0, 'the bottom of the art is on the ground');
+    assert.equal(Math.max(...ys), 3, 'and it stands as tall as it is drawn');
+});
+
+test('a declared object is grouped exactly, not by spreading', () => {
+    // Two different objects side by side on the sheet *and* on the map are
+    // indistinguishable to the adjacency test: every neighbouring pair is one
+    // step apart in both. Declared, each keeps to itself.
+    const map = mapWith(6, 1, { 0: [0, 8, 9, 10, 11, 0] });
+    const declared = {
+        8: { object: { tile: 8, w: 2, h: 1 }, dc: 0, dr: 0, role: 'S' },
+        9: { object: { tile: 8, w: 2, h: 1 }, dc: 1, dr: 0, role: 'S' },
+        10: { object: { tile: 10, w: 2, h: 1 }, dc: 0, dr: 0, role: 'S' },
+        11: { object: { tile: 10, w: 2, h: 1 }, dc: 1, dr: 0, role: 'S' }
+    };
+    const options = { elevationAt: flat, isUpright: id => id > 0, isAuthored: () => true };
+
+    const welded = Geometry.uprightObjects(map, options.isUpright, 99, () => true, null);
+    assert.equal(welded.length, 1, 'the guess welds them into one four-wide object');
+
+    const apart = Geometry.uprightObjects(map, options.isUpright, 99, () => true,
+        id => declared[id] || null);
+    assert.equal(apart.length, 2, 'the declarations keep them apart');
+    assert.deepEqual(apart.map(o => o.cells.length).sort(), [2, 2]);
+});
+
+test('two copies of the same declared object stay separate', () => {
+    // Same tiles, painted twice in a row. They share a declaration, so what
+    // separates the instances is where each one starts on the map.
+    const map = mapWith(5, 1, { 0: [8, 9, 8, 9, 0] });
+    const declared = {
+        8: { object: { tile: 8, w: 2, h: 1 }, dc: 0, dr: 0, role: 'S' },
+        9: { object: { tile: 8, w: 2, h: 1 }, dc: 1, dr: 0, role: 'S' }
+    };
+    const objects = Geometry.uprightObjects(map, id => id > 0, 99, () => true,
+        id => declared[id] || null);
+    assert.equal(objects.length, 2, 'two instances, not one four-wide run');
+    for (const object of objects) assert.equal(object.maxX - object.minX + 1, 2);
+});
+
+test('a roof rides on the wall it belongs to', () => {
+    // A building is two pieces of terrain: wall autotiles where it meets the
+    // ground, and roof tiles on the cells behind them. The walls raised into a
+    // mass and the roof, being flat terrain, stayed on the floor — so a
+    // building came out as a block with its own roof lying beside it.
+    const width = 4, height = 3;
+    const cells = new Array(width * height).fill(2816);   // A2 ground
+    for (let x = 1; x < 3; x++) {
+        cells[0 * width + x] = 5888;    // A4 roof, behind
+        cells[1 * width + x] = 4352;    // A3 wall, meeting the ground
+    }
+    const built = Geometry.build(mapWith(width, height, { 0: cells }), {
+        elevationAt: flat,
+        isScenery: id => id >= 4352 && id < 5888,
+        sceneryHeight: 1
+    });
+
+    const heights = new Map();
+    for (const group of built.groups.filter(g => !g.billboard)) {
+        for (let q = 0; q < group.positions.length / 3; q += 4) {
+            const ys = [0, 1, 2, 3].map(i => group.positions[(q + i) * 3 + 1]);
+            if (Math.min(...ys) !== Math.max(...ys)) continue;      // a wall face
+            const x = Math.floor(group.positions[q * 3] + 0.01);
+            const z = Math.floor(group.positions[q * 3 + 2] + 0.01);
+            heights.set(`${x},${z}`, ys[0]);
+        }
+    }
+    assert.equal(heights.get('1,1'), 1, 'the wall raises into a mass');
+    assert.equal(heights.get('1,0'), 1, 'and the roof behind it is carried up to match');
+    assert.equal(heights.get('2,0'), 1);
+    assert.equal(heights.get('1,2'), 0, 'the ground in front stays where it is');
+    assert.equal(heights.get('0,0'), 0, 'and so does ground that touches no wall');
+});
+
+test('an object turns about the middle of its own footprint', () => {
+    // The anchor is the axis the cut-out spins on, so anything off-centre makes
+    // the object orbit that point instead of turning where it stands. On the
+    // southern row the axis sat at the front edge, and a deep object visibly
+    // swung around it as the camera moved.
+    const art = [200, 208, 216, 224];        // one column, four rows of a sheet
+    const map = mapWith(3, 6, {
+        0: [
+            0, 0, 0,
+            0, art[0], 0,
+            0, art[1], 0,
+            0, art[2], 0,
+            0, art[3], 0,
+            0, 1, 0
+        ]
+    });
+    const built = Geometry.build(map, {
+        elevationAt: flat,
+        isUpright: id => art.includes(id),
+        isAuthored: () => true
+    });
+
+    const group = built.groups.find(g => g.billboard);
+    const anchors = new Set();
+    for (let i = 0; i < group.positions.length; i += 3) {
+        anchors.add(`${group.positions[i]},${group.positions[i + 2]}`);
+    }
+    assert.equal(anchors.size, 1, 'one axis for the whole object');
+    // Column 1, rows 1-4: the middle is x 1.5, z 3.
+    assert.equal(Array.from(anchors)[0], '1.5,3');
+
+    // The base still rests on the ground, so turning in place does not lift it.
+    const ys = [];
+    for (let i = 1; i < group.offsets.length; i += 2) ys.push(group.offsets[i]);
+    assert.equal(Math.min(...ys), 0);
 });

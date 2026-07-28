@@ -204,15 +204,18 @@ test('shape markers carry an explicit edge, not a soft shadow', () => {
     assert.doesNotMatch(body, /shadowColor|shadowBlur/, 'the shadow approach is gone');
 
     // All four blocked-direction dots and all four passable-direction arrows.
-    assert.equal((body.match(/this\.drawFlagDot\(/g) || []).length, 5,
-        'four direction dots plus the bush berry');
+    // The bush is no longer among them: a plain dot was indistinguishable from
+    // every other dot on a sheet, so it draws a shrub silhouette instead.
+    assert.equal((body.match(/this\.drawFlagDot\(/g) || []).length, 4,
+        'the four direction dots');
     assert.equal((body.match(/this\.drawFlagArrow\(/g) || []).length, 4);
     assert.equal((body.match(/this\.drawFlagRect\(/g) || []).length, 2,
         'the ladder stile and the counter bar');
+    assert.equal((body.match(/this\.drawBushMark\(/g) || []).length, 1);
 
     // Only the parts nested inside an already-outlined shape stay raw.
     const raw = body.match(/ctx\.fillRect\(|ctx\.fill\(\)/g) || [];
-    assert.equal(raw.length, 4, 'three ladder rungs and the bush centre');
+    assert.equal(raw.length, 3, 'the three ladder rungs');
 });
 
 test('the shape helpers restore what they change', () => {

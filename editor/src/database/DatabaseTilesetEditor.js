@@ -392,36 +392,36 @@ class DatabaseTilesetEditor {
                             <div style="flex: 1; overflow-y: auto; padding: 8px;">
                                 <!-- Flag buttons as single column list -->
                                 <button class="compact-flag-btn" id="flag-passability" data-mode="passability"
-                                        style="width: 100%; margin-bottom: 6px; font-size: 12px; padding: 10px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 6px; cursor: pointer; text-align: left;">
-                                    ${tt('Passability (O/X/★)')}
+                                        style="width: 100%; margin-bottom: 6px; font-size: 12px; padding: 10px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 6px; cursor: pointer; text-align: left; display: flex; align-items: center; gap: 8px;">
+                                    ${DatabaseTilesetEditor.flagIcon('passability')}<span>${tt('Passability (O/X/★)')}</span>
                                 </button>
                                 <button class="compact-flag-btn" id="flag-4dir" data-mode="4dir"
-                                        style="width: 100%; margin-bottom: 6px; font-size: 12px; padding: 10px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 6px; cursor: pointer; text-align: left;">
-                                    ↕↔ - ${tt('Passage (4 Dir)')}
+                                        style="width: 100%; margin-bottom: 6px; font-size: 12px; padding: 10px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 6px; cursor: pointer; text-align: left; display: flex; align-items: center; gap: 8px;">
+                                    ${DatabaseTilesetEditor.flagIcon('4dir')}<span>${tt('Passage (4 Dir)')}</span>
                                 </button>
                                 <button class="compact-flag-btn" id="flag-ladder" data-mode="ladder"
-                                        style="width: 100%; margin-bottom: 6px; font-size: 12px; padding: 10px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 6px; cursor: pointer; text-align: left;">
-                                    ${tt('Ladder')}
+                                        style="width: 100%; margin-bottom: 6px; font-size: 12px; padding: 10px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 6px; cursor: pointer; text-align: left; display: flex; align-items: center; gap: 8px;">
+                                    ${DatabaseTilesetEditor.flagIcon('ladder')}<span>${tt('Ladder')}</span>
                                 </button>
                                 <button class="compact-flag-btn" id="flag-bush" data-mode="bush"
-                                        style="width: 100%; margin-bottom: 6px; font-size: 12px; padding: 10px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 6px; cursor: pointer; text-align: left;">
-                                    ${tt('Bush')}
+                                        style="width: 100%; margin-bottom: 6px; font-size: 12px; padding: 10px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 6px; cursor: pointer; text-align: left; display: flex; align-items: center; gap: 8px;">
+                                    ${DatabaseTilesetEditor.flagIcon('bush')}<span>${tt('Bush')}</span>
                                 </button>
                                 <button class="compact-flag-btn" id="flag-counter" data-mode="counter"
-                                        style="width: 100%; margin-bottom: 6px; font-size: 12px; padding: 10px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 6px; cursor: pointer; text-align: left;">
-                                    ${tt('Counter')}
+                                        style="width: 100%; margin-bottom: 6px; font-size: 12px; padding: 10px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 6px; cursor: pointer; text-align: left; display: flex; align-items: center; gap: 8px;">
+                                    ${DatabaseTilesetEditor.flagIcon('counter')}<span>${tt('Counter')}</span>
                                 </button>
                                 <button class="compact-flag-btn" id="flag-damage" data-mode="damage"
-                                        style="width: 100%; margin-bottom: 6px; font-size: 12px; padding: 10px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 6px; cursor: pointer; text-align: left;">
-                                    ⚠ - ${tt('Damage Floor')}
+                                        style="width: 100%; margin-bottom: 6px; font-size: 12px; padding: 10px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 6px; cursor: pointer; text-align: left; display: flex; align-items: center; gap: 8px;">
+                                    ${DatabaseTilesetEditor.flagIcon('damage')}<span>${tt('Damage Floor')}</span>
                                 </button>
                                 <button class="compact-flag-btn" id="flag-terrain" data-mode="terrain"
-                                        style="width: 100%; margin-bottom: 6px; font-size: 12px; padding: 10px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 6px; cursor: pointer; text-align: left;">
-                                    ${tt('Terrain Tag (0-7)')}
+                                        style="width: 100%; margin-bottom: 6px; font-size: 12px; padding: 10px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 6px; cursor: pointer; text-align: left; display: flex; align-items: center; gap: 8px;">
+                                    ${DatabaseTilesetEditor.flagIcon('terrain')}<span>${tt('Terrain Tag (0-7)')}</span>
                                 </button>
                                 <button class="compact-flag-btn" id="flag-tile3d" data-mode="tile3d"
-                                        style="width: 100%; margin-bottom: 6px; font-size: 12px; padding: 10px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 6px; cursor: pointer; text-align: left;">
-                                    ▁▲ - ${tt('3D Shape')}
+                                        style="width: 100%; margin-bottom: 6px; font-size: 12px; padding: 10px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 6px; cursor: pointer; text-align: left; display: flex; align-items: center; gap: 8px;">
+                                    ${DatabaseTilesetEditor.flagIcon('tile3d')}<span>${tt('3D Shape')}</span>
                                 </button>
 
                                 <p style="font-size: 8px; color: var(--color-text-dim); margin: 8px 0 0 0; line-height: 1.3;">
@@ -444,11 +444,16 @@ class DatabaseTilesetEditor {
                             <button class="compact-layer-tab" data-tab="G" style="flex: 1; padding: 8px; font-size: 11px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 3px; cursor: pointer;">G</button>
                         </div>
 
-                        <!-- Preview area with canvas -->
-                        <div style="flex: 1; overflow: auto; padding: 16px; display: flex; align-items: flex-start; justify-content: center;">
+                        <!-- Preview area: key, sheet, 3D preview.
+                             The key and the preview live in the margins the
+                             sheet was already leaving empty, so nothing the
+                             author was looking at moves to make room. -->
+                        <div style="flex: 1; overflow: auto; padding: 16px; display: flex; align-items: flex-start; justify-content: center; gap: 16px;">
+                            <div id="flag-mode-key" style="flex: 0 0 168px; align-self: flex-start;"></div>
                             <div id="compact-tileset-canvas-container" style="max-width: 100%;">
                                 <p style="color: var(--color-text-muted); font-size: 10px;">${tt('Click a layer on the left to view')}</p>
                             </div>
+                            <div id="tile3d-preview" style="flex: 0 0 168px; align-self: flex-start;"></div>
                         </div>
                     </div>
                 </div>
@@ -459,6 +464,11 @@ class DatabaseTilesetEditor {
         setTimeout(() => {
             // Set up event listeners for the compact UI
             this.setupCompactEventListeners();
+
+            // The key and the preview belong to whatever mode is already
+            // selected, so they are drawn on open rather than on first click.
+            this.refreshFlagKey();
+            this.refreshTile3DPreview();
 
             // Load layer list thumbnails
             this.loadLayerListThumbnails();
@@ -1019,6 +1029,7 @@ class DatabaseTilesetEditor {
                 canvas.addEventListener('click', (e) => {
                     this.handleCompactCanvasClick(e, canvas, index, fileName, isSplitSheet);
                 });
+                this.attachTile3DDrag(canvas, index, isSplitSheet);
 
                 this.tabCanvases.push({ canvas, imageIndex: index, isSplitSheet });
                 wrapper.appendChild(canvas);
@@ -1118,6 +1129,8 @@ class DatabaseTilesetEditor {
                 const was3D = this.currentEditMode === 'tile3d';
                 this.currentEditMode = mode;
                 if (was3D !== (mode === 'tile3d')) this.refreshOverlays();
+                this.refreshFlagKey();
+                this.refreshTile3DPreview();
                 console.log(`Edit mode: ${mode}`);
             });
         });
@@ -1231,6 +1244,7 @@ class DatabaseTilesetEditor {
             canvas.addEventListener('click', (e) => {
                 this.handleCompactCanvasClick(e, canvas, imageIndex, fileName, isSplitSheet);
             });
+            this.attachTile3DDrag(canvas, imageIndex, isSplitSheet);
 
             // Store current canvas info for updates
             this.currentCanvas = { canvas, ctx, imageIndex, isSplitSheet, baseCanvas };
@@ -1591,21 +1605,79 @@ class DatabaseTilesetEditor {
             for (let x = 0; x < tilesX; x++) {
                 const tileIndex = this.getTileIndexForImage(imageIndex, x, y, tilesX);
                 const value = classes.classOf(store, tilesetId, tileIndex);
-                if (value === classes.AUTO) continue;
 
                 const drawX = x * this.tileSize;
                 const drawY = y * this.tileSize;
                 const centerX = drawX + this.tileSize / 2;
                 const centerY = drawY + this.tileSize / 2;
+                // A declared object is drawn over the classes: an outline round
+                // the whole rectangle, and a bar on any cell the author has
+                // laid flat. The two say different things — the class is what
+                // an unattached tile is, the role is how a tile behaves inside
+                // the object it belongs to — so both have to be visible at once.
+                const member = classes.objectAt(store, tilesetId, tileIndex);
+                if (member) {
+                    const { object, dc, dr, role } = member;
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(255, 235, 130, 0.95)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    // Only the outer edges, so a block reads as one object
+                    // rather than as a grid of boxes.
+                    if (dr === 0) { ctx.moveTo(drawX, drawY + 1); ctx.lineTo(drawX + this.tileSize, drawY + 1); }
+                    if (dr === object.h - 1) {
+                        ctx.moveTo(drawX, drawY + this.tileSize - 1);
+                        ctx.lineTo(drawX + this.tileSize, drawY + this.tileSize - 1);
+                    }
+                    if (dc === 0) { ctx.moveTo(drawX + 1, drawY); ctx.lineTo(drawX + 1, drawY + this.tileSize); }
+                    if (dc === object.w - 1) {
+                        ctx.moveTo(drawX + this.tileSize - 1, drawY);
+                        ctx.lineTo(drawX + this.tileSize - 1, drawY + this.tileSize);
+                    }
+                    ctx.stroke();
+                    ctx.restore();
+                    if (role === classes.FLAT) {
+                        this.drawFlagRect(ctx, drawX + 7, centerY - 2, this.tileSize - 14, 5,
+                            'rgba(255, 235, 130, 0.98)');
+                    }
+                }
+                if (value === classes.AUTO) continue;
+
+                // Inside a declared object the class is drawn once, on the
+                // object's top-left cell. Drawn on every cell it read as four
+                // separate mountains rather than one mountain drawn across
+                // four cells, which is the opposite of what the declaration
+                // says. The tint still covers the whole object.
+                const markHere = !member || (member.dc === 0 && member.dr === 0);
+
                 const upright = value === classes.UPRIGHT;
                 const scenery = value === classes.SCENERY;
+                const foliage = value === classes.FOLIAGE;
 
-                ctx.fillStyle = scenery
-                    ? 'rgba(120, 230, 120, 0.20)'
-                    : upright ? 'rgba(255, 170, 40, 0.22)' : 'rgba(70, 190, 255, 0.18)';
+                ctx.fillStyle = foliage
+                    ? 'rgba(90, 210, 150, 0.22)'
+                    : scenery ? 'rgba(120, 230, 120, 0.20)'
+                        : upright ? 'rgba(255, 170, 40, 0.22)' : 'rgba(70, 190, 255, 0.18)';
                 ctx.fillRect(drawX, drawY, this.tileSize, this.tileSize);
+                if (!markHere) continue;
 
-                if (scenery) {
+                if (foliage) {
+                    // Two small chevrons over an unbroken ground line: this
+                    // tile is a crowd of separate things standing on ground
+                    // that stays where it is, rather than one mass or one wall.
+                    this.drawFlagArrow(ctx, [
+                        centerX - 10, centerY + 2,
+                        centerX - 5, centerY - 7,
+                        centerX, centerY + 2
+                    ], 'rgba(130, 240, 185, 0.98)');
+                    this.drawFlagArrow(ctx, [
+                        centerX + 1, centerY + 4,
+                        centerX + 6, centerY - 4,
+                        centerX + 11, centerY + 4
+                    ], 'rgba(130, 240, 185, 0.98)');
+                    this.drawFlagRect(ctx, drawX + 8, drawY + this.tileSize - 12, this.tileSize - 16, 3,
+                        'rgba(130, 240, 185, 0.98)');
+                } else if (scenery) {
                     // A single standing tile: one chevron on its own base, in
                     // contrast to Upright's chevron on a full-width ground line.
                     this.drawFlagArrow(ctx, [
@@ -1630,6 +1702,35 @@ class DatabaseTilesetEditor {
                         'rgba(130, 220, 255, 0.98)');
                 }
             }
+        }
+
+        // What is selected, drawn over the classes: the whole object when one
+        // is selected, so a 2x2 mountain highlights as a mountain rather than
+        // as whichever of its four squares happened to be clicked.
+        const chosen = this.selected3dRect;
+        if (chosen) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(90, 190, 255, 0.95)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(chosen.x * this.tileSize + 1, chosen.y * this.tileSize + 1,
+                chosen.w * this.tileSize - 2, chosen.h * this.tileSize - 2);
+            ctx.restore();
+        }
+
+        // The rectangle being dragged, drawn last so it sits over everything.
+        const drag = this._tile3dDrag;
+        if (drag && drag.imageIndex === imageIndex) {
+            const { x0, x1, y0, y1 } = DatabaseTilesetEditor.dragBounds(drag);
+            const left = x0 * this.tileSize, top = y0 * this.tileSize;
+            const wide = (x1 - x0 + 1) * this.tileSize, high = (y1 - y0 + 1) * this.tileSize;
+            ctx.save();
+            ctx.fillStyle = 'rgba(255, 235, 130, 0.16)';
+            ctx.fillRect(left, top, wide, high);
+            ctx.strokeStyle = 'rgba(255, 235, 130, 0.95)';
+            ctx.setLineDash([5, 3]);
+            ctx.lineWidth = 2;
+            ctx.strokeRect(left + 1, top + 1, wide - 2, high - 2);
+            ctx.restore();
         }
     }
 
@@ -1743,14 +1844,11 @@ class DatabaseTilesetEditor {
                     ctx.fillRect(drawX + 3, drawY + 15, 10, 2);
                 }
 
-                // Draw bush icon (bit 6 set) - green circle in top-right corner
+                // Draw bush icon (bit 6 set) - a shrub in the top-right corner.
+                // A plain dot was indistinguishable from every other dot on the
+                // sheet; a silhouette says which flag it is at a glance.
                 if (flag & 0x40) {
-                    this.drawFlagDot(ctx, drawX + this.tileSize - 8, drawY + 8, 6, 'rgba(60, 215, 60, 0.95)');
-                    // Darker centre, inside the rim
-                    ctx.fillStyle = 'rgba(15, 85, 15, 0.95)';
-                    ctx.beginPath();
-                    ctx.arc(drawX + this.tileSize - 8, drawY + 8, 3, 0, Math.PI * 2);
-                    ctx.fill();
+                    this.drawBushMark(ctx, drawX + this.tileSize - 12, drawY + 4, 14);
                 }
 
                 // Draw counter icon (bit 7 set) - purple bar in bottom-left
@@ -1850,12 +1948,9 @@ class DatabaseTilesetEditor {
         this.selectedTile = { x, y };
 
         // 3D classification is not a tileset flag — it lives in its own file —
-        // so it is handled before the flag switch rather than inside it.
-        if (this.currentEditMode === 'tile3d') {
-            this.cycleTile3DClass(tileIndex);
-            this.repaintClickedCanvas(canvas, imageIndex, isSplitSheet);
-            return;
-        }
+        // and it is applied by dragging a rectangle rather than by clicking, so
+        // the drag handler owns it entirely. A plain click is a 1x1 drag.
+        if (this.currentEditMode === 'tile3d') return;
 
         // Apply the selected edit mode
         switch (this.currentEditMode) {
@@ -1980,6 +2075,744 @@ class DatabaseTilesetEditor {
      * Autotile ids fold to their kind, so classifying a wall classifies every
      * shape of that wall — see `RRTileset3DClass.keyFor`.
      */
+    /**
+     * Shift-click twice to say "these tiles are one object".
+     *
+     * The first click marks a corner, the second declares the rectangle between
+     * them. Which tiles belong to one object cannot be inferred: two different
+     * objects sitting side by side on the sheet look exactly like one wide
+     * object, and autotile terrain gives no grouping at all. Shift-clicking a
+     * tile that is already declared clears its object instead, so the same
+     * gesture undoes itself.
+     */
+    markTile3DObject(tileIndex) {
+        const classes = this.tileset3DClasses();
+        const store = this.tileset3DStore();
+        if (!classes || !store || !this.currentTileset) return;
+        const tilesetId = this.currentTileset.id;
+
+        if (!this._tile3dCorner) {
+            if (classes.objectAt(store, tilesetId, tileIndex)) {
+                classes.clearObject(store, tilesetId, tileIndex);
+                console.log(`3D object cleared at tile ${tileIndex}`);
+                return;
+            }
+            this._tile3dCorner = tileIndex;
+            console.log('3D object: shift-click the opposite corner');
+            return;
+        }
+
+        const from = classes.sheetCell(this._tile3dCorner);
+        const to = classes.sheetCell(tileIndex);
+        this._tile3dCorner = null;
+        if (from.setNumber !== to.setNumber) return;
+        const col = Math.min(from.col, to.col), row = Math.min(from.row, to.row);
+        const width = Math.abs(from.col - to.col) + 1;
+        const height = Math.abs(from.row - to.row) + 1;
+        classes.defineObject(store, tilesetId,
+            classes.tileAtCell(from.setNumber, col, row), width, height);
+        console.log(`3D object declared: ${width}x${height} from tile ` +
+            `${classes.tileAtCell(from.setNumber, col, row)}`);
+    }
+
+    /** Alt-click a tile inside an object to lay it flat, or stand it again. */
+    cycleTile3DRole(tileIndex) {
+        const classes = this.tileset3DClasses();
+        const store = this.tileset3DStore();
+        if (!classes || !store || !this.currentTileset) return;
+        const found = classes.objectAt(store, this.currentTileset.id, tileIndex);
+        if (!found) {
+            console.log('3D role: shift-click two corners to declare an object first');
+            return;
+        }
+        classes.cycleRole(store, this.currentTileset.id, tileIndex);
+    }
+
+    /**
+     * The mark on a flag-mode button.
+     *
+     * Drawn as a few strokes rather than a detailed picture: these render at
+     * 16px, where anything finer collapses into a smudge. `currentColor` so a
+     * selected button's icon follows its text.
+     */
+    static flagIcon(mode) {
+        const open = '<svg class="flag-mode-icon" viewBox="0 0 24 24" width="16" height="16"'
+            + ' fill="none" stroke="currentColor" stroke-width="2"'
+            + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+        const shapes = {
+            // A circle over a cross: pass, or do not.
+            passability: '<circle cx="12" cy="8" r="4.2"/><path d="M7.8 15.8l8.4 5.2M16.2 15.8l-8.4 5.2"/>',
+            // Four arrows from one centre.
+            '4dir': '<path d="M12 3v18M3 12h18"/><path d="M12 3l-2.6 3M12 3l2.6 3'
+                + 'M12 21l-2.6-3M12 21l2.6-3M3 12l3-2.6M3 12l3 2.6M21 12l-3-2.6M21 12l-3 2.6"/>',
+            // A stile: two rails and rungs.
+            ladder: '<path d="M8 3v18M16 3v18M8 8h8M8 13h8M8 18h8"/>',
+            // A shrub: three overlapping clumps on a line. Drawn as arcs
+            // rather than as leaves on stems, which at 16px is one grey blob.
+            bush: '<path d="M3.5 20h17"/>'
+                + '<path d="M4.5 20a4 4 0 016.2-3.3A5 5 0 0119.5 20z"/>'
+                + '<path d="M12 16.8V11M9.6 13.4L12 15M14.4 13.4L12 15"/>',
+            // A counter top with a lip, seen end on.
+            counter: '<path d="M3 9h18v3H3z"/><path d="M6 12v8M18 12v8"/>',
+            // A hazard triangle.
+            damage: '<path d="M12 4l8.5 15h-17z"/><path d="M12 10v4M12 17.2v.1"/>',
+            // A tag with its hole.
+            terrain: '<path d="M4 4h9l7 7-9 9-7-7z"/><circle cx="8.5" cy="8.5" r="1.4"/>',
+            // A cube: the one flag that is about three dimensions.
+            tile3d: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/>'
+                + '<path d="M12 21v-9M12 12l8-4.5M12 12L4 7.5"/>'
+        };
+        return shapes[mode] ? `${open}${shapes[mode]}</svg>` : '';
+    }
+
+
+    /**
+     * What the marks in the current mode mean.
+     *
+     * The overlays draw a lot of small glyphs and none of them announce
+     * themselves. The key sits in the margin beside the sheet, and it is built
+     * from the same colours the overlay uses so the two cannot drift apart in
+     * appearance without drifting apart in code.
+     */
+    /**
+     * What the marks in the current mode mean.
+     *
+     * Each row's mark is a small canvas drawn by the same code that draws it on
+     * a tile, so the key cannot say one thing while the sheet shows another.
+     * The first attempt used coloured squares and half of them came out blank,
+     * because the flags that matter are drawn as glyphs rather than as tints.
+     */
+    static flagKeyRows(mode) {
+        const rows = {
+            passability: [
+                ['pass-o', 'Passable'],
+                ['pass-x', 'Blocked'],
+                ['pass-star', 'Drawn above characters']
+            ],
+            '4dir': [
+                ['dir-open', 'Arrow: that side is open'],
+                ['dir-blocked', 'Dot: that side is blocked']
+            ],
+            ladder: [['ladder', 'Climbed vertically']],
+            bush: [['bush', 'Covers the lower half of a character']],
+            counter: [['counter', 'Talked and traded across']],
+            damage: [['damage', 'Costs HP to stand on']],
+            terrain: [['terrain', 'Tag 0-7, read by events and plugins']],
+            tile3d: [
+                ['3d-flat', 'Flat - lies on the ground'],
+                ['3d-upright', 'Upright - part of a standing object'],
+                ['3d-scenery', 'Scenery - raises the ground into a mass'],
+                ['3d-foliage', 'Foliage - a cut-out per cell, ground unchanged'],
+                ['3d-object', 'One declared 3D object'],
+                ['3d-role-flat', 'Lies flat within its object']
+            ]
+        };
+        return rows[mode] || null;
+    }
+
+    static flagKey(mode) {
+        const rows = DatabaseTilesetEditor.flagKeyRows(mode);
+        if (!rows) return '';
+        const items = rows.map(([mark, label]) =>
+            `<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;">`
+            + `<canvas class="flag-key-mark" data-mark="${mark}" width="26" height="26" `
+            + `style="width:26px;height:26px;flex:0 0 26px;border-radius:4px;`
+            + `background:var(--color-bg-deep);"></canvas>`
+            + `<span style="font-size:10px;color:var(--color-text-muted);line-height:1.3;">`
+            + `${label}</span></div>`).join('');
+        return `<div style="background:var(--color-bg-panel);border:1px solid var(--color-border);`
+            + `border-radius:6px;padding:10px;">`
+            + `<h4 style="margin:0 0 8px 0;font-size:9px;text-transform:uppercase;`
+            + `letter-spacing:0.5px;color:var(--color-text-muted);">Key</h4>${items}</div>`;
+    }
+
+    /**
+     * The tools for 3D authoring, as a palette rather than a cycle.
+     *
+     * Clicking used to advance a tile through every class, which meant there
+     * was no way to look at a tile without changing it. Pick a tool, then
+     * click: Select only selects, and each of the others paints one thing.
+     */
+    static tile3dTools() {
+        return [
+            ['select', 'Select', 'Look at a tile without changing it'],
+            ['flat', 'Flat', 'Lies on the ground'],
+            ['upright', 'Upright', 'Part of a standing object'],
+            ['scenery', 'Scenery', 'Raises the ground into a mass'],
+            ['foliage', 'Foliage', 'A cut-out per cell'],
+            ['auto', 'Auto', 'Clear back to the flag heuristic'],
+            ['object', 'Object', 'Drag a rectangle to group those tiles as one object'],
+            ['erase', 'Remove', 'Drag over declared objects to undeclare them'],
+            ['role', 'Role', 'Lay tiles flat within their object, or stand them']
+        ];
+    }
+
+    static tile3dToolbar(active) {
+        const buttons = DatabaseTilesetEditor.tile3dTools().map(([id, label, hint]) =>
+            `<button class="tile3d-tool" data-tool="${id}" title="${hint}" `
+            + `style="font-size:10px;padding:5px 6px;border-radius:4px;cursor:pointer;`
+            + `text-align:left;border:1px solid ${id === active
+                ? 'var(--color-accent-bright)' : 'var(--color-border-input)'};`
+            + `background:${id === active ? 'var(--color-bg-hover)' : 'var(--color-bg-panel)'};`
+            + `color:var(--color-text);">${label}</button>`).join('');
+        return `<div style="background:var(--color-bg-panel);border:1px solid var(--color-border);`
+            + `border-radius:6px;padding:10px;margin-bottom:10px;">`
+            + `<h4 style="margin:0 0 8px 0;font-size:9px;text-transform:uppercase;`
+            + `letter-spacing:0.5px;color:var(--color-text-muted);">3D tool</h4>`
+            + `<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">${buttons}</div>`
+            + `<p style="font-size:9px;color:var(--color-text-dim);margin:8px 0 0 0;line-height:1.4;">`
+            + `Drag a rectangle to apply the tool. A click is a single tile. `
+            + `Select changes nothing.</p></div>`;
+    }
+
+
+    /** Redraw the tools and the key for whatever mode is selected. */
+    refreshFlagKey() {
+        const host = document.getElementById('flag-mode-key');
+        if (!host) return;
+        if (!this.tile3dTool) this.tile3dTool = 'select';
+        const toolbar = this.currentEditMode === 'tile3d'
+            ? DatabaseTilesetEditor.tile3dToolbar(this.tile3dTool) : '';
+        host.innerHTML = toolbar + DatabaseTilesetEditor.flagKey(this.currentEditMode);
+        for (const canvas of host.querySelectorAll('canvas.flag-key-mark')) {
+            this.drawKeyMark(canvas.getContext('2d'), canvas.dataset.mark, canvas.width);
+        }
+        for (const button of host.querySelectorAll('button.tile3d-tool')) {
+            button.addEventListener('click', () => {
+                this.tile3dTool = button.dataset.tool;
+                // Choosing a tool abandons a half-finished object rectangle.
+                this._tile3dCorner = null;
+                this.refreshFlagKey();
+            });
+        }
+    }
+
+    /**
+     * One key mark, drawn with the same helpers the tile overlay uses.
+     *
+     * The size is the key swatch rather than a tile, so positions are scaled
+     * from the tile geometry instead of copied from it.
+     */
+    drawKeyMark(ctx, mark, size) {
+        const classes = this.tileset3DClasses();
+        const mid = size / 2;
+        ctx.clearRect(0, 0, size, size);
+        const tint = colour => { ctx.fillStyle = colour; ctx.fillRect(0, 0, size, size); };
+        const glyph = (text, colour) => {
+            ctx.fillStyle = colour;
+            ctx.font = `bold ${Math.round(size * 0.62)}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, mid, mid + 1);
+        };
+        switch (mark) {
+            case 'pass-o': glyph('O', 'rgba(120, 230, 120, 0.98)'); break;
+            case 'pass-x': glyph('X', 'rgba(255, 110, 110, 0.98)'); break;
+            case 'pass-star': glyph('\u2605', 'rgba(255, 220, 110, 0.98)'); break;
+            case 'dir-open':
+                this.drawFlagArrow(ctx, [mid - 5, mid + 4, mid, mid - 5, mid + 5, mid + 4],
+                    'rgba(140, 220, 255, 0.98)');
+                break;
+            case 'dir-blocked': this.drawFlagDot(ctx, mid, mid, 4, 'rgba(255, 130, 130, 0.98)'); break;
+            case 'ladder':
+                this.drawFlagRect(ctx, mid - 5, 4, 10, size - 8, 'rgba(160, 210, 255, 0.95)');
+                ctx.fillStyle = 'rgba(30, 30, 120, 0.95)';
+                for (let i = 0; i < 3; i++) ctx.fillRect(mid - 6, 8 + i * 5, 12, 2);
+                break;
+            case 'bush': this.drawBushMark(ctx, 4, 3, size - 8); break;
+            case 'counter':
+                this.drawFlagRect(ctx, 4, mid - 2, size - 8, 5, 'rgba(210, 160, 255, 0.95)');
+                break;
+            case 'damage': glyph('\u26a0', 'rgba(255, 140, 40, 0.98)'); break;
+            case 'terrain': glyph('3', 'rgba(255, 235, 130, 0.98)'); break;
+            case '3d-flat':
+                tint('rgba(70, 190, 255, 0.30)');
+                this.drawFlagRect(ctx, 5, mid - 2, size - 10, 5, 'rgba(130, 220, 255, 0.98)');
+                break;
+            case '3d-upright':
+                tint('rgba(255, 170, 40, 0.30)');
+                this.drawFlagArrow(ctx, [mid - 8, mid + 4, mid, mid - 7, mid + 8, mid + 4],
+                    'rgba(255, 196, 80, 0.98)');
+                this.drawFlagRect(ctx, 5, size - 8, size - 10, 3, 'rgba(255, 196, 80, 0.98)');
+                break;
+            case '3d-scenery':
+                tint('rgba(120, 230, 120, 0.28)');
+                this.drawFlagArrow(ctx, [mid - 6, mid + 3, mid, mid - 6, mid + 6, mid + 3],
+                    'rgba(150, 245, 150, 0.98)');
+                this.drawFlagRect(ctx, mid - 6, size - 8, 12, 3, 'rgba(150, 245, 150, 0.98)');
+                break;
+            case '3d-foliage':
+                tint('rgba(90, 210, 150, 0.30)');
+                this.drawFlagArrow(ctx, [mid - 8, mid + 2, mid - 4, mid - 6, mid, mid + 2],
+                    'rgba(130, 240, 185, 0.98)');
+                this.drawFlagArrow(ctx, [mid + 1, mid + 4, mid + 5, mid - 3, mid + 9, mid + 4],
+                    'rgba(130, 240, 185, 0.98)');
+                this.drawFlagRect(ctx, 4, size - 8, size - 8, 3, 'rgba(130, 240, 185, 0.98)');
+                break;
+            case '3d-object':
+                ctx.strokeStyle = 'rgba(255, 235, 130, 0.95)';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(4, 4, size - 8, size - 8);
+                break;
+            case '3d-role-flat':
+                ctx.strokeStyle = 'rgba(255, 235, 130, 0.55)';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(4, 4, size - 8, size - 8);
+                this.drawFlagRect(ctx, 7, mid - 2, size - 14, 5, 'rgba(255, 235, 130, 0.98)');
+                break;
+            default: if (classes) break;
+        }
+    }
+
+
+    /**
+     * A small picture of what the selected tile becomes in 3D.
+     *
+     * Drawn here rather than by the real renderer on purpose: the tileset
+     * editor would have to load three.js, the sheets and a scene to show one
+     * tile, and what an author needs to check is which parts stand and which
+     * lie down — not lighting. So it is an oblique diagram using the tile's own
+     * art, and it says so, rather than implying it is the view you will get.
+     */
+    refreshTile3DPreview() {
+        const host = document.getElementById('tile3d-preview');
+        if (!host) return;
+        // English for now, as with the key beside it.
+        if (this.currentEditMode !== 'tile3d') { host.innerHTML = ''; return; }
+
+        const classes = this.tileset3DClasses();
+        const store = this.tileset3DStore();
+        const tileIndex = this._preview3dTile;
+        if (!classes || !store || !this.currentTileset || tileIndex === undefined) {
+            host.innerHTML = `<div style="background:var(--color-bg-panel);border:1px solid `
+                + `var(--color-border);border-radius:6px;padding:10px;font-size:10px;`
+                + `color:var(--color-text-muted);">Click a tile to preview it in 3D</div>`;
+            return;
+        }
+
+        const tilesetId = this.currentTileset.id;
+        const member = classes.objectAt(store, tilesetId, tileIndex);
+        const object = member ? member.object : { tile: tileIndex, w: 1, h: 1, roles: 'S' };
+        const label = member
+            ? `${object.w}x${object.h} declared object`
+            : 'single tile';
+
+        host.innerHTML = `<div style="background:var(--color-bg-panel);border:1px solid `
+            + `var(--color-border);border-radius:6px;padding:10px;">`
+            + `<h4 style="margin:0 0 8px 0;font-size:9px;text-transform:uppercase;`
+            + `letter-spacing:0.5px;color:var(--color-text-muted);">3D preview</h4>`
+            + `<canvas id="tile3d-preview-canvas" width="146" height="146" `
+            + `style="width:146px;height:146px;image-rendering:pixelated;border-radius:4px;`
+            + `background:var(--color-bg-deep);cursor:ew-resize;touch-action:none;"></canvas>`
+            + `<p style="font-size:9px;color:var(--color-text-dim);margin:6px 0 0 0;">${label}</p>`
+            + `<p style="font-size:9px;color:var(--color-text-dim);margin:2px 0 0 0;">`
+            + `Drag to turn</p></div>`;
+        const canvas = document.getElementById('tile3d-preview-canvas');
+        this.drawTile3DPreview(canvas, object);
+        this.attachTile3DPreviewDrag(canvas, object);
+    }
+
+    /** Drag across the preview to turn the object on the spot. */
+    attachTile3DPreviewDrag(canvas, object) {
+        if (!canvas) return;
+        let from = null;
+        canvas.addEventListener('pointerdown', event => {
+            from = { x: event.clientX, yaw: this._preview3dYaw || 0 };
+            canvas.setPointerCapture?.(event.pointerId);
+        });
+        canvas.addEventListener('pointermove', event => {
+            if (!from) return;
+            // A drag across the pane is a little over half a turn, which is
+            // enough to see every side without the object spinning away.
+            this._preview3dYaw = from.yaw + (event.clientX - from.x) * 0.9;
+            this.drawTile3DPreview(canvas, object);
+        });
+        const release = event => {
+            from = null;
+            canvas.releasePointerCapture?.(event.pointerId);
+        };
+        canvas.addEventListener('pointerup', release);
+        canvas.addEventListener('pointercancel', release);
+    }
+
+    /**
+     * The diagram itself: a ground plane in oblique projection, the object's
+     * standing rows raised off it, and any row the author has laid flat drawn
+     * on the ground where it belongs.
+     */
+    drawTile3DPreview(canvas, object) {
+        const classes = this.tileset3DClasses();
+        if (!canvas || !classes || !this.currentTileset) return;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const yaw = ((this._preview3dYaw || 0) * Math.PI) / 180;
+        // Sized to the object rather than fixed, so a single tile is not a
+        // speck in the middle of a wide empty plane and a 4x4 still fits.
+        const span = Math.max(object.w, object.h) + 2.4;
+        const cell = Math.max(10, Math.min(30, (canvas.width - 16) / span));
+        // A ground plane seen at a slant, turning under the object. The turn
+        // has to be legible on the ground, because the standing art cannot show
+        // it: a cut-out spins to face the camera, so its picture is the same
+        // from every side. That is why the object read as a static 2D drawing
+        // when the ground was one fixed parallelogram.
+        const squash = 0.55;
+        const centreX = canvas.width / 2;
+        const horizon = canvas.height * 0.66;
+        const project = (gx, gz) => ({
+            x: centreX + (gx * Math.cos(yaw) - gz * Math.sin(yaw)) * cell,
+            y: horizon + (gx * Math.sin(yaw) + gz * Math.cos(yaw)) * cell * squash
+        });
+
+        // The footprint plus a margin, so there is ground to see it turn on.
+        const halfW = object.w / 2, halfH = object.h / 2;
+        const margin = 1.2;
+        ctx.save();
+        ctx.beginPath();
+        const corners = [
+            project(-halfW - margin, -halfH - margin), project(halfW + margin, -halfH - margin),
+            project(halfW + margin, halfH + margin), project(-halfW - margin, halfH + margin)
+        ];
+        ctx.moveTo(corners[0].x, corners[0].y);
+        for (const corner of corners.slice(1)) ctx.lineTo(corner.x, corner.y);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(120, 120, 130, 0.20)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(160, 160, 175, 0.45)';
+        ctx.stroke();
+        // Grid lines over the footprint, which is where a turn reads clearly.
+        ctx.strokeStyle = 'rgba(160, 160, 175, 0.28)';
+        ctx.beginPath();
+        for (let i = 0; i <= object.w; i++) {
+            const a = project(-halfW + i, -halfH), b = project(-halfW + i, halfH);
+            ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+        }
+        for (let i = 0; i <= object.h; i++) {
+            const a = project(-halfW, -halfH + i), b = project(halfW, -halfH + i);
+            ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        const source = this.previewArtSource(object);
+        const roles = object.roles || '';
+
+        // Flat parts lie on the ground and turn with it, so they are drawn
+        // first and the standing parts go over them.
+        for (let dr = 0; dr < object.h; dr++) {
+            for (let dc = 0; dc < object.w; dc++) {
+                if (roles[dr * object.w + dc] !== classes.FLAT) continue;
+                const a = project(-halfW + dc, -halfH + dr);
+                const b = project(-halfW + dc + 1, -halfH + dr + 1);
+                this.drawPreviewPiece(ctx, source, dc, dr,
+                    Math.min(a.x, b.x), Math.min(a.y, b.y),
+                    Math.max(6, Math.abs(b.x - a.x)), Math.max(4, Math.abs(b.y - a.y)));
+            }
+        }
+
+        // Standing parts, face-on, anchored on the middle of the footprint —
+        // where the renderer anchors them, and the point they turn about. On
+        // the southern edge the axis sat at the front of the object and it
+        // swung around that instead of turning where it stands.
+        const base = project(0, 0);
+        for (let dr = object.h - 1; dr >= 0; dr--) {
+            for (let dc = 0; dc < object.w; dc++) {
+                if (roles[dr * object.w + dc] === classes.FLAT) continue;
+                const x = base.x + (dc - object.w / 2) * cell;
+                const y = base.y - (object.h - dr) * cell;
+                this.drawPreviewPiece(ctx, source, dc, dr, x, y, cell, cell);
+            }
+        }
+    }
+
+    /**
+     * Where the preview's art comes from.
+     *
+     * A B-G tile is a rectangle of its sheet. An autotile is not: the A tabs
+     * show a *rendered* palette, one cell per kind, so the preview copies that
+     * cell from the palette the author is looking at rather than addressing a
+     * sheet the art was never laid out on. Reading it as a sheet drew nothing
+     * at all, which is what an A-layer preview did.
+     */
+    previewArtSource(object) {
+        const classes = this.tileset3DClasses();
+        if (!classes) return null;
+        if (object.tile >= 2048) {
+            const chosen = this._preview3dCell;
+            if (!chosen) return null;
+            // The *base* render, not the tab canvas: the tab has the flag
+            // overlay painted onto it, so copying a cell from there carried the
+            // class chevron into the preview — a marker about the tile drawn as
+            // though it were part of the art.
+            const base = this.cachedBaseCanvas(chosen.imageIndex);
+            if (!base) return null;
+            return {
+                image: base, size: this.tileSize, stepped: false,
+                sx: chosen.x * this.tileSize, sy: chosen.y * this.tileSize
+            };
+        }
+        const origin = classes.sheetCell(object.tile);
+        const image = this.sheetImageFor(origin.setNumber);
+        if (!image) return null;
+        return { image, size: 48, stepped: true, sx: origin.col * 48, sy: origin.row * 48 };
+    }
+
+    /**
+     * The unmarked render of a layer, from the cache the tab canvases are built
+     * from. Everything on screen has the flag overlay drawn over it; this is
+     * what it was drawn over.
+     */
+    cachedBaseCanvas(imageIndex) {
+        if (!this.currentTileset || !this.imageCache) return null;
+        const fileName = this.currentTileset.tilesetNames[imageIndex];
+        if (!fileName) return null;
+        return this.imageCache.get(`${imageIndex}_${fileName}`) || null;
+    }
+
+    /**
+     * The loaded sheet for a set number, if it has been drawn once already.
+     *
+     * Kept to what is in hand: the preview is a hint beside the sheet the
+     * author is looking at, so it draws boxes rather than starting a load and
+     * repainting later.
+     */
+    sheetImageFor(setNumber) {
+        if (!this.currentTileset || !this.fs || !this.path) return null;
+        const fileName = this.currentTileset.tilesetNames[setNumber];
+        if (!fileName) return null;
+        if (!this._sheetImages) this._sheetImages = new Map();
+        if (this._sheetImages.has(fileName)) return this._sheetImages.get(fileName);
+        const projectPath = this.getProjectPath();
+        if (!projectPath) return null;
+        const imagePath = this.path.join(projectPath, 'img', 'tilesets', `${fileName}.png`);
+        if (!this.fs.existsSync(imagePath)) return null;
+        const image = new Image();
+        // Repaint once it arrives; until then the preview draws placeholders.
+        image.onload = () => this.refreshTile3DPreview();
+        image.src = this.assetUrl(imagePath);
+        this._sheetImages.set(fileName, image);
+        return image.complete ? image : null;
+    }
+
+    /**
+     * A shrub, drawn small enough to survive a tile corner.
+     *
+     * Two lobes over a stem on a ground line: enough silhouette to be told from
+     * the dots and bars the other flags use.
+     */
+    drawBushMark(ctx, x, y, size) {
+        const green = 'rgba(80, 225, 80, 0.98)';
+        const dark = 'rgba(12, 70, 12, 0.95)';
+        ctx.save();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = dark;
+        ctx.fillStyle = green;
+        ctx.beginPath();
+        ctx.arc(x + size * 0.34, y + size * 0.52, size * 0.30, 0, Math.PI * 2);
+        ctx.arc(x + size * 0.66, y + size * 0.52, size * 0.30, 0, Math.PI * 2);
+        ctx.arc(x + size * 0.50, y + size * 0.34, size * 0.28, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x + size * 0.5, y + size * 0.62);
+        ctx.lineTo(x + size * 0.5, y + size * 0.92);
+        ctx.strokeStyle = dark;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x + size * 0.14, y + size * 0.94);
+        ctx.lineTo(x + size * 0.86, y + size * 0.94);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    /** One cell of the preview, or a placeholder when the art is not to hand. */
+    drawPreviewPiece(ctx, source, dc, dr, x, y, w, h) {
+        if (source && source.image) {
+            // A sheet block steps through its cells; an autotile palette holds
+            // one rendered cell per kind and has no neighbours to step to.
+            const stepping = source.stepped ? 1 : 0;
+            const sx = source.sx + stepping * dc * source.size;
+            const sy = source.sy + stepping * dr * source.size;
+            if (source.image.width > sx && source.image.height > sy) {
+                ctx.imageSmoothingEnabled = false;
+                ctx.drawImage(source.image, sx, sy, source.size, source.size, x, y, w, h);
+                return;
+            }
+        }
+        ctx.save();
+        ctx.fillStyle = 'rgba(200, 200, 215, 0.20)';
+        ctx.strokeStyle = 'rgba(200, 200, 215, 0.45)';
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+        ctx.restore();
+    }
+
+
+    /**
+     * Drag a rectangle across the sheet to apply the current 3D tool.
+     *
+     * The same gesture as the map's area paint, because it is the same job:
+     * mark out a region and say what it is. Clicking one tile at a time and
+     * counting corners was the wrong shape for declaring an object, which is
+     * a rectangle by definition — and a click here is simply a 1x1 drag, so
+     * single tiles still work without a second mode.
+     */
+    attachTile3DDrag(canvas, imageIndex, isSplitSheet) {
+        if (!canvas || canvas.dataset.tile3dDrag) return;
+        canvas.dataset.tile3dDrag = '1';
+
+        const cellAt = event => {
+            const rect = canvas.getBoundingClientRect();
+            // The canvas may be laid out at a different size from its backing
+            // store, so the pointer is scaled into canvas pixels first.
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            return {
+                x: Math.floor(((event.clientX - rect.left) * scaleX) / this.tileSize),
+                y: Math.floor(((event.clientY - rect.top) * scaleY) / this.tileSize)
+            };
+        };
+
+        canvas.addEventListener('pointerdown', event => {
+            if (this.currentEditMode !== 'tile3d') return;
+            event.preventDefault();
+            const cell = cellAt(event);
+            this._tile3dDrag = { imageIndex, from: cell, to: cell };
+            canvas.setPointerCapture?.(event.pointerId);
+            this.repaintClickedCanvas(canvas, imageIndex, isSplitSheet);
+        });
+
+        canvas.addEventListener('pointermove', event => {
+            const drag = this._tile3dDrag;
+            if (!drag || drag.imageIndex !== imageIndex) return;
+            const cell = cellAt(event);
+            if (cell.x === drag.to.x && cell.y === drag.to.y) return;
+            drag.to = cell;
+            this.repaintClickedCanvas(canvas, imageIndex, isSplitSheet);
+        });
+
+        const finish = event => {
+            const drag = this._tile3dDrag;
+            if (!drag || drag.imageIndex !== imageIndex) return;
+            this._tile3dDrag = null;
+            canvas.releasePointerCapture?.(event.pointerId);
+            const tilesX = Math.floor(canvas.width / this.tileSize);
+            this.applyTile3DTool(drag, imageIndex, tilesX);
+            this.repaintClickedCanvas(canvas, imageIndex, isSplitSheet);
+            this.refreshTile3DPreview();
+        };
+        canvas.addEventListener('pointerup', finish);
+        canvas.addEventListener('pointercancel', () => {
+            this._tile3dDrag = null;
+            this.repaintClickedCanvas(canvas, imageIndex, isSplitSheet);
+        });
+    }
+
+    /** The rectangle a drag covers, in tile coordinates. */
+    static dragBounds(drag) {
+        return {
+            x0: Math.min(drag.from.x, drag.to.x), x1: Math.max(drag.from.x, drag.to.x),
+            y0: Math.min(drag.from.y, drag.to.y), y1: Math.max(drag.from.y, drag.to.y)
+        };
+    }
+
+    /** Apply the selected tool over everything the drag covered. */
+    applyTile3DTool(drag, imageIndex, tilesX) {
+        const classes = this.tileset3DClasses();
+        const store = this.tileset3DStore();
+        if (!classes || !store || !this.currentTileset) return;
+        const tilesetId = this.currentTileset.id;
+        const tool = this.tile3dTool || 'select';
+        const { x0, x1, y0, y1 } = DatabaseTilesetEditor.dragBounds(drag);
+        const indexAt = (x, y) => this.getTileIndexForImage(imageIndex, x, y, tilesX);
+
+        // Whatever the tool, the drag also selects, and selecting a tile that
+        // belongs to a declared object selects the object: the whole point of
+        // declaring one is that it stops being a collection of squares.
+        this._preview3dTile = indexAt(x0, y0);
+        // The A tabs are a rendered palette rather than a sheet, so the preview
+        // needs the cell that was clicked, not just the tile id.
+        this._preview3dCell = { imageIndex, x: x0, y: y0 };
+        const member = classes.objectAt(store, tilesetId, this._preview3dTile);
+        this._selected3dObject = member ? member.object : null;
+        this.selected3dRect = member
+            ? { x: x0 - member.dc, y: y0 - member.dr, w: member.object.w, h: member.object.h }
+            : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+
+        if (tool === 'select') return;
+
+        // Declaring is a B-E idea: an object is a rectangle of a sheet, and an
+        // autotile id is a corner arrangement rather than a place in a drawing.
+        // Autotile terrain says what it is through its 3D class instead.
+        // A5 is not an autotile: whole tiles, eight to a row, so it declares
+        // objects like B-G. Only A1-A4 cannot.
+        const autotile = indexAt(x0, y0) >= 2048;
+        if ((tool === 'object' || tool === 'erase' || tool === 'role') && autotile) {
+            console.log('3D objects are declared on the B-G sheets; '
+                + 'use Flat/Upright/Scenery/Foliage for autotiles.');
+            return;
+        }
+
+        if (tool === 'object') {
+            const width = x1 - x0 + 1, height = y1 - y0 + 1;
+            // A single click must never destroy a grouping. Redeclaring one
+            // cell of a 2x2 replaced it with a 1x1 — one stray click and the
+            // object was gone, which is far too easy to do by accident.
+            if (width === 1 && height === 1
+                && classes.objectAt(store, tilesetId, indexAt(x0, y0))) {
+                console.log('Already part of an object — drag a rectangle to '
+                    + 'redeclare it, or use Remove.');
+                return;
+            }
+            classes.defineObject(store, tilesetId, indexAt(x0, y0), width, height);
+            console.log(`3D object declared: ${width}x${height}`);
+            return;
+        }
+        if (tool === 'erase') {
+            for (let y = y0; y <= y1; y++) {
+                for (let x = x0; x <= x1; x++) classes.clearObject(store, tilesetId, indexAt(x, y));
+            }
+            return;
+        }
+        if (tool === 'role') {
+            // One decision for the whole rectangle rather than a per-tile
+            // toggle, so dragging over a mixed selection does not scramble it.
+            let anyStanding = false;
+            for (let y = y0; y <= y1 && !anyStanding; y++) {
+                for (let x = x0; x <= x1; x++) {
+                    if (classes.roleOf(store, tilesetId, indexAt(x, y)) === classes.STAND) {
+                        anyStanding = true;
+                        break;
+                    }
+                }
+            }
+            for (let y = y0; y <= y1; y++) {
+                for (let x = x0; x <= x1; x++) {
+                    const tile = indexAt(x, y);
+                    const isStanding = classes.roleOf(store, tilesetId, tile) === classes.STAND;
+                    if (isStanding === anyStanding) classes.cycleRole(store, tilesetId, tile);
+                }
+            }
+            return;
+        }
+        for (let y = y0; y <= y1; y++) {
+            for (let x = x0; x <= x1; x++) this.setTile3DClass(indexAt(x, y), tool);
+        }
+    }
+
+    /** Paint one 3D class onto a tile, the tool palette's job. */
+    setTile3DClass(tileIndex, tool) {
+        const classes = this.tileset3DClasses();
+        const store = this.tileset3DStore();
+        if (!classes || !store || !this.currentTileset) return;
+        const values = {
+            auto: classes.AUTO, flat: classes.GROUND, upright: classes.UPRIGHT,
+            scenery: classes.SCENERY, foliage: classes.FOLIAGE
+        };
+        if (!(tool in values)) return;
+        classes.setClass(store, this.currentTileset.id, tileIndex, values[tool]);
+    }
+
     cycleTile3DClass(tileIndex) {
         const classes = this.tileset3DClasses();
         const store = this.tileset3DStore();
@@ -1990,7 +2823,8 @@ class DatabaseTilesetEditor {
         classes.setClass(store, tilesetId, tileIndex, next);
         const names = {
             [classes.AUTO]: 'auto', [classes.GROUND]: 'flat',
-            [classes.UPRIGHT]: 'upright', [classes.SCENERY]: 'scenery'
+            [classes.UPRIGHT]: 'upright', [classes.SCENERY]: 'scenery',
+            [classes.FOLIAGE]: 'foliage'
         };
         console.log(`3D class for tile ${tileIndex}: ${names[next]}`);
     }

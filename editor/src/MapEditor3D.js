@@ -1028,9 +1028,11 @@ class MapEditor3D {
 
     orbit(dx, dy) {
         this.view.yaw -= dx * 0.4;
-        // Clamped short of straight down and of the horizon: at 90 the orbit
-        // maths degenerates, and below ~5 the camera slides under the ground.
-        this.view.pitch = Math.min(89, Math.max(5, this.view.pitch - dy * 0.3));
+        // Clamped short of overhead and of the horizon. Standing art has
+        // nothing to show a camera looking straight down at it — the same
+        // reason an HD-2D game does not offer the angle — and below ~5 the
+        // camera slides under the ground.
+        this.view.pitch = Math.min(72, Math.max(5, this.view.pitch - dy * 0.3));
         this.applyCamera();
     }
 

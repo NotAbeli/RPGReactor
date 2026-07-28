@@ -115,7 +115,9 @@ test('the camera cannot be orbited under the ground or straight down', () => {
     view.orbit(0, 1000);
     assert.equal(view.view.pitch, 5, 'stops above the horizon');
     view.orbit(0, -1000);
-    assert.equal(view.view.pitch, 89, 'stops short of straight down, where the orbit degenerates');
+    // Well short of overhead: standing art has nothing to show a camera looking
+    // straight down at it, which is why an HD-2D game does not offer the angle.
+    assert.equal(view.view.pitch, 72, 'stops short of looking down on standing art');
 });
 
 test('zoom is clamped at both ends', () => {
