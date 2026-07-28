@@ -6,6 +6,9 @@ This root changelog summarizes public release progress for GitHub; larger releas
 
 ## [Unreleased - 0.97.0]
 
+Both fixes below landed with their plumbing under test but have not yet been run
+against a real project. `docs/HANDOFF.md` records what to check and where.
+
 ### Fixed
 
 - Projects that use a tile size other than 48 rendered as a mosaic of the wrong art. RPG Maker MZ lets a project choose 48, 32, 24 or 16 pixels and records the choice in `System.json`, and Reactor's own Database has always offered the setting — but the editor's map view, tile palette and tileset editor were written when 48 was the only answer, and sampled every sheet in 48-pixel steps regardless. On a 32-pixel project each read landed one and a half tiles further along than it should and the error accumulated, so the map drew as repeating fragments of unrelated tiles. The game itself was fine: the runtime already read the setting. Every surface that measures in pixels reads it now — the map view, the tile palette, the tileset editor, the hover preview and the 3D view — and changing the setting in the Database redraws the open map instead of waiting for the next launch.
