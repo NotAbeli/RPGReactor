@@ -1346,7 +1346,7 @@ class DatabaseTilesetEditor {
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.lineWidth = 1;
 
-        const tileSize = 48 * scale; // RPG Maker uses 48px tiles
+        const tileSize = this.tileSize * scale;
 
         // Draw vertical lines
         for (let x = 0; x <= width * scale; x += tileSize) {
@@ -1368,7 +1368,7 @@ class DatabaseTilesetEditor {
     // Render autotile palette showing representative tiles only (one per autotile kind)
     renderAutotilePalette(ctx, img, layer) {
         const canvas = ctx.canvas;
-        const tileSize = 48; // Each preview tile is 48x48
+        const tileSize = this.tileSize;
 
         // Autotile palette layout:
         // A1: 16 kinds (8 cols × 2 rows - water types + waterfalls spread horizontally)
@@ -1900,7 +1900,7 @@ class DatabaseTilesetEditor {
     // Draw selection highlight overlay (like TilesetPaletteViewer)
     drawSelectionHighlight(ctx, tileX, tileY, isSplitSheet) {
         const scale = 1;
-        const tileSize = 48 * scale;
+        const tileSize = this.tileSize * scale;
 
         // Convert logical tile coordinates to canvas coordinates
         // For B-E layers, tiles in the right half (x >= 8) are drawn in the bottom half

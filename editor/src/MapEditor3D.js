@@ -15,6 +15,8 @@
 class MapEditor3D {
     constructor(projectController) {
         this.projectController = projectController;
+        // A cell is the project's tile size in pixels, which MZ lets a project
+        // choose; tilePixels() reads it and the prototype holds the default.
         this.enabled = false;
         this.canvas = null;
         this.renderer = null;
@@ -325,7 +327,8 @@ class MapEditor3D {
         this.clearScene();
         this.mapScene = new Reactor3D.MapScene(mapData, bitmaps, {
             flags: tileset.flags,
-            tilesetId: tileset.id
+            tilesetId: tileset.id,
+            tileSize: this.tilePixels()
         });
         this.applyAtmosphere(mapData);
         await this.buildEvents(mapData);
@@ -341,6 +344,14 @@ class MapEditor3D {
             events: this.eventGroup ? this.eventGroup.children.length : 0
         };
         return true;
+    }
+
+    /**
+     * The project's tile size in pixels, taken from the map surface that
+     * already reads it so the two views cannot disagree about cell size.
+     */
+    tilePixels() {
+        return this.projectController?.tilemapManager?.TILE_SIZE || this.tileSize || 48;
     }
 
     /**
@@ -612,8 +623,8 @@ class MapEditor3D {
         if (THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
 
         // A 48px frame is one tile, the same relationship the 2D map uses.
-        const height = frameHeight / 48;
-        const width = frameWidth / 48;
+        const height = frameHeight / this.tilePixels();
+        const width = frameWidth / this.tilePixels();
         const mesh = new THREE.Mesh(
             new THREE.PlaneGeometry(width, height),
             new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.4 })
@@ -732,8 +743,8 @@ class MapEditor3D {
             y,
             // Where within the tile, in pixels, for the tools that care which
             // quadrant was clicked.
-            localX: (point.x - x) * 48,
-            localY: (point.z - y) * 48
+            localX: (point.x - x) * this.tilePixels(),
+            localY: (point.z - y) * this.tilePixels()
         };
     }
 
@@ -984,8 +995,8 @@ class MapEditor3D {
         // The quadrant-sensitive tools read this rather than taking coordinates,
         // so the raycast hit is handed over in the pixel space they expect.
         editor.lastMousePos = {
-            x: tile.x * 48 + tile.localX,
-            y: tile.y * 48 + tile.localY
+            x: tile.x * this.tilePixels() + tile.localX,
+            y: tile.y * this.tilePixels() + tile.localY
         };
         editor.paintTile(tile.x, tile.y);
         this._paintDirty = true;
@@ -1113,3 +1124,9 @@ class MapEditor3D {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = MapEditor3D;
 }
+
+// A default on the prototype, so an instance built without the constructor —
+// which the viewport tests do, to avoid three.js and the DOM — still measures
+// in whole tiles rather than in undefined.
+MapEditor3D.prototype.tileSize = 48;
+

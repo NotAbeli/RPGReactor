@@ -2693,7 +2693,9 @@ class MapEditor {
 
     // Get texture for a tile from the palette
     getTileTextureFromPalette(x, y, layer, tilesetTexture) {
-        const tileSize = 48; // RPG Maker tile size
+        // The project's tile size, not an assumption: MZ offers 48, 32, 24 and
+        // 16, and a sheet is laid out in whichever was chosen.
+        const tileSize = this.tilemapManager?.TILE_SIZE || 48;
 
         // Calculate source position in tileset based on layer type
         // MUST match TilesetPaletteViewer.js drawAutotilePreview logic exactly
@@ -2737,8 +2739,8 @@ class MapEditor {
                 // (bx*2 + qsx) half-tiles, i.e. bx*48 px. The old *24 here
                 // sampled the middle of the water block — lily pads
                 // previewed as the water corner-dots tile.
-                srcX = bx * 48;
-                srcY = by * 48;
+                srcX = bx * tileSize;
+                srcY = by * tileSize;
             } else if (layer === 'A2') {
                 // A2: Ground autotiles (8 columns × 4 rows of 2x3 blocks)
                 // x,y are palette grid coordinates - extract top-left preview tile from 2x3 block

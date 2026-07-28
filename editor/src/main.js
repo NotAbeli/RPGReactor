@@ -624,6 +624,20 @@ class RPGReactor {
             // keep the 48 they started with.
             this.tilesetPaletteViewer.refreshTileMetrics();
             this.tilemapManager.refreshTileMetrics();
+
+            // The Database can change the tile size while a map is open. Every
+            // surface re-reads it and the map is redrawn, so the setting takes
+            // effect where it was made rather than on the next launch.
+            window.rpgReactorTileSizeChanged = () => {
+                const moved = [
+                    this.tilemapManager.refreshTileMetrics(),
+                    this.tilesetPaletteViewer.refreshTileMetrics()
+                ].some(Boolean);
+                if (!moved) return;
+                this.tilesetPaletteViewer.renderCurrentLayer?.();
+                const openMap = this.tilemapManager?.currentMap?.id;
+                if (openMap != null) this.projectController?.loadMap(openMap, { force: true });
+            };
             this.projectController.setTilesetPaletteViewer(this.tilesetPaletteViewer);
 
             // Initialize the UI only once

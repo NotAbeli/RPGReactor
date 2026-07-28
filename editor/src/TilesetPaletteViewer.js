@@ -19,11 +19,10 @@ class TilesetPaletteViewer {
         this.app = app;
         this.projectPath = projectPath;
         this.databaseManager = databaseManager;
-        // MZ projects choose 48, 32, 24 or 16 and record it in System.json.
-        // Every measurement below that is in pixels reads this rather than
-        // assuming 48; the 48s in tile-id arithmetic are the format's
+        // The size comes from System.json via refreshTileMetrics; the
+        // prototype carries the default until then. Measurements in pixels
+        // read it, while the 48s in tile-id arithmetic are the format's
         // shapes-per-autotile-kind and stay where they are.
-        this.tileSize = 48;
         this.fs = null;
         this.path = null;
         this.currentTileset = null;

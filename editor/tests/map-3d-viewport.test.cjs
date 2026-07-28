@@ -294,7 +294,11 @@ test('a raycast hit becomes a tile coordinate', () => {
     // but the world position can, since the map is one unit per tile.
     assert.match(source, /Math\.floor\(point\.x\)/);
     assert.match(source, /Math\.floor\(point\.z\)/);
-    assert.match(source, /localX: \(point\.x - x\) \* 48/, 'quadrant tools get pixel offsets');
+    // In pixels, and a pixel is whatever size this project's tiles are: MZ
+    // offers 48, 32, 24 and 16, and a hardcoded 48 put every quadrant offset
+    // half a tile out on anything but the default.
+    assert.match(source, /localX: \(point\.x - x\) \* this\.tilePixels\(\)/,
+        'quadrant tools get pixel offsets in the project\'s tile size');
 });
 
 test('the scene has a sky and fog scaled to the map', () => {

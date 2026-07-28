@@ -62,3 +62,53 @@ test('the renderers read it rather than hardcoding 48', () => {
     const html = fs.readFileSync(path.join(editorRoot, 'index.html'), 'utf8');
     assert.ok(html.indexOf('src/utils/TileMetrics.js') > 0, 'the editor loads it');
 });
+
+test('nothing that measures in pixels still assumes 48', () => {
+    // A sweep rather than a list, because the ones that get missed are the
+    // ones nobody thought to look at. The distinction: 48 as a *pixel* size is
+    // the project's choice, while 48 as "shapes per autotile kind" is fixed by
+    // the file format and must never move.
+    const files = [
+        'src/TilemapManager.js', 'src/MapEditor.js', 'src/MapEditor3D.js',
+        'src/TilesetPaletteViewer.js', 'src/ProjectController.js',
+        'src/database/DatabaseTilesetEditor.js'
+    ];
+    // A default reached when the project has not said — `|| 48`, `: 48`,
+    // `return 48` — is the point of the exercise rather than a violation, and
+    // `% 48` / `< 48` / `2048 + kind * 48` are the format's shapes per kind.
+    const allowed = [
+        /\|\| 48/, /: 48\b/, /return 48;/,                      // stated fallbacks
+        /[%<] 48/, /\d{4} \+ [^;]*\* 48/,                       // format arithmetic
+        /- (?:2048|2816|4352|5888|band\.base|tileStart|this\.TILE_ID_A1)\) \/ 48/,
+        /48 (?:IDs|shapes|kinds|variations|consecutive)/,
+        /0\.48/, /48, 32, 24, 16/, /prototype\.tileSize = 48/,
+        /kindOffset = 48/, /A4 has 48/, /shape slots/
+    ];
+    const offenders = [];
+    for (const file of files) {
+        const source = fs.readFileSync(path.join(editorRoot, file), 'utf8');
+        source.split('\n').forEach((line, index) => {
+            if (!/\b48\b/.test(line)) return;
+            if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;        // a comment
+            if (allowed.some(pattern => pattern.test(line))) return;
+            offenders.push(`${file}:${index + 1}  ${line.trim()}`);
+        });
+    }
+    assert.deepEqual(offenders, [],
+        `these still measure in a hardcoded 48:\n${offenders.join('\n')}`);
+});
+
+test('changing the size in the Database reaches the open map', () => {
+    // Every surface reads the size once, when a project loads. Changing it in
+    // the Database and seeing nothing happen until the next launch looks
+    // exactly like the setting doing nothing at all.
+    const system2 = fs.readFileSync(
+        path.join(editorRoot, 'src', 'database', 'DatabaseSystem2Editor.js'), 'utf8');
+    assert.match(system2, /system\.tileSize = parseInt/);
+    assert.match(system2, /rpgReactorTileSizeChanged/, 'it announces the change');
+
+    const main = fs.readFileSync(path.join(editorRoot, 'src', 'main.js'), 'utf8');
+    assert.match(main, /window\.rpgReactorTileSizeChanged = \(\) =>/);
+    assert.match(main, /refreshTileMetrics\(\)/);
+    assert.match(main, /loadMap\(openMap/, 'and the open map is redrawn');
+});

@@ -364,6 +364,13 @@ class DatabaseSystem2Editor {
             radio.addEventListener('change', (e) => {
                 system.tileSize = parseInt(e.target.value);
                 console.log('Updated tileSize to:', system.tileSize);
+                // Every surface that draws tiles measures in this, and each
+                // reads it once when a project loads. Without telling them, the
+                // open map keeps drawing at the old size until a reload, which
+                // looks exactly like the setting having done nothing.
+                if (typeof window !== 'undefined' && typeof window.rpgReactorTileSizeChanged === 'function') {
+                    window.rpgReactorTileSizeChanged();
+                }
             });
         });
 

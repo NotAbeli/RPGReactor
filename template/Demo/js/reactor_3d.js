@@ -1856,6 +1856,19 @@ Reactor3D.currentFlags = function() {
         && $gameMap.tilesetFlags && $gameMap.tilesetFlags()) || null;
 };
 
+/**
+ * The project's tile size, from the data the game has loaded.
+ *
+ * `Game_Map.tileWidth` reads the same field; this exists because the geometry
+ * is built before a scene has a map object, and outside a running game the
+ * editor supplies the number itself.
+ */
+Reactor3D.currentTileSize = function() {
+    const size = typeof $dataSystem !== "undefined" && $dataSystem
+        ? Number($dataSystem.tileSize) : 0;
+    return [48, 32, 24, 16].includes(size) ? size : 48;
+};
+
 Reactor3D.currentTilesetId = function() {
     return (typeof $gameMap !== "undefined" && $gameMap
         && $gameMap.tilesetId && $gameMap.tilesetId()) || 0;
@@ -1956,10 +1969,15 @@ Reactor3D.MapScene.prototype.build = function(mapData, bitmaps, options) {
 
     const settings = options || {};
     const flags = settings.flags || Reactor3D.currentFlags();
+    // A cell is the project's tile size. MZ records the choice in System.json
+    // and the runtime honours it everywhere else; a sheet laid out at 32 and
+    // sampled at 48 draws the wrong art in every cell.
+    const tileSize = settings.tileSize || Reactor3D.currentTileSize();
     const tilesetId = settings.tilesetId != null
         ? settings.tilesetId
         : Reactor3D.currentTilesetId();
     const built = Reactor3D.Geometry.build(mapData, {
+        tileSize,
         elevationAt: (x, y) => Reactor3D.elevationAt(mapData, x, y),
         // Authored classification where it exists, flags as the guess where it
         // does not.

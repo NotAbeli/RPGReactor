@@ -3381,8 +3381,9 @@ class ProjectController {
             }
 
             const mapData = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
-            const pixelWidth = (mapData.width || 0) * 48;
-            const pixelHeight = (mapData.height || 0) * 48;
+            const tileSize = this.tilemapManager?.TILE_SIZE || 48;
+            const pixelWidth = (mapData.width || 0) * tileSize;
+            const pixelHeight = (mapData.height || 0) * tileSize;
             const maxCanvasSize = 32767;
             if (!pixelWidth || !pixelHeight || pixelWidth > maxCanvasSize || pixelHeight > maxCanvasSize) {
                 alert(`${this._tt('Map image is too large to export')} (${pixelWidth}x${pixelHeight}).`);
