@@ -24,7 +24,7 @@ RPGReactor/
 
 - [Editor README](editor/README.md): detailed feature list, source launch steps, project structure, shortcuts, and technical notes.
 - [Changelog](CHANGELOG.md): GitHub-facing release progress and links to the detailed editor changelog.
-- [RPG Reactor 0.96.0 draft overview](docs/devlogs/2026-07-25-rpg-reactor-0.96.0.md): current-cycle explanation of the deep correctness audit, the authored-data oracle, and the event-command and database fixes it produced.
+- [RPG Reactor 0.96.0 draft overview](docs/devlogs/2026-07-25-rpg-reactor-0.96.0.md): current-cycle explanation of the deep correctness audit, the authored-data oracle, the event-command and database fixes it produced, the 3D map renderer, and a closing section on what in 3D is not finished.
 - [RPG Reactor 0.95.0 overview](docs/devlogs/2026-07-18-rpg-reactor-0.95.0.md): prior-cycle explanation, including source-audited localization, expanded database workspaces, complete Conditional Branch editing, safer large-map workflows, and restored MV/YEP save compatibility.
 - [Maintainer docs](docs/README.md): workflows that are useful for project maintenance but are not required for normal editor use.
 - [Release checklist](docs/RELEASE-CHECKLIST.md): exact maintainer commands for validated, signed GitHub and optional itch.io publication.

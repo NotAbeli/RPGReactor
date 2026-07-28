@@ -8,6 +8,36 @@ This root changelog summarizes public release progress for GitHub; larger releas
 
 0.95.1 was an internal development version and was never published; its changes ship in 0.96.0.
 
+### Still in progress
+
+3D maps are new in this cycle and are honestly described as a first pass. What
+follows is known to be unfinished — it is listed so nobody has to discover it
+themselves. Everything here is opt-in: a map is only 3D if its note says `<3d>`,
+and a project with no 3D maps is untouched by all of it.
+
+- **Terrain needs authoring to look its best.** Which tiles stand up cannot be
+  derived from a tileset — a shopfront wall and a forest are both simply
+  impassable — so it is set per tile in the 3D Shape editor, and objects that
+  span several tiles are declared there too. `derive-tileset-3d-classes.cjs`
+  fills in a reasonable starting point from how your maps are already painted;
+  expect to correct it rather than accept it.
+- **Forests read as dense cover rather than as individual trees**, and a
+  mountain range reads as one texture rather than as peaks. Both are drawn from
+  the terrain's own lone variant, which is the right source; the arrangement is
+  not settled.
+- **Interior walls show the wrong art on top.** A wall autotile is a wall
+  *face* and has no top, so a raised wall is capped with its own side art. The
+  fix is to pair a wall with the roof drawn for it, which is not implemented.
+- **Pits and craters stand up.** Their art blocks movement exactly like a rock
+  does, and nothing in the tileset distinguishes a hole from an object. Set
+  those tiles to Flat in the 3D Shape editor, once per tileset.
+- **No parallax or sky.** A 3D map draws a flat backdrop; `parallaxName` is
+  ignored. Battles are 2D, unchanged.
+- **Editing a large 3D map is slower than editing it in 2D.** Every paint
+  stroke rebuilds the whole scene. Fine at 100x50, noticeable at 200x200.
+- The 3D Shape key and preview panels are English-only for now, pending a
+  translation pass.
+
 ### Added
 
 - **3D maps (HD-2D).** A map can be drawn in 3D: the ground lies flat, walls and buildings stand up, and characters stay as 2D sprites moving on the grid. It is opt-in per map — a map is 3D only if its note contains `<3d>` — and nothing else changes. Event commands, passability, regions and movement keep working on the same grid, and `Map###.json` stays standard RPG Maker data; elevation and camera live in a `Map###.r3d.json` beside it. A project with no 3D maps behaves exactly as before and never downloads the 3D library. Battles are still 2D.

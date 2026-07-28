@@ -527,3 +527,32 @@ single authored instance holds `[6, null]`, whose leading value matches neither
 the choice count nor the cancel setting. The interpreter reads nothing from it.
 Emitting a guessed number would be worse than emitting none, so the check is
 excluded with that reasoning written down rather than quietly skipped.
+
+## What is not finished
+
+3D maps are a first pass and this section is the honest edge of it. Everything
+below is opt-in twice over: a map renders in 3D only if its note contains
+`<3d>`, and a project without such a map never loads the 3D library at all.
+
+**Terrain wants authoring.** The classification cannot be derived from a
+tileset, only from how the tileset is used, and `derive-tileset-3d-classes.cjs`
+produces a starting point rather than an answer. Correcting it in the 3D Shape
+editor is expected work, not a sign something has gone wrong.
+
+**Three known-wrong cases, each for the same reason** — the tileset does not
+carry the distinction the renderer needs:
+
+- A wall autotile is a wall *face*. It has no top, so a raised wall is capped
+  with its own side art. Pairing an A4 roof kind with the wall kind eight rows
+  below it is the fix; the sheet layout guarantees that pairing exists.
+- A pit blocks movement exactly like a rock. Nothing separates a hole in the
+  ground from an object standing on it, so pits stand up until told otherwise.
+- A forest is drawn from its lone variant, which is right, but one cut-out per
+  cell reads as cover rather than as trees. The arrangement is unsettled; the
+  source is not.
+
+**Performance.** Painting rebuilds the whole scene. Incremental rebuild is the
+fix and has not been done.
+
+**Absent.** Parallax and sky in 3D. Event dragging in the 3D view. Region and
+layer overlays in the 3D view. Battles, which remain 2D and unchanged.
