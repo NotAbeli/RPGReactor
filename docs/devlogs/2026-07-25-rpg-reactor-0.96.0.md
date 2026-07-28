@@ -16,10 +16,9 @@ fields the engine reads unconditionally, and editor arithmetic that disagreed
 with the runtime performing the same calculation.
 
 Then came tileset sheets F and G, and after them the HD-2D work described below.
-Test coverage grew from 452 to 777 passing tests. Two editing features also
+Test coverage grew from 452 to 809 passing tests. Two editing features also
 landed — collapsible event blocks and a non-destructive map resize — alongside
-localization, performance and MV-compatibility work. This document remains a
-draft until 0.96.0 is tagged and published.
+localization, performance and MV-compatibility work.
 
 ## The bundled projects became an oracle
 

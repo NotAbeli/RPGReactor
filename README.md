@@ -4,7 +4,7 @@ RPG Reactor 0.96.0 is an open-source, cross-platform RPG game editor and runtime
 
 Use RPG Reactor to create, edit, playtest, and package 2D RPGs with familiar RPG Maker-style maps, events, database records, plugins, and deployment workflows, without depending on the original RPG Maker runtime or editor.
 
-Pre-built download binaries are available at <https://psychronic.itch.io/rpg-reactor>. The current development version is 0.96.0 and is not published yet; the latest tagged source release is [0.95.0](https://github.com/Psychronic-Games/RPGReactor/releases/tag/v0.95.0).
+Pre-built download binaries are available at <https://psychronic.itch.io/rpg-reactor>. The latest tagged source release is [0.96.0](https://github.com/Psychronic-Games/RPGReactor/releases/tag/v0.96.0).
 
 ## Repository Layout
 
@@ -24,7 +24,7 @@ RPGReactor/
 
 - [Editor README](editor/README.md): detailed feature list, source launch steps, project structure, shortcuts, and technical notes.
 - [Changelog](CHANGELOG.md): GitHub-facing release progress and links to the detailed editor changelog.
-- [RPG Reactor 0.96.0 draft overview](docs/devlogs/2026-07-25-rpg-reactor-0.96.0.md): current-cycle explanation of the deep correctness audit, the authored-data oracle, the event-command and database fixes it produced, the 3D map renderer, and a closing section on what in 3D is not finished.
+- [RPG Reactor 0.96.0 overview](docs/devlogs/2026-07-25-rpg-reactor-0.96.0.md): release explanation of the deep correctness audit, the authored-data oracle, the event-command and database fixes it produced, the 3D map renderer, and a closing section on what in 3D is not finished.
 - [RPG Reactor 0.95.0 overview](docs/devlogs/2026-07-18-rpg-reactor-0.95.0.md): prior-cycle explanation, including source-audited localization, expanded database workspaces, complete Conditional Branch editing, safer large-map workflows, and restored MV/YEP save compatibility.
 - [Maintainer docs](docs/README.md): workflows that are useful for project maintenance but are not required for normal editor use.
 - [Release checklist](docs/RELEASE-CHECKLIST.md): exact maintainer commands for validated, signed GitHub and optional itch.io publication.
@@ -166,7 +166,7 @@ cd editor
 npm test
 ```
 
-GitHub Actions runs the same suite from a clean checkout, including syntax, project scaffolding, runtime manifests, save safety, localization no-fallback checks, cross-instance clipboard transport, database and event-command serialization, map sampling and exact autotile placement, picture extensions, project lifecycle security, runtime compatibility, deployment, and release policy/signing gates. Current 0.96.0 validation completed with **777 passing tests and no failures**.
+GitHub Actions runs the same suite from a clean checkout, including syntax, project scaffolding, runtime manifests, save safety, localization no-fallback checks, cross-instance clipboard transport, database and event-command serialization, map sampling and exact autotile placement, picture extensions, project lifecycle security, runtime compatibility, deployment, and release policy/signing gates. Current 0.96.0 validation completed with **809 passing tests and no failures**.
 
 ## Runtime
 
