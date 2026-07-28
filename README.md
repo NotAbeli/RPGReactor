@@ -178,3 +178,21 @@ RPG Reactor-owned code is licensed under the MIT License in [LICENSE](LICENSE).
 Bundled third-party components remain under their respective licenses; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). No single license is asserted
 for third-party files or user/project content.
+
+## Cutting a release
+
+```
+GITHUB_TOKEN=... node editor/build-scripts/cut-release.cjs 0.97.0
+```
+
+Runs the editor test suite, rolls the version surfaces (changelog heading,
+README, `editor/package.json`), commits, tags, pushes the branch and tag, and
+publishes the GitHub release with that version's changelog section as its body.
+`--dry-run` reports what it would do and leaves the tree untouched; `--no-push`
+stops after tagging. Without a token it stops after the push and prints the URL
+to create the release by hand — a tag alone does not make one.
+
+This does not build or sign downloads. `release-candidate.yml` builds and signs
+the native artifacts and `release.yml` attaches them and pushes to itch.io; run
+those from the Actions tab when a release needs binaries.
+
