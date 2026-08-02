@@ -1,0 +1,287 @@
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const args = process.argv.slice(2);
+const platformArg = args.find(arg => arg.startsWith('--platform='));
+const outputArg = args.find(arg => arg.startsWith('--output='));
+const projectArg = args.find(arg => arg.startsWith('--project='));
+const nameArg = args.find(arg => arg.startsWith('--name='));
+const allowUnverifiedDownloads = args.includes('--developer-unverified-downloads');
+
+// Parse arguments
+// nw-builder v4 takes one platform per build call
+let platforms = ['win', 'linux', 'osx'];
+if (platformArg) {
+    const platform = platformArg.split('=')[1];
+    if (platform === 'mac') {
+        platforms = ['osx'];
+    } else if (platform === 'win') {
+        platforms = ['win'];
+    } else if (platform === 'linux') {
+        platforms = ['linux'];
+    }
+}
+
+const outputDir = outputArg ? outputArg.split('=')[1] : path.join(__dirname, '../dist');
+const projectPath = projectArg ? projectArg.split('=').slice(1).join('=') : null;
+const appName = nameArg ? nameArg.split('=').slice(1).join('=') : null;
+
+if (!projectPath) {
+    console.error('ERROR: --project=<path> argument is required.');
+    console.error('Usage: node build.js --project=/path/to/project --developer-unverified-downloads ' +
+        '[--name="Game Name"] [--platform=win|mac|linux] [--output=/path/to/output]');
+    process.exit(1);
+}
+
+if (!allowUnverifiedDownloads) {
+    console.error('ERROR: build.js delegates dynamic NW.js acquisition to nw-builder and cannot authenticate that download.');
+    console.error('Public release builds require a trusted SHA-256 release hash manifest. Use Deploy Game, or pass');
+    console.error('--developer-unverified-downloads only for a non-release local developer build.');
+    process.exit(1);
+}
+
+if (!fs.existsSync(projectPath)) {
+    console.error(`ERROR: Project path does not exist: ${projectPath}`);
+    process.exit(1);
+}
+
+// Read the project's package.json for app details
+const projectPackagePath = path.join(projectPath, 'package.json');
+if (!fs.existsSync(projectPackagePath)) {
+    console.error(`ERROR: No package.json found in project directory: ${projectPath}`);
+    process.exit(1);
+}
+const projectPackageJson = JSON.parse(fs.readFileSync(projectPackagePath, 'utf8'));
+
+// Determine game name: CLI arg > package.json window.title > "Game"
+const gameName = appName || (projectPackageJson.window && projectPackageJson.window.title) || 'Game';
+// Safe name for file system (strip characters that cause issues in paths/executables)
+const safeGameName = gameName.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '');
+
+console.log('========================================');
+console.log('RPG Reactor - Game Build Script');
+console.log('========================================');
+console.log(`Game: ${gameName}`);
+console.log(`Project: ${projectPath}`);
+console.log(`Platform(s): ${platforms.join(', ')}`);
+console.log(`Output directory: ${outputDir}`);
+console.log('========================================\n');
+
+// Paths/files to exclude when staging (relative to project root)
+const EXCLUDED = new Set([
+    'Backup',
+    'BACKUP',
+    'backup',
+    'Screenshots',
+    'save',
+    'project.rpgreactor',
+    'game.rmmzproject',
+    'Game.rpgproject',
+    'game.rpgproject',
+    path.join('js', 'REACTOR_CORE_DUMP_MIDDEV'),
+    path.join('js', 'RMMZ_Corescript'),
+    path.join('data', 'nul'),
+]);
+
+// Battle Test writes a full Test_-prefixed copy of every database file into
+// data/ and never removes it. Those files are regenerated on the next battle
+// test and are never read outside btest mode, so shipping them only bloats the
+// release (13-15 MB on a mature project) and leaks the developer's test party.
+function isStagingExcluded(relPath) {
+    if (EXCLUDED.has(relPath)) return true;
+    if (/^rpgmaker-runtime-backup(-\d+)?\.zip$/.test(relPath)) return true;
+    return relPath === path.join('data', path.basename(relPath))
+        && /^Test_.*\.json$/.test(path.basename(relPath));
+}
+
+/**
+ * Recursively copy a directory, skipping excluded paths.
+ */
+function copyDirFiltered(src, dest, relBase) {
+    if (!fs.existsSync(src)) return;
+
+    fs.mkdirSync(dest, { recursive: true });
+    const entries = fs.readdirSync(src, { withFileTypes: true });
+
+    for (const entry of entries) {
+        const relPath = path.join(relBase, entry.name);
+
+        if (isStagingExcluded(relPath)) {
+            console.log(`  [skip] ${relPath}`);
+            continue;
+        }
+
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
+
+        if (entry.isDirectory()) {
+            copyDirFiltered(srcPath, destPath, relPath);
+        } else {
+            fs.copyFileSync(srcPath, destPath);
+        }
+    }
+}
+
+function validateProjectRuntime(root) {
+    const required = [
+        'reactor_main.js', 'reactor_core.js', 'reactor_3d.js', 'reactor_managers.js',
+        'reactor_objects.js', 'reactor_scenes.js', 'reactor_sprites.js', 'reactor_picture_extensions.js',
+        'reactor_windows.js', 'reactor_mv_compat.js', 'reactor_plugins.js',
+        path.join('libs', 'pixi.js'), path.join('libs', 'pixi_compat.js'),
+        path.join('libs', 'pako.min.js'), path.join('libs', 'lz-string.js'), path.join('libs', 'localforage.min.js'),
+        path.join('libs', 'effekseer.min.js'), path.join('libs', 'effekseer.wasm'),
+        path.join('libs', 'vorbisdecoder.js'),
+    ];
+    const jsRoot = path.join(root, 'js');
+    // What index.html boots is the ground truth: imported RPG Maker projects
+    // ship their own corescript and need none of the Reactor files.
+    let usesReactorRuntime = null;
+    try {
+        usesReactorRuntime = /js\/reactor_main\.js/.test(fs.readFileSync(path.join(root, 'index.html'), 'utf8'));
+    } catch {}
+    if (usesReactorRuntime === null) {
+        const metadataPath = path.join(root, 'project.rpgreactor');
+        let metadataRequiresReactor = false;
+        if (fs.existsSync(metadataPath)) {
+            try {
+                metadataRequiresReactor = JSON.parse(fs.readFileSync(metadataPath, 'utf8')).imported !== true;
+            } catch {
+                metadataRequiresReactor = true;
+            }
+        }
+        usesReactorRuntime = metadataRequiresReactor
+            || required.some(file => file !== 'reactor_main.js' && fs.existsSync(path.join(jsRoot, file)));
+    }
+    if (!usesReactorRuntime) return false;
+    const missing = required.filter(file => !fs.existsSync(path.join(jsRoot, file)));
+    if (missing.length) {
+        throw new Error(`Project runtime is incomplete: missing ${missing.map(file => path.join('js', file)).join(', ')}. `
+            + 'Use "Install Reactor Runtime" in the editor\'s Build menu to copy the engine runtime into the project.');
+    }
+    return true;
+}
+
+function slugifyPackageName(value) {
+    const slug = String(value || 'game')
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    return slug || 'game';
+}
+
+function normalizeStagedPackage(stagingDir, gameName) {
+    const stagedPackagePath = path.join(stagingDir, 'package.json');
+    if (!fs.existsSync(stagedPackagePath)) return;
+
+    const stagedPackage = JSON.parse(fs.readFileSync(stagedPackagePath, 'utf8'));
+    const titleSlug = slugifyPackageName(gameName);
+    const currentName = slugifyPackageName(stagedPackage.name);
+    stagedPackage.name = currentName === 'rmmz-game'
+        ? `rpg-reactor-${titleSlug}`
+        : currentName;
+
+    fs.writeFileSync(stagedPackagePath, JSON.stringify(stagedPackage, null, 2));
+}
+
+// Create staging directory with clean game files
+const stagingDir = path.join(os.tmpdir(), `rpgreactor-build-${Date.now()}`);
+console.log('Creating staging directory...');
+console.log(`  ${stagingDir}\n`);
+
+console.log('Staging game files (excluding dev/backup files)...');
+validateProjectRuntime(projectPath);
+copyDirFiltered(projectPath, stagingDir, '');
+normalizeStagedPackage(stagingDir, gameName);
+console.log('\nStaging complete.\n');
+
+// Ensure output directory exists
+if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+}
+
+function cleanupStaging() {
+    try {
+        console.log('Cleaning up staging directory...');
+        fs.rmSync(stagingDir, { recursive: true, force: true });
+        console.log('Staging directory cleaned up.');
+    } catch (err) {
+        console.warn(`Could not clean up staging directory: ${err.message}`);
+    }
+}
+
+// nw-builder v4 is ESM — must use dynamic import()
+(async () => {
+    const { default: nwbuild } = await import('nw-builder');
+
+    const gameVersion = projectPackageJson.version || '1.0.0';
+
+    for (const platform of platforms) {
+        console.log(`\n--- Building for ${platform} (x64) ---\n`);
+
+        // Each platform gets its own output subdirectory
+        // (nw-builder v4 wipes outDir at the start of each build)
+        const platformOutDir = path.join(outputDir, `${safeGameName}-${platform}-x64`);
+
+        // Platform-specific app configuration
+        const appConfig = {
+            name: safeGameName,
+        };
+
+        if (platform === 'win') {
+            // Windows needs .ico for icon embedding; use false to skip if absent
+            // (false is non-nullish so nw-builder won't override it from package.json)
+            const icoPath = path.join(stagingDir, 'icon', 'icon.ico');
+            appConfig.icon = fs.existsSync(icoPath) ? icoPath : false;
+            // Required version fields (game package.json may lack "version")
+            appConfig.version = gameVersion;
+            appConfig.fileVersion = gameVersion;
+            appConfig.productVersion = gameVersion;
+        } else if (platform === 'osx') {
+            // macOS needs .icns for icon embedding
+            const icnsPath = path.join(stagingDir, 'icon', 'icon.icns');
+            appConfig.icon = fs.existsSync(icnsPath) ? icnsPath : false;
+            appConfig.CFBundleVersion = gameVersion;
+            appConfig.CFBundleShortVersionString = gameVersion;
+            appConfig.CFBundleDisplayName = gameName;
+            appConfig.CFBundleName = gameName;
+        }
+        // For Linux: leave app.icon unset — nw-builder reads window.icon
+        // from the game's package.json and resolves it from package.nw/
+
+        await nwbuild({
+            mode: 'build',
+            version: 'latest',
+            flavor: 'normal',
+            platform: platform,
+            arch: 'x64',
+            srcDir: stagingDir,
+            cacheDir: path.join(__dirname, '../.nw-cache'),
+            outDir: platformOutDir,
+            glob: false,
+            app: appConfig,
+        });
+
+        console.log(`\nBuild for ${platform} complete: ${platformOutDir}`);
+    }
+
+    console.log('\n========================================');
+    console.log('Build completed successfully!');
+    console.log('========================================');
+    console.log(`Output location: ${outputDir}`);
+    console.log('\nBuild artifacts:');
+    platforms.forEach(platform => {
+        const label = platform === 'osx' ? 'MAC' : platform.toUpperCase();
+        console.log(`  - ${label}: ${path.join(outputDir, `${safeGameName}-${platform}-x64`)}`);
+    });
+    console.log();
+
+    cleanupStaging();
+})().catch((error) => {
+    console.error('\n========================================');
+    console.error('Build failed!');
+    console.error('========================================');
+    console.error(error);
+    cleanupStaging();
+    process.exit(1);
+});

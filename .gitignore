@@ -1,0 +1,38 @@
+# ===== Dependencies (regenerable via npm ci) =====
+node_modules/
+**/node_modules/
+
+# ===== Packaged NW.js runtime distribution =====
+# ~923 MB of binaries (nw.exe, DLLs, locales, swiftshader) — regenerable
+# via the editor distribution builder / nwjs download.
+/AGONIA ENGINE/
+
+# ===== Bundled demo game template =====
+# ~328 MB of binary assets used as the "New Project" seed; not editor code.
+/app/template/Demo/
+
+# ===== Local game projects (test data, not editor code) =====
+/Право на Жизнь - Актуал/
+
+# ===== Build output & caches =====
+dist/
+build/
+out/
+.nw-cache/
+.nw-codec-cache/
+package.nw
+
+# ===== Logs =====
+*.log
+debug.log
+
+# ===== OS junk =====
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ===== Editor / IDE =====
+.vscode/
+.idea/
+*.swp

@@ -1,0 +1,66 @@
+{
+  "name": "rpg-reactor",
+  "version": "0.96.0",
+  "private": true,
+  "description": "An open-source, cross-platform RPG game engine",
+  "main": "index.html?rrFrameless=1",
+  "scripts": {
+    "start": "nw .",
+    "dev": "nw .",
+    "test": "node --test",
+    "build": "node build-scripts/build.js",
+    "build:win": "node build-scripts/build.js --platform=win",
+    "build:mac": "node build-scripts/build.js --platform=mac",
+    "build:linux": "node build-scripts/build.js --platform=linux",
+    "convert-icon": "node build-scripts/convert-icon.js"
+  },
+  "window": {
+    "title": "Agonia Engine",
+    "width": 1280,
+    "height": 720,
+    "min_width": 1280,
+    "min_height": 720,
+    "position": "center",
+    "icon": "images/icon.png",
+    "show_devtools": false,
+    "frame": false,
+    "toolbar": false,
+    "show": true
+  },
+  "name_for_display": "Agonia Engine",
+  "chromium-args": "--disable-direct-composition --force-device-scale-factor=1 --window-size=1280,720 --class=rpg-reactor",
+  "webkit": {
+    "plugin": true
+  },
+  "dependencies": {
+    "@jsquash/oxipng": "2.3.0",
+    "gif.js": "^0.2.0",
+    "gifuct-js": "^2.1.2",
+    "pixi.js": "^8.0.0",
+    "three": "^0.185.1"
+  },
+  "keywords": [
+    "rpg",
+    "game-engine",
+    "cross-platform",
+    "nwjs",
+    "pixijs"
+  ],
+  "author": "Psychronic",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Psychronic-Games/RPGReactor.git"
+  },
+  "homepage": "https://github.com/Psychronic-Games/RPGReactor#readme",
+  "bugs": {
+    "url": "https://github.com/Psychronic-Games/RPGReactor/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "nw-builder": "^4.17.13",
+    "png-to-ico": "^3.0.1"
+  }
+}
