@@ -170,6 +170,14 @@ release, and its absence looks exactly like the push having failed.
 `--dry-run` reports what it would do and leaves the tree untouched. `--no-push`
 stops after tagging.
 
+If the release step was skipped — no token, and the link went unclicked — the
+tag already exists and a rerun refuses. Finish it without redoing any of the
+rest:
+
+```
+GITHUB_TOKEN=ghp_yourtoken node editor/build-scripts/cut-release.cjs 0.97.0 --publish-only
+```
+
 ### Publishing without the click
 
 Set `GITHUB_TOKEN` and the release is created as well, with that version's

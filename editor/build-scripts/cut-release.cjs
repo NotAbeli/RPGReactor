@@ -35,12 +35,17 @@ const say = message => console.log(message);
 function parseArguments(argv) {
     const version = argv.find(argument => !argument.startsWith('-'));
     if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
-        throw new Error('usage: cut-release.cjs <x.y.z> [--dry-run] [--no-push]');
+        throw new Error('usage: cut-release.cjs <x.y.z> '
+            + '[--dry-run] [--no-push] [--publish-only]');
     }
     return {
         version,
         dryRun: argv.includes('--dry-run'),
-        push: !argv.includes('--no-push')
+        push: !argv.includes('--no-push'),
+        // Publishing is the one step that needs a token, so it is the one that
+        // gets skipped when there isn't one — and then the tag exists and a
+        // rerun refuses. This finishes the job without redoing any of it.
+        publishOnly: argv.includes('--publish-only')
     };
 }
 
@@ -93,6 +98,32 @@ function rollVersionSurfaces(version, testCount) {
     return edits;
 }
 
+/**
+ * Create the GitHub release, with the changelog section as its body.
+ *
+ * The token goes to curl on stdin rather than in an argument. Arguments are
+ * readable by every process on the machine for as long as the command runs —
+ * `ps` shows them — and a token in a release script is the kind of thing that
+ * ends up in a screen recording. Nothing is written to disk either way.
+ */
+function publish(version, tag, body, token) {
+    const payload = JSON.stringify({
+        tag_name: tag, name: `RPG Reactor ${version}`, body, draft: false, prerelease: false
+    });
+    const response = execFileSync('curl', ['-sS', '-X', 'POST', '--config', '-',
+        '-H', 'Accept: application/vnd.github+json',
+        `https://api.github.com/repos/${REPO}/releases`,
+        '-d', payload], {
+        cwd: repoRoot, encoding: 'utf8',
+        input: `header = "Authorization: Bearer ${token}"\n`
+    });
+    const parsed = JSON.parse(response);
+    if (!parsed.html_url) throw new Error(`GitHub refused the release: ${parsed.message}`);
+    say(`\nPublished ${parsed.html_url}`);
+    say('Its body is the changelog section for this version, so the release '
+        + 'notes and the changelog cannot disagree.');
+}
+
 function main() {
     const options = parseArguments(process.argv.slice(2));
     const { version } = options;
@@ -100,6 +131,16 @@ function main() {
     say(`Cutting ${tag}${options.dryRun ? ' (dry run)' : ''}\n`);
 
     // A dirty tree means the release would carry work nobody reviewed.
+    // Finishing an already-tagged release: no tests, no edits, no push. The
+    // tag is expected to exist here, and its absence is the error.
+    if (options.publishOnly) {
+        if (!run('git', ['tag', '-l', tag])) throw new Error(`${tag} does not exist`);
+        const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+        if (!token) throw new Error('--publish-only needs GITHUB_TOKEN or GH_TOKEN');
+        publish(version, tag, changelogSection(version), token);
+        return;
+    }
+
     const dirty = run('git', ['status', '--porcelain']);
     if (dirty) throw new Error(`working tree is not clean:\n${dirty}`);
     if (run('git', ['tag', '-l', tag])) throw new Error(`${tag} already exists`);
@@ -165,17 +206,7 @@ function main() {
         say(`and paste the ${version} section of CHANGELOG.md as the body.`);
         return;
     }
-    const payload = JSON.stringify({
-        tag_name: tag, name: `RPG Reactor ${version}`, body, draft: false, prerelease: false
-    });
-    const response = run('curl', ['-sS', '-X', 'POST',
-        '-H', `Authorization: Bearer ${token}`,
-        '-H', 'Accept: application/vnd.github+json',
-        `https://api.github.com/repos/${REPO}/releases`,
-        '-d', payload]);
-    const parsed = JSON.parse(response);
-    if (!parsed.html_url) throw new Error(`GitHub refused the release: ${parsed.message}`);
-    say(`\nPublished ${parsed.html_url}`);
+    publish(version, tag, body, token);
 }
 
 try {
