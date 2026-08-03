@@ -691,3 +691,35 @@ test('every phrase the route dialog shows is translated', () => {
         !table.includes(JSON.stringify(phrase) + ':') && !table.includes(`'${phrase}':`));
     assert.deepEqual(missing, [], 'none are left in English');
 });
+
+test('pushing a version tag publishes the release from the changelog', () => {
+    /*
+     * A tag is not a release, and the difference is invisible from the outside:
+     * the version is on GitHub, the code is on GitHub, and Releases still shows
+     * the one before it. That gap was closed by hand, with a personal token, by
+     * somebody remembering — so it stayed open whenever nobody did, which is
+     * exactly what happened to 0.97.0.
+     */
+    const workflow = fs.readFileSync(
+        path.join(repoRoot, '.github', 'workflows', 'publish-release.yml'), 'utf8');
+    assert.match(workflow, /tags:\n\s+- 'v\[0-9\]\+\.\[0-9\]\+\.\[0-9\]\+'/,
+        'it runs on a version tag');
+    assert.match(workflow, /permissions:\n\s+contents: write/,
+        'and may write a release');
+    assert.match(workflow, /GH_TOKEN: \$\{\{ github\.token \}\}/,
+        'with the token GitHub hands the run, not one anybody holds');
+
+    // The notes are the changelog section, so the two cannot drift apart.
+    assert.match(workflow, /--print-notes > release-notes\.md/);
+    assert.match(workflow, /test -s release-notes\.md/, 'and empty notes fail the run');
+
+    // A rerun must not fail on a release that already exists: correcting the
+    // changelog and re-pushing the tag corrects the release.
+    assert.match(workflow, /gh release view "\$TAG"[\s\S]*?gh release edit "\$TAG"/);
+    assert.match(workflow, /gh release create "\$TAG"[\s\S]*?--verify-tag/);
+
+    // And the flag it depends on exists and prints only the notes.
+    const script = fs.readFileSync(
+        path.join(repoRoot, 'editor', 'build-scripts', 'cut-release.cjs'), 'utf8');
+    assert.match(script, /if \(options\.printNotes\) \{\s*\n\s*process\.stdout\.write\(changelogSection\(version\)\);/);
+});

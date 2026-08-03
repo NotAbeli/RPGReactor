@@ -163,15 +163,24 @@ years ago. Any token with `repo` scope works, or a fine-grained one with
 `Contents: read and write`.
 
 It runs the editor test suite, rolls the version surfaces (changelog heading,
-README, `editor/package.json`), commits, tags, pushes the branch and tag, and
-then prints a link to publish the release — because a tag on its own is not a
-release, and its absence looks exactly like the push having failed.
+README, `editor/package.json`), commits, tags, and pushes the branch and tag.
+
+**Pushing the tag is what publishes the release.** `publish-release.yml` runs on
+any `vX.Y.Z` tag, builds the notes from that version's `CHANGELOG.md` section,
+and creates the release with the token GitHub hands every workflow run. Nothing
+has to be remembered and nobody needs a token for it, which is the point: a tag
+without a release is invisible from the outside — the version is on GitHub, the
+code is on GitHub, and Releases still shows the one before it.
+
+Re-pushing a tag re-runs it and rewrites the notes rather than failing, so
+correcting a changelog entry and forcing the tag corrects the published
+release.
 
 `--dry-run` reports what it would do and leaves the tree untouched. `--no-push`
 stops after tagging.
 
-If the release step was skipped — no token, and the link went unclicked — the
-tag already exists and a rerun refuses. Finish it without redoing any of the
+If a release ever needs making from a tag that is already pushed — CI disabled,
+or a tag that predates this workflow — this does it without redoing any of the
 rest:
 
 ```

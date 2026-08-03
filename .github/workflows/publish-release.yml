@@ -1,0 +1,62 @@
+name: Publish Release
+
+# A tag is not a release, and the difference is invisible from the outside:
+# the version is on GitHub, the code is on GitHub, and Releases still shows the
+# one before it. That gap used to be closed by hand, with a personal token, by
+# somebody remembering — so it stayed open whenever nobody did.
+#
+# Pushing the tag closes it. The notes come from that version's CHANGELOG.md
+# section, so the release and the changelog are the same text rather than two
+# texts that happen to agree, and the token is the one GitHub hands every
+# workflow run rather than one anybody has to hold.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Read the version from the tag
+        id: version
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build the release notes from the changelog
+        run: |
+          node editor/build-scripts/cut-release.cjs \
+            "${{ steps.version.outputs.value }}" --print-notes > release-notes.md
+          test -s release-notes.md
+
+      # Creating and updating are separate calls, and a rerun must not fail on
+      # a release that is already there — the notes are rewritten instead, so
+      # correcting a changelog and re-pushing the tag corrects the release.
+      - name: Publish, or update what is already published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists; updating its notes."
+            gh release edit "$TAG" \
+              --title "RPG Reactor $VERSION" \
+              --notes-file release-notes.md
+          else
+            gh release create "$TAG" \
+              --title "RPG Reactor $VERSION" \
+              --notes-file release-notes.md \
+              --verify-tag
+          fi
+          gh release view "$TAG" --json url --jq .url

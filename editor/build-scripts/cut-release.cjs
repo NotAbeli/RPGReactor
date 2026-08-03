@@ -36,7 +36,7 @@ function parseArguments(argv) {
     const version = argv.find(argument => !argument.startsWith('-'));
     if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
         throw new Error('usage: cut-release.cjs <x.y.z> '
-            + '[--dry-run] [--no-push] [--publish-only]');
+            + '[--dry-run] [--no-push] [--publish-only] [--print-notes]');
     }
     return {
         version,
@@ -45,7 +45,11 @@ function parseArguments(argv) {
         // Publishing is the one step that needs a token, so it is the one that
         // gets skipped when there isn't one — and then the tag exists and a
         // rerun refuses. This finishes the job without redoing any of it.
-        publishOnly: argv.includes('--publish-only')
+        publishOnly: argv.includes('--publish-only'),
+        // The changelog section, on stdout and nothing else. This is what CI
+        // reads to write the release notes, so the notes and the changelog are
+        // the same text rather than two texts that agree for now.
+        printNotes: argv.includes('--print-notes')
     };
 }
 
@@ -128,6 +132,12 @@ function main() {
     const options = parseArguments(process.argv.slice(2));
     const { version } = options;
     const tag = `v${version}`;
+
+    if (options.printNotes) {
+        process.stdout.write(changelogSection(version));
+        return;
+    }
+
     say(`Cutting ${tag}${options.dryRun ? ' (dry run)' : ''}\n`);
 
     // A dirty tree means the release would carry work nobody reviewed.
@@ -201,9 +211,18 @@ function main() {
     // like the push having failed.
     const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
     if (!token) {
-        say(`\nNo GITHUB_TOKEN set, so the release itself was not created.`);
-        say(`Finish it at https://github.com/${REPO}/releases/new?tag=${tag}`);
-        say(`and paste the ${version} section of CHANGELOG.md as the body.`);
+        /*
+         * Not an error, and no longer a missing step.
+         *
+         * Pushing the tag starts `publish-release.yml`, which builds the notes
+         * from this same changelog section and creates the release with the
+         * token GitHub hands every workflow run. Publishing from here is the
+         * shortcut, not the mechanism — which is what stops a release from
+         * quietly not existing because nobody had a token to hand.
+         */
+        say(`\nNo GITHUB_TOKEN set, so the release is being made by CI instead.`);
+        say(`Watch it at https://github.com/${REPO}/actions`);
+        say(`It will appear at https://github.com/${REPO}/releases/tag/${tag}`);
         return;
     }
     publish(version, tag, body, token);
