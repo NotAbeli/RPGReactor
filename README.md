@@ -179,9 +179,11 @@ release.
 `--dry-run` reports what it would do and leaves the tree untouched. `--no-push`
 stops after tagging.
 
-If a release ever needs making from a tag that is already pushed — CI disabled,
-or a tag that predates this workflow — this does it without redoing any of the
-rest:
+For a tag that is already pushed — one that predates this workflow, or a run
+worth repeating — start **Publish Release** from the repository's Actions tab
+and give it the version. That needs no token and no local checkout.
+
+The same thing locally, if CI is unavailable:
 
 ```
 GITHUB_TOKEN=ghp_yourtoken node editor/build-scripts/cut-release.cjs 0.97.0 --publish-only

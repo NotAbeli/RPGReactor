@@ -14,6 +14,15 @@ on:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
+  # For a tag pushed before this workflow existed, or one whose run needs
+  # repeating. Deleting and re-pushing a tag would also do it, and is a worse
+  # thing to reach for.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish, without the v
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -29,9 +38,17 @@ jobs:
         with:
           node-version: 22
 
-      - name: Read the version from the tag
+      - name: Read the version from the tag, or from what was asked for
         id: version
-        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        env:
+          ASKED: ${{ inputs.version }}
+        run: |
+          value="${ASKED:-${GITHUB_REF_NAME#v}}"
+          case "$value" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "not a version: $value" >&2; exit 1 ;;
+          esac
+          echo "value=$value" >> "$GITHUB_OUTPUT"
 
       - name: Build the release notes from the changelog
         run: |
@@ -45,7 +62,7 @@ jobs:
       - name: Publish, or update what is already published
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: v${{ steps.version.outputs.value }}
           VERSION: ${{ steps.version.outputs.value }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then

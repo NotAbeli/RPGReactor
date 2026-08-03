@@ -704,6 +704,12 @@ test('pushing a version tag publishes the release from the changelog', () => {
         path.join(repoRoot, '.github', 'workflows', 'publish-release.yml'), 'utf8');
     assert.match(workflow, /tags:\n\s+- 'v\[0-9\]\+\.\[0-9\]\+\.\[0-9\]\+'/,
         'it runs on a version tag');
+    // And by hand, for a tag that predates the workflow or a run worth
+    // repeating — deleting and re-pushing a tag would also do it, and is a
+    // worse thing to reach for.
+    assert.match(workflow, /workflow_dispatch:/);
+    assert.match(workflow, /TAG: v\$\{\{ steps\.version\.outputs\.value \}\}/,
+        'both routes name the tag the same way');
     assert.match(workflow, /permissions:\n\s+contents: write/,
         'and may write a release');
     assert.match(workflow, /GH_TOKEN: \$\{\{ github\.token \}\}/,
