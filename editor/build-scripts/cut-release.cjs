@@ -86,8 +86,18 @@ function rollVersionSurfaces(version, testCount) {
         }
     };
 
-    // The changelog heading is what marks a version as shipped.
-    edit('CHANGELOG.md', `## [Unreleased - ${version}]`, `## [${version}] - ${today()}`);
+    /*
+     * The changelog heading is what marks a version as shipped — in both files.
+     *
+     * Only the root one was rolled, so the editor changelog kept saying
+     * `[Unreleased - 0.96.0]` for a month after 0.96.0 shipped and had a
+     * release's worth of entries filed under it. The detailed changelog is the
+     * one people read to find out what changed; it is the worse of the two to
+     * leave lying.
+     */
+    for (const file of ['CHANGELOG.md', 'editor/CHANGELOG.md']) {
+        edit(file, `## [Unreleased - ${version}]`, `## [${version}] - ${today()}`);
+    }
 
     // The README names the newest tag and the verified test count.
     edit('README.md',

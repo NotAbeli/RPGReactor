@@ -5,7 +5,13 @@ All notable changes to RPG Reactor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased - 0.97.0]
+## [Unreleased - 0.98.0]
+
+### Fixed
+
+- **The audio player's track list fills the dialog.** It was a flat 475px — the height of the A-Z strip standing beside it, 26 tabs at 17px plus padding — so the list was sized to fit the alphabet rather than the window, and everything below it was an empty grey band that could have been holding twice as many track names. The dialog is a column now and the list is the part that grows.
+
+## [0.97.0] - 2026-08-03
 
 ### Added
 
