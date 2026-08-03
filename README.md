@@ -4,7 +4,7 @@ RPG Reactor 0.97.0 is an open-source, cross-platform RPG game editor and runtime
 
 Use RPG Reactor to create, edit, playtest, and package 2D RPGs with familiar RPG Maker-style maps, events, database records, plugins, and deployment workflows, without depending on the original RPG Maker runtime or editor.
 
-Pre-built download binaries are available at <https://psychronic.itch.io/rpg-reactor>. The current development version is 0.97.0 and is not published yet; the latest tagged source release is [0.96.0](https://github.com/Psychronic-Games/RPGReactor/releases/tag/v0.96.0).
+Pre-built download binaries are available at <https://psychronic.itch.io/rpg-reactor>. The latest tagged source release is [0.97.0](https://github.com/Psychronic-Games/RPGReactor/releases/tag/v0.97.0).
 
 ## Repository Layout
 
