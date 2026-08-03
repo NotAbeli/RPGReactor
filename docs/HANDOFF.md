@@ -1,35 +1,70 @@
-# Handoff — 0.97.0 in progress
+# Handoff — 0.98.0 in progress
 
-Last updated 2026-08-02. Delete or rewrite this when the items below are closed.
+Last updated 2026-08-03. Delete or rewrite this when the items below are closed.
 
-0.96.0 was tagged, released and pushed on 2026-07-27. Everything since is the
-0.97.0 cycle, pushed to `main` as unreleased work — no tag, no binaries. The
-version stays 0.97.0 until a release candidate is cut; see
-[RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) for that, which this was not.
+**0.97.0 shipped on 2026-08-03** — tagged, pushed, and published at
+<https://github.com/Psychronic-Games/RPGReactor/releases/tag/v0.97.0>, source
+only with no attached binaries. 0.98.0 is open: version surfaces bumped,
+`[Unreleased - 0.98.0]` sections at the top of both changelogs.
 
-## Open, 2026-08-02
+One commit is **not pushed**: `d9bb943`, the audio player fix and the 0.98.0
+opening. Push with `git push origin main` — git will ask for a username and a
+personal access token, since the remote is HTTPS and there is no credential
+helper. `gh` is not installed.
 
-- **Per-object 3D shape override.** Painted map objects inherit their shape from
-  the tiles they contain, and there is no way to say "this whole group is a
-  panel" or "…is scenery" outright. The control is trivial; the plumbing is not,
-  because cut-outs, panels and masses take genuinely different paths through the
-  renderer, and a dropdown that writes a field nothing reads is worse than no
-  dropdown. This is the last piece of the map-object feature.
-- **A wall box has no top.** What covers a wall is a roof, and the tileset's
-  wall→roof pairing already says which tile that is — but that pairing is wired
-  into the mass path, not the cut-out path. Looking down at an Upright wall from
-  a high angle shows through it.
-- **Cross-sheet draw order.** Cut-outs are emitted north to south, which fixes
-  ordering within a merged buffer, but geometry is merged *per sheet* and
-  three.js sorts those meshes by distance. Two overlapping things drawn from
-  different sheets can still order wrongly.
+Releasing is now one command and is documented in the README:
 
-Both changelogs now split at that release. The editor changelog had kept
-writing 0.97.0's entries into a section still headed `[Unreleased - 0.96.0]`
-a month after 0.96.0 shipped; it is `## [0.96.0] - 2026-07-27` with a
-`## [Unreleased - 0.97.0]` above it, and the duplicate `### Changed` group each
-file carried is folded into one. No entry text changed — 685 bullets before and
-after in the editor file, none lost, gained or duplicated.
+```
+node editor/build-scripts/cut-release.cjs 0.98.0
+```
+
+Pushing the tag is what publishes the release — `publish-release.yml` builds the
+notes from that version's changelog section and creates it with the token GitHub
+gives the run. Nothing to remember, no token to hold. Give the Actions run a
+minute before concluding it failed; that cost an hour on 0.97.0.
+
+## Start here, 2026-08-03
+
+The 3D map-object system landed and is the thing with unfinished edges. In
+rough order of value:
+
+1. **Per-object 3D shape override.** A painted map object inherits its shape
+   from the tiles it contains, and there is no way to say "this whole group is
+   a panel" or "…is scenery" outright. The control is trivial and the plumbing
+   is not: cut-outs, panels and masses take genuinely different paths through
+   the renderer, so a dropdown writing a field nothing reads would be worse
+   than no dropdown. This is the last piece of the feature.
+2. **A wall box has no top.** What covers a wall is a roof, and the tileset's
+   wall→roof pairing already names the tile — but that pairing is wired into
+   the mass path, not the cut-out path. Looking down at an Upright wall from a
+   high angle shows through it.
+3. **Cross-sheet draw order.** Cut-outs are emitted north to south, which fixes
+   ordering within a merged buffer, but geometry is merged *per sheet* and
+   three.js sorts those meshes by distance. Two overlapping things drawn from
+   different sheets can still order wrongly.
+4. **The gateway on map 596 of Star Shift Rebellion** is still declared 7x7
+   with every role `S`. Now that the map-object tab exists it is the better fix
+   than editing roles: group it and mark its ground rows Footing. That project
+   is gitignored, so its data is local only — and it already carries one hand
+   edit, `data/Tilesets.r3d.json`, backed up beside itself as
+   `.bak-before-role-fix`.
+
+## How to work on the 3D geometry
+
+Do not reason from screenshots. `Reactor3D.Geometry` is pure and runs in plain
+Node against real project data, and every 3D fix this cycle came from measuring
+it rather than looking at it:
+
+```js
+const Reactor3D = require('./runtime/reactor_3d.js');
+Reactor3D._classification = JSON.parse(fs.readFileSync('<project>/data/Tilesets.r3d.json'));
+const built = Reactor3D.Geometry.build(map, { /* predicates */ });
+```
+
+Anchors, footings, facade planes and quad counts all fall out of `built`, and a
+wrong answer is obvious in a way it never is on screen. `pngjs` under
+`editor/node_modules` renders sheet art when the question is about the picture
+rather than the geometry.
 
 ## Needs testing before it can be called done
 
@@ -275,8 +310,9 @@ to weld two objects that sit side by side on the sheet *and* on the map.
   a project's 3D tile classification from how its maps are painted.
 - `scratchpad/` — the harness that drives the real game over devtools: load a
   save, walk the camera, screenshot, and measure. See *3D, day two* above. It is
-  not committed and has no dependencies; it is worth rebuilding rather than
-  eyeballing screenshots, which is how most of a day went.
+  gitignored (it had grown to 58MB and was about to be committed) and has no
+  dependencies; it is worth rebuilding rather than eyeballing screenshots, which
+  is how most of a day went.
 
 ## Posts ready to publish
 
