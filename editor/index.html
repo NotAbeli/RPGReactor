@@ -263,6 +263,10 @@
                                     <input id="map-autotile-animation" type="checkbox" checked aria-label="Toggle A1 Autotile Animation" data-i18n-aria="toolbar.title.animateAutotiles">
                                     <span>A1</span>
                                 </label>
+                                <label class="map-info-item map-grid" title="Show the tile grid" data-i18n-title="toolbar.title.showGrid">
+                                    <input id="map-grid" type="checkbox" aria-label="Show the tile grid" data-i18n-aria="toolbar.title.showGrid">
+                                    <span>Grid</span>
+                                </label>
                                 <label class="map-info-item map-3d-view" title="Show the map in 3D" data-i18n-title="toolbar.title.map3DView">
                                     <input id="map-3d-view" type="checkbox" aria-label="Show the map in 3D" data-i18n-aria="toolbar.title.map3DView">
                                     <span>3D</span>
@@ -761,6 +765,8 @@
     <script src="src/utils/EquipSlots.js"></script>
     <script src="src/utils/TilesetSheets.js"></script>
     <script src="src/utils/TileMetrics.js"></script>
+    <script src="src/utils/MapElevation.js"></script>
+    <script src="src/utils/MapObjects3D.js"></script>
     <script src="src/utils/Tileset3DClass.js"></script>
     <script src="src/utils/FsAtomic.js"></script>
     <script src="src/I18nDeepTranslations.js"></script>
@@ -924,6 +930,7 @@
     <!-- Map editing subsystems -->
     <script src="src/TilemapManager.js"></script>
     <script src="src/RegionManager.js"></script>
+    <script src="src/Object3DManager.js"></script>
     <script src="src/MapEditor.js"></script>
     <script src="src/MapEditor3D.js"></script>
     <script src="src/TilesetPaletteViewer.js"></script>

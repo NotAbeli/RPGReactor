@@ -15,7 +15,11 @@ class RegionManager {
         // Canvas for region palette
         this.canvas = null;
         this.ctx = null;
-        this.tileSize = 48; // Match tileset palette tile size
+        // A swatch is the project's tile, like every tile in the A-G preview
+        // beside it. The canvas is stretched to the panel by the stylesheet, so
+        // a 16-pixel project draws small squares and shows them at the same
+        // size a 48-pixel one does — the numbers scale with them.
+        this.tileSize = 48;
         this.columns = 8; // 8 columns of regions
         this.rows = Math.ceil(256 / this.columns); // 256 regions (0-255), so 32 rows
     }
@@ -77,11 +81,13 @@ class RegionManager {
     // regioned 256×256 map froze for ~5s on every overlay rebuild.
     _regionTileTexture(regionId) {
         if (!this._tileTextures) this._tileTextures = new Map();
-        let tex = this._tileTextures.get(regionId);
-        if (tex) return tex;
-
         const TW = this.tilemapManager.TILE_WIDTH;
         const TH = this.tilemapManager.TILE_HEIGHT;
+        // Keyed by size as well as by number: a project opened at a different
+        // tile size would otherwise be handed the last one's textures.
+        const key = `${regionId}:${TW}x${TH}`;
+        let tex = this._tileTextures.get(key);
+        if (tex) return tex;
         const canvas = document.createElement('canvas');
         canvas.width = TW;
         canvas.height = TH;
@@ -95,11 +101,15 @@ class RegionManager {
         c.lineWidth = 1;
         c.strokeRect(0.5, 0.5, TW - 1, TH - 1);
         c.globalAlpha = 1;
-        c.font = 'bold 18px Arial';
+        // Sized from the tile, not fixed. A project set to 16-pixel tiles drew
+        // an 18px number with a 4px outline into a 16px square, which is not a
+        // number — it is a smear the width of the cell and taller.
+        const size = Math.max(7, Math.round(Math.min(TW, TH) * 0.42));
+        c.font = `bold ${size}px Arial`;
         c.textAlign = 'center';
         c.textBaseline = 'middle';
         c.strokeStyle = '#000';
-        c.lineWidth = 4;
+        c.lineWidth = Math.max(2, Math.round(size / 4.5));
         c.lineJoin = 'round';
         c.miterLimit = 2;
         c.strokeText(String(regionId), TW / 2, TH / 2);
@@ -107,7 +117,7 @@ class RegionManager {
         c.fillText(String(regionId), TW / 2, TH / 2);
 
         tex = PIXI.Texture.from(canvas);
-        this._tileTextures.set(regionId, tex);
+        this._tileTextures.set(key, tex);
         return tex;
     }
 
@@ -223,15 +233,15 @@ class RegionManager {
     initializeUI(container) {
         const tt = text => (typeof window !== 'undefined' && window.I18n) ? window.I18n.tText(text) : text;
         container.innerHTML = `
-            <div id="region-palette-container" style="display: flex; flex-direction: column; height: 100%; background-color: var(--color-bg-surface);">
+            <div id="region-palette-container" style="display: flex; flex-direction: column; flex: 1; min-width: 0; height: 100%; min-height: 0; background-color: var(--color-bg-surface);">
                 <!-- Region Info -->
                 <div id="region-selection-info" style="padding: 8px; background-color: var(--color-bg-list-item); border-bottom: 1px solid var(--color-border);">
                     <div style="font-size: 11px; color: var(--color-text-muted);">${tt('Selected: Region')} <span id="selected-region-number">1</span></div>
                 </div>
 
                 <!-- Region Palette Canvas (scrollable) -->
-                <div id="region-palette-scroll" style="flex: 1; overflow-y: auto; background-color: var(--color-bg-menubar);">
-                    <canvas id="region-palette-canvas" style="display: block; image-rendering: pixelated;"></canvas>
+                <div id="region-palette-scroll" style="flex: 1; overflow: auto; position: relative; min-height: 0; background-color: var(--color-bg-menubar);">
+                    <canvas id="region-palette-canvas" style="display: block; cursor: pointer; min-width: 100%; min-height: 100%;"></canvas>
                 </div>
             </div>
         `;
@@ -247,16 +257,41 @@ class RegionManager {
     }
 
     // Setup canvas dimensions
+    /**
+     * Size the picker to the panel it is in.
+     *
+     * The grid used to be a fixed eight columns of forty-eight pixels, so it
+     * met the panel's right edge only by luck: wider and it left a bare strip
+     * beside the scrollbar, narrower and it grew a horizontal scrollbar of its
+     * own. The tileset preview next to it has always filled its panel, and two
+     * palettes in the same slot that do not line up read as a layout fault.
+     *
+     * The swatch size is derived from the width actually available rather than
+     * the canvas being stretched to fit: the numbers are drawn as text, and
+     * scaling a canvas up blurs them.
+     */
+    /** The project's tile size, which is what the A-G preview draws at. */
+    projectTileSize() {
+        const metrics = (typeof RRTileMetrics !== 'undefined' && RRTileMetrics)
+            || (typeof window !== 'undefined' && window.RRTileMetrics);
+        const database = this.tilemapManager && this.tilemapManager.databaseManager;
+        const system = database && typeof database.getSystem === 'function'
+            ? database.getSystem() : null;
+        const size = metrics ? metrics.tileSizeOf(system) : 48;
+        return size > 0 ? size : 48;
+    }
+
     setupCanvas() {
         if (!this.canvas || !this.ctx) return;
 
-        const canvasWidth = this.columns * this.tileSize;
-        const canvasHeight = this.rows * this.tileSize;
 
-        this.canvas.width = canvasWidth;
-        this.canvas.height = canvasHeight;
-        this.canvas.style.width = canvasWidth + 'px';
-        this.canvas.style.height = canvasHeight + 'px';
+        this.tileSize = this.projectTileSize();
+
+        // Its natural size only. The stylesheet's `min-width: 100%` stretches
+        // it to the panel when there is room and its container scrolls it when
+        // there is not — which is the whole of how the A-G preview behaves.
+        this.canvas.width = this.columns * this.tileSize;
+        this.canvas.height = this.rows * this.tileSize;
     }
 
     // Render the region palette
@@ -284,7 +319,7 @@ class RegionManager {
 
             // Draw region number (bigger and fully opaque)
             this.ctx.fillStyle = '#fff';
-            this.ctx.font = 'bold 18px Arial';
+            this.ctx.font = `bold ${Math.max(9, Math.round(this.tileSize * 0.38))}px Arial`;
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
             this.ctx.strokeStyle = '#000';
@@ -323,8 +358,13 @@ class RegionManager {
 
         this.canvas.addEventListener('click', (e) => {
             const rect = this.canvas.getBoundingClientRect();
-            const x = Math.floor((e.clientX - rect.left) / this.tileSize);
-            const y = Math.floor((e.clientY - rect.top) / this.tileSize);
+
+            // Account for canvas scaling: convert client coordinates to canvas
+            // coordinates, the same way the tileset preview does.
+            const scaleX = this.canvas.width / rect.width;
+            const scaleY = this.canvas.height / rect.height;
+            const x = Math.floor(((e.clientX - rect.left) * scaleX) / this.tileSize);
+            const y = Math.floor(((e.clientY - rect.top) * scaleY) / this.tileSize);
             const regionId = y * this.columns + x;
 
             if (regionId >= 0 && regionId <= 255) {

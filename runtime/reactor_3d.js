@@ -40,6 +40,7 @@ Reactor3D.SIDECAR_SUFFIX = ".r3d.json";
 Reactor3D._loadPromise = null;
 Reactor3D._viewport = null;
 Reactor3D._unsupportedReason = null;
+Reactor3D._supported = null;
 
 /**
  * True once three.js is present. Callers that must not await use this to decide
@@ -87,16 +88,34 @@ Reactor3D.ensureLoaded = function() {
  */
 Reactor3D.isSupported = function() {
     if (this._unsupportedReason) return false;
+    // Answered once and remembered.
+    //
+    // This takes a real WebGL context to find out, and the answer cannot
+    // change during a session — but `shouldRender3D` calls it, and that is
+    // called by every character sprite on every frame. So a 3D map with a
+    // hundred events took a hundred contexts per frame and never gave one
+    // back: the browser began evicting live ones ("Too many active WebGL
+    // contexts"), which took out PIXI's renderer and three's alike, and the
+    // game went white on a shader that could no longer compile.
+    if (this._supported !== null && this._supported !== undefined) return this._supported;
     try {
         const canvas = document.createElement("canvas");
         const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
         if (!gl) {
             this._unsupportedReason = "no WebGL context";
+            this._supported = false;
             return false;
         }
+        // Hand the probe context straight back rather than waiting for the
+        // canvas to be collected — a browser's context budget is small, and
+        // this one has served its purpose the moment it exists.
+        const lose = gl.getExtension("WEBGL_lose_context");
+        if (lose) lose.loseContext();
+        this._supported = true;
         return true;
     } catch (e) {
         this._unsupportedReason = String(e && e.message ? e.message : e);
+        this._supported = false;
         return false;
     }
 };
@@ -109,10 +128,33 @@ Reactor3D.viewport = function() {
     return this._viewport;
 };
 
-/** Create the viewport if needed; null when 3D is unavailable. */
+/**
+ * Create the viewport if needed; null when 3D is unavailable.
+ *
+ * A half-built viewport is disposed rather than dropped. The constructor takes
+ * a WebGL context before it does anything else, so a throw after that point
+ * used to leave the context alive and unreferenced — and the caller retries
+ * every frame, so the browser filled with contexts until it started evicting
+ * live ones ("Too many active WebGL contexts") and the game went white.
+ */
 Reactor3D.acquireViewport = function() {
     if (!this.isLoaded()) return null;
-    if (!this._viewport) this._viewport = new Reactor3D.Viewport();
+    if (this._viewport) return this._viewport;
+    // One attempt. If building it fails there is no reason to believe the next
+    // frame will do better, and believing otherwise is what made a single
+    // failure into a flood.
+    if (this._viewportFailed) return null;
+    let built = null;
+    try {
+        built = new Reactor3D.Viewport();
+    } catch (error) {
+        this._viewportFailed = true;
+        console.error("Reactor3D: could not create the 3D viewport; "
+            + "the map will be drawn in 2D.", error);
+        if (built) { try { built.destroy(); } catch (e) { /* already broken */ } }
+        return null;
+    }
+    this._viewport = built;
     return this._viewport;
 };
 
@@ -173,6 +215,57 @@ Reactor3D.elevationAt = function(mapData, x, y) {
     if (x < 0 || y < 0 || x >= width || y >= height) return this.DEFAULT_ELEVATION;
     const value = heights[y * width + x];
     return Number.isFinite(value) ? value : this.DEFAULT_ELEVATION;
+};
+
+/**
+ * The 3D object a cell's tile has been painted into, or 0 for none.
+ *
+ * A tileset can say what a *tile* is, and that is all it can say: an autotile
+ * id is a corner arrangement shared by forty-eight shapes, so every shop built
+ * from one wall kind is the same tile as every other. Which cells make up one
+ * building is a fact about a placement, and it can only be said on the map.
+ *
+ * Stored per layer, because a tree on B standing over a wall on A is not part
+ * of the building. Layers with nothing painted are absent rather than stored
+ * as planes of zeroes.
+ */
+Reactor3D.objectIdAt = function(mapData, x, y, layer) {
+    const painted = mapData && mapData.reactor3d && mapData.reactor3d.objects;
+    if (!painted) return 0;
+    const plane = painted[layer] || painted[String(layer)];
+    if (!Array.isArray(plane)) return 0;
+    if (x < 0 || y < 0 || x >= mapData.width || y >= mapData.height) return 0;
+    const value = plane[y * mapData.width + x];
+    return Number.isFinite(value) && value > 0 ? value : 0;
+};
+
+/**
+ * Whether a painted cell is the object's footing rather than its height.
+ *
+ * Standing a drawing up turns its map rows into courses, so a building painted
+ * across seven rows becomes seven tiles tall. Some of those rows are usually
+ * the ground it stands on — the skirt of an archway, the pavement in front of
+ * a shop — and marking them says so. Without it the whole thing is height, and
+ * the object plants itself on its southernmost row instead of in the middle of
+ * its own footprint.
+ */
+Reactor3D.objectGroundAt = function(mapData, x, y, layer) {
+    const ground = mapData && mapData.reactor3d && mapData.reactor3d.objectGround;
+    if (!ground) return false;
+    const plane = ground[layer] || ground[String(layer)];
+    if (!Array.isArray(plane)) return false;
+    if (x < 0 || y < 0 || x >= mapData.width || y >= mapData.height) return false;
+    return !!plane[y * mapData.width + x];
+};
+
+/** Whether this map has any painted 3D objects at all. */
+Reactor3D.hasPaintedObjects = function(mapData) {
+    const painted = mapData && mapData.reactor3d && mapData.reactor3d.objects;
+    if (!painted) return false;
+    return Object.keys(painted).some(key => {
+        const plane = painted[key];
+        return Array.isArray(plane) && plane.some(value => value > 0);
+    });
 };
 
 /**
@@ -255,15 +348,32 @@ Reactor3D.Viewport.prototype.initialize = function() {
 
     this._renderer = new THREE.WebGLRenderer({
         canvas: this._canvas,
-        antialias: false,   // HD-2D wants crisp texels, not smoothed edges
+        // Multisampling, which is what alpha-to-coverage spreads a cut-out's
+        // partial alpha across — see `billboardMaterial`. It smooths coverage,
+        // not texture sampling: filtering stays nearest, so texels are as crisp
+        // as they ever were and only the edges of a shape are resolved.
+        antialias: true,
         alpha: true
     });
     this._renderer.setPixelRatio(1);
-    this._renderer.setClearColor(0x000000, 1);
+    // Cleared transparent, not black. The render is composited into the game's
+    // own scene as a sprite, and the pass drawn *over* the characters must show
+    // them everywhere it has nothing of its own — an opaque clear there would
+    // be a black rectangle across the screen.
+    this._renderer.setClearColor(0x000000, 0);
 
     this._scene = null;
     this._camera = null;
-    this.resize();
+    // Anything from here on can throw — `resize` reads Graphics and touches the
+    // DOM — and the context is already taken by now, so it is given back rather
+    // than left for the browser to evict later.
+    try {
+        this.resize();
+    } catch (error) {
+        try { this._renderer.dispose(); } catch (e) { /* nothing to do */ }
+        try { this._canvas.remove(); } catch (e) { /* nothing to do */ }
+        throw error;
+    }
 };
 
 /** Match the game canvas's backing size and on-screen placement. */
@@ -296,13 +406,104 @@ Reactor3D.Viewport.prototype.camera = function() {
     return this._camera;
 };
 
+/**
+ * What is actually on the 3D canvas, and where that canvas actually is.
+ *
+ * An empty 3D view has survived every check that can be made from the outside —
+ * meshes, textures, camera, canvas size, visibility — so this reads the drawing
+ * buffer itself. Non-black pixels mean three is drawing and the problem is
+ * compositing; all black means it is not, whatever the scene says.
+ */
+Reactor3D.Viewport.prototype.probe = function() {
+    const gl = this._renderer && this._renderer.getContext && this._renderer.getContext();
+    const report = { renders: this._renderCount || 0 };
+    if (!gl) return Object.assign(report, { gl: "none" });
+    report.contextLost = gl.isContextLost ? gl.isContextLost() : "unknown";
+
+    // A grid of samples rather than one: a single point can legitimately be
+    // sky. `readPixels` reads the buffer as it stands after the last draw.
+    const width = this._canvas.width, height = this._canvas.height;
+    const pixel = new Uint8Array(4);
+    let lit = 0, sampled = 0;
+    const brightest = [0, 0, 0];
+    try {
+        for (let ry = 1; ry <= 3; ry++) {
+            for (let rx = 1; rx <= 3; rx++) {
+                gl.readPixels(Math.floor(width * rx / 4), Math.floor(height * ry / 4),
+                    1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+                sampled++;
+                if (pixel[0] + pixel[1] + pixel[2] > 12) lit++;
+                for (let c = 0; c < 3; c++) brightest[c] = Math.max(brightest[c], pixel[c]);
+            }
+        }
+    } catch (e) {
+        return Object.assign(report, { readPixels: String(e && e.message || e) });
+    }
+    report.litSamples = `${lit}/${sampled}`;
+    report.brightest = brightest.join(",");
+
+    // Where the two canvases actually sit, as the browser sees them.
+    const describe = canvas => {
+        if (!canvas || !canvas.getBoundingClientRect) return "none";
+        const rect = canvas.getBoundingClientRect();
+        const style = typeof getComputedStyle === "function" ? getComputedStyle(canvas) : {};
+        return `${Math.round(rect.left)},${Math.round(rect.top)} ${Math.round(rect.width)}x${Math.round(rect.height)}`
+            + ` z=${style.zIndex} vis=${style.visibility} op=${style.opacity} disp=${style.display}`;
+    };
+    report.threeCanvas = describe(this._canvas);
+    report.gameCanvas = describe(typeof Graphics !== "undefined" && Graphics._canvas);
+    report.inDocument = !!(this._canvas && this._canvas.parentNode);
+    const renderer = typeof Graphics !== "undefined" && Graphics.app && Graphics.app.renderer;
+    report.pixiBackgroundAlpha = renderer && renderer.background
+        ? renderer.background.alpha : "n/a";
+    return report;
+};
+
 Reactor3D.Viewport.prototype.render = function() {
     if (!this._scene || !this._camera) return;
+    this._renderCount = (this._renderCount || 0) + 1;
     this._renderer.render(this._scene, this._camera);
+};
+
+/**
+ * Draw one pass on its own, over a cleared canvas.
+ *
+ * The two passes sandwich the character sprites: the ground goes down, PIXI
+ * draws the characters, and then the star-flagged tiles go over them. Both come
+ * off the same canvas, one after the other, so this costs a second draw and a
+ * second upload rather than a second WebGL context.
+ */
+Reactor3D.Viewport.prototype.renderPass = function(mapScene, which) {
+    if (!mapScene || !mapScene.setPass) return this.render();
+    mapScene.setPass(which);
+    this.render();
+    mapScene.setPass("all");
 };
 
 Reactor3D.Viewport.prototype.setVisible = function(visible) {
     this._canvas.style.display = visible ? "block" : "none";
+};
+
+/**
+ * Stop showing the 3D canvas on its own and let PIXI draw it instead.
+ *
+ * Stacked canvases put the 3D ground outside the PIXI scene, and everything a
+ * game draws *over* the map assumes the map is in that scene: a fog or a
+ * lighting overlay set to MULTIPLY has nothing to multiply against, so it
+ * composites as a flat wash — which is why fog reads heavier in 3D than in 2D —
+ * and the screen tone, which is a filter on the spriteset, never reaches the
+ * ground at all.
+ *
+ * Rendering is unaffected by the canvas being hidden: a WebGL context draws
+ * into its buffer whether or not the element is laid out.
+ */
+Reactor3D.Viewport.prototype.detachFromPage = function() {
+    this._canvas.style.display = "none";
+    this._detached = true;
+};
+
+Reactor3D.Viewport.prototype.isDetached = function() {
+    return !!this._detached;
 };
 
 Reactor3D.Viewport.prototype.destroy = function() {
@@ -448,6 +649,189 @@ Reactor3D.Geometry.WATERFALL_AUTOTILE_TABLE = [
     [[2,0],[3,0],[2,1],[3,1]], [[0,0],[3,0],[0,1],[3,1]]
 ];
 
+/*
+ * A wall autotile's shape is an exposed-edge mask.
+ *
+ * `WALL_AUTOTILE_TABLE` has sixteen entries because a wall shape is decided by
+ * four neighbours, one bit each — set when the neighbour is *absent*, so the
+ * edge shows. Every wall tile on every map already carries this, which is what
+ * makes a wall's geometry derivable rather than something to author.
+ *
+ * The names are the map directions the editor computes them from
+ * (`calculateWallAutotileShape`); on a vertical face in 3D they read as the
+ * four edges of that face, west/east being its left and right *as seen from
+ * outside* and north/south its top and bottom.
+ */
+Reactor3D.Geometry.WALL_CAP_WEST = 1;
+Reactor3D.Geometry.WALL_CAP_NORTH = 2;
+Reactor3D.Geometry.WALL_CAP_EAST = 4;
+Reactor3D.Geometry.WALL_CAP_SOUTH = 8;
+
+/**
+ * Whether a tile id is one of the sixteen-shape wall autotiles.
+ *
+ * A3 is walls throughout. A4 alternates roof rows and wall rows, eight kinds to
+ * a row, odd rows being walls. Mirrors `MapEditor.isWallAutotile`; a test pins
+ * the two together.
+ */
+Reactor3D.Geometry.isWallAutotile = function(tileId) {
+    const band = this.bands();
+    if (!Number.isFinite(tileId)) return false;
+    if (tileId >= band.A3 && tileId < band.A4) return true;
+    if (tileId >= band.A4 && tileId < band.MAX) {
+        const kind = Math.floor((tileId - band.A4) / 48);
+        return Math.floor(kind / 8) % 2 === 1;
+    }
+    return false;
+};
+
+/** The base id of a tile's autotile kind — its shape 0. */
+Reactor3D.Geometry.autotileBase = function(tileId) {
+    const band = this.bands();
+    if (tileId < band.A1 || tileId >= band.MAX) return tileId;
+    return band.A1 + Math.floor((tileId - band.A1) / 48) * 48;
+};
+
+/**
+ * The shape a wall face should use, from which of its own edges are exposed.
+ *
+ * The shape stored in the map answers a two-dimensional question — which cells
+ * beside this one hold the same wall — and a face in three dimensions is asking
+ * a different one: where does *this side of the mass* end. Reusing the stored
+ * shape put a wall's left-hand end cap on its north face as well, because in
+ * plan those are the same edge.
+ */
+Reactor3D.Geometry.wallFaceShape = function(edges) {
+    return (edges.left ? this.WALL_CAP_WEST : 0)
+        + (edges.top ? this.WALL_CAP_NORTH : 0)
+        + (edges.right ? this.WALL_CAP_EAST : 0)
+        + (edges.bottom ? this.WALL_CAP_SOUTH : 0);
+};
+
+/**
+ * The roof a wall kind is drawn with, where the sheet layout guarantees one.
+ *
+ * A4 alternates roof rows and wall rows, eight kinds to a row, so the roof for
+ * a wall is the kind directly above it — one row, eight kinds, back. That
+ * pairing is a property of the format rather than of any particular tileset,
+ * so it needs no authoring. A3 is walls throughout and has no roof to pair
+ * with; those have to be named in the classification file.
+ *
+ * Returns 0 when there is nothing derivable.
+ */
+Reactor3D.Geometry.roofForWall = function(tileId) {
+    const band = this.bands();
+    if (!Number.isFinite(tileId) || tileId < band.A4 || tileId >= band.MAX) return 0;
+    const kind = Math.floor((tileId - band.A4) / 48);
+    if (Math.floor(kind / 8) % 2 !== 1) return 0;
+    return band.A4 + (kind - 8) * 48;
+};
+
+/*
+ * A panel: something with a front.
+ *
+ * A gate, a door, a signpost or a shopfront is drawn as a front elevation and
+ * belongs to a direction. Turned into a camera-facing cut-out it swings to
+ * follow the viewer, so a gate you were walking through turns to face you —
+ * correct for a bush, absurd for anything built.
+ *
+ * A fixed plane was the obvious answer and was tried before: it vanishes
+ * edge-on, which is why it was abandoned for billboards. It vanishes because it
+ * has no thickness. With one, edge-on reads as a gate seen from the side, which
+ * is what it should look like.
+ */
+Reactor3D.Geometry.PANEL_THICKNESS = 0.12;
+
+/** How wide a strip of the art the thin edges are cut from, in pixels. */
+Reactor3D.Geometry.PANEL_EDGE_PIXELS = 3;
+
+/**
+ * How deep a wall is, in tiles.
+ *
+ * A wall used to be a single plane on the southern face of its run, which is
+ * right from the front and nothing at all from the side: walk round a shop and
+ * its front thinned to a line and vanished, because that is what a plane seen
+ * edge-on does. 2D never draws a building's sides, so there is no art for them
+ * — but the wall's own art is a better answer than a hole, and it is the one an
+ * author would reach for.
+ *
+ * A whole tile rather than a sliver. The rows north of the footing are already
+ * spoken for as the wall's *height*, so nothing is drawn in the depth this
+ * occupies and it can be as deep as it needs to read as solid; a panel's 0.12
+ * is thin because a gate genuinely is.
+ */
+Reactor3D.Geometry.WALL_THICKNESS = 1;
+
+/**
+ * Which way a panel faces, from what is solid around it.
+ *
+ * Nothing is authored here. A gate set into a wall faces the way the wall
+ * faces, and a wall is solid ground on both sides of the opening — so a gap in
+ * an east-west run faces south, and a gap in a north-south run faces east. A
+ * panel with solid on one side only turns its back to it. With nothing to go
+ * on it faces south, which is the direction RPG Maker art is drawn from.
+ *
+ * `solidAt(dx, dy)` says whether a neighbour is built up.
+ */
+Reactor3D.Geometry.panelFacing = function(solidAt) {
+    const north = !!solidAt(0, -1), south = !!solidAt(0, 1);
+    const east = !!solidAt(1, 0), west = !!solidAt(-1, 0);
+    if (east && west && !north && !south) return "south";
+    if (north && south && !east && !west) return "east";
+    if (east && !west) return "west";
+    if (west && !east) return "east";
+    if (north && !south) return "south";
+    if (south && !north) return "north";
+    return "south";
+};
+
+/** The outward normal of a facing, in map axes. */
+Reactor3D.Geometry.FACING_NORMALS = {
+    south: [0, 1], north: [0, -1], east: [1, 0], west: [-1, 0]
+};
+
+/**
+ * The 48-shape a floor autotile takes, from which of its eight neighbours
+ * carry the same thing.
+ *
+ * `same(dx, dy)` answers for one neighbour. This mirrors
+ * `MapEditor.calculateAutotileShape` exactly — a test drives both over every
+ * neighbourhood and compares — because a roof laid on top of a mass has to
+ * choose its corners the way the same roof painted flat would, or the two
+ * disagree wherever a building meets its own roof.
+ */
+Reactor3D.Geometry.floorShapeFrom = function(same) {
+    const at = (dx, dy) => !!same(dx, dy);
+    let pattern = 0;
+    if (at(0, -1)) pattern |= 1;
+    if (at(1, 0)) pattern |= 2;
+    if (at(0, 1)) pattern |= 4;
+    if (at(-1, 0)) pattern |= 8;
+
+    // Surrounded on all four sides: the shape is which diagonals are missing.
+    if (pattern === 0b1111) {
+        return (at(-1, -1) ? 0 : 1) + (at(1, -1) ? 0 : 2)
+            + (at(1, 1) ? 0 : 4) + (at(-1, 1) ? 0 : 8);
+    }
+    // Three sides: an edge, refined by the diagonals along it.
+    if (pattern === 0b1110) return 20 + (at(1, 1) ? 0 : 1) + (at(-1, 1) ? 0 : 2);
+    if (pattern === 0b0111) return 16 + (at(1, -1) ? 0 : 1) + (at(1, 1) ? 0 : 2);
+    if (pattern === 0b1101) return 24 + (at(-1, 1) ? 0 : 1) + (at(-1, -1) ? 0 : 2);
+    if (pattern === 0b1011) return 28 + (at(-1, -1) ? 0 : 1) + (at(1, -1) ? 0 : 2);
+    // Two adjacent sides: a corner, inner or outer by its diagonal.
+    if (pattern === 0b0110) return at(1, 1) ? 34 : 35;
+    if (pattern === 0b1100) return at(-1, 1) ? 36 : 37;
+    if (pattern === 0b0011) return at(1, -1) ? 40 : 41;
+    if (pattern === 0b1001) return at(-1, -1) ? 38 : 39;
+
+    const strips = {
+        0: 46,                                  // isolated
+        0b1010: 33, 0b0101: 32,                 // through strips
+        0b0001: 44, 0b0010: 43, 0b0100: 42, 0b1000: 45   // strip ends
+    };
+    return strips[pattern] === undefined ? 46 : strips[pattern];
+};
+
 /**
  * The shape tables to build with.
  *
@@ -572,6 +956,7 @@ Reactor3D.Geometry.autotileQuads = function(tileId, tileSize, tables) {
  */
 Reactor3D.Geometry.LAYER_LIFT = 0.001;
 
+
 Reactor3D.Geometry.topTileAt = function(mapData, x, y, isUpright) {
     if (!mapData || !Array.isArray(mapData.data)) return 0;
     const { width, height } = mapData;
@@ -649,6 +1034,33 @@ Reactor3D.Geometry.groundStackAt = function(mapData, x, y, isUpright) {
 };
 
 /** The upright tile in a cell, if any — the topmost one wins. */
+/**
+ * Every standing tile in one cell, lowest layer first.
+ *
+ * A cell holds four tile planes and more than one of them can be standing art:
+ * a plate set down on a column occupies the same square as the column, exactly
+ * as it does in 2D, where both are drawn one over the other. Taking only the
+ * topmost — which is what asking for *the* upright tile does — silently threw
+ * the other away, so a column with anything resting on it disappeared from the
+ * 3D view entirely while looking perfectly ordinary in 2D.
+ *
+ * Lowest first, so drawing them in order layers them the way the 2D tilemap
+ * layers its planes.
+ */
+Reactor3D.Geometry.uprightTilesAt = function(mapData, x, y, isUpright) {
+    if (!isUpright || !mapData || !Array.isArray(mapData.data)) return [];
+    const { width, height } = mapData;
+    if (x < 0 || y < 0 || x >= width || y >= height) return [];
+    const plane = width * height;
+    const found = [];
+    for (let z = 0; z <= 3; z++) {
+        const tileId = mapData.data[z * plane + y * width + x] || 0;
+        if (tileId > 0 && isUpright(tileId)) found.push(tileId);
+    }
+    return found;
+};
+
+/** The topmost standing tile in a cell, for the questions that want just one. */
 Reactor3D.Geometry.uprightTileAt = function(mapData, x, y, isUpright) {
     if (!isUpright || !mapData || !Array.isArray(mapData.data)) return 0;
     const { width, height } = mapData;
@@ -730,7 +1142,8 @@ Reactor3D.Geometry.samePicture = function(tileA, tileB, dx, dy) {
     return a.setNumber === b.setNumber && b.col - a.col === dx && b.row - a.row === dy;
 };
 
-Reactor3D.Geometry.uprightObjects = function(mapData, isUpright, maxHeight, isAuthored, declaredAt) {
+Reactor3D.Geometry.uprightObjects = function(mapData, isUpright, maxHeight, isAuthored,
+    declaredAt, paintedAt, isPaintedGround, claimed) {
     if (!isUpright || !mapData || !Array.isArray(mapData.data)) return [];
     const { width, height } = mapData;
     const cap = maxHeight || Infinity;
@@ -738,17 +1151,86 @@ Reactor3D.Geometry.uprightObjects = function(mapData, isUpright, maxHeight, isAu
     const tileAt = new Map();
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
-            const tileId = this.uprightTileAt(mapData, x, y, isUpright);
             // A1-A4 are walls, and a wall faces a way. Those are built as
             // fixed planes elsewhere rather than turned to face the camera,
             // which would swing a building's walls around as you orbit. A5 is
             // a plain sheet and belongs with B-G.
-            if (tileId && tileId < 2048) tileAt.set(y * width + x, tileId);
+            const tiles = this.uprightTilesAt(mapData, x, y, isUpright)
+                .filter(tileId => tileId < 2048);
+            if (tiles.length) tileAt.set(y * width + x, tiles);
         }
     }
 
     const objects = [];
     const seen = new Set();
+    const painted = new Set();
+
+    /*
+     * What the author painted, before anything is worked out.
+     *
+     * Every other pass here is a derivation — a declared rectangle of a sheet,
+     * or a flood fill over touching cells. Both answer "which cells look like
+     * they belong together", and neither can answer "which cells the author
+     * says are one building". Three shops in a row built from one wall kind
+     * are indistinguishable to a tileset and are one blob to a flood fill.
+     *
+     * A painted group is stated outright, so it wins, and it takes whatever it
+     * covers — autotile walls and picture tiles alike. That last part is the
+     * point: a flag hung on a shopfront is a B-sheet tile, and picture tiles
+     * can never join a wall's facade, so the flag became its own object with
+     * its own footing two rows nearer the camera and slid against the wall it
+     * was painted on. Inside one painted object there is one anchor and one
+     * plane, so everything on the building moves with the building.
+     */
+    if (paintedAt) {
+        const groups = new Map();
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                // Every standing tile in the cell, autotiles included — this
+                // pass is not limited to the sheets objects are declared on.
+                for (let layer = 0; layer < 4; layer++) {
+                    const tileId = mapData.data[layer * width * height + y * width + x] || 0;
+                    if (!tileId || !isUpright(tileId)) continue;
+                    const id = paintedAt(x, y, layer);
+                    if (!id) continue;
+                    // Ground within the object: its footprint, not a course of
+                    // its height. Claimed all the same, so no later pass
+                    // stands it up again.
+                    const ground = isPaintedGround ? isPaintedGround(x, y, layer) : false;
+                    if (!groups.has(id)) groups.set(id, { cells: new Map(), ground: new Set() });
+                    const group = groups.get(id);
+                    const at = y * width + x;
+                    if (ground) {
+                        group.ground.add(at);
+                    } else {
+                        if (!group.cells.has(at)) group.cells.set(at, { x, y, tileId, tileIds: [] });
+                        group.cells.get(at).tileIds.push(tileId);
+                    }
+                    seen.add(at);
+                    painted.add(at);
+                    if (claimed) claimed.add(at);
+                    tileAt.delete(at);
+                }
+            }
+        }
+        for (const group of groups.values()) {
+            const cells = [...group.cells.values()];
+            if (!cells.length) continue;
+            for (const cell of cells) cell.tileId = cell.tileIds[cell.tileIds.length - 1];
+            objects.push({
+                cells,
+                painted: true,
+                minX: Math.min(...cells.map(cell => cell.x)),
+                maxX: Math.max(...cells.map(cell => cell.x)),
+                minY: Math.min(...cells.map(cell => cell.y)),
+                maxY: Math.max(...cells.map(cell => cell.y)),
+                // A painted group is its own answer about how tall it may be,
+                // so neither the sheet cap nor the same-object rule applies.
+                sheetH: 0,
+                sheetTile: 0
+            });
+        }
+    }
 
     // Declared objects first, and they group exactly rather than by spreading.
     //
@@ -759,23 +1241,57 @@ Reactor3D.Geometry.uprightObjects = function(mapData, isUpright, maxHeight, isAu
     // the whole reason the guess below is not enough.
     if (declaredAt) {
         const instances = new Map();
-        for (const [index, tileId] of tileAt) {
-            const found = declaredAt(tileId);
-            if (!found) continue;
+        /*
+         * One cell, possibly several objects — one per standing tile.
+         *
+         * Asking the cell's topmost tile which object it belongs to reads a
+         * plate set down on a column as the whole story: both of the column's
+         * cells joined the plate's 1x1 instances instead of each other, so the
+         * capital and the shaft became two objects with two anchors, and a
+         * cut-out turns about its own anchor — the column came apart and its
+         * halves swung independently as the camera moved.
+         *
+         * Each tile answers for itself, so the column's two cells find the same
+         * origin and are one object, and the plates are their own. Making the
+         * plates ride the column instead was tried, to put them at one anchor
+         * with it, and it is the wrong reading: a tile sharing a standing
+         * object's footprint is usually something standing on the *floor*
+         * beside it, not something resting on top of it, and hoisting it up a
+         * course moved it somewhere the author never put it.
+         */
+        for (const [index, tiles] of tileAt) {
             const x = index % width;
             const y = (index - x) / width;
-            const key = `${found.object.tile}:${x - found.dc}:${y - found.dr}`;
-            if (!instances.has(key)) instances.set(key, []);
-            instances.get(key).push({ x, y, tileId });
-            seen.add(index);
+            let claimed = false;
+            for (const tileId of tiles) {
+                const found = declaredAt(tileId);
+                if (!found) continue;
+                const key = `${found.object.tile}:${x - found.dc}:${y - found.dr}`;
+                if (!instances.has(key)) instances.set(key, []);
+                instances.get(key).push({ x, y, tileId, tileIds: [tileId] });
+                claimed = true;
+            }
+            // Anything left over in a claimed cell would be drawn twice if the
+            // guess pass took the cell as well, so a cell any object claimed is
+            // done with here.
+            if (claimed) seen.add(index);
         }
-        for (const cells of instances.values()) {
+        for (const [key, cells] of instances) {
+            const declared = declaredAt(cells[0].tileId);
             objects.push({
                 cells,
                 minX: Math.min(...cells.map(cell => cell.x)),
                 maxX: Math.max(...cells.map(cell => cell.x)),
                 minY: Math.min(...cells.map(cell => cell.y)),
-                maxY: Math.max(...cells.map(cell => cell.y))
+                maxY: Math.max(...cells.map(cell => cell.y)),
+                // How tall this object's picture is on the sheet. A structure
+                // built from it cannot stand taller than its own art, which is
+                // what stops pieces joining up the length of a street.
+                sheetH: declared ? declared.object.h : 0,
+                // Which tileset object this is a placement of. Two placements
+                // of the *same* object side by side are one surface painted in
+                // columns; two different objects that merely touch are not.
+                sheetTile: declared ? declared.object.tile : 0
             });
         }
     }
@@ -791,9 +1307,12 @@ Reactor3D.Geometry.uprightObjects = function(mapData, isUpright, maxHeight, isAu
             const index = stack.pop();
             const x = index % width;
             const y = (index - x) / width;
-            const tileId = tileAt.get(index);
-            cells.push({ x, y, tileId });
-            if (isAuthored && isAuthored(tileId)) authored = true;
+            const tiles = tileAt.get(index) || [];
+            // `tileId` stays the topmost, which is what the questions about a
+            // cell's identity want; `tileIds` is everything standing there.
+            const tileId = tiles[tiles.length - 1] || 0;
+            cells.push({ x, y, tileId, tileIds: tiles });
+            if (isAuthored && tiles.some(id => isAuthored(id))) authored = true;
             if (x < minX) minX = x;
             if (x > maxX) maxX = x;
             if (y < minY) minY = y;
@@ -804,7 +1323,8 @@ Reactor3D.Geometry.uprightObjects = function(mapData, isUpright, maxHeight, isAu
                 if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
                 const next = ny * width + nx;
                 if (!tileAt.has(next) || seen.has(next)) continue;
-                if (!this.samePicture(tileId, tileAt.get(next), dx, dy)) continue;
+                const there = tileAt.get(next);
+                if (!this.samePicture(tileId, there[there.length - 1], dx, dy)) continue;
                 seen.add(next);
                 stack.push(next);
             }
@@ -820,27 +1340,121 @@ Reactor3D.Geometry.uprightObjects = function(mapData, isUpright, maxHeight, isAu
     return objects;
 };
 
-Reactor3D.Geometry.uprightRuns = function(mapData, isUpright, maxHeight, isAuthored) {
+Reactor3D.Geometry.uprightRuns = function(mapData, isUpright, maxHeight, isAuthored, taken) {
     if (!isUpright || !mapData || !Array.isArray(mapData.data)) return [];
     const { width, height } = mapData;
     const cap = maxHeight || Infinity;
+
+    const stands = new Uint8Array(width * height);
+    const tileAt = new Int32Array(width * height);
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            // A cell a painted object claimed is that object's; standing it up
+            // again here would draw its art twice, on two planes.
+            if (taken && taken.has(y * width + x)) continue;
+            const tile = this.uprightTileAt(mapData, x, y, isUpright);
+            if (!tile) continue;
+            stands[y * width + x] = 1;
+            tileAt[y * width + x] = tile;
+        }
+    }
+
+    /*
+     * A connected region of standing tiles is one wall, and shares one base.
+     *
+     * Each column used to stand at its own southern edge, which tore any wall
+     * whose bottom is not level. A gateway is the clearest case: its two posts
+     * run three rows lower than the panel between them, so the posts stood on
+     * the ground while the panel stood three tiles further back and three
+     * tiles lower, and the sign hanging across them lined up with neither. It
+     * also drifted, because two surfaces at different depths do not move
+     * together as the camera pans.
+     *
+     * Sharing a base makes a map row mean one height across the whole wall,
+     * which is the reading the art was painted for: rows going north are
+     * courses going up. Regions that do not touch keep their own bases, so
+     * two separate buildings are still two buildings.
+     */
+    const seen = new Uint8Array(width * height);
     const runs = [];
+    const frontier = [];
+    for (let start = 0; start < stands.length; start++) {
+        if (!stands[start] || seen[start]) continue;
 
-    for (let x = 0; x < width; x++) {
-        let y = 0;
-        while (y < height) {
-            if (!this.uprightTileAt(mapData, x, y, isUpright)) { y++; continue; }
+        frontier.length = 0;
+        frontier.push(start);
+        seen[start] = 1;
+        const cells = [];
+        let footing = 0;
+        while (frontier.length) {
+            const at = frontier.pop();
+            cells.push(at);
+            const x = at % width;
+            const y = (at - x) / width;
+            if (y > footing) footing = y;
+            const reach = (nx, ny) => {
+                if (nx < 0 || ny < 0 || nx >= width || ny >= height) return;
+                const next = ny * width + nx;
+                if (stands[next] && !seen[next]) { seen[next] = 1; frontier.push(next); }
+            };
+            reach(x - 1, y); reach(x + 1, y); reach(x, y - 1); reach(x, y + 1);
+        }
 
-            // Walk south to the end of the run.
-            let end = y;
-            while (end + 1 < height && this.uprightTileAt(mapData, x, end + 1, isUpright)) end++;
+        const columns = new Map();
+        // How far the region reaches either side on each of its rows, so a
+        // column can ask whether anything is holding it up.
+        const span = new Map();
+        for (const at of cells) {
+            const x = at % width;
+            const y = (at - x) / width;
+            if (!columns.has(x)) columns.set(x, []);
+            columns.get(x).push(y);
+            const reach = span.get(y);
+            if (!reach) span.set(y, { minX: x, maxX: x });
+            else { if (x < reach.minX) reach.minX = x; if (x > reach.maxX) reach.maxX = x; }
+        }
 
-            // Bottom-up means south-to-north, which is how the facade stacks.
+        /*
+         * How far off the ground a column that stops short of the footing hangs.
+         *
+         * Sharing a footing is what keeps a wall from tearing in depth, but it
+         * was also deciding height, and those are different questions. Indexed
+         * straight off the footing, a column whose lowest painted cell is north
+         * of it was drawn that many courses up with nothing beneath — so a
+         * mountain range, whose southern edge steps back in ones and twos,
+         * stood its whole front row a tile clear of the ground. 166 of 616
+         * columns on Infernis Prime hung that way, up to twenty-one tiles.
+         *
+         * A column only hangs if something is holding it up: an archway's panel
+         * has its posts either side, and the rows beneath it are spanned by the
+         * same region left and right. A range's edge has open ground on one
+         * side, so it sits down. Counting only the *consecutive* bridged rows
+         * beneath matters — a column bridged for two rows and open below that
+         * is a panel on posts standing on a slope, not a panel floating.
+         */
+        const liftOf = (x, bottom) => {
+            let lift = 0;
+            for (let y = bottom + 1; y <= footing; y++) {
+                const reach = span.get(y);
+                if (!reach || reach.minX >= x || reach.maxX <= x) break;
+                lift++;
+            }
+            return lift;
+        };
+
+        for (const [x, rows] of columns) {
+            rows.sort((a, b) => a - b);
+            const bottom = rows[rows.length - 1];
+            const lift = liftOf(x, bottom);
+            // Indexed by height above the ground the column stands on, so a
+            // column that stops short simply leaves its *upper* courses empty —
+            // `forEach` skips the holes, and nothing is drawn where nothing was
+            // painted.
             const tiles = [];
             let authored = false;
-            for (let row = end; row >= y; row--) {
-                const tile = this.uprightTileAt(mapData, x, row, isUpright);
-                tiles.push(tile);
+            for (const y of rows) {
+                const tile = tileAt[y * width + x];
+                tiles[lift + bottom - y] = tile;
                 if (isAuthored && isAuthored(tile)) authored = true;
             }
             // A run longer than a building is a cliff face or a map-edge wall
@@ -851,14 +1465,21 @@ Reactor3D.Geometry.uprightRuns = function(mapData, isUpright, maxHeight, isAutho
             // tile as upright the height is theirs to choose: tilesets draw
             // buildings as single perspective props dozens of tiles tall, and
             // capping those dropped whole city blocks back to the floor.
-            if (authored || tiles.length <= cap) {
-                runs.push({ x, northY: y, southY: end, tiles });
+            if (authored || footing - rows[0] + 1 <= cap) {
+                runs.push({
+                    x,
+                    northY: rows[0],
+                    southY: rows[rows.length - 1],
+                    // The whole region's footing, which is what it stands on.
+                    faceY: footing,
+                    tiles
+                });
             }
-            y = end + 1;
         }
     }
     return runs;
 };
+
 
 /**
  * Build ground and wall geometry, grouped by sheet.
@@ -892,11 +1513,37 @@ Reactor3D.Geometry.build = function(mapData, options) {
     // Tiles that draw as one standing cut-out per cell rather than as terrain:
     // a forest is trees, not a plateau of bark.
     const isFoliage = opts.isFoliage || null;
+    // Tiles that stand still and face a direction, with a little thickness:
+    // gates, doors, signs, fences. Anything with a front.
+    const isPanel = opts.isPanel || null;
+    // Tiles the 2D tilemap draws over characters — the star flag. Their
+    // geometry goes into a second pass so a character can walk behind them here
+    // as well.
+    const isAbove = opts.isAbove || null;
+    /*
+     * Whether a tile's geometry goes in the pass drawn over the characters.
+     *
+     * Per tile, which is what the 2D tilemap does: the star flag routes each
+     * tile to the upper or lower layer on its own account, and an object whose
+     * rows carry different flags is genuinely drawn across both. Answering for
+     * the whole object instead was tried — a column vanishing looked like its
+     * halves being split between the passes — and the cause turned out to be
+     * elsewhere, in a cell only ever yielding one standing tile. Meanwhile the
+     * object-wide answer put a column's unflagged shaft in the pass over the
+     * characters, where it covered a plate standing in front of it.
+     */
+    const drawsAbove = tileId => !!isAbove && !!isAbove(tileId);
     // The declared object a tile belongs to, when the tileset says so.
     const declaredAt = opts.declaredAt || null;
+    // What the author grouped by hand on this map, which outranks both.
+    const paintedAt = opts.paintedAt || null;
+    const isPaintedGround = opts.isPaintedGround || null;
     // The tile whose art that cut-out uses — the lone-cell variant of the same
     // terrain, which the tileset already draws.
     const standInFor = opts.standInFor || (tileId => tileId);
+    // The roof a raised wall is capped with. Absent, a wall keeps its own art
+    // on top, which is what it did before there was anywhere to say otherwise.
+    const topFaceFor = opts.topFaceFor || null;
     // How tall a foliage cut-out stands, as a multiple of its own art.
     const foliageHeight = opts.foliageHeight === undefined ? 1.4 : opts.foliageHeight;
     // How many cut-outs a foliage cell carries. One: a cell is one instance of
@@ -906,9 +1553,16 @@ Reactor3D.Geometry.build = function(mapData, options) {
     const foliageDensity = opts.foliageDensity === undefined ? 1 : opts.foliageDensity;
     // How far they wander from the cell's centre, in tiles.
     const foliageSpread = opts.foliageSpread === undefined ? 0.55 : opts.foliageSpread;
-    // How far a foliage cell's floor rises above the ground around it. Small:
-    // enough that a wood sits on the land rather than being painted onto it.
-    const foliageLift = opts.foliageLift === undefined ? 0.25 : opts.foliageLift;
+    // How far a foliage cell's floor rises above the ground around it.
+    //
+    // Zero, after seeing it. The idea was that a small lift would give a wood
+    // an edge and something to stand on; what it actually does is raise every
+    // wood onto a plinth of itself, because the lift is a step and a step gets
+    // vertical faces, and the art those faces take is the wood's own tiling
+    // art. A forest on a low kerb of bark is worse than a forest on the
+    // ground. Left as an option because a raised wood may be wanted where the
+    // terrain around it is authored lower.
+    const foliageLift = opts.foliageLift === undefined ? 0 : opts.foliageLift;
     // Whether the tiling art is also laid flat under the cut-outs.
     // The tiling art of a terrain is that terrain seen from above, so drawing
     // it flat *and* standing cut-outs on it draws each cell twice: at ground
@@ -930,11 +1584,11 @@ Reactor3D.Geometry.build = function(mapData, options) {
     const groups = new Map();
     // Billboards need their own material, so they cannot share a group with
     // static geometry even when they draw from the same sheet.
-    const groupFor = (setNumber, billboard) => {
-        const key = `${setNumber}:${billboard ? 1 : 0}`;
+    const groupFor = (setNumber, billboard, above) => {
+        const key = `${setNumber}:${billboard ? 1 : 0}:${above ? 1 : 0}`;
         if (!groups.has(key)) {
             groups.set(key, {
-                setNumber, billboard: !!billboard,
+                setNumber, billboard: !!billboard, above: !!above,
                 positions: [], uvs: [], indices: [], vertexCount: 0,
                 // Corner offsets, in tiles, from the anchor the vertex shares
                 // with the rest of its quad. Only billboards carry them.
@@ -1117,6 +1771,97 @@ Reactor3D.Geometry.build = function(mapData, options) {
         return base;
     };
 
+    /**
+     * The wall autotile a cell's art is built from, or 0.
+     *
+     * Read from the whole stack rather than layer zero: a building's wall is
+     * often painted over a ground tile, and it is the wall that says what the
+     * vertical faces of the mass are made of.
+     */
+    const wallTileAt = (x, y) => {
+        if (x < 0 || y < 0 || x >= width || y >= height) return 0;
+        const stack = this.groundStackAt(mapData, x, y);
+        for (let i = stack.length - 1; i >= 0; i--) {
+            if (this.isWallAutotile(stack[i])) return stack[i];
+        }
+        return 0;
+    };
+
+    /**
+     * The art that covers the top of a raised wall.
+     *
+     * A wall autotile draws a wall *face* and has no top, so a raised wall was
+     * capped with its own side art. Where a roof is known — named in the
+     * classification file, or derived from A4's alternating rows — the cap
+     * takes that instead, and picks its shape from the mass it covers rather
+     * than reusing the wall's, which answers a different question.
+     *
+     * Anything that is not a raised wall is returned untouched.
+     */
+    const roofCapFor = (tileId, x, y, top) => {
+        if (!topFaceFor || !this.isWallAutotile(tileId)) return tileId;
+        const roof = topFaceFor(tileId);
+        if (!roof) return tileId;
+        // A neighbour continues this roof when it stands as high and is capped
+        // with the same roof, so a run of wall reads as one continuous surface.
+        const same = (dx, dy) => {
+            const cx = x + dx, cy = y + dy;
+            if (cx < 0 || cy < 0 || cx >= width || cy >= height) return false;
+            if (surfaceAt(cx, cy) !== top) return false;
+            const neighbour = wallTileAt(cx, cy);
+            return !!neighbour && topFaceFor(neighbour) === roof;
+        };
+        return roof + this.floorShapeFrom(same);
+    };
+
+    /**
+     * One side of a raised wall, as a stack of tile-tall pieces.
+     *
+     * Two things this does that a single stretched quad cannot. The art repeats
+     * once per tile of height instead of being pulled over the whole face, so a
+     * three-tile wall is three courses rather than one smeared one. And each
+     * piece takes the shape its *own* edges call for — capped at the top of the
+     * mass, capped where the wall ends along this face, open where it carries
+     * on — rather than the shape stored in the map, which answers the same
+     * question in plan and therefore put a wall's western end cap on its
+     * northern face too.
+     */
+    const wallFaceStack = (side, x, y, top, bottom, wallId) => {
+        const base = this.autotileBase(wallId);
+        const rect = this.sheetRectFor(base, tileSize);
+        if (!rect) return 0;
+        const group = groupFor(rect.setNumber, false, drawsAbove(wallId));
+        const size = sheetSize(rect.setNumber);
+
+        // The face carries on sideways where the neighbour is the same wall and
+        // stands at least as tall; anywhere else this side of the mass ends.
+        const carriesOn = (dx, dy) => {
+            const cx = x + dx, cy = y + dy;
+            if (cx < 0 || cy < 0 || cx >= width || cy >= height) return false;
+            if (surfaceAt(cx, cy) < top) return false;
+            return this.autotileBase(wallTileAt(cx, cy)) === base;
+        };
+        const left = !carriesOn(side.lx, side.ly);
+        const right = !carriesOn(side.rx, side.ry);
+
+        let drawn = 0;
+        const levels = Math.max(1, Math.round(top - bottom));
+        for (let level = 0; level < levels; level++) {
+            const yTop = top - level;
+            // The lowest course reaches whatever the neighbour's surface is,
+            // which need not be a whole number of tiles below.
+            const yBot = level === levels - 1 ? bottom : yTop - 1;
+            const shape = this.wallFaceShape({
+                left, right, top: level === 0, bottom: level === levels - 1
+            });
+            const piece = this.sheetRectFor(base + shape, tileSize);
+            if (!piece) break;
+            drawn += faceQuads(group, side.corners(yTop, yBot), piece, size,
+                this.autotileQuads(base + shape, tileSize, tables));
+        }
+        return drawn;
+    };
+
     /** Whether a cell holds foliage at all. */
     const foliageAt = (x, y) =>
         !!isFoliage && x >= 0 && y >= 0 && x < width && y < height
@@ -1139,36 +1884,308 @@ Reactor3D.Geometry.build = function(mapData, options) {
         !foliageAt(x - 1, y) || !foliageAt(x + 1, y)
         || !foliageAt(x, y - 1) || !foliageAt(x, y + 1);
 
+    /**
+     * A panel standing on its cell: a box a tenth of a tile deep, with the art
+     * on both faces and a strip of it wrapped round the two edges.
+     *
+     * Built from a basis rather than four hand-written cases. `n` is the
+     * outward normal and `u` runs along the face left-to-right as seen from
+     * outside it — for the south face that is west-to-east, and it rotates with
+     * the normal, which is what keeps the art the right way round on all four.
+     */
+    const panelBox = (tileId, x, y, y0, y1, facing) => {
+        const rect = this.sheetRectFor(tileId, tileSize);
+        if (!rect) return 0;
+        const group = groupFor(rect.setNumber, false, drawsAbove(tileId));
+        const size = sheetSize(rect.setNumber);
+        const [nx, nz] = this.FACING_NORMALS[facing] || this.FACING_NORMALS.south;
+        const ux = nz, uz = -nx;
+        const half = this.PANEL_THICKNESS / 2;
+        const cx = x + 0.5, cz = y + 0.5;
+        const at = (alongU, alongN, height) =>
+            [cx + ux * alongU + nx * alongN, height, cz + uz * alongU + nz * alongN];
+
+        // The edges take a narrow strip of the art rather than a flat colour,
+        // so a painted gate has painted sides.
+        const strip = Math.max(1, Math.min(Math.round(this.PANEL_EDGE_PIXELS), rect.width));
+        const leftStrip = Object.assign({}, rect, { width: strip });
+        const rightStrip = Object.assign({}, rect,
+            { sx: rect.sx + rect.width - strip, width: strip });
+
+        // Front, back, and the two edges. The back carries the same picture:
+        // a tileset draws one elevation, and a mirrored front is a better
+        // guess at the other side than a hole.
+        quad(group, [at(-0.5, half, y1), at(0.5, half, y1),
+            at(0.5, half, y0), at(-0.5, half, y0)], rect, size);
+        quad(group, [at(0.5, -half, y1), at(-0.5, -half, y1),
+            at(-0.5, -half, y0), at(0.5, -half, y0)], rect, size);
+        quad(group, [at(-0.5, -half, y1), at(-0.5, half, y1),
+            at(-0.5, half, y0), at(-0.5, -half, y0)], leftStrip, size);
+        quad(group, [at(0.5, half, y1), at(0.5, -half, y1),
+            at(0.5, -half, y0), at(0.5, half, y0)], rightStrip, size);
+        return 4;
+    };
+
     // Facades first, and note which cells they consumed: a cell inside a
     // building's footprint is under the building, not open ground.
     const consumed = new Set();
     // Cell index -> the ground tile to draw under a facade that covers it.
     const apron = new Map();
-    const objects = this.uprightObjects(mapData, isUpright, maxFacade, isAuthored, declaredAt);
+    /*
+     * Where a cell's art ended up, once it was stood into a wall.
+     *
+     * A facade takes a cell's picture off the ground and puts it on a vertical
+     * plane at the wall's footing, some number of courses up. Anything drawn
+     * *over* the scene — a sign event, the animation playing on it — has to
+     * follow it there, or it stays lying on the floor at its own row while the
+     * art it belongs to is metres away, and the two drift apart as the camera
+     * pans because they are at different depths.
+     */
+    const facadeZ = new Float32Array(width * height);
+    const facadeY = new Float32Array(width * height);
+    const facadeLift = new Float32Array(width * height);
+    const onFacade = new Uint8Array(width * height);
+    /*
+     * The wall's footing and how far up it this cell sits, kept apart.
+     *
+     * They cannot be added together here, because "up" is not world up: a
+     * cut-out's courses are stacked along the billboard's own up axis, which
+     * leans back with the camera. Storing one combined world height put every
+     * sprite at a world position while the art it belongs to was drawn along
+     * the leaning axis — a gap that grows with height and swings as the camera
+     * moves, which is a sign creeping against the pole it hangs from.
+     */
+    const standAt = (x, y, planeZ, footingY, lift) => {
+        if (x < 0 || y < 0 || x >= width || y >= height) return;
+        const at = y * width + x;
+        onFacade[at] = 1;
+        facadeZ[at] = planeZ;
+        facadeY[at] = footingY;
+        facadeLift[at] = lift;
+    };
+    // A panel stands still and faces a way; it must not also be swept into a
+    // cut-out that turns. Filtered here rather than trusted to the caller,
+    // because being in both places at once draws the thing twice.
+    const standsAsCutout = isUpright
+        ? (tileId => isUpright(tileId) && !(isPanel && isPanel(tileId)))
+        : null;
+    // Cells a painted object took, so the facade pass leaves them alone.
+    const paintedCells = new Set();
+    const objects = this.uprightObjects(
+        mapData, standsAsCutout, maxFacade, isAuthored, declaredAt,
+        paintedAt, isPaintedGround, paintedCells);
+
+    /*
+     * One footing for every piece of one wall.
+     *
+     * A piece of standing art used to take its depth from its own southern
+     * row, so the pieces of a single mural landed on different planes: the
+     * gateway on this map was built at depths 8, 9 and 11 at once, because its
+     * middle panel ends three rows north of the posts holding it up. Nothing
+     * could line up with anything — and art at different depths does not move
+     * together as the camera pans, which is what read as a sign sliding
+     * sideways against its own building while walking.
+     *
+     * Two pieces belong to one wall when they touch *and their row ranges
+     * overlap*. That second half is what keeps the rule honest. Touching alone
+     * swept a statue standing on the pavement into the building behind it and
+     * hoisted it thirty tiles up the facade, because everything in a street
+     * touches everything else in a long chain. Pieces of one mural interleave
+     * — the gateway's panel occupies rows the posts also occupy — while a prop
+     * in front of a wall merely meets its bottom edge.
+     */
+    const owner = new Int32Array(width * height).fill(-1);
+    objects.forEach((object, index) => {
+        for (const cell of object.cells) owner[cell.y * width + cell.x] = index;
+    });
+    /*
+     * A course of standing art shares its footing along the row, and only
+     * along the row.
+     *
+     * Standing art gets painted in pieces: the gateway's sign panel on this
+     * map is five separate one-column placements of the same object at shifted
+     * origins, flanked by posts that reach three rows further down. Each piece
+     * stood on its own bottom row, so one painted surface was built on three
+     * different planes at three different depths — the sign lined up with
+     * neither post, and slid against them as the view panned, because surfaces
+     * at different depths do not move together.
+     *
+     * Joining everything that touches fixed the gateway and broke the city:
+     * standing art is adjacent to standing art all the way down a street, so
+     * the region walked south to the map's edge and stood every wall in
+     * Moletown on row 50, thirty-eight tiles up, which put the towers off the
+     * top of the screen entirely.
+     *
+     * East and west only is what makes it safe. A course cannot walk southward
+     * however long the street is, so the footing is bounded by the tallest
+     * piece in one horizontal band — which is exactly the thing carrying the
+     * band. Row ranges have to overlap as well, so a course joins its own
+     * neighbours rather than whatever happens to abut its ends.
+     */
+    /*
+     * Pieces join into one structure, and a structure is never taller than the
+     * art it is made of.
+     *
+     * Moletown's gateway is scaffolding: tileset pieces standing in 3D with a
+     * charset sign hung on an event in front of them. The sign band and the
+     * posts holding it up are separate placements, so each stood on its own
+     * bottom row — the band at one depth, the posts two tiles behind it — and
+     * the sign lined up with one and slid against the other.
+     *
+     * Joining anything that touches fixes that and breaks the city: standing
+     * art abuts standing art all the way down a street, so the group walks
+     * south to the map's edge and stands every wall thirty-eight tiles up.
+     * Requiring pieces to begin on the same row bounds it and is too strict —
+     * posts start lower than the band they carry, which is the whole point of
+     * a post.
+     *
+     * A declared object knows how tall its own picture is, and that is the
+     * honest bound. A gateway assembled from a sixteen-row sheet may stand
+     * eight rows tall; a street of separate buildings may not fuse into a
+     * thirty-nine row wall, because no piece of it was ever drawn that tall.
+     */
+    const parent = objects.map((_, index) => index);
+    const span = objects.map(object => ({
+        minY: object.minY, maxY: object.maxY, tallest: object.sheetH || 0
+    }));
+    const find = index => {
+        while (parent[index] !== index) {
+            parent[index] = parent[parent[index]];
+            index = parent[index];
+        }
+        return index;
+    };
+    const join = (a, b) => {
+        const rootA = find(a);
+        const rootB = find(b);
+        if (rootA === rootB) return;
+        const minY = Math.min(span[rootA].minY, span[rootB].minY);
+        const maxY = Math.max(span[rootA].maxY, span[rootB].maxY);
+        const tallest = Math.max(span[rootA].tallest, span[rootB].tallest);
+        // Never taller than the tallest picture in it.
+        if (maxY - minY + 1 > tallest) return;
+        parent[rootB] = rootA;
+        span[rootA] = { minY, maxY, tallest };
+    };
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const mine = owner[y * width + x];
+            if (mine < 0) continue;
+            const meet = (nx, ny) => {
+                if (nx >= width || ny >= height) return;
+                const theirs = owner[ny * width + nx];
+                if (theirs >= 0 && theirs !== mine) join(mine, theirs);
+            };
+            meet(x + 1, y);
+            meet(x, y + 1);
+        }
+    }
+    /*
+     * Each placement stands on its own bottom row, with one narrow exception.
+     *
+     * Every general merging rule tried here made something worse. Joining
+     * whatever touches walked the length of a street and stood the whole city
+     * on its southern edge. Bounding that by the art's own height stopped the
+     * runaway and still swept a shopfront into the cooling towers below it,
+     * which stacked the shopfront six rows up a wall that is not there — its
+     * windows and counters came out skewed and displaced, which is what
+     * "garbled" looked like.
+     *
+     * The one case that genuinely is one surface: several placements of the
+     * *same* tileset object, side by side, overlapping in rows. That is an
+     * author painting one object out column by column — Moletown's gateway is
+     * five one-column placements of the same piece — and it is not the same as
+     * two different objects that happen to abut.
+     */
+    /*
+     * North to south, which is the order 2D draws in.
+     *
+     * A cut-out is drawn with `depthWrite` off — its soft edges have to blend
+     * with whatever is behind them rather than punch a hole in the depth
+     * buffer — so within one merged buffer the last thing written is the thing
+     * you see. Order is the whole of the occlusion, and the order was whatever
+     * the passes above happened to produce: painted groups, then declared
+     * rectangles, then the flood fill.
+     *
+     * So a banner hanging on a wall was drawn over a sign standing in front of
+     * it, purely because its object was built first. 2D never has this problem
+     * because it draws row by row, and a thing further up the map is always
+     * painted before the thing below it. Sorting by footing is that same rule:
+     * whatever stands further north goes down first, and anything to the south
+     * paints over it.
+     */
+    objects.sort((a, b) => (a.maxY - b.maxY) || (a.minX - b.minX));
+
+    const footings = objects.map(object => object.maxY);
+
+    const indexOf = new Map();
+    objects.forEach((object, index) => indexOf.set(object, index));
+    const footingFor = object => {
+        const index = indexOf.get(object);
+        return index === undefined ? object.maxY : footings[index];
+    };
 
     for (const object of objects) {
-        // The object turns about this point, so it is the middle of the
-        // footprint — an object should turn where it stands rather than orbit
-        // something. Anchoring on the southern row put the axis at the front
-        // edge, and a deep object visibly swung around it as the camera moved.
+        // A cut-out's rows are its *height*, not its depth.
         //
-        // Height is a separate question from the axis, and conflating them is
-        // what made the southern row look right for a while: the base takes the
-        // ground at the object's southern row, which is the ground it faces, so
-        // it stays planted while turning in place.
+        // `level = maxY - cell.y` below stacks the object's map rows upwards to
+        // build the picture, which is the whole idea of standing a drawing up:
+        // a three-row street light is three tiles tall, not three tiles deep.
+        // Centring the anchor on those rows as though they were a footprint put
+        // the object's feet in the middle of its own height — a lamp stood
+        // roughly half its height north of the tile it belongs to, which at a
+        // pitched camera reads as floating well above the ground it should be
+        // planted on. The taller the prop, the further off it sat.
+        //
+        // So the anchor sits on the southern row — and in the *middle* of it,
+        // as it does across the object's columns.
+        //
+        // It used to sit on that row's southern edge, on the reasoning that
+        // RPG Maker plants a standing sprite on the bottom of its cell:
+        // `screenY` is `scrolledY * tileHeight + tileHeight`. That is where the
+        // baseline is drawn on a 2D screen, and it is not where the object is
+        // in the world. Taking it literally pinned the object half a tile south
+        // of its own cell while its x pivoted about the cell's middle, so the
+        // two axes disagreed. Half a tile of pure depth is invisible from the
+        // front — which is why it looked right — and swings into view as the
+        // camera comes round, until a column standing in the middle of a three
+        // by three pool is planted on the pool's southern lip.
+        //
+        // The middle of the cell is the object's own axis, so it turns about
+        // itself from every angle.
         const centreX = (object.minX + object.maxX + 1) / 2;
-        const centreZ = (object.minY + object.maxY + 1) / 2;
-        const base = surfaceAt(Math.floor(centreX), object.maxY);
+        // The region's footing rather than this object's own southern row, so
+        // every piece of one mural stands on one plane at one depth.
+        const footing = footingFor(object);
+        const centreZ = footing + 0.5;
+        const base = surfaceAt(Math.floor(centreX), footing);
         const anchor = [centreX, base, centreZ];
 
         for (const cell of object.cells) {
-            const rect = this.sheetRectFor(cell.tileId, tileSize);
-            if (!rect) continue;
-            const group = groupFor(rect.setNumber, true);
-            const size = sheetSize(rect.setNumber);
             // South is the bottom of the picture, so a cell's distance north of
-            // the object's southern row is its height above the ground.
-            const level = object.maxY - cell.y;
+            // the region's footing is its height above the ground.
+            const level = footing - cell.y;
+            // Recorded whether or not the tile draws, so a sign hanging on this
+            // object is placed on the object's own plane rather than on the
+            // floor at its own map row. The two are not the same place: a
+            // gateway drawn across rows 5-10 stands at the depth of row 10, so
+            // an event at row 7 left on the ground sat three tiles nearer the
+            // camera than the art it belongs to — and slid against it as the
+            // camera panned, because two surfaces at different depths do not
+            // move together.
+            standAt(cell.x, cell.y, centreZ, base, level * uprightHeight);
+
+            // Every standing tile in the cell, lowest layer first — a cell can
+            // hold more than one, and in 2D they are simply drawn one over the
+            // other. Taking only the topmost made a column with a plate resting
+            // on it vanish and leave the plate behind.
+            const standing = (cell.tileIds && cell.tileIds.length)
+                ? cell.tileIds : (cell.tileId ? [cell.tileId] : []);
+            for (const tileId of standing) {
+            const rect = this.sheetRectFor(tileId, tileSize);
+            if (!rect) continue;
+            const group = groupFor(rect.setNumber, true, drawsAbove(tileId));
+            const size = sheetSize(rect.setNumber);
             const y0 = level * uprightHeight;
             const y1 = y0 + uprightHeight;
             const left = cell.x - centreX;
@@ -1180,7 +2197,7 @@ Reactor3D.Geometry.build = function(mapData, options) {
             // border. The quadrants tile the face the same way they tile the
             // ground, with qy running down the face instead of south.
             const parts = rect.autotile
-                ? this.autotileQuads(cell.tileId, tileSize, tables)
+                ? this.autotileQuads(tileId, tileSize, tables)
                 : null;
             const half = uprightHeight / 2;
             const faces = parts
@@ -1208,6 +2225,7 @@ Reactor3D.Geometry.build = function(mapData, options) {
             // turns never is seen edge-on, so the crossing plane is gone: it
             // only ever showed as a seam through the middle of the art when the
             // camera caught it at an angle.
+            }
         }
 
         // The floor the object stands on.
@@ -1235,15 +2253,37 @@ Reactor3D.Geometry.build = function(mapData, options) {
     // the camera moved.
     const wallRuns = isUpright
         ? this.uprightRuns(mapData, tileId => isUpright(tileId) && tileId >= 2048,
-            maxFacade, isAuthored)
+            maxFacade, isAuthored, paintedCells)
         : [];
+    /*
+     * Which columns have a wall beside them, so a run of them is a solid block
+     * rather than a row of boxes with faces between every pair.
+     *
+     * Keyed by footing as well as by column: two walls at the same x standing
+     * on different rows are different buildings and each keeps its own ends.
+     */
+    const wallColumns = new Map();
+    for (const run of wallRuns) wallColumns.set(`${run.x}:${run.faceY}`, run);
+    const wallBeside = (x, faceY, level) => {
+        const run = wallColumns.get(`${x}:${faceY}`);
+        return !!(run && run.tiles[level]);
+    };
+
+    // Walls sort the same way, and for the same reason.
+    wallRuns.sort((a, b) => (a.faceY - b.faceY) || (a.x - b.x));
+
     for (const run of wallRuns) {
-        const base = surfaceAt(run.x, run.southY);
-        const zFace = run.southY + 1;
+        // The region's footing, not this column's own bottom: a wall whose
+        // base is ragged — a gateway, whose posts run lower than the panel
+        // between them — was otherwise torn into columns at different depths
+        // and heights, and nothing hanging on it could line up with any of it.
+        const base = surfaceAt(run.x, run.faceY);
+        const zFace = run.faceY + 1;
         run.tiles.forEach((tileId, level) => {
+            standAt(run.x, run.faceY - level, zFace, base, level * uprightHeight);
             const rect = this.sheetRectFor(tileId, tileSize);
             if (!rect) return;
-            const group = groupFor(rect.setNumber, false);
+            const group = groupFor(rect.setNumber, false, drawsAbove(tileId));
             const size = sheetSize(rect.setNumber);
             const y0 = base + level * uprightHeight;
             const y1 = y0 + uprightHeight;
@@ -1263,6 +2303,20 @@ Reactor3D.Geometry.build = function(mapData, options) {
                     yBot: y1 - (part.qy + 1) * half
                 }))
                 : [{ rect, x0: run.x, x1: run.x + 1, yTop: y1, yBot: y0 }];
+            /*
+             * A box, not a plane.
+             *
+             * The same picture on the front and the back, and on whichever
+             * ends are exposed. A tileset draws one elevation of a wall and
+             * nothing else, so its own art is the only thing there is to put
+             * on the other three sides — and it is what an author reaching for
+             * a quick fix would put there themselves.
+             *
+             * No top. What covers a wall is a roof, and the tileset already
+             * says which tile that is; wall art laid flat up there would be
+             * wrong on every building that has a proper roof painted on it.
+             */
+            const zBack = zFace - this.WALL_THICKNESS;
             for (const face of faces) {
                 quad(group, [
                     [face.x0, face.yTop, zFace],
@@ -1270,8 +2324,80 @@ Reactor3D.Geometry.build = function(mapData, options) {
                     [face.x1, face.yBot, zFace],
                     [face.x0, face.yBot, zFace]
                 ], face.rect, size);
-                quadCount++;
+                // Wound the other way about, so it faces north rather than
+                // being a front you can only see from inside the building.
+                quad(group, [
+                    [face.x1, face.yTop, zBack],
+                    [face.x0, face.yTop, zBack],
+                    [face.x0, face.yBot, zBack],
+                    [face.x1, face.yBot, zBack]
+                ], face.rect, size);
+                quadCount += 2;
             }
+            /*
+             * The ends, turned into depth.
+             *
+             * Built from the same quadrants as the front, with the shape's
+             * horizontal split running along z instead of x — an autotile
+             * standing up is still an autotile, and `sheetRectFor` on one is
+             * the block's whole top-left tile, which is a corner piece. Using
+             * it raw is what once built walls out of grass corners; it would
+             * do it again here, one face round the corner.
+             *
+             * And only where the wall actually ends. A shopfront five columns
+             * wide is one block; a face between every pair of columns is
+             * geometry nobody can see and two surfaces fighting over a plane.
+             */
+            const depth = this.WALL_THICKNESS;
+            const ends = parts
+                ? parts.map(part => ({
+                    rect: part,
+                    z0: zBack + part.qx * 0.5 * depth,
+                    z1: zBack + (part.qx * 0.5 + 0.5) * depth,
+                    yTop: y1 - part.qy * half,
+                    yBot: y1 - (part.qy + 1) * half
+                }))
+                : [{ rect, z0: zBack, z1: zFace, yTop: y1, yBot: y0 }];
+            for (const side of [run.x, run.x + 1]) {
+                const outward = side === run.x ? -1 : 1;
+                if (wallBeside(run.x + outward, run.faceY, level)) continue;
+                for (const end of ends) {
+                    quad(group, [
+                        [side, end.yTop, end.z0], [side, end.yTop, end.z1],
+                        [side, end.yBot, end.z1], [side, end.yBot, end.z0]
+                    ], end.rect, size);
+                    quadCount++;
+                }
+            }
+        });
+        for (let row = run.northY; row <= run.southY; row++) {
+            consumed.add(row * width + run.x);
+        }
+        const surface = this.nearestGround(mapData, run, isUpright);
+        if (surface) {
+            for (let row = run.northY; row <= run.southY; row++) {
+                apron.set(row * width + run.x, surface);
+            }
+        }
+    }
+
+    // Panels: things with a front. A run of them going north is the same
+    // drawing convention a facade uses — the cells north of the base are the
+    // upper courses of one picture — so the run stacks from the ground up, and
+    // the whole thing faces the way its base cell says.
+    const panelRuns = isPanel ? this.uprightRuns(mapData, isPanel, Infinity, () => true) : [];
+    for (const run of panelRuns) {
+        const base = surfaceAt(run.x, run.faceY);
+        const facing = this.panelFacing((dx, dy) => {
+            const nx = run.x + dx, ny = run.faceY + dy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) return false;
+            // Solid means built up beside it — a wall, a cliff, a raised mass.
+            return surfaceAt(nx, ny) > base;
+        });
+        run.tiles.forEach((tileId, level) => {
+            const y0 = base + level * uprightHeight;
+            standAt(run.x, run.faceY - level, run.faceY + 1, base, level * uprightHeight);
+            quadCount += panelBox(tileId, run.x, run.faceY, y0, y0 + uprightHeight, facing);
         });
         for (let row = run.northY; row <= run.southY; row++) {
             consumed.add(row * width + run.x);
@@ -1319,10 +2445,14 @@ Reactor3D.Geometry.build = function(mapData, options) {
             // tile's width, so nothing separates visibly even edge-on.
             for (let layer = 0; layer < stack.length; layer++) {
                 const tileId = stack[layer];
-                const rect = this.sheetRectFor(tileId, tileSize);
+                // A raised wall is capped with its roof rather than with its
+                // own face art. The roof picks its corners from the mass it
+                // covers, the same way it would if it had been painted flat.
+                const drawId = roofCapFor(tileId, x, y, top);
+                const rect = this.sheetRectFor(drawId, tileSize);
                 if (!rect) continue;
 
-                const group = groupFor(rect.setNumber, false);
+                const group = groupFor(rect.setNumber, false, drawsAbove(tileId));
                 const size = sheetSize(rect.setNumber);
                 const surface = top + layer * this.LAYER_LIFT;
 
@@ -1350,26 +2480,55 @@ Reactor3D.Geometry.build = function(mapData, options) {
                                 height: found.height * spanY
                             })
                             : found;
-                        const standGroup = groupFor(standRect.setNumber, true);
+                        const standGroup = groupFor(standRect.setNumber, true, drawsAbove(tileId));
                         const standSize = sheetSize(standRect.setNumber);
                         const standParts = standRect.autotile
                             ? this.autotileQuads(standId, tileSize, tables)
                             : null;
-                        // One cell wide, and as tall as the art is in
-                        // proportion, so a tall thin tree stays tall and thin.
-                        const tall = (spanY / spanX) * foliageHeight;
+                        /*
+                         * As wide as the art is, and taller in proportion.
+                         *
+                         * The span was read as an aspect ratio and its size
+                         * thrown away, so a stand-in naming a 2x2 rectangle of
+                         * the sheet — a mountain drawn across four cells — was
+                         * built at the same world width as a single tile. The
+                         * picture came out squeezed to half its width, and the
+                         * quad no longer covered the cell it stood on, so bare
+                         * ground showed between one cut-out and the next: the
+                         * rectangular bites out of a range's silhouette, with
+                         * the straight vertical sides a billboard quad has.
+                         *
+                         * A 1x1 stand-in is unchanged — `spanX` is 1 and this
+                         * is the expression it always was — so ordinary
+                         * foliage keeps the size and the look it had.
+                         */
+                        const broad = spanX;
+                        const tall = spanY * foliageHeight;
 
                         // Several of them, each nudged off centre and sized a
                         // little differently. One per cell sitting dead centre
                         // reads as an orchard however good the art is, because
                         // the eye finds the grid immediately.
                         for (let n = 0; n < foliageDensity; n++) {
-                            const scale = 0.75 + scatter(x, y, n * 3) * 0.5;
-                            const dx = (scatter(x, y, n * 3 + 1) - 0.5) * foliageSpread;
+                            // From one cell wide upward, never less. Below a
+                            // full cell a cut-out cannot cover the ground it
+                            // stands on however it is placed, and the bare
+                            // strip beside it reads as a bite out of the mass.
+                            const scale = 1 + scatter(x, y, n * 3) * 0.5;
+                            const wide = (broad * scale) / 2;
+                            const high = tall * scale;
+                            // Wander as far as the art can afford and no
+                            // further: an offset wider than the overhang walks
+                            // the cut-out off its own cell and opens the same
+                            // gap the size floor just closed. A big cut-out
+                            // still moves the full spread, so the grid is
+                            // broken up where there is room to break it.
+                            const room = Math.max(0, wide - 0.5);
+                            const dx = (scatter(x, y, n * 3 + 1) - 0.5)
+                                * Math.min(foliageSpread, room * 2);
+                            // Depth is along the view, so it opens no gap.
                             const dz = (scatter(x, y, n * 3 + 2) - 0.5) * foliageSpread;
                             const anchor = [x + 0.5 + dx, top, y + 0.5 + dz];
-                            const wide = scale / 2;
-                            const high = tall * scale;
                             const half = high / 2;
                             const cutouts = standParts
                                 ? standParts.map(part => ({
@@ -1402,7 +2561,7 @@ Reactor3D.Geometry.build = function(mapData, options) {
                 // autotile is four quarter-cells, because its shape picks four
                 // corners out of the sheet rather than one whole picture.
                 const quads = rect.autotile
-                    ? this.autotileQuads(tileId, tileSize, tables)
+                    ? this.autotileQuads(drawId, tileSize, tables)
                     : null;
                 if (quads) {
                     for (const part of quads) {
@@ -1459,22 +2618,35 @@ Reactor3D.Geometry.build = function(mapData, options) {
             // Walls, one per side whose neighbour sits lower. A cell outside the
             // map counts as elevation 0, so the map's rim is closed off rather
             // than floating.
+            // `lx/ly` and `rx/ry` are the cells beyond this face's left and
+            // right edges *as seen from outside it*, which is not the same as
+            // west and east: the north face's left is the map's east. They
+            // decide where a wall's end caps go.
             const neighbours = [
-                { dx: 0, dy: 1, corners: h => [[x, top, y + 1], [x + 1, top, y + 1], [x + 1, h, y + 1], [x, h, y + 1]] },
-                { dx: 0, dy: -1, corners: h => [[x + 1, top, y], [x, top, y], [x, h, y], [x + 1, h, y]] },
-                { dx: -1, dy: 0, corners: h => [[x, top, y], [x, top, y + 1], [x, h, y + 1], [x, h, y]] },
-                { dx: 1, dy: 0, corners: h => [[x + 1, top, y + 1], [x + 1, top, y], [x + 1, h, y], [x + 1, h, y + 1]] }
+                { dx: 0, dy: 1, lx: -1, ly: 0, rx: 1, ry: 0,
+                    corners: (a, b) => [[x, a, y + 1], [x + 1, a, y + 1], [x + 1, b, y + 1], [x, b, y + 1]] },
+                { dx: 0, dy: -1, lx: 1, ly: 0, rx: -1, ry: 0,
+                    corners: (a, b) => [[x + 1, a, y], [x, a, y], [x, b, y], [x + 1, b, y]] },
+                { dx: -1, dy: 0, lx: 0, ly: -1, rx: 0, ry: 1,
+                    corners: (a, b) => [[x, a, y], [x, a, y + 1], [x, b, y + 1], [x, b, y]] },
+                { dx: 1, dy: 0, lx: 0, ly: 1, rx: 0, ry: -1,
+                    corners: (a, b) => [[x + 1, a, y + 1], [x + 1, a, y], [x + 1, b, y], [x + 1, b, y + 1]] }
             ];
+            const wallId = wallTileAt(x, y);
             for (const side of neighbours) {
                 const nx = x + side.dx;
                 const ny = y + side.dy;
                 const outside = nx < 0 || ny < 0 || nx >= width || ny >= height;
                 const neighbourTop = outside ? 0 : surfaceAt(nx, ny);
                 if (neighbourTop >= top) continue;
-                // Wall faces sample the whole-tile rect even for autotiles: a
-                // cliff side wants wall art, which the sidecar will name rather
-                // than it being derivable from whichever ground tile sits above.
-                quadCount += faceQuads(surfaceGroup, side.corners(neighbourTop),
+                // A wall knows what its own sides look like; anything else —
+                // a cliff, a step, a raised wood — takes the terrain art of
+                // the cell it belongs to, stretched over the drop.
+                if (wallId) {
+                    quadCount += wallFaceStack(side, x, y, top, neighbourTop, wallId);
+                    continue;
+                }
+                quadCount += faceQuads(surfaceGroup, side.corners(top, neighbourTop),
                     surfaceRect, surfaceSize, surfaceParts);
             }
         }
@@ -1484,6 +2656,9 @@ Reactor3D.Geometry.build = function(mapData, options) {
     const built = Array.from(groups.values()).filter(group => group.vertexCount > 0).map(group => ({
         setNumber: group.setNumber,
         billboard: group.billboard,
+        // Which pass this belongs to: the ground, or the part drawn over the
+        // characters so they can walk behind it.
+        above: group.above,
         // Billboards keep their anchor in `positions` and their corner in
         // `offsets`; the shader combines the two per frame.
         offsets: group.billboard ? Float32Array.from(group.offsets) : null,
@@ -1497,7 +2672,18 @@ Reactor3D.Geometry.build = function(mapData, options) {
             : Uint16Array.from(group.indices)
     }));
 
-    return { groups: built, quads: quadCount };
+    // The height of every cell's surface, kept so that things drawn *over* the
+    // scene — characters, events, the animations played on them — can stand on
+    // what was built rather than on the flat ground beneath it.
+    const surface = new Float32Array(width * height);
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) surface[y * width + x] = surfaceAt(x, y);
+    }
+
+    return {
+        groups: built, quads: quadCount, surface, width, height,
+        facade: { onFacade, z: facadeZ, y: facadeY, lift: facadeLift }
+    };
 };
 
 //-----------------------------------------------------------------------------
@@ -1518,6 +2704,7 @@ Reactor3D.CLASS_GROUND = 1;    // always lies flat
 Reactor3D.CLASS_UPRIGHT = 2;   // part of a standing object
 Reactor3D.CLASS_SCENERY = 3;   // raises the ground it sits on
 Reactor3D.CLASS_FOLIAGE = 4;   // a cut-out per cell, over ground that stays flat
+Reactor3D.CLASS_PANEL = 5;     // stands still, faces a way, has a little depth
 
 /**
  * The shape of a terrain painted as a single isolated cell.
@@ -1586,8 +2773,29 @@ Reactor3D.tileClass = function(tilesetId, tileId) {
     const value = forTileset && forTileset[this.classKey(tileId)];
     return value === this.CLASS_GROUND || value === this.CLASS_UPRIGHT
         || value === this.CLASS_SCENERY || value === this.CLASS_FOLIAGE
+        || value === this.CLASS_PANEL
         ? value
         : this.CLASS_AUTO;
+};
+
+/**
+ * The tile whose art covers the top of a raised wall.
+ *
+ * A wall autotile is a picture of a wall *face*: it has no top, so a wall
+ * raised into a mass was capped with its own side art, which reads as a
+ * building wearing its front as a hat. The roof is named in the classification
+ * file where an author has said so, and derived from the sheet layout where A4
+ * guarantees the pairing. Returns 0 when neither applies, and the caller then
+ * leaves the tile alone rather than inventing one.
+ */
+Reactor3D.topFaceFor = function(tilesetId, tileId) {
+    const base = this.Geometry.autotileBase(tileId);
+    const all = this._classification;
+    const forTileset = all && all.materials && all.materials[tilesetId];
+    const entry = forTileset && forTileset[base];
+    const named = entry && entry.top;
+    if (named > 0) return this.Geometry.autotileBase(named);
+    return this.Geometry.roofForWall(base);
 };
 
 /**
@@ -1684,6 +2892,11 @@ Reactor3D.foliagePredicate = function(tilesetId) {
     return tileId => this.tileClass(tilesetId, tileId) === this.CLASS_FOLIAGE;
 };
 
+/** Tiles that stand still and face a direction. */
+Reactor3D.panelPredicate = function(tilesetId) {
+    return tileId => this.tileClass(tilesetId, tileId) === this.CLASS_PANEL;
+};
+
 /**
  * The predicate the geometry builder uses.
  *
@@ -1691,6 +2904,21 @@ Reactor3D.foliagePredicate = function(tilesetId) {
  * a guess — impassable or draws-above-characters — which is what lets a map
  * that has never been touched show something recognisable.
  */
+/**
+ * Tiles the 2D tilemap draws *above* characters — the star flag.
+ *
+ * In 2D this is what lets a character walk behind a tree or through a doorway:
+ * the tilemap draws those tiles in its upper layer, over the sprites. In 3D the
+ * ground is one picture behind every sprite, so nothing could ever be in front
+ * of anyone and a character walked over the front of everything.
+ *
+ * Bit 0x10 is the flag, read the way the tilemap reads it.
+ */
+Reactor3D.abovePredicate = function(flags) {
+    if (!flags) return null;
+    return tileId => !!(flags[tileId] & 0x10);
+};
+
 Reactor3D.uprightPredicate = function(tilesetId, flags, options) {
     // Guessing is off by default. The flag heuristic was meant to let an
     // unclassified map show something recognisable, but "impassable or draws
@@ -1779,6 +3007,393 @@ Reactor3D.loadClassification = function() {
 // A three.js scene built from one map. Meshes are grouped by tileset sheet, so
 // the whole ground is a handful of draw calls however large the map.
 
+/**
+ * The world point a standing place actually resolves to.
+ *
+ * The lift runs along the billboard's up axis, not the world's, because that
+ * is how the courses of a cut-out are stacked. Anything that wants to sit
+ * against the art has to travel the same way to get there.
+ */
+Reactor3D.pointOf = function(camera, x, stand) {
+    const up = this.billboardUp(camera);
+    const lift = stand.lift || 0;
+    return {
+        x: x + up.x * lift,
+        y: stand.height + up.y * lift,
+        z: stand.z + up.z * lift
+    };
+};
+
+/** The up axis a cut-out is built on: world up, leaned by the tilt. */
+Reactor3D.billboardUp = function(camera) {
+    const up = new THREE.Vector3(0, 1, 0);
+    if (camera && this.BILLBOARD_TILT) {
+        const leaning = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+        up.lerp(leaning, this.BILLBOARD_TILT).normalize();
+    }
+    return up;
+};
+
+/**
+ * Where in the world a character is standing, for drawing purposes.
+ *
+ * Normally the southern edge of its own cell at ground level — `screenY` in 2D
+ * is `scrolledY * tileHeight + tileHeight`, so a character's feet are on the
+ * bottom edge of the tile it stands on, and props are planted the same way.
+ *
+ * But a cell whose art was stood into a wall is no longer where the map says
+ * it is: its picture has moved onto a vertical plane at the wall's footing,
+ * some courses up. A sign hanging on that wall has to move with it. Left on
+ * the ground it sat at the wrong height *and* the wrong depth, and the depth
+ * is what made it slide against its own wall as the camera panned — two
+ * surfaces at different distances do not move together.
+ *
+ * Only things that stay put are put on the wall. A character crossing in front
+ * of a building is standing on the street, whatever the cell behind it was
+ * turned into.
+ */
+Reactor3D.standingPlaceFor = function(character) {
+    const map = typeof $dataMap !== "undefined" ? $dataMap : null;
+    const x = Math.round(character._realX);
+    const y = Math.round(character._realY);
+    // The middle of the cell, which is where the cell is — the same place a
+    // prop standing on it is anchored. RPG Maker draws a sprite's feet on the
+    // bottom edge of its cell, and that is a 2D screen convention rather than
+    // a world position; taking it literally put every character half a tile
+    // south of the square it occupies, which is invisible head-on and swings
+    // into view as the camera comes round.
+    const ground = { height: this.elevationAt(map, x, y), z: character._realY + 0.5, lift: 0 };
+    if (typeof character.eventId !== "function") return ground;
+    if (character.isMoving && character.isMoving()) return ground;
+
+    /*
+     * A route only disqualifies an event that actually goes somewhere.
+     *
+     * Pinning a walking event to a wall would carry it up the facade as it
+     * crossed the cell, so having a move route used to rule the facade out
+     * flatly. But most routes on scenery do not walk: they turn, wait, toggle
+     * a switch, or play a step animation, and the event stands exactly where
+     * the author put it for the whole game.
+     *
+     * The cap on a building is one of those — a custom route that never
+     * leaves its cell — and the flat rule left it on the ground while the
+     * building it belongs to stood up without it.
+     *
+     * So the question is not whether the event has a route but whether it has
+     * left home. An event still on its own square belongs to whatever was
+     * built there; one that has walked off does not, and drops to the ground
+     * the moment it moves.
+     */
+    const page = character.page && character.page();
+    if (page && page.moveType) {
+        const home = typeof character.event === "function" ? character.event() : null;
+        if (!home || x !== home.x || y !== home.y) return ground;
+    }
+
+    const facade = this.facadeAt(x, y);
+    return facade
+        ? { height: facade.height, z: facade.z, lift: facade.lift }
+        : ground;
+};
+
+/**
+ * Where a cell's art was stood up, if it was.
+ *
+ * Returns `{ z, height }` — the depth of the wall plane and how far up it the
+ * cell sits — or null for a cell that stayed on the ground. Anything drawn
+ * over the scene at a cell has to ask this, because the art it is standing
+ * against may no longer be where the map says the cell is.
+ */
+Reactor3D.facadeAt = function(x, y) {
+    return this.facadeIn(this._facade, x, y);
+};
+
+/**
+ * The same question against a particular table.
+ *
+ * The running game has one map and keeps its facade on `Reactor3D`, but the
+ * editor holds a scene of its own and has to ask about that one — its 3D view
+ * has to stand an event against the same wall the game will.
+ */
+Reactor3D.facadeIn = function(facade, x, y) {
+    if (!facade || x < 0 || y < 0 || x >= facade.width || y >= facade.height) return null;
+    const at = y * facade.width + x;
+    if (!facade.onFacade[at]) return null;
+    // `height` is the wall's footing; `lift` is how far up it this cell sits,
+    // measured along the billboard's up axis rather than the world's.
+    return { z: facade.z[at], height: facade.y[at], lift: facade.lift[at] };
+};
+
+/**
+ * The height of the surface a character standing on this cell rests on.
+ *
+ * Elevation says how high the *ground* is; it says nothing about a shop with a
+ * raised roof, a plinth, or a rise of scenery. An event standing on a shop's
+ * roof was therefore projected at street level while its roof was drawn three
+ * tiles up, and because a perspective camera moves a raised point differently
+ * from a ground one, the sign did not merely sit low — it slid sideways and
+ * vertically against its own roof as the view moved.
+ *
+ * The build records what every cell's surface came out at; this reads it back.
+ * Falls through to plain elevation before a scene exists, and for a flat cell
+ * the two are the same number, so ordinary ground is untouched.
+ */
+Reactor3D.surfaceHeightAt = function(mapData, x, y) {
+    const surface = this._surface;
+    if (surface && x >= 0 && y >= 0 && x < surface.width && y < surface.height) {
+        const value = surface.heights[y * surface.width + x];
+        if (Number.isFinite(value)) return value;
+    }
+    return this.elevationAt(mapData, x, y);
+};
+
+/**
+ * Everything about where one event is being drawn, in one line of console.
+ *
+ * Placing a flat sprite over a 3D world has several independent ways of going
+ * subtly wrong — the cell it reads, the height it projects at, the camera it
+ * projects through, the scale it lands at, whether the tile under it was built
+ * as geometry — and from a screenshot they all look identical: the thing is in
+ * the wrong place. This reports all of them together so the wrong one can be
+ * picked out rather than guessed at.
+ *
+ * Call `Reactor3D.probeEvent(12)` in the console, or `Reactor3D.probeEvent()`
+ * for the player.
+ */
+Reactor3D.probeEvent = function(eventId) {
+    if (typeof $gameMap === "undefined" || !$gameMap) return "no map";
+    const character = eventId === undefined || eventId === null
+        ? $gamePlayer
+        : $gameMap.event(eventId);
+    if (!character) return `no event ${eventId}`;
+
+    const viewport = this.viewport();
+    const camera = viewport && viewport.camera();
+    const x = character._realX;
+    const y = character._realY;
+    const cx = Math.round(x);
+    const cy = Math.round(y);
+
+    // The tile stack under it, and what each tile was classified as: this is
+    // what decides whether the cell was built as standing geometry.
+    const tilesetId = this.currentTilesetId();
+    const stack = [];
+    if ($dataMap && Array.isArray($dataMap.data)) {
+        const plane = $dataMap.width * $dataMap.height;
+        for (let z = 0; z < 4; z++) {
+            const tileId = $dataMap.data[z * plane + cy * $dataMap.width + cx] || 0;
+            if (tileId) {
+                stack.push({
+                    z, tileId,
+                    class: this.tileClass(tilesetId, tileId),
+                    classified: this.isClassified(tilesetId, tileId),
+                    star: !!(this.currentFlags()[tileId] & 0x10)
+                });
+            }
+        }
+    }
+
+    const sprite = (SceneManager._scene && SceneManager._scene._spriteset
+        && (SceneManager._scene._spriteset._characterSprites || [])
+            .find(each => each._character === character)) || null;
+
+    const ground = this.elevationAt($dataMap, cx, cy);
+    const surface = this.surfaceHeightAt($dataMap, cx, cy);
+    const at = height => {
+        const point = camera ? this.projectToScreen(camera, x + 0.5, height, y + 1) : null;
+        return point ? { x: Math.round(point.x), y: Math.round(point.y) } : null;
+    };
+
+    return {
+        event: eventId === undefined ? "player" : eventId,
+        cell: { x, y, rounded: [cx, cy] },
+        // A tile graphic means the event may have been built into the scene as
+        // a prop instead of drawn as a sprite.
+        tileGraphic: (character._tileId || 0) || null,
+        isProp: this.isEventProp(character.eventId ? character.eventId() : -1),
+        heights: { ground, surface },
+        projected: { atGround: at(ground), atSurface: at(surface) },
+        sprite: sprite
+            ? {
+                x: Math.round(sprite.x), y: Math.round(sprite.y),
+                scale: Number(sprite.scale.x.toFixed(3)),
+                visible: sprite.visible, z: sprite.z,
+                anchor: sprite.anchor ? [sprite.anchor.x, sprite.anchor.y] : null,
+                height: sprite.height
+            }
+            : "no sprite found",
+        camera: camera
+            ? {
+                position: ["x", "y", "z"].map(k => Number(camera.position[k].toFixed(3))),
+                fov: camera.fov
+            }
+            : "no camera",
+        focus: $gamePlayer ? [$gamePlayer._realX, $gamePlayer._realY] : null,
+        // Where the builder put the standing art for this same cell, so the two
+        // can be compared directly instead of eyeballed against a screenshot.
+        prop: (() => {
+            const declared = this.objectAt(tilesetId, (stack[stack.length - 1] || {}).tileId);
+            if (!declared) return null;
+            const object = declared.object;
+            const centreX = cx + 0.5;
+            const centreZ = cy + 0.5;
+            const point = camera
+                ? this.projectToScreen(camera, centreX, surface, centreZ) : null;
+            return {
+                object: { tile: object.tile, w: object.w, h: object.h },
+                anchor: [centreX, surface, centreZ],
+                screen: point ? { x: Math.round(point.x), y: Math.round(point.y) } : null
+            };
+        })(),
+        scale: (() => {
+            const stand = camera ? this.standScaleAt(camera, x + 0.5, ground, y + 1) : null;
+            return {
+                stand: stand
+                    ? { x: Number(stand.x.toFixed(3)), y: Number(stand.y.toFixed(3)) }
+                    : null,
+                billboard: camera
+                    ? Number(this.screenScaleAt(camera, x + 0.5, ground, y + 1).toFixed(3))
+                    : null
+            };
+        })(),
+        tiles: stack,
+        graphicsHeight: typeof Graphics !== "undefined" ? Graphics.height : null,
+        tileSize: this.currentTileSize()
+    };
+};
+
+/**
+ * The tiles that events put on the map.
+ *
+ * A door, a sign, a chest, a barrel — an enormous amount of what an author
+ * actually stands up is placed as an event with a tile graphic rather than
+ * painted into a layer. The scene is built from `mapData.data`, which those
+ * tiles are not in, so they stayed resolutely flat while the identical tile
+ * painted one cell over stood up properly. That is the whole of the "3D
+ * objects work but doors and signs look 2D" split: it was never about sprites.
+ *
+ * Read from the map data rather than `$gameMap`, because the scene is built
+ * before the interpreter is set up and `$gameMap` has nothing to say yet. The
+ * first page carrying a tile is the one taken, which is right for the static props
+ * this is for and is why moving events are left out below.
+ */
+Reactor3D.eventTiles = function(mapData) {
+    const found = [];
+    if (!mapData || !Array.isArray(mapData.events)) return found;
+    for (const event of mapData.events) {
+        if (!event || !Array.isArray(event.pages)) continue;
+        // Anything that walks keeps its sprite: a prop is baked into the scene
+        // at build time and cannot follow an event around, so an event that
+        // moves would leave its 3D self behind and travel as an invisible
+        // ghost. Props do not move; that is what makes them props.
+        if (event.pages.some(page => page && page.moveType)) continue;
+        for (const page of event.pages) {
+            const tileId = page && page.image && page.image.tileId;
+            if (!tileId) continue;
+            found.push({ id: event.id, x: event.x, y: event.y, tileId });
+            break;
+        }
+    }
+    return found;
+};
+
+/**
+ * The map, with those tiles written into it.
+ *
+ * Injecting them into a copy of the tile data means they go through exactly
+ * the same classification, geometry and lighting as a painted tile — an event
+ * door is the same box as a painted one, with no second code path to keep in
+ * step. The copy is shallow apart from `data`, and the original is never
+ * touched, so the map RPG Maker and every plugin sees is unchanged.
+ *
+ * Only tiles the author has classified as standing are taken. An unclassified
+ * or flat one is left as the sprite it always was, so this can never quietly
+ * change how an existing map looks.
+ */
+/**
+ * How an event with a character-sheet graphic should stand in 3D.
+ *
+ * An event whose graphic is a *tile* already inherits that tile's 3D class —
+ * `mapWithEventTiles` writes it into the map before any geometry is built, so
+ * a shopfront placed as an event is a shopfront. An event drawn from a
+ * character sheet has no tile to inherit from and no way to say what it is, so
+ * it says so in its own note, beside the `<3d>` that makes a map 3D at all:
+ *
+ *   <3d panel>          a plane that stands still and faces the default view
+ *   <3d panel east>     a plane facing the direction named
+ *   <3d upright>        a cut-out that does not turn with the camera
+ *   <3d flat>           lying on the ground
+ *
+ * No note means what it has always meant: a cut-out that turns to face the
+ * camera, which is right for anything a character-shaped, and wrong for an
+ * animated piece of a city that ought to sit in the world with the painted
+ * buildings beside it.
+ *
+ * Returns null when the note asks for nothing, so a caller can tell "no
+ * opinion" from "explicitly a billboard".
+ */
+Reactor3D.eventShapeFromNote = function(note) {
+    if (typeof note !== "string" || !note) return null;
+    const found = /<3d\s+(panel|upright|flat)(?:\s+(north|south|east|west))?\s*>/i.exec(note);
+    if (!found) return null;
+    return {
+        shape: found[1].toLowerCase(),
+        // Stated or not; a panel with no direction faces the way the map is
+        // first shown, which is what an author drawing a facade expects.
+        facing: (found[2] || "south").toLowerCase()
+    };
+};
+
+/** The turn about the vertical axis that points a plane the named way. */
+Reactor3D.facingRotation = function(facing) {
+    const turns = { south: 0, east: Math.PI / 2, north: Math.PI, west: -Math.PI / 2 };
+    const asked = turns[String(facing || "south").toLowerCase()];
+    return asked === undefined ? 0 : asked;
+};
+
+Reactor3D.mapWithEventTiles = function(mapData, tilesetId) {
+    Reactor3D._eventProps = null;
+    if (!mapData || !Array.isArray(mapData.data)) return mapData;
+
+    const isUpright = this.uprightPredicate(tilesetId);
+    const candidates = this.eventTiles(mapData).filter(tile =>
+        this.isClassified(tilesetId, tile.tileId) && isUpright(tile.tileId));
+    if (!candidates.length) return mapData;
+
+    const { width, height } = mapData;
+    const plane = width * height;
+    const data = Array.isArray(mapData.data) ? mapData.data.slice() : mapData.data;
+    const claimed = new Set();
+
+    for (const tile of candidates) {
+        if (tile.x < 0 || tile.y < 0 || tile.x >= width || tile.y >= height) continue;
+        const cell = tile.y * width + tile.x;
+        // The first free tile layer over that cell. A prop that would have to
+        // overwrite painted art is skipped rather than allowed to erase it.
+        let placed = false;
+        for (let z = 0; z < 4; z++) {
+            if (data[z * plane + cell]) continue;
+            data[z * plane + cell] = tile.tileId;
+            placed = true;
+            break;
+        }
+        if (placed) claimed.add(tile.id);
+    }
+    if (!claimed.size) return mapData;
+
+    Reactor3D._eventProps = claimed;
+    return Object.assign(Object.create(Object.getPrototypeOf(mapData) || Object.prototype),
+        mapData, { data });
+};
+
+/**
+ * Whether this event is now standing in the scene, and so must not also be
+ * drawn flat over it — otherwise a door appears twice, once lying down.
+ */
+Reactor3D.isEventProp = function(eventId) {
+    return !!(this._eventProps && this._eventProps.has(eventId));
+};
+
 Reactor3D.MapScene = function() {
     this.initialize(...arguments);
 };
@@ -1801,6 +3416,16 @@ Reactor3D.MapScene.prototype.initialize = function(mapData, bitmaps, options) {
  * geometry. Matches `Tilemap._drawAutotile` — the still surface cycles
  * 0,1,2,1 and a waterfall runs 0,1,2.
  */
+/**
+ * Where this scene stood a cell's art up, if it did.
+ *
+ * See `Reactor3D.facadeAt` — this is the same answer for a scene held on its
+ * own rather than for the map the game is running.
+ */
+Reactor3D.MapScene.prototype.facadeAt = function(x, y) {
+    return Reactor3D.facadeIn(this._facade, x, y);
+};
+
 Reactor3D.MapScene.prototype.setAnimationFrame = function(frame) {
     const next = Math.floor(frame) || 0;
     if (next === this._frame || !this._animated || !this._animated.length) return;
@@ -1818,6 +3443,98 @@ Reactor3D.MapScene.prototype.setAnimationFrame = function(frame) {
         }
         uv.needsUpdate = true;
     }
+};
+
+/**
+ * What actually got built, for when the view comes up empty.
+ *
+ * An empty 3D canvas has several causes that look identical on screen — no
+ * meshes, no textures, a camera pointing somewhere else — and none of them
+ * raise an error. The counts tell them apart in one line.
+ */
+Reactor3D.MapScene.prototype.report = function() {
+    return {
+        meshes: this._meshes.length,
+        textures: this._textures.length,
+        children: this._scene ? this._scene.children.length : 0
+    };
+};
+
+/**
+ * The world-space box the built geometry occupies.
+ *
+ * Paired with the camera's position, this answers the only question an empty
+ * 3D view leaves open once the meshes are known to exist: whether the camera
+ * is anywhere near them.
+ */
+Reactor3D.MapScene.prototype.extent = function() {
+    const box = new THREE.Box3();
+    for (const mesh of this._meshes) {
+        if (!mesh.geometry) continue;
+        mesh.geometry.computeBoundingBox();
+        if (mesh.geometry.boundingBox) box.union(mesh.geometry.boundingBox);
+    }
+    if (box.isEmpty()) return "empty";
+    const round = value => Math.round(value * 10) / 10;
+    return `${round(box.min.x)},${round(box.min.y)},${round(box.min.z)}`
+        + ` .. ${round(box.max.x)},${round(box.max.y)},${round(box.max.z)}`;
+};
+
+/** The canvas the 3D pass draws on, for diagnostics. */
+Reactor3D.Viewport.prototype.canvas = function() {
+    return this._canvas;
+};
+
+/** The geometry drawn under the characters. */
+Reactor3D.MapScene.prototype.belowGroup = function() {
+    if (!this._belowGroup) {
+        this._belowGroup = new THREE.Group();
+        this._scene.add(this._belowGroup);
+    }
+    return this._belowGroup;
+};
+
+/** The light pools, drawn last and added to what is already there. */
+Reactor3D.MapScene.prototype.lightGroup = function() {
+    if (!this._lightGroup) {
+        this._lightGroup = new THREE.Group();
+        this._scene.add(this._lightGroup);
+    }
+    return this._lightGroup;
+};
+
+/** Whether this map draws any lights at all. */
+Reactor3D.MapScene.prototype.hasLights = function() {
+    return !!(this._lightGroup && this._lightGroup.children.length);
+};
+
+/** The geometry drawn over them — the star-flagged tiles. */
+Reactor3D.MapScene.prototype.aboveGroup = function() {
+    if (!this._aboveGroup) {
+        this._aboveGroup = new THREE.Group();
+        this._scene.add(this._aboveGroup);
+    }
+    return this._aboveGroup;
+};
+
+/** Whether anything at all is drawn over the characters on this map. */
+Reactor3D.MapScene.prototype.hasAbove = function() {
+    return !!(this._aboveGroup && this._aboveGroup.children.length);
+};
+
+/**
+ * Show one pass and hide the other.
+ *
+ * `"below"` is the ground, `"above"` the star-flagged tiles, `"all"` both —
+ * which is what a single-pass caller (the editor's viewport) wants.
+ */
+Reactor3D.MapScene.prototype.setPass = function(which) {
+    const all = which === "all";
+    if (this._belowGroup) this._belowGroup.visible = all || which === "below";
+    if (this._aboveGroup) this._aboveGroup.visible = all || which === "above";
+    // Never with the others: the light pass is composited by addition and the
+    // rest by covering, so drawing them together would blend one as the other.
+    if (this._lightGroup) this._lightGroup.visible = which === "lights";
 };
 
 Reactor3D.MapScene.prototype.scene = function() {
@@ -1903,7 +3620,47 @@ Reactor3D.currentTilesetId = function() {
  * short of the angle where a standing cut-out has nothing left to show, which
  * is why HD-2D games do not let you look straight down either.
  */
-Reactor3D.BILLBOARD_TILT = 0;
+/**
+ * How far a cut-out leans from world-upright towards facing the camera.
+ *
+ * 0 is bolt upright and 1 is square-on to the lens. Upright is the honest
+ * choice and it is the wrong one for art drawn flat: a pitched camera
+ * foreshortens a world-vertical plane — about six tenths at the default
+ * camera — so every character came out squat, every sign was drawn shorter
+ * than it was painted, and because a world-vertical line converges towards a
+ * vanishing point, the two ends of a wide sign leaned by angles some fourteen
+ * degrees apart. None of that is representable by a sprite, which is a
+ * rectangle.
+ *
+ * Square-on removes all three at once, because a quad parallel to the image
+ * plane projects to a plain scaled rectangle: art keeps the proportions it was
+ * painted at, there is no lean, and a sprite can match it exactly. The cost is
+ * that a cut-out leans back with the camera rather than standing in the world,
+ * which is the usual HD-2D bargain and only starts to read badly as the camera
+ * climbs towards straight down.
+ *
+ * Props and sprites both take this number, so whatever it is set to they agree.
+ * A map may ask for something in between with `billboardTilt` in its sidecar,
+ * which buys back some of the standing-in-the-world look at the cost of
+ * bringing the squash and the lean back with it.
+ */
+Reactor3D.DEFAULT_BILLBOARD_TILT = 1;
+
+/**
+ * The tilt in force, which the shader and `standScaleAt` both read.
+ *
+ * Set from the map at build time rather than passed around: a cut-out and the
+ * sprite standing next to it have to lean by the same amount or they are
+ * different shapes, and one number they both read cannot drift apart.
+ */
+Reactor3D.BILLBOARD_TILT = Reactor3D.DEFAULT_BILLBOARD_TILT;
+
+Reactor3D.billboardTiltFor = function(mapData) {
+    const sidecar = mapData && mapData.reactor3d;
+    const asked = sidecar && sidecar.billboardTilt;
+    if (!Number.isFinite(asked)) return this.DEFAULT_BILLBOARD_TILT;
+    return Math.max(0, Math.min(1, asked));
+};
 
 Reactor3D.billboardMaterial = function(texture) {
     // The ordinary tile material, with only the vertex position replaced.
@@ -1916,17 +3673,64 @@ Reactor3D.billboardMaterial = function(texture) {
     // from the ground it stands on.
     const material = new THREE.MeshBasicMaterial({
         map: texture,
-        // Opaque, with alphaTest cutting the transparent texels. Marking it
-        // transparent would move thousands of trees into the back-to-front
-        // pass, where any two at the same distance swap order frame to frame.
-        transparent: false,
-        alphaTest: 0.5,
+        /*
+         * Opaque, with alpha spread across the multisample coverage mask.
+         *
+         * A tileset paints soft edges — the shadow beside a column, the fringe
+         * of a canopy — and cutting them with `alphaTest` alone draws every
+         * texel that survives at full strength, so a half-there shadow came out
+         * a hard slab. Blending was the obvious answer and it cost whole
+         * objects: `transparent` moves a mesh into three.js's sorted pass,
+         * which orders *per mesh* by centroid while still writing depth, and a
+         * centroid says nothing useful about a mesh spanning the entire map —
+         * which is what one merged buffer per sheet is. Whichever sorted
+         * nearest wrote depth over everything it covered, so a column vanished
+         * when a couple of plates were set down beside it and moved the
+         * centroids around.
+         *
+         * Alpha-to-coverage gets both. The material stays opaque, so it draws
+         * in the unsorted pass where depth settles things per fragment rather
+         * than per mesh, and the GPU turns each fragment's alpha into a share
+         * of the multisample mask — partial transparency with no ordering to
+         * get wrong. It needs the viewport to have MSAA, which is why
+         * `antialias` is on there.
+         *
+         * Blended, so a texel is drawn at the alpha it was painted at.
+         *
+         * Coverage was the previous answer and it only approximates: the mask
+         * has one bit per multisample, so alpha quantises to the sample count
+         * — a shadow painted at 55% lands on 50%. Blending is exact.
+         *
+         * Blending on its own is what emptied the map before, because a
+         * transparent mesh goes into three.js's sorted pass, which orders per
+         * mesh by centroid while still writing depth, and a centroid says
+         * nothing about a mesh spanning the whole map. The prepass below fixes
+         * that at the root: the solid core of every cut-out writes depth
+         * first, in the unsorted pass, so by the time anything blends the
+         * depth buffer is already correct and nothing can cull anything.
+         * `depthWrite` is off here for the same reason — the prepass owns
+         * depth, and a blended fragment must not add to it.
+         *
+         * `alphaTest` stays at a half in the *prepass* and is off here: the
+         * dark matte halo these sheets carry must not become solid depth, but
+         * it should still be drawn at the fraction of a percent it was painted
+         * at, which is invisible rather than a black fringe.
+         */
+        transparent: true,
+        depthWrite: false,
+        alphaTest: 0,
         side: THREE.DoubleSide,
         // Lying flat under an overhead camera puts a cut-out in the same plane
         // as the ground it stands on, and coplanar surfaces flicker against
         // each other. A depth bias settles it from every angle, where nudging
         // the geometry would only settle it from one.
         polygonOffset: true,
+        // One bias for every cut-out. Biasing the starred pass harder was
+        // tried, to settle which of two coplanar cut-outs wins, and it reaches
+        // further than that: it also pulled starred art in front of things
+        // genuinely nearer the camera, so a plate standing in front of a
+        // column drew behind it. What two cut-outs at one anchor need is not
+        // to be at one anchor.
         polygonOffsetFactor: -2,
         polygonOffsetUnits: -2
     });
@@ -1944,12 +3748,38 @@ Reactor3D.billboardMaterial = function(texture) {
             vec3 billboardRight = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
             vec3 cameraUp = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
             vec3 billboardUp = normalize(mix(vec3(0.0, 1.0, 0.0), cameraUp, tilt));
+
+            // The base sits at the near edge of the cell, not its middle.
+            //
+            // A column standing on a cell fills it front to back: its base is
+            // a circle, and what the eye reads as "where it stands" is the
+            // near edge of that circle, not its centre. A flat cut-out has no
+            // depth to spread across, so a quad planted on the cell's centre
+            // reads half a square too far back — while planting it on the
+            // cell's southern edge, which is where 2D draws a standing foot,
+            // only looks right until the camera comes round and that edge is
+            // no longer the near one.
+            //
+            // Half a cell towards the camera is both: the pivot stays the
+            // cell's centre, so the object turns about its own axis, and the
+            // visible base stays on the near edge from every angle.
+            vec3 toCamera = vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+            vec3 nearward = vec3(toCamera.x, 0.0, toCamera.z);
+            float reach = length(nearward);
+            vec3 footward = reach > 0.0001
+                ? nearward * (0.5 / reach)
+                : vec3(0.0);
+
             vec3 transformed = position
+                + footward
                 + billboardRight * offset.x
                 + billboardUp * offset.y;
             `
         );
     };
+    // Tagged so the ambient level can dim cut-outs, which are not shaded by
+    // their normals — see `syncLights`.
+    material.__reactorBillboard = true;
     // Without this every billboard material compiles its own program, since
     // three.js keys the cache on the material's own properties and cannot see
     // the injected code.
@@ -1976,6 +3806,20 @@ Reactor3D.MapScene.prototype.build = function(mapData, bitmaps, options) {
     const tilesetId = settings.tilesetId != null
         ? settings.tilesetId
         : Reactor3D.currentTilesetId();
+    // Before any material is made: the shader bakes the tilt in as a uniform
+    // when it compiles, and the sprites read the same number each frame.
+    Reactor3D.BILLBOARD_TILT = Reactor3D.billboardTiltFor(mapData);
+
+    // Events that place a classified tile become part of the world here, so
+    // everything below sees one map with no idea which cells came from where.
+    // Guarded: a project with unusual event data must lose its door props, not
+    // its whole map.
+    try {
+        mapData = Reactor3D.mapWithEventTiles(mapData, tilesetId);
+    } catch (error) {
+        console.warn("Reactor3D: event props skipped —", error);
+        Reactor3D._eventProps = null;
+    }
     const built = Reactor3D.Geometry.build(mapData, {
         tileSize,
         elevationAt: (x, y) => Reactor3D.elevationAt(mapData, x, y),
@@ -1986,8 +3830,17 @@ Reactor3D.MapScene.prototype.build = function(mapData, bitmaps, options) {
         isAuthored: tileId => Reactor3D.isClassified(tilesetId, tileId),
         isScenery: Reactor3D.sceneryPredicate(tilesetId),
         isFoliage: Reactor3D.foliagePredicate(tilesetId),
+        isPanel: Reactor3D.panelPredicate(tilesetId),
+        // The same flag the 2D tilemap's upper layer uses, so a character walks
+        // behind the same things in both views.
+        isAbove: Reactor3D.abovePredicate(flags),
         standInFor: tileId => Reactor3D.standInFor(tilesetId, tileId),
+        topFaceFor: tileId => Reactor3D.topFaceFor(tilesetId, tileId),
         declaredAt: tileId => Reactor3D.objectAt(tilesetId, tileId),
+        // Painted on the map rather than derived from the tileset: which cells
+        // the author says are one building.
+        paintedAt: (x, y, layer) => Reactor3D.objectIdAt(mapData, x, y, layer),
+        isPaintedGround: (x, y, layer) => Reactor3D.objectGroundAt(mapData, x, y, layer),
         sheetSize: setNumber => {
             const bitmap = bitmaps && bitmaps[setNumber];
             // The sheet's real size, so a non-standard sheet still maps its
@@ -1998,6 +3851,18 @@ Reactor3D.MapScene.prototype.build = function(mapData, bitmaps, options) {
             };
         }
     });
+
+    // What each cell's surface ended up at, so a sprite standing on a shop's
+    // roof is drawn on the roof rather than on the street below it.
+    Reactor3D._surface = built.surface
+        ? { heights: built.surface, width: built.width, height: built.height }
+        : null;
+    Reactor3D._facade = built.facade
+        ? Object.assign({ width: built.width, height: built.height }, built.facade)
+        : null;
+    // Kept on the scene as well as globally: the editor builds a scene without
+    // running a game, and rebuilds it on every edit.
+    this._facade = Reactor3D._facade;
 
     for (const group of built.groups) {
         const texture = this.textureFor(bitmaps && bitmaps[group.setNumber]);
@@ -2011,6 +3876,32 @@ Reactor3D.MapScene.prototype.build = function(mapData, bitmaps, options) {
         }
         geometry.setIndex(new THREE.BufferAttribute(group.indices, 1));
         geometry.computeVertexNormals();
+        /*
+         * A cut-out is not where its vertices say it is.
+         *
+         * Its quad is built in the vertex shader — every vertex of one object
+         * sits at the same anchor, and the `offset` attribute carries the
+         * corners out from it. Three.js computes the bounding sphere from the
+         * positions, so it measures the anchors and nothing else: for a whole
+         * building grouped onto one anchor that is very nearly a point, and
+         * the structure vanished the moment the point left the frustum while
+         * its art was still filling the screen.
+         *
+         * So the sphere is grown by the furthest any corner is pushed, plus
+         * the half tile the shader steps everything towards the camera.
+         * Culling still works — it is simply told the truth about the size.
+         */
+        if (group.offsets) {
+            geometry.computeBoundingSphere();
+            if (geometry.boundingSphere) {
+                let reach = 0;
+                for (let i = 0; i < group.offsets.length; i += 2) {
+                    const corner = Math.hypot(group.offsets[i], group.offsets[i + 1]);
+                    if (corner > reach) reach = corner;
+                }
+                geometry.boundingSphere.radius += reach + 0.5;
+            }
+        }
         if (group.anim) {
             // Keep the frame-0 UVs; every later frame is computed from them
             // rather than accumulated, so rounding cannot drift over an hour.
@@ -2027,6 +3918,16 @@ Reactor3D.MapScene.prototype.build = function(mapData, bitmaps, options) {
         // needing back-to-front sorting.
         const material = group.billboard
             ? Reactor3D.billboardMaterial(texture)
+            // Unlit, with the ambient level applied as a plain multiplier on
+            // the material's colour.
+            //
+            // Lambert under an AmbientLight was the obvious choice and it came
+            // out visibly darker than the same map in 2D: three's shading
+            // divides diffuse by pi, so "ambient 1" is nowhere near "unlit",
+            // and the exact factor moves between three releases. Nothing here
+            // needs a light model — the lights are additive quads drawn in
+            // their own pass — so the scene is shaded the one way that is
+            // guaranteed to match the 2D tilemap pixel for pixel: not at all.
             : new THREE.MeshBasicMaterial({
                 map: texture,
                 transparent: true,
@@ -2036,19 +3937,415 @@ Reactor3D.MapScene.prototype.build = function(mapData, bitmaps, options) {
                 // hide a whole sheet.
                 side: THREE.DoubleSide
             });
+        // Every material now takes the ambient level, not just the cut-outs.
+        material.__reactorShaded = true;
+
+        const target = group.above ? this.aboveGroup() : this.belowGroup();
+
+        /*
+         * A depth prepass in front of every blended cut-out.
+         *
+         * Blending needs the depth buffer to be right before it starts, or a
+         * mesh drawn early hides one drawn later that stands in front of it.
+         * This draws the same geometry with no colour and no blending, keeping
+         * only the texels solid enough to count as the object — `alphaTest` at
+         * a half, the same cut that has always separated a cut-out from the
+         * dark matte halo round its edge. It writes depth and nothing else, in
+         * the unsorted pass, so the blended draw that follows composites onto
+         * a scene whose depths are already settled.
+         */
+        if (group.billboard) {
+            const depthOnly = Reactor3D.billboardMaterial(texture);
+            depthOnly.transparent = false;
+            depthOnly.depthWrite = true;
+            depthOnly.alphaTest = 0.5;
+            depthOnly.colorWrite = false;
+            const depthMesh = new THREE.Mesh(geometry, depthOnly);
+            depthMesh.renderOrder = -1;
+            target.add(depthMesh);
+            this._meshes.push(depthMesh);
+            this._materials.push(depthOnly);
+        }
 
         const mesh = new THREE.Mesh(geometry, material);
-        this._scene.add(mesh);
+        // Two passes: the ground, and the part the 2D tilemap would have drawn
+        // over the characters. They are separate groups so the renderer can
+        // draw one, let PIXI put the characters down, and then draw the other.
+        target.add(mesh);
         this._meshes.push(mesh);
         this._materials.push(material);
+    }
+};
+
+/**
+ * Bring the scene's lights in line with what has been declared.
+ *
+ * Called every frame, so it edits in place: a light that is still there keeps
+ * its object and only moves. Rebuilding the list each frame would drop and
+ * recreate every shadow-casting object in three.js's internal state, which is
+ * expensive and shows as a flicker.
+ *
+ * A cut-out is lit differently from the ground on purpose. Its normals mean
+ * nothing — the shader rewrites the vertices to face the camera — so shading it
+ * by them gives a tree lit from whichever way the sheet happened to be wound.
+ * They take the ambient level as a flat multiplier instead, which is what makes
+ * a wood go dark in a dark place without pretending to catch a lantern on one
+ * side.
+ */
+/**
+ * The soft disc every light is stamped with.
+ *
+ * Built once, in code, so a project ships no extra art: white fading to
+ * nothing, which each light tints for itself. The falloff is squared rather
+ * than linear because a linear ramp reads as a flat plate with a hard rim
+ * instead of a pool of light.
+ */
+Reactor3D.roundLightTexture = function() {
+    if (this._roundLight) return this._roundLight;
+    // Generous, because one of these is stretched across hundreds of screen
+    // pixels: at 128 the gradient banded and the rim came out as a visible
+    // step rather than a fade.
+    const size = 512, half = size / 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    const context = canvas.getContext("2d");
+    const image = context.createImageData(size, size);
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+            const dx = (x + 0.5 - half) / half, dy = (y + 0.5 - half) / half;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const fade = distance >= 1 ? 0 : (1 - distance) * (1 - distance);
+            const at = (y * size + x) * 4;
+            image.data[at] = image.data[at + 1] = image.data[at + 2] = 255;
+            image.data[at + 3] = Math.round(fade * 255);
+        }
+    }
+    context.putImageData(image, 0, 0);
+    this._roundLight = new THREE.CanvasTexture(canvas);
+    // Rows as drawn, not flipped: the cone below depends on which end of its
+    // picture is the source, and both are built the same way so they cannot
+    // drift apart.
+    this._roundLight.flipY = false;
+    return this._roundLight;
+};
+
+/**
+ * The same, for a cone.
+ *
+ * Drawn for one fixed spread and stretched to whatever a light actually asks
+ * for: the quad is sized independently across and along, so the angle is a
+ * property of the quad rather than of the picture. The source is the middle of
+ * the bottom edge, which is where the thing holding the torch stands.
+ */
+Reactor3D.coneLightTexture = function() {
+    if (this._coneLight) return this._coneLight;
+    const size = 512;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    const context = canvas.getContext("2d");
+    const image = context.createImageData(size, size);
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+            // The quad this is painted on is already the cone: a trapezoid
+            // that starts narrow at the torch and opens to the beam's width at
+            // its far end. So the picture must NOT draw a wedge of its own.
+            // It did, and the two wedges multiplied into a pinched triangle
+            // that was transparent at the very place the light comes from —
+            // the shape was being applied twice and the brightness backwards.
+            //
+            // All this owes the quad is falloff: soft at the rim, fading out
+            // at range.
+            const v = (y + 0.5) / size;
+            // v runs tip -> source, because the quad's near corners are given
+            // v = 1. Distance from the torch is therefore the other way round.
+            const fromSource = 1 - v;
+            const across = Math.abs((x + 0.5) / size - 0.5) * 2;
+            // Raised cosines rather than polynomials. `1 - across^2` still
+            // meets the rim at a slope, and against a dark map that slope
+            // reads as an edge — the beam looked like a cut-out triangle
+            // rather than light. A raised cosine arrives at nothing with no
+            // slope at all, at the rim and at the far end both, which is the
+            // soft-shouldered falloff the 2D plugin gets by stacking blurred
+            // circles.
+            //
+            // Squared, so the shoulder is wider still and the lit core narrower
+            // than the wedge that carries it. A beam whose brightness runs all
+            // the way out to the geometry has a visible straight edge however
+            // smoothly it fades there, because the edge is where it stops
+            // existing rather than where it stops being bright.
+            const rim = 0.5 * (1 + Math.cos(Math.min(across, 1) * Math.PI));
+            const beam = rim * rim;
+            const reach = 0.5 * (1 + Math.cos(Math.min(fromSource, 1) * Math.PI));
+            const at = (y * size + x) * 4;
+            image.data[at] = image.data[at + 1] = image.data[at + 2] = 255;
+            image.data[at + 3] = Math.round(beam * reach * 255);
+        }
+    }
+    context.putImageData(image, 0, 0);
+    this._coneLight = new THREE.CanvasTexture(canvas);
+    // Without this the picture arrives upside down and a torch shines out of
+    // the wall it is pointing at instead of out of the hand holding it.
+    this._coneLight.flipY = false;
+    return this._coneLight;
+};
+
+/**
+ * One mesh holding every light of one shape.
+ *
+ * Buffers are allocated once at their largest and only the used part is drawn,
+ * so a frame with forty lights costs forty quads of arithmetic and no
+ * allocation at all. Additive, because light adds; depth-tested so a wall hides
+ * the pool behind it, but not depth-*written*, so two overlapping pools do not
+ * punch holes in each other.
+ */
+Reactor3D.MapScene.prototype.lightPool = function(kind) {
+    if (!this._pools) this._pools = {};
+    if (this._pools[kind]) return this._pools[kind];
+
+    const quads = Reactor3D.MAX_LIGHTS;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position",
+        new THREE.BufferAttribute(new Float32Array(quads * 4 * 3), 3));
+    geometry.setAttribute("uv",
+        new THREE.BufferAttribute(new Float32Array(quads * 4 * 2), 2));
+    geometry.setAttribute("color",
+        new THREE.BufferAttribute(new Float32Array(quads * 4 * 3), 3));
+    const indices = new Uint16Array(quads * 6);
+    for (let i = 0; i < quads; i++) {
+        const base = i * 4;
+        indices.set([base, base + 1, base + 2, base, base + 2, base + 3], i * 6);
+    }
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+
+    const material = new THREE.MeshBasicMaterial({
+        map: kind === "cone" ? Reactor3D.coneLightTexture() : Reactor3D.roundLightTexture(),
+        vertexColors: true,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        // Nothing occludes a light. Depth-testing them looked physical and was
+        // wrong for a view where the ground is 3D and the people on it are
+        // flat: a doorway standing between the lamp and its own pool of light
+        // sliced a bite out of it. Light is the last thing drawn and it goes
+        // over everything, which is also what makes it fall *on* the sprites
+        // rather than behind them. It removes the coplanar flicker the pool
+        // used to need a polygon offset to avoid, too.
+        depthTest: false,
+        side: THREE.DoubleSide
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.frustumCulled = false;   // the buffer is rewritten every frame
+    mesh.renderOrder = 10;
+    // A pass of their own, drawn last and composited *additively*.
+    //
+    // Sharing the pass that carries star-flagged tiles would not do: that one
+    // is drawn over the scene with ordinary blending, because a tree has to
+    // cover what is behind it. Light does not cover anything — it adds. Put in
+    // with the trees, a lantern arrived as a pale disc painted over the ground
+    // rather than as light falling on it, which reads as dim and oddly solid
+    // at the same time.
+    this.lightGroup().add(mesh);
+    this._materials.push(material);
+    this._pools[kind] = { mesh, geometry, count: 0 };
+    return this._pools[kind];
+};
+
+/**
+ * Lay this frame's lights on the ground.
+ *
+ * The ambient light is the only real one: it is the darkness everything is seen
+ * against, and being one light it costs the shader nothing. Everything else is
+ * geometry.
+ */
+Reactor3D.MapScene.prototype.syncLights = function(focus) {
+    if (!this._scene) return;
+    const ambient = Reactor3D.ambient();
+    const level = ambient && ambient.intensity !== undefined ? ambient.intensity : 1;
+    const colour = ambient && ambient.colour !== undefined ? ambient.colour : 0xffffff;
+    // Dimmed rather than shaded, cut-outs and ground alike: normals mean
+    // nothing to a billboard, whose vertices the shader rewrites to face the
+    // camera, and a light model buys the ground nothing when the lights
+    // themselves are additive quads in a pass of their own.
+    if (this._ambientLevel !== level || this._ambientColour !== colour) {
+        this._ambientLevel = level;
+        this._ambientColour = colour;
+        const r = (((colour >> 16) & 255) / 255) * level;
+        const g = (((colour >> 8) & 255) / 255) * level;
+        const b = ((colour & 255) / 255) * level;
+        for (const material of this._materials) {
+            if (material.__reactorBillboard || material.__reactorShaded) {
+                material.color.setRGB(r, g, b);
+            }
+        }
+    }
+
+    // Still ranked by distance, though the budget is now generous: a light
+    // whose radius cannot reach the player writes no quad and costs nothing.
+    // The billboard axes, worked out once for the whole pool.
+    const camera = Reactor3D.viewport() && Reactor3D.viewport().camera();
+    const right = new THREE.Vector3(1, 0, 0);
+    const up = new THREE.Vector3(0, 1, 0);
+    if (camera) {
+        right.applyQuaternion(camera.quaternion);
+        if (Reactor3D.BILLBOARD_TILT) {
+            const leaning = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+            up.lerp(leaning, Reactor3D.BILLBOARD_TILT).normalize();
+        }
+    }
+
+    const declared = Reactor3D.nearestLights(Reactor3D.lights(), focus);
+    const round = this.lightPool("round");
+    const cone = this.lightPool("cone");
+    round.count = 0;
+    cone.count = 0;
+
+    for (const light of declared) {
+        const spot = light.type === Reactor3D.LIGHT_SPOT;
+        const pool = spot ? cone : round;
+        if (pool.count >= Reactor3D.MAX_LIGHTS) continue;
+        const radius = light.radius > 0 ? light.radius : 0;
+        if (!(radius > 0)) continue;
+
+        const at = pool.count++;
+        const position = pool.geometry.attributes.position.array;
+        const uv = pool.geometry.attributes.uv.array;
+        const tint = pool.geometry.attributes.color.array;
+
+        // On the surface it belongs to, a hair clear of it, and above any pool
+        // already written below it.
+        //
+        // `groundY` was read here and set nowhere, so every light in the scene
+        // sat at street level however high the thing carrying it stood. A
+        // searchlight on a tower roof was drawn on the pavement — and since a
+        // perspective camera moves a raised point differently from a ground
+        // one, it did not merely sit low, it sat somewhere else entirely.
+        // A light on a wall belongs on the wall.
+        //
+        // Placed by the ground alone, a neon sign's glow sat at street level
+        // at its own map row while the sign it comes from had been stood
+        // several tiles up and a couple of tiles further back — so it lit the
+        // pavement instead of the shopfront, and slid against it as the camera
+        // panned. This is the same rule the sign's own sprite follows, so the
+        // two cannot come apart.
+        const facade = Reactor3D.facadeAt(Math.round(light.x), Math.round(light.y));
+        const standsOn = light.groundY !== undefined
+            ? light.groundY
+            : (facade ? facade.height : Reactor3D.surfaceHeightAt(
+                typeof $dataMap !== "undefined" ? $dataMap : null,
+                Math.round(light.x), Math.round(light.y)));
+        // Up the wall along the axis its courses were stacked on, so a glow
+        // and the sign it comes from cannot part company.
+        const lift = facade ? facade.lift : 0;
+        const y = standsOn + up.y * lift + 0.02 + at * 0.0005;
+        // The middle across, and the southern edge along — the same place a
+        // character or a prop on this cell stands. A pool centred half a tile
+        // north of the lamp casting it does not look like its light.
+        const cx = light.x + 0.5 + up.x * lift;
+        const cz = (facade ? facade.z : light.y + 1) + up.z * lift;
+
+        // Built on the same two axes as every other cut-out — the camera's
+        // right, and world up leaned by `BILLBOARD_TILT` — instead of lying
+        // flat on the floor.
+        //
+        // Flat on the floor, a beam is foreshortened by the camera's pitch, so
+        // a torch drawn the size its author chose arrived about six tenths as
+        // long as it is in 2D and read as small and hard-edged. Everything
+        // else on this map already faces the camera; light doing the same puts
+        // it back at the size and shape the plugin drew, which is the one thing
+        // there is a reference for.
+        let corners;
+        if (spot) {
+            const angle = ((light.angle === undefined ? 45 : light.angle) * Math.PI) / 180;
+            const half = Math.tan(Math.min(angle, Math.PI * 0.49) / 2) * radius;
+            // The direction it points, flattened into the billboard's plane.
+            const yaw = ((light.yaw || 0) * Math.PI) / 180;
+            const aim = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+            let alongU = aim.dot(right);
+            let alongV = aim.dot(up);
+            const reach = Math.hypot(alongU, alongV) || 1;
+            alongU /= reach;
+            alongV /= reach;
+            const sideU = -alongV, sideV = alongU;
+            const tipU = alongU * radius, tipV = alongV * radius;
+            // A true apex, not a short near edge. As a trapezoid the quad was
+            // split into two triangles whose UVs interpolate independently,
+            // and the crease along that diagonal showed as a bright slit up
+            // the middle of the beam. Collapsed to a point the lit half is one
+            // triangle, which has no seam to show, and the other is degenerate
+            // and draws nothing.
+            corners = [
+                [tipU - sideU * half, tipV - sideV * half],
+                [tipU + sideU * half, tipV + sideV * half],
+                [0, 0],
+                [0, 0]
+            ];
+        } else {
+            corners = [
+                [-radius, radius], [radius, radius],
+                [radius, -radius], [-radius, -radius]
+            ];
+        }
+
+        // Both apex corners take the middle of the source edge, so the one
+        // triangle that draws maps the picture symmetrically about its axis.
+        const uvs = spot
+            ? [[0, 0], [1, 0], [0.5, 1], [0.5, 1]]
+            : [[0, 0], [1, 0], [1, 1], [0, 1]];
+        const rgb = light.colour === undefined ? 0xffffff : light.colour;
+        const intensity = (light.intensity === undefined ? 1 : light.intensity)
+            * Reactor3D.LIGHT_GAIN;
+        let r = (((rgb >> 16) & 255) / 255) * intensity;
+        let g = (((rgb >> 8) & 255) / 255) * intensity;
+        let b = ((rgb & 255) / 255) * intensity;
+        // Held to its hue. Clamping happens per channel, so a colour with one
+        // channel over full loses that channel's lead over the others and the
+        // light drifts towards white; scaling all three keeps the colour the
+        // author picked and only costs brightness.
+        const peak = Math.max(r, g, b);
+        if (peak > 1) { r /= peak; g /= peak; b /= peak; }
+
+        for (let corner = 0; corner < 4; corner++) {
+            const v = at * 4 + corner;
+            // Plane coordinates back into the world, on the billboard's axes.
+            const u = corners[corner][0];
+            const w = corners[corner][1];
+            position[v * 3] = cx + right.x * u + up.x * w;
+            position[v * 3 + 1] = y + right.y * u + up.y * w;
+            position[v * 3 + 2] = cz + right.z * u + up.z * w;
+            uv[v * 2] = uvs[corner][0];
+            uv[v * 2 + 1] = uvs[corner][1];
+            tint[v * 3] = r;
+            tint[v * 3 + 1] = g;
+            tint[v * 3 + 2] = b;
+        }
+    }
+
+    for (const pool of [round, cone]) {
+        pool.geometry.setDrawRange(0, pool.count * 6);
+        pool.geometry.attributes.position.needsUpdate = true;
+        pool.geometry.attributes.uv.needsUpdate = true;
+        pool.geometry.attributes.color.needsUpdate = true;
+        pool.mesh.visible = pool.count > 0;
     }
 };
 
 Reactor3D.MapScene.prototype.clear = function() {
     this._animated = [];
     this._frame = -1;
+    this._facade = null;
+    // The light pools live in the pass groups rather than in `_meshes`, so
+    // they have to be let go of by name or a rebuilt map keeps the old ones.
+    for (const kind of Object.keys(this._pools || {})) {
+        const pool = this._pools[kind];
+        if (pool.mesh.parent) pool.mesh.parent.remove(pool.mesh);
+        pool.geometry.dispose();
+    }
+    this._pools = {};
     for (const mesh of this._meshes) {
-        this._scene.remove(mesh);
+        // Meshes live in one of the two pass groups now, so removing them from
+        // the scene itself would leave every one of them behind.
+        if (mesh.parent) mesh.parent.remove(mesh);
         mesh.geometry.dispose();
     }
     for (const material of this._materials) material.dispose();
@@ -2060,6 +4357,9 @@ Reactor3D.MapScene.prototype.clear = function() {
 
 Reactor3D.MapScene.prototype.destroy = function() {
     this.clear();
+    this._belowGroup = null;
+    this._aboveGroup = null;
+    this._lightGroup = null;
     this._scene = null;
 };
 
@@ -2077,6 +4377,30 @@ Reactor3D.createCamera = function(settings) {
 };
 
 /**
+ * How far back the camera sits when a map does not say.
+ *
+ * Not a constant. It is the distance at which a tile under the focus covers
+ * the same pixels it would on a flat map, so the 3D view frames about as much
+ * world as the 2D one and a character is drawn at about the size its art was
+ * painted at. A fixed 12 was roughly half that: the map arrived at twice its
+ * flat size, which showed a quarter of the world, upscaled every sprite, and
+ * made every light look twice as big as its author drew it.
+ *
+ * Derived rather than tuned, so it stays right on a project with a different
+ * tile size, resolution or field of view. `distance` in the map's sidecar
+ * overrides it for a map that wants a closer or wider look.
+ */
+Reactor3D.defaultCameraDistance = function(camera) {
+    const fov = (((camera && camera.fov) || 30) * Math.PI) / 180;
+    const tile = typeof $gameMap !== "undefined" && $gameMap.tileHeight
+        ? $gameMap.tileHeight() : 48;
+    const height = typeof Graphics !== "undefined" && Graphics.height
+        ? Graphics.height : 624;
+    const distance = height / (2 * tile * Math.tan(fov / 2));
+    return distance > 0 && isFinite(distance) ? distance : 12;
+};
+
+/**
  * Point `camera` at a grid position.
  *
  * Pitch is measured from the horizon, so 90 is straight down and the shallow
@@ -2088,7 +4412,7 @@ Reactor3D.aimCamera = function(camera, focus, settings) {
     const opts = settings || {};
     const pitch = ((opts.pitch || 55) * Math.PI) / 180;
     const yaw = ((opts.yaw || 0) * Math.PI) / 180;
-    const distance = opts.distance || 12;
+    const distance = opts.distance || Reactor3D.defaultCameraDistance(camera);
 
     // Cell centres, so the camera does not sit on a tile corner.
     const cx = focus.x + 0.5;
@@ -2125,6 +4449,490 @@ Reactor3D.projectToScreen = function(camera, x, y, z) {
     };
 };
 
+/**
+ * How many screen pixels one world tile covers at a given point.
+ *
+ * A character over a 3D map is still an ordinary 2D sprite, so nothing scales
+ * it: without this it is drawn at its flat size wherever it stands, and a
+ * figure at the far end of a street is exactly as big as one at your feet —
+ * which reads as the map being 3D and the people on it not.
+ *
+ * Measured rather than derived: project the point and the point one tile above
+ * it, and the distance between them on screen is the answer, whatever the
+ * camera's field of view and pitch happen to be.
+ */
+/**
+ * How a sprite has to be scaled to stand on the same plane a 3D object does.
+ *
+ * A declared 3D object is a billboard, and `billboardMaterial` builds its quad
+ * on two specific axes: the camera's right axis, and — since `BILLBOARD_TILT`
+ * is 0 — world up. It turns to face you as you orbit, but it stays upright.
+ *
+ * A sprite standing in for one has to occupy exactly that quad, so the two are
+ * measured the same way rather than derived separately: project the anchor,
+ * the point one unit along each of those axes, and read the screen distances
+ * off. The two factors are not the same number — a camera pitched over
+ * foreshortens the vertical axis and not the horizontal — which is why a
+ * single uniform scale could never make a sprite line up with the standing art
+ * beside it. It was drawn at full height against art squashed to about six
+ * tenths, and the gap moved as the view moved.
+ *
+ * Returns null where the question does not apply, leaving the sprite alone.
+ */
+Reactor3D.standScaleAt = function(camera, x, y, z, wide, tall) {
+    if (!camera || !THREE.Vector3) return null;
+
+    // The same two axes the billboard shader uses, in world space.
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+    const up = this.billboardUp(camera);
+
+    // Measured across the thing's *own* size, not across one tile and
+    // multiplied.
+    //
+    // Perspective is not linear, so three tiles up is not three times one tile
+    // up. Sizing a three-tile sign from a one-tile sample put its top edge
+    // twenty pixels off at the near end of a street and fifty-six at the far
+    // end — and because the error moves with the camera, the sign crept
+    // against the pole it hangs from as you walked up the map. Measuring over
+    // the full extent lands the far corner exactly, whatever the height.
+    const spanU = wide > 0 ? wide : 1;
+    const spanV = tall > 0 ? tall : 1;
+
+    const base = this.projectToScreen(camera, x, y, z);
+    const across = this.projectToScreen(camera,
+        x + right.x * spanU, y + right.y * spanU, z + right.z * spanU);
+    const above = this.projectToScreen(camera,
+        x + up.x * spanV, y + up.y * spanV, z + up.z * spanV);
+    if (!base || !across || !above) return null;
+
+    const tileWidth = typeof $gameMap !== "undefined" && $gameMap.tileWidth
+        ? $gameMap.tileWidth() : 48;
+    const tileHeight = typeof $gameMap !== "undefined" && $gameMap.tileHeight
+        ? $gameMap.tileHeight() : 48;
+    if (!(tileWidth > 0) || !(tileHeight > 0)) return null;
+
+    // Straight-line screen distance, not the difference along one screen axis:
+    // the world axes only line up with the screen's while the camera's yaw is
+    // zero, and a rotated view would otherwise report a sprite as flat.
+    const wideOnScreen = Math.hypot(across.x - base.x, across.y - base.y);
+    const upX = above.x - base.x;
+    const upY = above.y - base.y;
+    const tallOnScreen = Math.hypot(upX, upY);
+    if (!(wideOnScreen > 0) || !(tallOnScreen > 0)) return null;
+
+    // And the lean — as a shear, not a turn.
+    //
+    // A world-vertical line converges towards a vanishing point, so standing
+    // art tilts: more the taller it is and the further it sits from the
+    // screen's centre column. A sprite is axis-aligned and stayed bolt
+    // upright, which put the top of a tall sign sideways of where it belonged
+    // by an amount that swung about as the camera moved.
+    //
+    // Turning the sprite is the wrong correction, because it tilts *both*
+    // axes. A standing billboard's bottom edge runs along the camera's right
+    // axis, which is perpendicular to the view and therefore stays level on
+    // screen; only its vertical edges lean. The shape is a parallelogram, and
+    // a rotated rectangle is not one — it lifts the ground line the sprite is
+    // standing on, so a row of characters looked like it was walking up a
+    // slope.
+    //
+    // A shear about the anchor is exactly a parallelogram: feet level, top
+    // displaced. PIXI composes `skew.x` into the y-axis as
+    // `(-sin(-skew.x), cos(-skew.x))`, and the sprite's own up is -y, so the
+    // angle it wants is the negative of the up-vector's tilt from vertical.
+    const skew = -Math.atan2(upX, -upY);
+    return {
+        x: wideOnScreen / (spanU * tileWidth),
+        y: tallOnScreen / (spanV * tileHeight),
+        skew
+    };
+};
+
+Reactor3D.screenScaleAt = function(camera, x, y, z) {
+    if (!camera || !THREE.Vector3) return 1;
+    const tile = typeof $gameMap !== "undefined" && $gameMap.tileHeight
+        ? $gameMap.tileHeight() : 48;
+    if (!(tile > 0)) return 1;
+
+    // How far along the way the camera is looking, not how far away in a
+    // straight line: what a perspective camera divides by is the depth.
+    const point = new THREE.Vector3(x, y, z);
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    const depth = point.sub(camera.position).dot(forward);
+    if (!(depth > 0.001)) return 1;
+
+    // A world unit is this many pixels tall at that depth. The projection of a
+    // world-*vertical* segment is the wrong measure, however natural it looks:
+    // a pitched camera foreshortens one, and that foreshortening eases with
+    // distance at almost exactly the rate perspective shrinks it, so the two
+    // cancel and every sprite comes out the same size wherever it stands —
+    // which is the map in perspective and the people on it not. A billboard
+    // turns to face the camera and is never foreshortened, so its size is the
+    // plain perspective divide.
+    const fov = (camera.fov || 30) * Math.PI / 180;
+    const height = typeof Graphics !== "undefined" ? Graphics.height : 720;
+    const pixelsPerTile = height / (2 * depth * Math.tan(fov / 2));
+    return pixelsPerTile / tile;
+};
+
+//-----------------------------------------------------------------------------
+// Lighting
+//
+// A 2D lighting plugin draws circles and cones onto the screen, which on a 3D
+// map is a picture of light rather than light: it lands flat over the world
+// instead of pooling on the ground and climbing walls. The geometry is here to
+// be lit, so it is lit.
+//
+// Reactor cannot read a plugin's lights directly without binding itself to one
+// plugin's internals, so it publishes a shape and a shim translates. Positions
+// are map cells — the same coordinates everything else in this file uses — so a
+// shim never has to know about the camera.
+
+Reactor3D.LIGHT_POINT = "point";
+Reactor3D.LIGHT_SPOT = "spot";
+
+/** The spread of a cone whose plugin does not say, in degrees. */
+Reactor3D.DEFAULT_CONE_ANGLE = 70;
+
+/** And how far it reaches, in tiles, when that is not known either. */
+Reactor3D.DEFAULT_CONE_LENGTH = 6;
+
+/*
+ * Lights are drawn, not simulated.
+ *
+ * The obvious implementation — one `THREE.PointLight` per light — does not
+ * survive contact with a real map. three.js sizes its light uniform arrays to
+ * the number of lights in the scene and compiles that count into *every*
+ * material's shader, so a city with a lantern on every corner overruns the
+ * fragment shader's uniform budget, the program fails to link, and the map
+ * draws nothing at all. Capping the count to fit is not a fix either: twelve
+ * lights on a street of a hundred is not lighting.
+ *
+ * But a 2D lighting plugin never simulated anything. Its light *is* a shape: a
+ * radius, a colour, an alpha — a soft disc it stamps on the screen. That shape
+ * is what has to end up on the ground in 3D, and a shape can simply be drawn.
+ *
+ * So every light becomes a quad lying on the ground, sized to its own radius,
+ * tinted by its own colour, added to what is already there. All of them share
+ * one geometry and one material, so a hundred lights is one draw call and no
+ * shader uniforms whatsoever. The only real light in the scene is a single
+ * ambient one, which is the darkness the lights are read against.
+ */
+
+/** How many light quads the pool can hold. Far past any real map. */
+Reactor3D.MAX_LIGHTS = 512;
+
+/**
+ * How strongly a light reads, over and above the alpha the plugin gave it.
+ *
+ * One by default, and raising it is not free: the quads are added, so a channel
+ * pushed past full clamps while the others carry on climbing, and an amber lamp
+ * turns white from the middle outwards. The colour is normalised below to hold
+ * its hue, but brightness is better found by *darkening* — the ambient level in
+ * the map's sidecar — than by pushing light past what a channel can hold.
+ */
+Reactor3D.LIGHT_GAIN = 1;
+
+Reactor3D._lights = [];
+Reactor3D._ambient = null;
+
+/**
+ * Declare the lights on the map this frame.
+ *
+ * Each entry: `{ type, x, y, height, radius, colour, intensity, angle, yaw }`.
+ * `x`/`y` are map cells and `radius` is in tiles; `angle` and `yaw` are degrees
+ * and only mean anything for a spot. Everything but a position has a sensible
+ * default, so the smallest useful light is `{ x, y, radius }`.
+ *
+ * Called every frame by a shim. Cheap to call: the descriptors are compared
+ * against what is already in the scene, and only a change of count or kind
+ * rebuilds anything.
+ */
+Reactor3D.setLights = function(lights) {
+    this._lights = Array.isArray(lights) ? lights : [];
+};
+
+Reactor3D.lights = function() {
+    return this._lights;
+};
+
+/**
+ * The light everything gets regardless.
+ *
+ * A lighting plugin's darkness is the absence of its lights, so without an
+ * ambient floor an unlit corner of a 3D map is pure black rather than dim.
+ * `null` means "no lighting at all" — the unlit look, which is what a map with
+ * no lighting plugin should keep.
+ */
+Reactor3D.setAmbient = function(ambient) {
+    this._ambient = ambient || null;
+};
+
+Reactor3D.ambient = function() {
+    return this._ambient;
+};
+
+/**
+ * The lights worth carrying, nearest a point first.
+ *
+ * A light is only worth a slot if it can be seen from where the camera is
+ * looking, so the budget goes to the closest — and a light whose radius does
+ * not reach the focus at all is dropped before the sort, which on a city map
+ * removes most of them for nothing.
+ */
+Reactor3D.nearestLights = function(lights, focus) {
+    if (!Array.isArray(lights)) return [];
+    if (lights.length <= this.MAX_LIGHTS) return lights;
+    if (!focus) return lights.slice(0, this.MAX_LIGHTS);
+
+    const reach = [];
+    for (const light of lights) {
+        const dx = (light.x || 0) - focus.x;
+        const dy = (light.y || 0) - focus.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        // Its own radius plus a screenful: a lantern well off the side of the
+        // view lights nothing that can be seen, however bright it is.
+        if (distance > (light.radius || 0) + this.LIGHT_CULL_MARGIN) continue;
+        reach.push({ light, distance });
+    }
+    reach.sort((a, b) => a.distance - b.distance);
+    return reach.slice(0, this.MAX_LIGHTS).map(entry => entry.light);
+};
+
+/** How far past its own reach a light is still considered, in tiles. */
+Reactor3D.LIGHT_CULL_MARGIN = 20;
+
+/** Whether anything has asked for lighting on this map. */
+Reactor3D.isLit = function() {
+    return !!this._ambient || this._lights.length > 0;
+};
+
+//-----------------------------------------------------------------------------
+// Lighting shims
+//
+// A lighting plugin owns its lights and knows nothing about a third dimension.
+// Reading its internals is the only way to reach them, so that reading is
+// quarantined here: one small function per plugin, each free to fail, and the
+// plugin itself is never modified. A project running neither is untouched.
+
+Reactor3D.LightShims = {};
+
+/**
+ * MVNovaLighting.
+ *
+ * Its manager hands out the lights on the current map, each already carrying a
+ * map-cell position, a radius in pixels, a tint and an alpha. `flashlight` is
+ * its cone; `fire` is a point that flickers, which three.js gives for free
+ * because the plugin animates the values this reads.
+ */
+Reactor3D.LightShims.nova = function() {
+    const nova = typeof Anisoft !== "undefined" && Anisoft.Nova;
+    const manager = nova && nova.LightManager;
+    if (!manager || typeof manager.currentMapLights !== "function") return null;
+
+    const tile = typeof $gameMap !== "undefined" && $gameMap.tileWidth
+        ? $gameMap.tileWidth() : 48;
+    const lights = [];
+    for (const light of manager.currentMapLights()) {
+        if (!light || light.active === false) continue;
+        const at = light.position;
+        if (!at) continue;
+
+        const spot = light.type === "flashlight";
+        let radius, angle;
+        if (spot) {
+            // A flashlight's size is neither its scale nor its bitmap alone.
+            // `Sprite_Light.refresh` draws the cone at
+            //
+            //     scale.set(data.scale.x / bitmap.resolution)
+            //
+            // so what reaches the screen is the bitmap times that factor.
+            // Reading `scale` on its own gave a ten-tile beam built out of the
+            // 512 fallback Nova leaves in `radius` for cones; reading the
+            // bitmap on its own dropped the 8x factor and gave a needle. Both
+            // together are the beam the player actually sees.
+            const bitmap = light.bitmap;
+            const scale = light.scale && light.scale.x !== undefined
+                ? light.scale.x : light.scale;
+            const resolution = bitmap && bitmap.resolution ? bitmap.resolution : 1;
+            const factor = (Number(scale) || 0) / resolution;
+            const length = bitmap && bitmap.height ? (bitmap.height * factor) / tile : 0;
+            const across = bitmap && bitmap.width ? (bitmap.width * factor) / tile : 0;
+            radius = length > 0 ? length : Reactor3D.DEFAULT_CONE_LENGTH;
+            angle = across > 0 && length > 0
+                ? (Math.atan2(across / 2, length) * 360) / Math.PI
+                : Reactor3D.DEFAULT_CONE_ANGLE;
+        } else {
+            // A round light's scale *is* its radius, in pixels.
+            const scale = light.scale && light.scale.x !== undefined ? light.scale.x : light.scale;
+            radius = (Number(scale) || 0) / tile;
+        }
+        if (!(radius > 0)) continue;
+
+        lights.push({
+            type: spot ? Reactor3D.LIGHT_SPOT : Reactor3D.LIGHT_POINT,
+            x: at.x, y: at.y,
+            radius,
+            angle,
+            colour: light.tint === undefined ? 0xffffff : light.tint,
+            intensity: light.alpha === undefined ? 1 : light.alpha,
+            // Nova's rotation is clockwise from south, which is the direction
+            // a character faces; the scene's yaw is measured the same way.
+            yaw: light.rotation === undefined ? 0 : (-light.rotation * 180) / Math.PI
+        });
+    }
+    return lights;
+};
+
+/**
+ * PSYCHRONIC_RaveLighting.
+ *
+ * Its lights are sprites in the spriteset's own container, each carrying the
+ * parsed note it was built from and the character it follows. The character is
+ * what matters here: a sprite's x/y are screen pixels for a 2D map and mean
+ * nothing once the ground is projected, but the character it belongs to knows
+ * which cell it is standing in.
+ */
+Reactor3D.LightShims.rave = function() {
+    const scene = typeof SceneManager !== "undefined" && SceneManager._scene;
+    const container = scene && scene._spriteset && scene._spriteset._lightContainer;
+    if (!container || !container.children) return null;
+
+    const tile = typeof $gameMap !== "undefined" && $gameMap.tileWidth
+        ? $gameMap.tileWidth() : 48;
+    const lights = [];
+    for (const sprite of container.children) {
+        if (!sprite || sprite.visible === false || !sprite._lightType) continue;
+        const character = sprite._character;
+        if (!character) continue;
+        const cone = sprite._lightType === "flashlight" || sprite._lightType === "beam";
+        const pixels = cone
+            ? Number(sprite._coneLengthPx) || 0
+            : Number(sprite._lightRadius) || 0;
+        const radius = pixels / tile;
+        if (!(radius > 0)) continue;
+        lights.push({
+            type: cone ? Reactor3D.LIGHT_SPOT : Reactor3D.LIGHT_POINT,
+            x: character._realX + (Number(sprite._offsetX) || 0) / tile,
+            y: character._realY + (Number(sprite._offsetY) || 0) / tile,
+            radius,
+            colour: Reactor3D.parseColour(sprite._lightColor),
+            intensity: sprite.alpha === undefined ? 1 : sprite.alpha,
+            // A cone's spread is authored as a width in squares at its far end,
+            // which is the angle it subtends from where it stands.
+            angle: cone && sprite._coneWidthPx
+                ? (Math.atan2((sprite._coneWidthPx / tile) / 2, radius) * 360) / Math.PI
+                : undefined,
+            yaw: Reactor3D.facingYaw(character.direction ? character.direction() : 2)
+        });
+    }
+    return lights;
+};
+
+/** `#rrggbb` or a number, to a number. White for anything unreadable. */
+Reactor3D.parseColour = function(value) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value !== "string") return 0xffffff;
+    const hex = value.replace("#", "").trim();
+    const parsed = parseInt(hex, 16);
+    return Number.isFinite(parsed) && hex.length >= 3 ? parsed : 0xffffff;
+};
+
+/** RPG Maker's direction numbers as a yaw in degrees: 2 is south, 8 north. */
+Reactor3D.facingYaw = function(direction) {
+    switch (direction) {
+        case 4: return 90;      // west
+        case 6: return -90;     // east
+        case 8: return 180;     // north
+        default: return 0;      // south, and anything unrecognised
+    }
+};
+
+/**
+ * Hide a lighting plugin's own 2D overlay.
+ *
+ * Its lightmap is a picture of light drawn over the map. With real lights in
+ * the scene the two would both apply — a dark wash from the plugin and a lit
+ * world underneath it — so the plugin's is put away while 3D lighting is on.
+ * Hidden, never modified: turning 3D lighting off brings it straight back.
+ */
+Reactor3D.LightShims.nova.suppress = function(hide) {
+    const nova = typeof Anisoft !== "undefined" && Anisoft.Nova;
+    const container = nova && nova.lightMapContainer;
+    if (container) container.visible = !hide;
+};
+
+Reactor3D.LightShims.rave.suppress = function(hide) {
+    const scene = typeof SceneManager !== "undefined" && SceneManager._scene;
+    const container = scene && scene._spriteset && scene._spriteset._lightContainer;
+    if (container) container.visible = !hide;
+};
+
+/** Put every plugin's 2D lightmap away, or bring them all back. */
+Reactor3D.suppressFlatLighting = function(hide) {
+    for (const name of Object.keys(this.LightShims)) {
+        const shim = this.LightShims[name];
+        if (typeof shim.suppress !== "function") continue;
+        try {
+            shim.suppress(hide);
+        } catch (error) {
+            /* A plugin that has moved on is not worth a broken frame. */
+        }
+    }
+};
+
+/**
+ * Whether this map wants its lights in three dimensions.
+ *
+ * Off unless asked for. A project already lit to its author's satisfaction in
+ * 2D should not have that quietly replaced by something that looks different,
+ * so it is opted into per map with `<3d lights>` in the note, beside the `<3d>`
+ * that made it a 3D map at all.
+ */
+Reactor3D.wantsLights3D = function(mapData) {
+    if (!this.isMap3D(mapData)) return false;
+    const sidecar = mapData && mapData.reactor3d;
+    if (sidecar && sidecar.lighting && sidecar.lighting.enabled !== undefined) {
+        return !!sidecar.lighting.enabled;
+    }
+    return !!(mapData && mapData.meta && mapData.meta["3d lights"]);
+};
+
+/** How dark an unlit corner of a lit map is. */
+Reactor3D.ambientFor = function(mapData) {
+    const sidecar = mapData && mapData.reactor3d;
+    const lighting = (sidecar && sidecar.lighting) || {};
+    return {
+        intensity: lighting.ambient === undefined ? 0.25 : lighting.ambient,
+        colour: lighting.ambientColour === undefined ? 0xffffff : lighting.ambientColour
+    };
+};
+
+/**
+ * Collect this frame's lights from whichever lighting plugin is present.
+ *
+ * Each shim is tried and each may fail without taking the frame with it: a
+ * plugin can be updated underneath this at any time, and a 3D map going black
+ * because a shim threw would be a poor trade for lighting.
+ */
+Reactor3D.collectLights = function() {
+    const found = [];
+    for (const name of Object.keys(this.LightShims)) {
+        try {
+            const lights = this.LightShims[name]();
+            if (lights && lights.length) found.push(...lights);
+        } catch (error) {
+            if (!this._shimWarned) this._shimWarned = {};
+            if (!this._shimWarned[name]) {
+                this._shimWarned[name] = true;
+                console.warn(`Reactor3D: the ${name} lighting shim failed; `
+                    + "its lights will not be in 3D.", error);
+            }
+        }
+    }
+    return found;
+};
+
 //-----------------------------------------------------------------------------
 // Scene preparation
 //
@@ -2157,9 +4965,70 @@ Reactor3D.isPrepared = function() {
     return this._prepared !== false;
 };
 
+/**
+ * Let the 3D canvas underneath show through, or cover it again.
+ *
+ * The two canvases are stacked — 3D at z-index 0, the game canvas at 1 — so
+ * PIXI can keep drawing windows, pictures and every plugin sprite over the
+ * top. That only works if the game canvas is *transparent* where nothing is
+ * drawn, and PIXI clears to opaque black by default: the 3D ground was being
+ * rendered correctly and then painted over, every frame, which looks exactly
+ * like 3D not working.
+ *
+ * Written for whichever PIXI is present. v7 and v8 keep it on a background
+ * system; v5 and v6 on the renderer itself.
+ */
+Reactor3D.setGameCanvasTransparent = function(transparent) {
+    const renderer = typeof Graphics !== "undefined" && Graphics.app && Graphics.app.renderer;
+    if (!renderer) return false;
+    const alpha = transparent ? 0 : 1;
+    if (renderer.background && "alpha" in renderer.background) {
+        renderer.background.alpha = alpha;
+        return true;
+    }
+    if ("backgroundAlpha" in renderer) {
+        renderer.backgroundAlpha = alpha;
+        return true;
+    }
+    if ("transparent" in renderer) {
+        renderer.transparent = !!transparent;
+        return true;
+    }
+    return false;
+};
+
 /** Whether this map should actually be drawn in 3D right now. */
 Reactor3D.shouldRender3D = function(mapData) {
     return this.isMap3D(mapData) && this.isLoaded() && this.isSupported();
+};
+
+/**
+ * Why a map that asked for 3D is not getting it, or null when it is.
+ *
+ * Every gate between "the note says <3d>" and "the scene is built" could fail
+ * quietly and leave an ordinary 2D map on screen, which is indistinguishable
+ * from the feature not existing. There is nothing to debug from that, so each
+ * gate names itself here and `createReactor3D` prints it once.
+ */
+Reactor3D.renderBlocker = function(mapData) {
+    if (!this.isMap3D(mapData)) {
+        return "the map is not marked 3D — its note needs <3d>, and $dataMap.meta['3d'] "
+            + "must be set, which DataManager does when it extracts the note";
+    }
+    if (!this.isSupported()) {
+        return `this machine cannot draw it (${this.unsupportedReason()})`;
+    }
+    if (!this.isLoaded()) {
+        if (this._unsupportedReason) return `three.js is not loaded (${this._unsupportedReason})`;
+        // Nothing failed, so either the file is not where it should be or the
+        // scene asked before the fetch came back. Both are worth naming: the
+        // second one looks impossible from the outside, because the file is
+        // plainly sitting there.
+        return `three.js has not finished loading — expected at ${this.LIB_URL}, relative `
+            + "to the game's index.html. If the file is present, the scene built its "
+            + "spriteset before the fetch returned";
+    }
+    return null;
 };
 
 if (typeof module !== "undefined" && module.exports) {

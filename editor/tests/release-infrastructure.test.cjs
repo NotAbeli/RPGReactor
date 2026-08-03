@@ -157,14 +157,31 @@ test('tests do not depend on ignored private project fixtures', () => {
     // re-includes it), so reaching it is fine and is how the bundled Demo gets
     // checked. Reaching `template` without naming Demo would enumerate the
     // private projects, which are absent in CI.
+    // One exception, and the distinction it turns on: this rule is about a test
+    // *depending* on a fixture CI does not have. `runtime-template-sync` walks
+    // whatever projects are present and asserts nothing about which those are,
+    // so on a clean checkout it checks the tracked Demo alone and locally it
+    // also covers the private test beds — which is exactly where a runtime fix
+    // gets tried by hand, and where it silently went stale before.
+    const ENUMERATES_SAFELY = new Set(['runtime-template-sync.test.cjs']);
     for (const entry of fs.readdirSync(__dirname).filter(name => name.endsWith('.cjs'))) {
         if (entry === path.basename(__filename)) continue;
+        if (ENUMERATES_SAFELY.has(entry)) continue;
         const source = fs.readFileSync(path.join(__dirname, entry), 'utf8');
         assert.doesNotMatch(
             source,
             /path\.(?:join|resolve)\(\s*repoRoot\s*,\s*['"](?:template(?!['"]\s*,\s*['"]Demo['"])|INSPIRATION|save)['"]/,
             `${entry} references an ignored repository fixture`
         );
+    }
+
+    // The exception is only safe while it stays absence-tolerant, so that is
+    // checked rather than trusted.
+    for (const entry of ENUMERATES_SAFELY) {
+        const source = fs.readFileSync(path.join(__dirname, entry), 'utf8');
+        assert.match(source, /existsSync/, `${entry} tolerates a missing fixture`);
+        assert.doesNotMatch(source, /Star Shift|Complex|Barebones/,
+            `${entry} must not name a private project`);
     }
     const ci = readRepo('.github/workflows/ci.yml');
     assert.match(ci, /npm ci --ignore-scripts/);

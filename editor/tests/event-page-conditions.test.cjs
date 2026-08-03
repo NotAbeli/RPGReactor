@@ -86,3 +86,50 @@ test('every numeric condition the form exposes is declared numeric', () => {
     assert.deepEqual(missing, [],
         `these are numbers in authored data but are not converted: ${missing.join(', ')}`);
 });
+
+//-----------------------------------------------------------------------------
+// Autonomous custom routes
+
+test('a page set to Custom movement can say what the route is', () => {
+    /*
+     * Choosing Custom was only half of it. The type could be set and there was
+     * no way to say what the route actually was — the page kept whatever list
+     * it already had, and a new event kept an empty one, so Custom meant
+     * "stand still" and could not be made to mean anything else. RPG Maker
+     * puts a Route... button beside the dropdown; there was none here.
+     */
+    const source = fs.readFileSync(
+        path.join(__dirname, '..', 'src', 'event', 'EventPageEditor.js'), 'utf8');
+    assert.match(source, /class="movement-route-btn"/, 'the button exists');
+    assert.match(source, /page\.moveType === 3 \? '' : 'disabled'/,
+        'and only a custom route has a route to edit');
+    // The choice and the button stay in step, rather than the button sitting
+    // there inviting a click that would do nothing.
+    assert.match(source, /if \(field === 'moveType'\) \{[\s\S]*?button\.disabled = page\.moveType !== 3/);
+    assert.match(source, /editor\.showRoute\(page\.moveRoute, route => \{ page\.moveRoute = route; \}\)/,
+        'and it writes the route back onto the page');
+});
+
+test('the route dialog is borrowed, not built a second time', () => {
+    /*
+     * An autonomous custom route *is* a move route — the same structure built
+     * from the same forty-five commands, which is why RPG Maker opens the same
+     * dialog for both. Two of them would drift apart a command at a time.
+     */
+    const page = fs.readFileSync(
+        path.join(__dirname, '..', 'src', 'event', 'EventPageEditor.js'), 'utf8');
+    assert.match(page, /const owner = this\.parentEditor && this\.parentEditor\.commandList;/);
+    assert.match(page, /if \(owner && owner\.setMovementRouteEditor\) return owner\.setMovementRouteEditor;/);
+
+    const dialog = fs.readFileSync(path.join(__dirname, '..', 'src', 'event',
+        'commands', 'SetMovementRouteEditor.js'), 'utf8');
+    // What the page has already answered is left out: it is always this event,
+    // and nothing is waiting on it to finish.
+    assert.match(dialog, /if \(!this\.autonomous\) this\.renderCharacterDropdown\(panel\)/);
+    assert.match(dialog, /if \(!this\.autonomous\) \{\s*\n\s*section\.appendChild\(this\._checkbox\('Wait for Completion'/);
+    // And it hands back the route itself, because that is what a page stores.
+    assert.match(dialog, /this\.callback\(this\.autonomous \? this\.moveRoute : this\.buildCommand\(\)\)/);
+    // Both ways in share one tail, so the list invariant cannot be enforced in
+    // one of them and forgotten in the other.
+    assert.equal((dialog.match(/this\._openWithRoute\(\);/g) || []).length, 2);
+});

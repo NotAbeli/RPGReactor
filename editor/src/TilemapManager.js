@@ -223,6 +223,9 @@ class TilemapManager {
             const mapData = JSON.parse(this.fs.readFileSync(mapPath, 'utf8'));
             // Set the map ID (it's not stored in the JSON file)
             mapData.id = mapId;
+            // Its 3D sidecar comes with it, and has to: grouping is painted on
+            // the 2D canvas, so the file cannot wait for the 3D view to open.
+            this.loadMapSidecar(mapData);
 
             // Load tileset for this map
             let tileset = this.databaseManager.getTileset(mapData.tilesetId);
@@ -550,6 +553,7 @@ class TilemapManager {
         this.container.addChild(this.layers.upper2);
         this.container.addChild(this.layers.upper3);
         this.container.addChild(this.layers.layerHighlight);
+        this.drawGrid();
 
         // Containers are recreated on setup — re-apply any active layer
         // dimming so switching maps keeps the editing context visible.
@@ -557,6 +561,48 @@ class TilemapManager {
 
         // Add panning support
         this.setupPanning();
+    }
+
+    /**
+     * A line at every tile boundary, over the map.
+     *
+     * Drawn from `TILE_WIDTH`/`TILE_HEIGHT` rather than a constant, so it
+     * matches whatever size the project chose in System 2 — a 32-pixel project
+     * gets a 32-pixel grid. Above every tile layer and below the editing
+     * overlays, and faint enough to read as a guide rather than as artwork.
+     */
+    drawGrid() {
+        if (typeof PIXI === "undefined" || !this.container) return;
+        if (this.gridLayer) {
+            this.gridLayer.parent?.removeChild(this.gridLayer);
+            this.gridLayer.destroy({ children: true });
+            this.gridLayer = null;
+        }
+        if (!this.currentMap) return;
+
+        const width = this.currentMap.width * this.TILE_WIDTH;
+        const height = this.currentMap.height * this.TILE_HEIGHT;
+        const graphics = new PIXI.Graphics();
+        for (let x = 0; x <= this.currentMap.width; x++) {
+            const at = x * this.TILE_WIDTH;
+            graphics.moveTo(at, 0).lineTo(at, height);
+        }
+        for (let y = 0; y <= this.currentMap.height; y++) {
+            const at = y * this.TILE_HEIGHT;
+            graphics.moveTo(0, at).lineTo(width, at);
+        }
+        graphics.stroke({ width: 1, color: 0xffffff, alpha: 0.16 });
+        graphics.eventMode = "none";
+        graphics.visible = this.gridVisible === true;
+
+        this.gridLayer = graphics;
+        this.container.addChild(graphics);
+    }
+
+    /** Show or hide the tile grid. */
+    setGridVisible(on) {
+        this.gridVisible = on === true;
+        if (this.gridLayer) this.gridLayer.visible = this.gridVisible;
     }
 
     /**
@@ -616,10 +662,24 @@ class TilemapManager {
 
         this.container.on('pointermove', (event) => {
             if (isDragging) {
+                // Clamp here, as the view moves, rather than leaving it to the
+                // scrollbar refresh. That refresh is throttled to one frame,
+                // so a drag past the edge was drawn out of bounds and yanked
+                // back a frame later, over and over: the map jittered against
+                // its own edge for as long as you kept pulling.
                 this.container.x = event.data.global.x - dragStart.x;
                 this.container.y = event.data.global.y - dragStart.y;
-                // updateScrollbars clamps the position to the map bounds and
-                // repositions the thumbs; throttle to one update per frame.
+                this.clampContainerToMap();
+
+                // Re-anchor to where the view actually is. Without this the
+                // drag keeps accumulating past the edge and the map does not
+                // move again until that overshoot has been pulled back out,
+                // which reads as the pan sticking.
+                dragStart.x = event.data.global.x - this.container.x;
+                dragStart.y = event.data.global.y - this.container.y;
+
+                // The thumbs only need repositioning, so one update a frame is
+                // still enough for them.
                 if (!this.scrollbarUpdateScheduled) {
                     this.scrollbarUpdateScheduled = true;
                     requestAnimationFrame(() => {
@@ -715,13 +775,10 @@ class TilemapManager {
                     this.container.x = mouseX - worldX * newScale;
                     this.container.y = mouseY - worldY * newScale;
 
-                    // Clamp container position to prevent drifting outside bounds
-                    const mapWidth = this.currentMap.width * this.TILE_SIZE * newScale;
-                    const mapHeight = this.currentMap.height * this.TILE_SIZE * newScale;
-                    const minX = Math.min(0, containerRect.width - mapWidth);
-                    const minY = Math.min(0, containerRect.height - mapHeight);
-                    this.container.x = Math.max(minX, Math.min(0, this.container.x));
-                    this.container.y = Math.max(minY, Math.min(0, this.container.y));
+                    // Keep the view inside the map at the new scale: zooming
+                    // out enlarges the viewport in world terms, so a position
+                    // that was against the edge is past it a moment later.
+                    this.clampContainerToMap(newScale);
 
                     // Update scrollbars
                     this.updateScrollbars();
@@ -909,10 +966,11 @@ class TilemapManager {
             const containerDelta = -delta * ratio;
 
             if (direction === 'horizontal') {
-                this.container.x = Math.min(0, Math.max(-(mapSize - viewportSize), startContainerPos + containerDelta));
+                this.container.x = startContainerPos + containerDelta;
             } else {
-                this.container.y = Math.min(0, Math.max(-(mapSize - viewportSize), startContainerPos + containerDelta));
+                this.container.y = startContainerPos + containerDelta;
             }
+            this.clampContainerToMap();
 
             // PERFORMANCE: Throttle scrollbar updates during drag
             if (!this.scrollbarUpdateScheduled) {
@@ -931,6 +989,46 @@ class TilemapManager {
         document.addEventListener('mouseup', onUp);
     }
 
+    /**
+     * How far the view may be scrolled, in container pixels.
+     *
+     * `x` runs from `minX` (the map's right edge against the viewport's) to 0
+     * (its left edge against the viewport's). When the map is smaller than the
+     * viewport there is nowhere to go and both ends are 0.
+     *
+     * Returns null when there is no map or no viewport to measure against, so
+     * a caller can tell "do not move" from "clamp to zero".
+     */
+    panBounds(scale = this.container.scale.x) {
+        if (!this.currentMap) return null;
+        const element = document.getElementById('canvas-container');
+        const rect = element && element.getBoundingClientRect();
+        if (!rect || !(rect.width > 0) || !(rect.height > 0)) return null;
+        return {
+            minX: Math.min(0, rect.width - this.currentMap.width * this.TILE_WIDTH * scale),
+            minY: Math.min(0, rect.height - this.currentMap.height * this.TILE_HEIGHT * scale),
+            width: rect.width,
+            height: rect.height
+        };
+    }
+
+    /**
+     * Hold the view inside the map, and report where it ended up.
+     *
+     * Every path that moves the view goes through here rather than writing the
+     * same two `Math.max(min, Math.min(0, …))` lines again: panning, the
+     * scrollbar thumbs, wheel zoom and the scrollbar refresh had four copies
+     * between them and the pan had none, which is what let a drag leave the
+     * map at all.
+     */
+    clampContainerToMap(scale = this.container.scale.x) {
+        const bounds = this.panBounds(scale);
+        if (!bounds) return null;
+        this.container.x = Math.max(bounds.minX, Math.min(0, this.container.x));
+        this.container.y = Math.max(bounds.minY, Math.min(0, this.container.y));
+        return bounds;
+    }
+
     updateScrollbars() {
         if (!this.scrollbars || !this.currentMap) return;
 
@@ -941,11 +1039,7 @@ class TilemapManager {
         const mapWidth = this.currentMap.width * this.TILE_WIDTH * scale;
         const mapHeight = this.currentMap.height * this.TILE_HEIGHT * scale;
 
-        // Clamp container position to map bounds
-        const minX = Math.min(0, rect.width - mapWidth);
-        const minY = Math.min(0, rect.height - mapHeight);
-        this.container.x = Math.max(minX, Math.min(0, this.container.x));
-        this.container.y = Math.max(minY, Math.min(0, this.container.y));
+        this.clampContainerToMap(scale);
 
         // Horizontal scrollbar
         const needsHScroll = mapWidth > rect.width;
@@ -2522,17 +2616,104 @@ class TilemapManager {
         const data = { ...map };
         delete data.id;
         delete data.name;
+        // Elevation and camera live in Map###.r3d.json beside the map. They are
+        // attached to the loaded map so the 3D view can read them, and writing
+        // them back here would put fields RPG Maker does not know into a file
+        // that has to stay ordinary RPG Maker data.
+        delete data.reactor3d;
         return data;
+    }
+
+    /**
+     * Read `Map###.r3d.json` onto the map, if it has one.
+     *
+     * With the map, not with the 3D view. It used to be attached only when
+     * that view opened, which held while everything in the file was something
+     * only that view could show.
+     *
+     * Grouping is not: it is painted on the 2D canvas, so the file has to be
+     * in hand whenever the map is. Without this an author who grouped some
+     * buildings, saved, and reopened the project found the numbers gone — they
+     * were on disk, but nothing had read them back, so the palette drew an
+     * empty overlay. The silent half was worse than the visible one: painting
+     * again over an unread sidecar and saving writes one built from nothing,
+     * taking everything else in the file with it.
+     */
+    loadMapSidecar(mapData) {
+        if (!this.fs || !this.path || !this.projectPath || !mapData || !mapData.id) return false;
+        const elevation = this.mapElevation();
+        const suffix = elevation ? elevation.SUFFIX : '.r3d.json';
+        const file = `Map${String(mapData.id).padStart(3, '0')}${suffix}`;
+        const filePath = this.path.join(this.projectPath, 'data', file);
+        try {
+            if (!this.fs.existsSync(filePath)) return false;
+            const sidecar = JSON.parse(this.fs.readFileSync(filePath, 'utf8'));
+            if (sidecar && typeof sidecar === 'object') {
+                mapData.reactor3d = sidecar;
+                return true;
+            }
+        } catch (error) {
+            // A corrupt sidecar must not stop the map opening: the map is the
+            // work, and its 3D notes are recoverable by repainting.
+            console.error(`${file} could not be read.`, error);
+        }
+        return false;
+    }
+
+    /** The height field module, absent on a host that never loaded it. */
+    mapElevation() {
+        return (typeof RRMapElevation !== 'undefined' && RRMapElevation)
+            || (typeof window !== 'undefined' && window.RRMapElevation) || null;
+    }
+
+    /**
+     * Write the map's 3D sidecar, or clear it when nothing is left to say.
+     *
+     * Separate from the map itself, and failing here must not fail the save:
+     * losing a height field is bad, losing the map is worse.
+     */
+    saveMapSidecar() {
+        const elevation = this.mapElevation();
+        if (!elevation || !this.currentMap || !this.fs || !this.path) return false;
+        try {
+            return elevation.save(this.fs, this.path, this.projectPath, this.currentMap, {
+                writeFileAtomicSync: this._writeFileAtomic
+                    ? (fs, filePath, data, encoding) =>
+                        this._writeFileAtomic(fs, filePath, data, encoding)
+                    : null
+            });
+        } catch (error) {
+            console.error('Error saving the map 3D sidecar:', error);
+            return false;
+        }
+    }
+
+    /**
+     * The sidecar's contribution to "has this map changed".
+     *
+     * It is deliberately not part of `getPersistedMapData` — that is what goes
+     * into `Map###.json`, which has to stay ordinary RPG Maker data. But it is
+     * still the author's work, and a change to it is still a change to the map.
+     */
+    sidecarState() {
+        const sidecar = this.currentMap && this.currentMap.reactor3d;
+        return sidecar ? JSON.stringify(sidecar) : null;
     }
 
     captureSavedMapState() {
         const data = this.getPersistedMapData();
         this.savedMapState = data ? JSON.stringify(data) : null;
+        this.savedSidecarState = this.sidecarState();
     }
 
     isMapDirty() {
         const data = this.getPersistedMapData();
         if (!data || this.savedMapState === null) return false;
+        // The 3D sidecar lives beside the map rather than in it, and
+        // comparing only what goes into `Map###.json` said a map with a
+        // freshly grouped building was unchanged — so closing the project
+        // never asked, and the work went with it.
+        if (this.sidecarState() !== this.savedSidecarState) return true;
         return JSON.stringify(data) !== this.savedMapState;
     }
 
@@ -2555,6 +2736,7 @@ class TilemapManager {
 
             // Write map data to file with formatting
             this._writeFileAtomic(this.fs, mapPath, JSON.stringify(mapDataToSave, null, 2), 'utf8');
+            this.saveMapSidecar();
             this.captureSavedMapState();
             this.bumpVersionId();
 

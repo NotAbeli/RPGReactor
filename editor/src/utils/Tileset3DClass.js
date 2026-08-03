@@ -18,6 +18,7 @@
     const UPRIGHT = 2;   // part of a standing object
     const SCENERY = 3;   // raises the ground it sits on
     const FOLIAGE = 4;   // a cut-out per cell, over ground that stays flat
+    const PANEL = 5;     // stands still, faces a way, has a little depth
 
     // Upright, scenery and foliage all rise off the floor, and the difference is
     // what a group of them means. A building is one picture spanning many cells,
@@ -33,7 +34,8 @@
     const FILENAME = 'Tilesets.r3d.json';
     const VERSION = 1;
 
-    const create = () => ({ version: VERSION, tilesets: {}, standIns: {}, objects: {} });
+    const create = () =>
+        ({ version: VERSION, tilesets: {}, standIns: {}, objects: {}, materials: {} });
 
     /**
      * The id a class is stored under.
@@ -69,7 +71,7 @@
                 // Keys are folded to their autotile kind so a hand-written file
                 // that named a shape is still read back by every shape.
                 if (value === GROUND || value === UPRIGHT || value === SCENERY
-                    || value === FOLIAGE) {
+                    || value === FOLIAGE || value === PANEL) {
                     kept[keyFor(tileId)] = value;
                 }
             }
@@ -100,7 +102,7 @@
             if (!Array.isArray(list)) continue;
             const kept = [];
             for (const object of list) {
-                if (!object || !isPictureTile(object.tile)) continue;
+                if (!object || !isObjectOrigin(object.tile)) continue;
                 const w = Math.max(1, Math.round(object.w || 1));
                 const h = Math.max(1, Math.round(object.h || 1));
                 const roles = String(object.roles || '')
@@ -109,13 +111,79 @@
             }
             if (kept.length > 0) objects[tilesetId] = kept;
         }
-        return { version: VERSION, tilesets, standIns, objects };
+        // Per-tile materials: which art covers a face the tileset never drew as
+        // one. Only `top` so far — the roof a raised wall is capped with, for
+        // the sheets where it cannot be derived.
+        const materials = {};
+        const named = data.materials && typeof data.materials === 'object' ? data.materials : {};
+        for (const [tilesetId, tiles] of Object.entries(named)) {
+            if (!tiles || typeof tiles !== 'object') continue;
+            const kept = {};
+            for (const [tileId, value] of Object.entries(tiles)) {
+                if (!value || typeof value !== 'object') continue;
+                const top = Number(value.top);
+                if (!Number.isInteger(top) || top <= 0) continue;
+                kept[keyFor(tileId)] = { top: keyFor(top) };
+            }
+            if (Object.keys(kept).length > 0) materials[tilesetId] = kept;
+        }
+        return { version: VERSION, tilesets, standIns, objects, materials };
+    };
+
+    /**
+     * Whether a tile is one of the sixteen-shape wall autotiles.
+     *
+     * A3 is walls throughout; A4 alternates roof rows and wall rows, eight
+     * kinds to a row, odd rows being walls. Mirrors `Reactor3D.Geometry`'s
+     * copy and the editor's; a test pins all three together.
+     */
+    const isWallLike = tileId => {
+        const id = Number(tileId);
+        if (!Number.isFinite(id)) return false;
+        if (id >= 4352 && id < 5888) return true;
+        if (id >= 5888 && id < 8192) {
+            const kind = Math.floor((id - 5888) / 48);
+            return Math.floor(kind / 8) % 2 === 1;
+        }
+        return false;
+    };
+
+    /** The art named for a tile's faces, or null. */
+    const materialOf = (data, tilesetId, tileId) => {
+        const tiles = data && data.materials && data.materials[tilesetId];
+        return (tiles && tiles[keyFor(tileId)]) || null;
+    };
+
+    /**
+     * Name the roof a wall kind is capped with, or clear it with 0.
+     *
+     * A4 pairs a roof with every wall by its own layout, so this is for the
+     * sheets that do not — A3, which is walls throughout, and any tileset whose
+     * author put the roof somewhere else.
+     */
+    const setTopFace = (data, tilesetId, tileId, topTileId) => {
+        const store = data && data.tilesets ? data : create();
+        if (!store.materials) store.materials = {};
+        const key = String(tilesetId);
+        const tile = keyFor(tileId);
+        const top = Number(topTileId);
+        if (!Number.isInteger(top) || top <= 0) {
+            if (store.materials[key]) {
+                delete store.materials[key][tile];
+                if (Object.keys(store.materials[key]).length === 0) delete store.materials[key];
+            }
+            return store;
+        }
+        if (!store.materials[key]) store.materials[key] = {};
+        store.materials[key][tile] = { top: keyFor(top) };
+        return store;
     };
 
     const classOf = (data, tilesetId, tileId) => {
         const tiles = data && data.tilesets && data.tilesets[tilesetId];
         const value = tiles && tiles[keyFor(tileId)];
-        return value === GROUND || value === UPRIGHT || value === SCENERY || value === FOLIAGE
+        return value === GROUND || value === UPRIGHT || value === SCENERY
+            || value === FOLIAGE || value === PANEL
             ? value : AUTO;
     };
 
@@ -130,7 +198,8 @@
         const store = data && data.tilesets ? data : create();
         const key = String(tilesetId);
         const tile = keyFor(tileId);
-        if (value !== GROUND && value !== UPRIGHT && value !== SCENERY && value !== FOLIAGE) {
+        if (value !== GROUND && value !== UPRIGHT && value !== SCENERY
+            && value !== FOLIAGE && value !== PANEL) {
             if (store.tilesets[key]) {
                 delete store.tilesets[key][tile];
                 if (Object.keys(store.tilesets[key]).length === 0) delete store.tilesets[key];
@@ -148,6 +217,7 @@
         if (current === GROUND) return UPRIGHT;
         if (current === UPRIGHT) return SCENERY;
         if (current === SCENERY) return FOLIAGE;
+        if (current === FOLIAGE) return PANEL;
         return AUTO;
     };
 
@@ -230,9 +300,31 @@
      * object. Only A1-A4 cannot — their ids encode a corner arrangement rather
      * than a position in a drawing.
      */
+    /**
+     * Whether a tile id can be *found* inside a declared object.
+     *
+     * Tile 0 is the engine's "no tile": an empty map cell reads as 0, so a
+     * lookup for it must never match an object or every blank cell on the map
+     * would belong to whatever sits at the top-left of the B sheet.
+     */
     const isPictureTile = tileId => {
         const id = Number(tileId);
         return id > 0 && id < 2048;
+    };
+
+    /**
+     * Whether a tile id can be the *corner* of a declared object.
+     *
+     * Wider than `isPictureTile` by exactly one value. Tile 0 is a real place
+     * on the B sheet — its top-left cell — and an object anchored there works
+     * for every other cell it covers; only that one cell can never be looked
+     * up, which is correct, because a map cell holding 0 is empty. Refusing it
+     * as an origin meant a large prop drawn into the corner of a sheet could
+     * not be declared at all, and the attempt did nothing without saying why.
+     */
+    const isObjectOrigin = tileId => {
+        const id = Number(tileId);
+        return Number.isInteger(id) && id >= 0 && id < 2048;
     };
 
     /** Where a picture tile sits on its sheet, in whole tiles. */
@@ -298,30 +390,24 @@
      */
     const defineObject = (data, tilesetId, tile, w, h, roles) => {
         const store = data && data.tilesets ? data : create();
-        // Tile 0 is the engine's "no tile", so it can never be part of an
-        // object. Accepting it here while `objectAt` refused it made a
-        // declaration that could be created and never found again.
-        if (!isPictureTile(tile)) return store;
+        if (!isObjectOrigin(tile)) return store;
         if (!store.objects) store.objects = {};
         const key = String(tilesetId);
         const width = Math.max(1, Math.round(w));
         const height = Math.max(1, Math.round(h));
         const origin = sheetCell(tile);
-        const covered = new Set();
-        for (let dr = 0; dr < height; dr++) {
-            for (let dc = 0; dc < width; dc++) {
-                covered.add(tileAtCell(origin.setNumber, origin.col + dc, origin.row + dr));
-            }
-        }
+        // Overlap is a question about rectangles on a sheet, so it is asked
+        // that way. Comparing the tile ids they cover could not tell a real
+        // tile 0 — the top-left of the B sheet — from the 0 `tileAtCell`
+        // returns for a cell off the edge of the sheet.
         const kept = (store.objects[key] || []).filter(object => {
             const other = sheetCell(object.tile);
-            for (let dr = 0; dr < object.h; dr++) {
-                for (let dc = 0; dc < object.w; dc++) {
-                    const at = tileAtCell(other.setNumber, other.col + dc, other.row + dr);
-                    if (other.setNumber === origin.setNumber && covered.has(at)) return false;
-                }
-            }
-            return true;
+            if (other.setNumber !== origin.setNumber) return true;
+            const overlaps = other.col < origin.col + width
+                && other.col + object.w > origin.col
+                && other.row < origin.row + height
+                && other.row + object.h > origin.row;
+            return !overlaps;
         });
         const filled = (roles || '').padEnd(width * height, STAND).slice(0, width * height);
         kept.push({ tile: Number(tile), w: width, h: height, roles: filled });
@@ -352,13 +438,49 @@
         return data;
     };
 
+    /**
+     * Forget everything said about one tile.
+     *
+     * Erase used to remove a tile from its declared object and nothing else,
+     * so a tile classified Upright, given a stand-in or paired with a roof
+     * kept all of it with no way back short of editing the file. Clearing is
+     * one idea — "this tile has no 3D information" — and it needs one action.
+     *
+     * Reports whether anything was actually forgotten, so the editor can say
+     * so rather than claiming a clear it did not perform.
+     */
+    const clearTile = (data, tilesetId, tileId) => {
+        const store = data && data.tilesets ? data : create();
+        // Read the store rather than the accessors. The accessors answer with
+        // derived facts as well as authored ones — an A4 wall is paired with
+        // the roof its sheet layout implies, a tile with no stand-in stands in
+        // for itself — so asking them reported untouched autotiles as carrying
+        // information, and Clear claimed to remove what was never there.
+        const key = String(tilesetId);
+        const tile = keyFor(tileId);
+        const stored = (group, at) => {
+            const forTileset = store[group] && store[group][key];
+            return !!forTileset && forTileset[at] !== undefined;
+        };
+        const had = stored('tilesets', tile)
+            || stored('standIns', Number(tileId))
+            || stored('materials', tile)
+            || !!objectAt(store, tilesetId, tileId);
+        setClass(store, tilesetId, tileId, AUTO);
+        setStandIn(store, tilesetId, tileId, 0);
+        setTopFace(store, tilesetId, tileId, 0);
+        clearObject(store, tilesetId, tileId);
+        return had;
+    };
+
     const api = {
-        AUTO, GROUND, UPRIGHT, SCENERY, FOLIAGE, LONE_SHAPE, FILENAME, VERSION,
+        AUTO, GROUND, UPRIGHT, SCENERY, FOLIAGE, PANEL, LONE_SHAPE, FILENAME, VERSION,
         STAND, FLAT,
         create, normalize, keyFor, classOf, setClass, cycle, countClassified, isEmpty,
         standInOf, setStandIn,
-        sheetCell, tileAtCell, isPictureTile, objectList, objectAt, roleOf,
-        defineObject, clearObject, cycleRole
+        materialOf, setTopFace, isWallLike,
+        sheetCell, tileAtCell, isPictureTile, isObjectOrigin, objectList, objectAt, roleOf,
+        defineObject, clearObject, cycleRole, clearTile
     };
     root.RRTileset3DClass = api;
     if (typeof module !== 'undefined' && module.exports) module.exports = api;

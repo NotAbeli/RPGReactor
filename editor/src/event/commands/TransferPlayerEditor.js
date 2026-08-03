@@ -15,6 +15,18 @@ class TransferPlayerEditor {
     }
 
     /**
+     * How many pixels a tile is on the preview canvas.
+     *
+     * The preview is drawn by the map canvas, which measures in the project's
+     * tile size. Assuming 48 here put the grid and the selection box out of
+     * step with the art on a 32-pixel project, and made a click land on the
+     * wrong tile.
+     */
+    tilePixels() {
+        return this.projectController?.tilemapManager?.TILE_SIZE || 48;
+    }
+
+    /**
      * Show editor for a transfer player command
      * @param {object} command - The command to edit (or null for new)
      * @param {function} callback - Callback when done editing
@@ -764,7 +776,7 @@ class TransferPlayerEditor {
             const clickY = e.clientY - rect.top;
 
             // Account for zoom level when calculating tile coordinates
-            const tileSize = 48;
+            const tileSize = this.tilePixels();
             const adjustedX = clickX / zoomLevel;
             const adjustedY = clickY / zoomLevel;
 
@@ -797,7 +809,7 @@ class TransferPlayerEditor {
             const hoverX = e.clientX - rect.left;
             const hoverY = e.clientY - rect.top;
 
-            const tileSize = 48;
+            const tileSize = this.tilePixels();
             const tileX = Math.floor(hoverX / tileSize);
             const tileY = Math.floor(hoverY / tileSize);
 
@@ -998,7 +1010,7 @@ class TransferPlayerEditor {
                 }
 
                 // Draw grid overlay (but not selection - that's added separately)
-                const tileSize = 48;
+                const tileSize = this.tilePixels();
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
                 ctx.lineWidth = 1;
 
@@ -1106,7 +1118,7 @@ class TransferPlayerEditor {
      */
     drawSelectionOverlay(canvas, location = this) {
         const ctx = canvas.getContext('2d');
-        const tileSize = 48;
+        const tileSize = this.tilePixels();
 
         // Highlight selected position
         ctx.fillStyle = 'rgba(212, 175, 55, 0.4)';

@@ -29,7 +29,7 @@
   "parallaxShow": true,
   "parallaxSx": 0,
   "parallaxSy": 0,
-  "note": "<fog effect>\nid: 1\nname: \"$Menu_Fog4\"\nopacity: 40\nmove y: 1\nmove x: 3\n</fog effect>\n\n<MultiParallax>\n  layer: 2\n  image: !Reactor-Core-01-Upper\n  z: 4\n</MultiParallax>",
+  "note": "<fog effect>\nid: 1\nname: \"$Menu_Fog4\"\nopacity: 40\nmove y: 1\nmove x: 3\n</fog effect>",
   "encounterList": [],
   "data": [
     1536,

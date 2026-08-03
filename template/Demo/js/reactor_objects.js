@@ -7212,12 +7212,48 @@ Game_CharacterBase.prototype.scrolledY = function() {
     return $gameMap.adjustY(this._realY);
 };
 
+/**
+ * Where this character actually appears, when the map is drawn in 3D.
+ *
+ * The scroll-based answer below is where it *would* be in 2D, which on a 3D
+ * map is nowhere in particular: the ground is projected through a camera with
+ * pitch and yaw, so a cell's place on screen has nothing to do with the scroll
+ * offset. Reactor's own character sprites already project themselves; this is
+ * for everything else that asks a character where it is — lighting plugins,
+ * pop-ups, mini labels — which is why a light sat somewhere other than the
+ * thing it belonged to.
+ *
+ * Returns null in 2D, and the stock answer is used.
+ */
+Game_CharacterBase.prototype.reactor3DScreenPoint = function() {
+    if (typeof Reactor3D === "undefined") return null;
+    const viewport = Reactor3D.viewport();
+    const camera = viewport && viewport.camera();
+    if (!camera || !Reactor3D.shouldRender3D($dataMap)) return null;
+    // The ground, and the same ground the sprite is drawn on: this feeds
+    // `screenX`/`screenY`, which plugins read to place their own overlays, and
+    // the two have to agree.
+    const ground = Reactor3D.elevationAt(
+        $dataMap, Math.round(this._realX), Math.round(this._realY));
+    // The middle of the cell, matching the foot of every standing prop in the
+    // 3D scene. The 2D `screenY` below draws a sprite's feet on the cell's
+    // bottom edge, which is a screen convention rather than a world position.
+    return Reactor3D.projectToScreen(
+        camera, this._realX + 0.5, ground, this._realY + 0.5);
+};
+
 Game_CharacterBase.prototype.screenX = function() {
+    const point = this.reactor3DScreenPoint();
+    if (point) return Math.round(point.x);
     const tw = $gameMap.tileWidth();
     return Math.floor(this.scrolledX() * tw + tw / 2);
 };
 
 Game_CharacterBase.prototype.screenY = function() {
+    const point = this.reactor3DScreenPoint();
+    // The jump still lifts it off the ground it is standing on; the projection
+    // places that ground, not the character's height above it.
+    if (point) return Math.round(point.y - this.jumpHeight());
     const th = $gameMap.tileHeight();
     return Math.floor(
         this.scrolledY() * th + th - this.shiftY() - this.jumpHeight()

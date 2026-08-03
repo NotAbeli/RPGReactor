@@ -154,13 +154,46 @@ class MapEditor3D {
      */
     listenForEdits() {
         if (this._onMapEdited || typeof document === 'undefined') return;
+        // Throttled, not merely debounced. A trailing debounce never fires
+        // while the pointer keeps moving, so shaping ground with the height
+        // brush showed nothing at all until the drag ended — which is the one
+        // thing that tool cannot be used without. This rebuilds straight away
+        // when the last one was long enough ago, and otherwise schedules the
+        // tail, so a continuous drag still updates while a burst of strokes
+        // from a fill collapses into one.
+        const REBUILD_INTERVAL = 220;
+        this._lastRebuildAt = 0;
+        const runRebuild = () => {
+            this._lastRebuildAt = Date.now();
+            this._rebuildTimer = null;
+            this.rebuild().catch(error => console.error('3D rebuild failed:', error));
+        };
         this._onMapEdited = () => {
-            clearTimeout(this._rebuildTimer);
-            this._rebuildTimer = setTimeout(() => {
-                this.rebuild().catch(error => console.error('3D rebuild failed:', error));
-            }, 200);
+            const since = Date.now() - (this._lastRebuildAt || 0);
+            if (since >= REBUILD_INTERVAL) {
+                clearTimeout(this._rebuildTimer);
+                runRebuild();
+                return;
+            }
+            if (this._rebuildTimer) return;
+            this._rebuildTimer = setTimeout(runRebuild, REBUILD_INTERVAL - since);
         };
         document.addEventListener('rr-map-edited', this._onMapEdited);
+
+        // The tileset's 3D classification decides what stands up, and it is
+        // edited in the Database rather than on the map — so nothing announced
+        // it here and the view kept the shapes it was built with until the map
+        // was next painted. `rebuild` re-reads the classification, so following
+        // the announcement is enough. Throttled with the same handler, since a
+        // stroke of the Shape tool announces per cell.
+        this._onClassesChanged = this._onMapEdited;
+        document.addEventListener('rr-tileset-3d-saved', this._onClassesChanged);
+
+        // An event's note decides how it stands — see `buildEvents` — so a note
+        // edited in the event window has to reach here. Same throttle: editing
+        // events can announce several times in a row.
+        this._onEventsChanged = this._onMapEdited;
+        document.addEventListener('rr-events-changed', this._onEventsChanged);
 
         // Selecting an event anywhere — the map, the events panel, the editor —
         // funnels through EventManager.selectEvent, so following that keeps the
@@ -172,10 +205,18 @@ class MapEditor3D {
     stopListeningForEdits() {
         if (typeof document !== 'undefined') {
             if (this._onMapEdited) document.removeEventListener('rr-map-edited', this._onMapEdited);
+            if (this._onClassesChanged) {
+                document.removeEventListener('rr-tileset-3d-saved', this._onClassesChanged);
+            }
+            if (this._onEventsChanged) {
+                document.removeEventListener('rr-events-changed', this._onEventsChanged);
+            }
             if (this._onEventSelected) document.removeEventListener('rr-event-selected', this._onEventSelected);
         }
         clearTimeout(this._rebuildTimer);
         this._onMapEdited = null;
+        this._onClassesChanged = null;
+        this._onEventsChanged = null;
         this._onEventSelected = null;
     }
 
@@ -331,8 +372,20 @@ class MapEditor3D {
             tileSize: this.tilePixels()
         });
         this.applyAtmosphere(mapData);
+        this.buildGrid(mapData);
+        this.buildHoverCell();
         await this.buildEvents(mapData);
-        this.frameMap(mapData);
+        // Frame the map when it is a different map, not on every rebuild.
+        // A rebuild happens on every edit, and re-framing threw away wherever
+        // the author had orbited and zoomed to — so the view jumped back and
+        // the zoom reset each time, which makes the camera feel broken rather
+        // than merely resetting. Resizing counts as a different map, since the
+        // old framing no longer fits it.
+        const framing = `${mapData.id}:${mapData.width}x${mapData.height}`;
+        if (framing !== this._framedMap) {
+            this._framedMap = framing;
+            this.frameMap(mapData);
+        }
 
         // An empty view has several possible causes — no sheets on disk, a
         // tileset with no images, geometry that built nothing — and they look
@@ -362,6 +415,11 @@ class MapEditor3D {
      */
     attachSidecar(mapData) {
         if (!this.fs || !this.path || !mapData || !mapData.id) return;
+        // Only when the map has none in hand. A rebuild runs on every edit, and
+        // re-reading the file each time would overwrite elevation painted since
+        // the last save with whatever is still on disk — the height brush would
+        // undo itself a few strokes in.
+        if (mapData.reactor3d) return;
         const projectPath = this.projectPath();
         if (!projectPath) return;
 
@@ -520,25 +578,238 @@ class MapEditor3D {
                 opacity: 0.8
             }));
             const height = sprite ? sprite.userData.height : 0.55;
-            mesh.position.set(event.x + 0.5, elevation + height / 2, event.y + 0.5);
             // What the raycaster hands back on a click.
             mesh.userData.event = event;
+            mesh.userData.height = height;
             this.eventGroup.add(mesh);
             this.pickables.push(mesh);
-            if (sprite) this.billboards.push(mesh);
+
+            /*
+             * A box round the event, so it reads as one.
+             *
+             * An event drawn from a character sheet is just a picture standing
+             * on the map, indistinguishable from a painted tree until you
+             * click it. The 2D canvas borders every event for exactly that
+             * reason. Only the edges are drawn — a filled box would have to be
+             * transparent, and transparent boxes are what sliced the labels.
+             */
+            const boxHeight = Math.max(height, 0.94);
+            const box = this.eventBox(boxHeight, this.eventColor(event));
+            mesh.userData.box = box;
+            mesh.userData.boxHeight = boxHeight;
+            this.eventGroup.add(box);
+
+            /*
+             * An event can say what it is, in its own note.
+             *
+             * An event whose graphic is a *tile* inherits that tile's 3D class
+             * before any geometry is built. One drawn from a character sheet
+             * has no tile to inherit from, so it says so itself — `<3d panel>`,
+             * `<3d panel east>`, `<3d upright>`, `<3d flat>` — which is what
+             * lets an animated piece of a city stand with the painted
+             * buildings beside it instead of turning to follow the viewer.
+             *
+             * Anything that says nothing keeps turning, which is right for
+             * anything character-shaped.
+             */
+            const asked = sprite ? Reactor3D.eventShapeFromNote(event.note) : null;
+            mesh.userData.asked = !!asked;
+            // Standing against a wall means standing still: a sprite that is
+            // part of the art beside it must not turn away from it.
+            const onFacade = sprite && !asked
+                && !!this.mapScene?.facadeAt?.(event.x, event.y);
+            if (!sprite || !asked) {
+                if (sprite && !onFacade) this.billboards.push(mesh);
+            } else if (asked.shape === 'flat') {
+                mesh.rotation.x = -Math.PI / 2;
+                mesh.userData.flat = true;
+            } else {
+                // Panel and upright both stand still; only the way they face
+                // differs, and an upright keeps the map's own orientation.
+                mesh.rotation.y = asked.shape === 'panel'
+                    ? Reactor3D.facingRotation(asked.facing)
+                    : 0;
+            }
 
             const label = this.eventLabel(event);
             if (label) {
-                label.position.set(event.x + 0.5, elevation + height + 0.28, event.y + 0.5);
                 label.userData.event = event;
+                mesh.userData.label = label;
                 this.eventGroup.add(label);
                 this.billboards.push(label);
                 this.labels.push(label);
             }
+
+            // One place decides where an event's pieces sit, because dragging
+            // one has to put all three back down together.
+            this.placeEvent(mesh);
         }
 
         scene.add(this.eventGroup);
         this.faceCamera();
+    }
+
+    /**
+     * The wire box drawn round an event.
+     *
+     * Slightly under a full cell so two events side by side do not fight over
+     * the edge they would otherwise share.
+     */
+    eventBox(height, colour) {
+        const side = 0.94;
+        const shape = new THREE.BoxGeometry(side, height, side);
+        const geometry = new THREE.EdgesGeometry(shape);
+        shape.dispose();
+        const box = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({
+            color: colour, transparent: true, opacity: 0.8
+        }));
+        box.userData.color = colour;
+        return box;
+    }
+
+    /**
+     * Put an event's sprite, box and label where the event says it is.
+     *
+     * Called when the scene is built and again on every step of a drag, so
+     * that the three pieces move as one and land on the ground at their new
+     * cell rather than at the height of the old one.
+     */
+    placeEvent(mesh) {
+        const mapData = this.currentMap();
+        const event = mesh?.userData?.event;
+        if (!mapData || !event) return;
+
+        const height = mesh.userData.height || 0.55;
+        const x = event.x + 0.5;
+
+        /*
+         * An event standing where the map's art was stood up is drawn on that
+         * art, which is what the running game does — `standingPlaceFor` asks
+         * `facadeAt` the same question. The editor never did, so an event whose
+         * graphic belongs to a building sat on the ground in front of it,
+         * turning to follow the camera while the building it belongs to stood
+         * still. Rotate ninety degrees and the two came apart, which is what
+         * read as the town being drawn twice.
+         *
+         * An explicit note wins: someone who has said how an event stands has
+         * said it about this cell too.
+         */
+        const facade = mesh.userData.asked
+            ? null
+            : this.mapScene?.facadeAt?.(event.x, event.y);
+        const elevation = facade
+            ? facade.height + facade.lift
+            : Reactor3D.elevationAt(mapData, event.x, event.y);
+        const z = facade ? facade.z : event.y + 0.5;
+
+        // A flat event lies on the ground; everything else stands on it.
+        mesh.position.set(x, mesh.userData.flat ? elevation + 0.01 : elevation + height / 2, z);
+        mesh.userData.box?.position.set(x, elevation + mesh.userData.boxHeight / 2, z);
+        mesh.userData.label?.position.set(x, elevation + height + 0.28, z);
+    }
+
+    /**
+     * A line at every cell boundary, so the grid is visible in 3D.
+     *
+     * The 2D canvas needs none — a tile's own art shows where it ends — but a
+     * 3D view of the same map has no such landmark, and placing or dragging an
+     * event means knowing which square you are over. Drawn on the ground and
+     * faintly, so it reads as a guide rather than as part of the map.
+     *
+     * One flat plane at the map's base rather than something that follows the
+     * terrain: a per-cell grid on a two-hundred-square map is eighty thousand
+     * segments, and elevation is rare enough that it is not worth the cost.
+     */
+    buildGrid(mapData) {
+        if (!this.mapScene || !mapData) return;
+        const { width, height } = mapData;
+        if (!(width > 0) || !(height > 0)) return;
+
+        const base = Reactor3D.elevationAt(mapData, 0, 0) + 0.02;
+        const points = [];
+        for (let x = 0; x <= width; x++) points.push(x, base, 0, x, base, height);
+        for (let z = 0; z <= height; z++) points.push(0, base, z, width, base, z);
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position',
+            new THREE.BufferAttribute(new Float32Array(points), 3));
+        const material = new THREE.LineBasicMaterial({
+            color: 0xffffff, transparent: true, opacity: 0.14, depthWrite: false
+        });
+        this.grid = new THREE.LineSegments(geometry, material);
+        this.grid.visible = this.gridVisible === true;
+        this.mapScene.scene().add(this.grid);
+    }
+
+    /** Show or hide the cell grid. */
+    setGridVisible(on) {
+        this.gridVisible = !!on;
+        if (this.grid) this.grid.visible = this.gridVisible;
+    }
+
+    /**
+     * The outline that follows the cursor.
+     *
+     * On the 2D canvas the cursor is already on the map, so where a click will
+     * land needs no explaining. Through a perspective camera it does: the
+     * pointer is somewhere on the screen and the tile it names is worked out
+     * by a raycast, which is not something you can eyeball. So the cell the
+     * raycast found is drawn.
+     *
+     * Built as a unit square at the origin and scaled, so a multi-tile brush
+     * outlines everything it will put down rather than just its first cell.
+     * `depthTest: false` because it is a cursor: it should not be cut in half
+     * by the ground it is lying on. Nothing can hide it wrongly, since a cell
+     * with something in front of it is not a cell the raycast can reach.
+     */
+    buildHoverCell() {
+        if (!this.mapScene) return;
+        const points = [0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0];
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position',
+            new THREE.BufferAttribute(new Float32Array(points), 3));
+        this.hoverCell = new THREE.Line(geometry, new THREE.LineBasicMaterial({
+            color: 0xfff2a0, transparent: true, opacity: 0.9, depthTest: false
+        }));
+        // Under the labels, over everything else.
+        this.hoverCell.renderOrder = 998;
+        this.hoverCell.visible = false;
+        this.mapScene.scene().add(this.hoverCell);
+    }
+
+    /** How many cells the brush in hand covers, for sizing the outline. */
+    brushSize() {
+        const editor = this.mapEditor();
+        const stamp = editor?.mapStamp;
+        if (stamp?.width > 0 && stamp?.height > 0) {
+            return { width: stamp.width, height: stamp.height };
+        }
+        const tiles = editor?.tilesetPaletteViewer?.selectedTiles;
+        if (!Array.isArray(tiles) || !tiles.length) return { width: 1, height: 1 };
+        const xs = tiles.map(tile => tile.x);
+        const ys = tiles.map(tile => tile.y);
+        return {
+            width: Math.max(...xs) - Math.min(...xs) + 1,
+            height: Math.max(...ys) - Math.min(...ys) + 1
+        };
+    }
+
+    /** Move the outline onto a cell, or hide it when the cursor is off the map. */
+    updateHoverCell(tile) {
+        if (!this.hoverCell) return;
+        const mapData = this.currentMap();
+        if (!tile || !mapData) {
+            this.hoverCell.visible = false;
+            return;
+        }
+        const { width, height } = this.brushSize();
+        this.hoverCell.scale.set(width, 1, height);
+        this.hoverCell.position.set(
+            tile.x,
+            Reactor3D.elevationAt(mapData, tile.x, tile.y) + 0.03,
+            tile.y
+        );
+        this.hoverCell.visible = true;
     }
 
     /**
@@ -657,10 +928,17 @@ class MapEditor3D {
         // with the camera so a label holds its size on screen rather than
         // swelling to fill the view as you zoom in.
         const scale = 0.0085;
-        return new THREE.Mesh(
+        const label = new THREE.Mesh(
             new THREE.PlaneGeometry(canvas.width * scale, canvas.height * scale),
             new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false })
         );
+        // Drawn after everything else. `depthTest: false` stops a label being
+        // rejected by depth, but it cannot stop something drawn *later* from
+        // painting over it — and the event boxes are transparent too, so they
+        // sort by distance and a nearer box lands on top of a farther label.
+        // Which is why a label came out sliced by the box beside it.
+        label.renderOrder = 1000;
+        return label;
     }
 
     /**
@@ -759,6 +1037,12 @@ class MapEditor3D {
     highlight(mesh, on) {
         const scale = on ? 1.25 : 1;
         mesh.scale.set(scale, scale, scale);
+        // The box marks the cell, so it holds its size and brightens instead.
+        const box = mesh.userData.box;
+        if (box) {
+            box.material.opacity = on ? 1 : 0.8;
+            box.material.color.setHex(on ? 0xfff2a0 : box.userData.color);
+        }
         if (mesh.material.map) {
             // A character sprite is brightened rather than faded: dimming the
             // unselected ones would make every other event harder to read.
@@ -791,6 +1075,14 @@ class MapEditor3D {
         }
         this.billboards = [];
         this.labels = [];
+        for (const key of ['grid', 'hoverCell']) {
+            const mesh = this[key];
+            if (!mesh) continue;
+            mesh.geometry.dispose();
+            mesh.material.dispose();
+            mesh.parent?.remove(mesh);
+            this[key] = null;
+        }
         if (this.mapScene) {
             this.mapScene.destroy();
             this.mapScene = null;
@@ -834,6 +1126,9 @@ class MapEditor3D {
                 paint: false
             };
             this.canvas.setPointerCapture?.(event.pointerId);
+            // Once per gesture: what is being looked at cannot change until
+            // the camera moves, and the raycast is not free.
+            this.seatPivot();
 
             // A left drag paints when the palette has tiles selected, exactly
             // as it does on the 2D canvas, and orbits when it does not. Holding
@@ -847,11 +1142,25 @@ class MapEditor3D {
                     this.paintAt(tile);
                 }
             }
+
+            // With the event tool up and no brush in hand, a left drag that
+            // starts on an event carries it, exactly as it does on the 2D
+            // canvas. Starting anywhere else still orbits.
+            if (event.button === 0 && !event.shiftKey && !event.ctrlKey
+                && !this.pointer.paint && this.canDragEvents()) {
+                const mesh = this.eventAt(event.clientX, event.clientY);
+                if (mesh) {
+                    this.pointer.drag = mesh;
+                    this.beginEventDrag();
+                }
+            }
         };
         this._onPointerMove = event => {
             if (!this.pointer) {
-                this.updateHover(event.clientX, event.clientY);
-                this.reportTileUnderCursor(event.clientX, event.clientY);
+                // One raycast answers both questions.
+                const tile = this.tileAt(event.clientX, event.clientY);
+                this.updateHover(event.clientX, event.clientY, tile);
+                if (tile) window.reactor?.updateMapCoordinates?.(tile.x, tile.y);
                 return;
             }
             const dx = event.clientX - this.pointer.x;
@@ -860,7 +1169,20 @@ class MapEditor3D {
             this.pointer.y = event.clientY;
             if (this.pointer.paint) {
                 const tile = this.tileAt(event.clientX, event.clientY);
-                if (tile) this.paintAt(tile);
+                if (tile) {
+                    this.paintAt(tile);
+                    this.updateHoverCell(tile);
+                    // Keep the readout live through the stroke: with the height
+                    // brush the number in the map bar is the only way to tell
+                    // "nothing happened" from "already at that height".
+                    window.reactor?.updateMapCoordinates?.(tile.x, tile.y);
+                }
+            } else if (this.pointer.drag) {
+                const tile = this.tileAt(event.clientX, event.clientY);
+                if (tile) {
+                    this.dragEventTo(this.pointer.drag, tile);
+                    this.updateHoverCell(tile);
+                }
             } else if (this.pointer.pan) {
                 this.pan(dx, dy);
             } else {
@@ -881,11 +1203,18 @@ class MapEditor3D {
             // select whatever it happens to finish on. A few pixels of travel
             // is a click with a shaky hand.
             const travel = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+            if (drag.drag) {
+                this.finishEventDrag();
+                // A press that went nowhere is a click on the event, not a
+                // move of it, and still selects.
+                if (travel <= 4) this.handleClick(event.clientX, event.clientY);
+                return;
+            }
             if (travel > 4) return;
             this.handleClick(event.clientX, event.clientY);
         };
         this._onDoubleClick = event => {
-            const cube = this.eventAt(event.clientX, event.clientY);
+            const cube = this.canSelectEvents() && this.eventAt(event.clientX, event.clientY);
             if (!cube) {
                 // Nothing under the cursor: put the whole map back in view.
                 // Getting lost in an orbit camera is easy and there is
@@ -916,13 +1245,16 @@ class MapEditor3D {
             event.preventDefault();
             const drag = this.pointer;
             if (drag && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4) return;
-            const cube = this.eventAt(event.clientX, event.clientY);
+            const cube = this.canSelectEvents() && this.eventAt(event.clientX, event.clientY);
             if (!cube) return;
             const picked = this.select(cube);
             if (picked && typeof this.onEventContextMenu === 'function') {
                 this.onEventContextMenu(picked, event.clientX, event.clientY);
             }
         };
+        // The outline is a cursor, so it leaves with the cursor rather than
+        // staying behind on the last cell the pointer happened to cross.
+        this._onPointerLeave = () => this.updateHoverCell(null);
         this._onResize = () => this.resize();
         // The window is not the only thing that changes the canvas size — the
         // sidebar divider does too, and that fires no resize event. Without
@@ -937,10 +1269,12 @@ class MapEditor3D {
         this.canvas.addEventListener('pointermove', this._onPointerMove);
         this.canvas.addEventListener('pointerup', this._onPointerUp);
         this.canvas.addEventListener('pointercancel', this._onPointerUp);
+        this.canvas.addEventListener('pointerleave', this._onPointerLeave);
         this.canvas.addEventListener('dblclick', this._onDoubleClick);
         this.canvas.addEventListener('wheel', this._onWheel, { passive: false });
         this.canvas.addEventListener('contextmenu', this._onContextMenu);
         window.addEventListener('resize', this._onResize);
+        this.installFlyKeys();
     }
 
     detachInput() {
@@ -949,11 +1283,13 @@ class MapEditor3D {
             this.canvas.removeEventListener('pointermove', this._onPointerMove);
             this.canvas.removeEventListener('pointerup', this._onPointerUp);
             this.canvas.removeEventListener('pointercancel', this._onPointerUp);
+            this.canvas.removeEventListener('pointerleave', this._onPointerLeave);
             this.canvas.removeEventListener('dblclick', this._onDoubleClick);
             this.canvas.removeEventListener('wheel', this._onWheel);
             this.canvas.removeEventListener('contextmenu', this._onContextMenu);
         }
         if (this._onResize) window.removeEventListener('resize', this._onResize);
+        this.removeFlyKeys();
         if (this._resizeObserver) {
             this._resizeObserver.disconnect();
             this._resizeObserver = null;
@@ -1019,22 +1355,147 @@ class MapEditor3D {
         }
     }
 
-    /** Show the tile under the cursor in the map info bar, as 2D does. */
-    reportTileUnderCursor(clientX, clientY) {
-        const tile = this.tileAt(clientX, clientY);
-        if (tile) window.reactor?.updateMapCoordinates?.(tile.x, tile.y);
+    //-------------------------------------------------------------------------
+    // Moving events
+    //
+    // The event list, the undo state and the 2D sprites all belong to
+    // EventManager, so the 3D view asks it to do the work and only decides
+    // which cell the cursor is over.
+
+    eventManager() {
+        return window.reactor?.eventManager || this.projectController?.eventManager || null;
+    }
+
+    /**
+     * Whether events can be picked at all.
+     *
+     * The same rule the 2D canvas keeps: it only lets events be touched in
+     * event mode. In 3D they could be clicked while a tileset was selected,
+     * which meant a click that looked like it was going to paint selected an
+     * event instead.
+     */
+    canSelectEvents() {
+        return !!this.eventManager()?.eventMode;
+    }
+
+    /** Whether a left drag on an event should carry it. */
+    canDragEvents() {
+        return this.canSelectEvents() && !this.canPaint();
+    }
+
+    /**
+     * Undo is captured on the first cell actually crossed, not here: every
+     * click on an event comes through this, and saving up front would push a
+     * snapshot of the whole event list each time one was merely selected.
+     */
+    beginEventDrag() {
+        this._eventDragSaved = false;
+        this._eventDragMoved = false;
+        if (this.canvas) this.canvas.style.cursor = 'grabbing';
+    }
+
+    dragEventTo(mesh, tile) {
+        const mapData = this.currentMap();
+        const event = mesh?.userData?.event;
+        if (!mapData || !event) return;
+        if (tile.x === event.x && tile.y === event.y) return;
+        if (tile.x < 0 || tile.y < 0 || tile.x >= mapData.width || tile.y >= mapData.height) return;
+
+        const manager = this.eventManager();
+        // Two events cannot share a cell, and the 2D drag refuses the same way.
+        const occupant = manager?.getEventAt?.(tile.x, tile.y);
+        if (occupant && occupant.id !== event.id) return;
+
+        if (!this._eventDragSaved) {
+            this._eventDragSaved = true;
+            manager?.resetMapClickTracking?.();
+            manager?.saveState?.();
+        }
+        event.x = tile.x;
+        event.y = tile.y;
+        this._eventDragMoved = true;
+        this.placeEvent(mesh);
+        manager?.selectTile?.(tile.x, tile.y);
+    }
+
+    /**
+     * Drop the event.
+     *
+     * `renderEvents` redraws the 2D sprites and announces the change, which is
+     * what brings the two views back into agreement — the same call the 2D
+     * drag makes when it lets go.
+     */
+    finishEventDrag() {
+        if (this.canvas) this.canvas.style.cursor = 'default';
+        const moved = this._eventDragMoved;
+        this._eventDragSaved = false;
+        this._eventDragMoved = false;
+        if (moved) this.eventManager()?.renderEvents?.();
     }
 
     /** Select the event under the pointer, or clear the selection. */
     handleClick(clientX, clientY) {
+        if (!this.canSelectEvents()) return;
         const picked = this.select(this.eventAt(clientX, clientY));
         if (typeof this.onEventSelected === 'function') this.onEventSelected(picked);
     }
 
-    /** The cursor becomes a pointer over an event, as it does on the 2D map. */
-    updateHover(clientX, clientY) {
+    /**
+     * Follow the cursor: outline the cell it is over, and shape it over events.
+     *
+     * The tile is passed in when the caller has already raycast for it, so a
+     * pointer move costs one cast rather than one per question.
+     */
+    updateHover(clientX, clientY, tile = this.tileAt(clientX, clientY)) {
+        this.updateHoverCell(tile);
         if (!this.canvas) return;
-        this.canvas.style.cursor = this.eventAt(clientX, clientY) ? 'pointer' : 'default';
+        const over = this.canSelectEvents() && this.eventAt(clientX, clientY);
+        this.canvas.style.cursor = over
+            ? (this.canDragEvents() ? 'grab' : 'pointer')
+            : 'default';
+    }
+
+    /**
+     * Put the pivot on whatever is in the middle of the view.
+     *
+     * The camera always looks straight at `view.target`, so the pivot is
+     * already at the centre of the screen — but only as a *direction*. How far
+     * along it the pivot sits is `view.distance`, and nothing kept that honest.
+     * Framing a map sets it to about the map's width; flying then moves the
+     * camera without touching it, and turning in place moves the target to
+     * match. So after a flight the pivot could be hundreds of tiles past
+     * everything on screen, or underneath it — and orbiting swung the whole
+     * visible map about a point out in the distance rather than about what
+     * was being looked at.
+     *
+     * Raycasting the centre of the screen answers it properly: the pivot goes
+     * on the surface actually being looked at. The camera does not move — the
+     * hit lies on its own view ray, so its direction and angles are unchanged
+     * and only the distance along that ray is corrected.
+     */
+    seatPivot() {
+        if (!this.camera || !this.mapScene || !this.canvas) return false;
+        this._raycaster = this._raycaster || new THREE.Raycaster();
+        this._raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+
+        const hits = this._raycaster.intersectObjects(this.mapScene._meshes, false);
+        let point = hits.length ? hits[0].point : null;
+        if (!point) {
+            // Looking at the sky, or off the edge of the map. The ground plane
+            // still says something, and is better than a stale number.
+            const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+            point = this._raycaster.ray.intersectPlane(ground, new THREE.Vector3());
+        }
+        if (!point) return false;
+
+        const distance = this.camera.position.distanceTo(point);
+        if (!(distance > 1)) return false;
+        this.view.distance = Math.min(400, Math.max(3, distance));
+        // `aimCamera` aims at the focus plus half a tile on each ground axis,
+        // so the target that puts the pivot on this point is half a tile back.
+        this.view.target = { x: point.x - 0.5, y: point.y, z: point.z - 0.5 };
+        this.applyCamera();
+        return true;
     }
 
     orbit(dx, dy) {
@@ -1065,6 +1526,139 @@ class MapEditor3D {
         this.applyCamera();
     }
 
+    //-------------------------------------------------------------------------
+    // Flying
+    //
+    // Orbiting is how you inspect a thing: it holds a point and circles it.
+    // Flying is how you inspect a *place* — you go there. On a two-hundred
+    // tile map the difference is the whole of it, and building a world you can
+    // fly through is a different job from building one you can only orbit.
+    //
+    // WASD moves, QE rises and falls, Shift hurries. While a movement key is
+    // down the bare pointer turns the camera rather than merely hovering, so
+    // the two hands work together the way they do in a game.
+
+    /** Keys that mean "move", and which way. */
+    static FLY_KEYS() {
+        return {
+            w: 'forward', s: 'back', a: 'left', d: 'right',
+            q: 'down', e: 'up',
+            arrowup: 'forward', arrowdown: 'back',
+            arrowleft: 'left', arrowright: 'right'
+        };
+    }
+
+    /** Whether the keyboard is currently asking the camera to move. */
+    flying() {
+        return !!(this.flyKeys && this.flyKeys.size);
+    }
+
+    /**
+     * Whether a key event is for us.
+     *
+     * Not while typing, not while a dialog is up, and not when a modifier is
+     * held — Ctrl+S is a save and Ctrl+D is the browser's, and neither should
+     * launch the camera across the map.
+     */
+    acceptsFlyKey(event) {
+        if (!this.isEnabled() || event.ctrlKey || event.altKey || event.metaKey) return false;
+        const target = event.target;
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
+            || target.isContentEditable)) return false;
+        return !document.querySelector('.modal-overlay, .rr-modal-overlay, #database-modal');
+    }
+
+    installFlyKeys() {
+        if (typeof window === 'undefined') return;
+        this.flyKeys = new Set();
+        const directions = MapEditor3D.FLY_KEYS();
+        this._onFlyDown = event => {
+            const way = directions[String(event.key).toLowerCase()];
+            if (!way || !this.acceptsFlyKey(event)) return;
+            event.preventDefault();
+            this.flyKeys.add(way);
+            // The clock starts on the first key rather than at the last frame,
+            // or the camera lurches by however long the view sat still.
+            this._flewAt = null;
+            if (this.flyKeys.size === 1) this.seatPivot();
+        };
+        this._onFlyUp = event => {
+            const way = directions[String(event.key).toLowerCase()];
+            if (way) this.flyKeys.delete(way);
+        };
+        this._onFlyShift = event => { this.flyFast = !!event.shiftKey; };
+        // A window that loses focus never sees the key come up, and the camera
+        // would fly on by itself until the key was pressed and released again.
+        this._onFlyBlur = () => { this.flyKeys.clear(); this.flyFast = false; };
+
+        window.addEventListener('keydown', this._onFlyDown);
+        window.addEventListener('keyup', this._onFlyUp);
+        window.addEventListener('keydown', this._onFlyShift);
+        window.addEventListener('keyup', this._onFlyShift);
+        window.addEventListener('blur', this._onFlyBlur);
+    }
+
+    removeFlyKeys() {
+        if (typeof window === 'undefined' || !this._onFlyDown) return;
+        window.removeEventListener('keydown', this._onFlyDown);
+        window.removeEventListener('keyup', this._onFlyUp);
+        window.removeEventListener('keydown', this._onFlyShift);
+        window.removeEventListener('keyup', this._onFlyShift);
+        window.removeEventListener('blur', this._onFlyBlur);
+        this.flyKeys?.clear();
+    }
+
+    /**
+     * Move the camera for one frame.
+     *
+     * Timed rather than counted, so the same press covers the same ground on a
+     * slow machine as on a fast one. Speed rises with how far back the camera
+     * is: a step that reads as a stroll at three tiles' distance is a crawl at
+     * two hundred, and the distance is the only thing that says which the
+     * author is doing.
+     */
+    stepFly(now) {
+        if (!this.flying() || !this.camera) {
+            this._flewAt = null;
+            return;
+        }
+        const last = this._flewAt;
+        this._flewAt = now;
+        // A frame's worth at most: coming back from a stall must not teleport.
+        const seconds = last === null || last === undefined
+            ? 0 : Math.min(0.1, (now - last) / 1000);
+        if (seconds <= 0) return;
+
+        const speed = Math.max(4, this.view.distance * 0.55) * (this.flyFast ? 3 : 1) * seconds;
+        // Taken from the camera rather than from the yaw, so it stays true
+        // whatever `aimCamera` decides its angles mean. Flattened onto the
+        // ground plane: height belongs to Q and E, and W following the look
+        // direction meant a camera that could not hold level flew itself into
+        // the ground — or, once it could look up, out of sight of the map.
+        const forward = this.camera.getWorldDirection(new THREE.Vector3());
+        forward.y = 0;
+        if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
+        forward.normalize();
+        const right = new THREE.Vector3(-forward.z, 0, forward.x);
+
+        const keys = this.flyKeys;
+        const move = new THREE.Vector3();
+        if (keys.has('forward')) move.add(forward);
+        if (keys.has('back')) move.sub(forward);
+        if (keys.has('right')) move.add(right);
+        if (keys.has('left')) move.sub(right);
+        // Diagonals must not be faster than the straight lines they are made
+        // of, which is what adding two unit vectors gives.
+        if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed);
+        if (keys.has('up')) move.y += speed;
+        if (keys.has('down')) move.y -= speed;
+
+        this.view.target.x += move.x;
+        this.view.target.y += move.y;
+        this.view.target.z += move.z;
+        this.applyCamera();
+    }
+
     /**
      * Report the 3D zoom in the map info bar.
      *
@@ -1082,9 +1676,16 @@ class MapEditor3D {
 
     startLoop() {
         if (this.frame !== null) return;
-        const tick = () => {
-            if (!this.enabled) return;
+        const tick = now => {
+            // Let go of the handle on the way out. `startLoop` refuses to start
+            // a second loop by checking this, so a tick that bailed while still
+            // holding a stale id meant the loop could never be started again:
+            // switching 3D off and on left a canvas that only drew when the
+            // pointer moved over it — those handlers render directly — and
+            // otherwise showed nothing at all.
+            if (!this.enabled) { this.frame = null; return; }
             this.frame = requestAnimationFrame(tick);
+            this.stepFly(now);
             this.render();
         };
         this.frame = requestAnimationFrame(tick);

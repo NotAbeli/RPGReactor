@@ -979,6 +979,14 @@ class UIManager {
         }
     }
 
+    /**
+     * Turn the height brush on or off, and show or hide what it needs.
+     *
+     * The level, the action and the brush width are meaningless with the brush
+     * off, and a toolbar full of controls that do nothing is worse than a
+     * toolbar without them.
+     */
+
     setDrawTool(tool) {
         if (!this.callbacks.getMapEditor) return;
 
@@ -994,7 +1002,6 @@ class UIManager {
         if (mapEditor.shadowPenMode) {
             mapEditor.setShadowPenMode(false);
         }
-
         mapEditor.setTool(tool);
 
         // Update button visual states

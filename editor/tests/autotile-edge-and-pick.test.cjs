@@ -75,8 +75,7 @@ test('a wall against the left edge keeps its left cap', () => {
 });
 
 test('a picked autotile resolves to its palette cell', () => {
-    // Picking one tile selects the kind, so painting re-shapes it; picking an
-    // area still stamps verbatim.
+    // Picking one tile selects the kind, so painting re-shapes it.
     const editor = editorWith(mapOf(1, 1, [0]));
     assert.deepEqual(editor.palettePositionForTile(2048), { x: 0, y: 0, layer: 'A1' });
     assert.deepEqual(editor.palettePositionForTile(2816 + 9 * 48), { x: 1, y: 1, layer: 'A2' });
@@ -86,8 +85,10 @@ test('a picked autotile resolves to its palette cell', () => {
 });
 
 test('a single-tile pick selects rather than stamps', () => {
+    // Right-clicking one cell is the eyedropper, as it is in RPG Maker: it
+    // points the palette at the autotile's kind. Sampling an *area* is the
+    // other gesture and is covered in `map-stamp-autotiles`.
     assert.match(source, /start\.x === current\.x && start\.y === current\.y/);
     assert.match(source, /this\.selectPickedAutotile\(start\.x, start\.y\)/);
-    // A dragged area keeps its shapes, which is what makes it useful.
     assert.match(source, /this\.activateMapStamp\(this\.captureMapStamp\(/);
 });

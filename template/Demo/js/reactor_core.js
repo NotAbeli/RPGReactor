@@ -308,12 +308,25 @@ Utils.isLocal = function() {
  * @returns {boolean} True if the browser supports WebGL.
  */
 Utils.canUseWebGL = function() {
+    // Answered once and remembered. Finding out costs a real WebGL context,
+    // and a browser's budget for those is around sixteen — but MV compat
+    // exposes this as `Graphics.hasWebGL()`, which MV plugins call freely and
+    // some call every frame. Taking a context per call and never giving one
+    // back made the browser evict live ones, which takes the game's own
+    // renderer down with it.
+    if (Utils._canUseWebGL !== undefined) return Utils._canUseWebGL;
     try {
         const canvas = document.createElement("canvas");
-        return !!canvas.getContext("webgl");
+        const gl = canvas.getContext("webgl");
+        if (gl) {
+            const lose = gl.getExtension("WEBGL_lose_context");
+            if (lose) lose.loseContext();
+        }
+        Utils._canUseWebGL = !!gl;
     } catch (e) {
-        return false;
+        Utils._canUseWebGL = false;
     }
+    return Utils._canUseWebGL;
 };
 
 /**
@@ -826,6 +839,21 @@ Graphics._updateAllElements = function() {
     this._updateErrorPrinter();
     this._updateCanvas();
     this._updateVideo();
+    this._updateReactor3DCanvas();
+};
+
+/**
+ * Keep the 3D canvas the same size and place as the game canvas.
+ *
+ * It is a sibling of the game canvas rather than one of Graphics' own
+ * elements, so it was missed whenever the window changed: going fullscreen
+ * scaled the game canvas up and left the 3D one at its old size, drawing the
+ * world as a small rectangle in the middle of a black screen.
+ */
+Graphics._updateReactor3DCanvas = function() {
+    if (typeof Reactor3D === "undefined") return;
+    const viewport = Reactor3D.viewport && Reactor3D.viewport();
+    if (viewport && viewport.resize) viewport.resize();
 };
 
 Graphics._onTick = function(deltaTime) {
@@ -1531,7 +1559,19 @@ Graphics._createPixiApp = async function() {
             app = new PIXI.Application();
             await app.init({
                 canvas: this._canvas,
-                autoStart: false
+                autoStart: false,
+                // Ask for an alpha channel in the drawing buffer.
+                //
+                // v8 decides this once, at init, from `background.alpha < 1` —
+                // and never again. Left at the default the context is created
+                // with `alpha: false`, which makes the canvas opaque at the
+                // compositor level whatever the clear colour says afterwards.
+                // A 3D map draws on a canvas *underneath* this one, so without
+                // an alpha channel it can never be seen: the ground renders
+                // perfectly and is composited away. The visible default is
+                // restored immediately below, so an ordinary 2D map is opaque
+                // exactly as before.
+                backgroundAlpha: 0
                 // (Note) useBackBuffer was previously enabled here for the
                 // PSYCHRONIC_RaveLighting MULTIPLY-blend path. That approach
                 // was abandoned in favor of an alpha-composited tone sprite,
@@ -1548,11 +1588,20 @@ Graphics._createPixiApp = async function() {
             if (typeof window.installLegacyRendererStubs === "function") {
                 window.installLegacyRendererStubs(app.renderer);
             }
+            // Opaque again: the alpha channel exists now, and only a 3D map
+            // asks for it to be used.
+            if (app.renderer && app.renderer.background) app.renderer.background.alpha = 1;
         } else {
             app = new PIXI.Application({
                 view: this._canvas,
-                autoStart: false
+                autoStart: false,
+                // Same reasoning as v8 above: v5-v7 take the context's alpha
+                // from `transparent`, decided once when the renderer is made.
+                transparent: true
             });
+            if (app.renderer && "backgroundAlpha" in app.renderer) {
+                app.renderer.backgroundAlpha = 1;
+            }
         }
         app.ticker.remove(app.render, app);
         app.ticker.add(this._onTick, this);

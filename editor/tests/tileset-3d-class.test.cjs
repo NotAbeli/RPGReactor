@@ -54,12 +54,15 @@ test('a malformed file degrades instead of throwing', () => {
     assert.equal(C.classOf(data, 5, 101), C.GROUND);
 });
 
-test('clicking cycles ground, upright, scenery, foliage, back to automatic', () => {
+test('clicking cycles every class and back to automatic', () => {
     assert.equal(C.cycle(C.AUTO), C.GROUND);
     assert.equal(C.cycle(C.GROUND), C.UPRIGHT);
     assert.equal(C.cycle(C.UPRIGHT), C.SCENERY);
     assert.equal(C.cycle(C.SCENERY), C.FOLIAGE);
-    assert.equal(C.cycle(C.FOLIAGE), C.AUTO);
+    // Panel joins the end of the ring rather than the middle, so the classes
+    // that were already there keep the order authors have learned.
+    assert.equal(C.cycle(C.FOLIAGE), C.PANEL);
+    assert.equal(C.cycle(C.PANEL), C.AUTO);
 });
 
 test('an autotile answers for its own lone variant, a B-E tile is pointed at one', () => {
@@ -148,10 +151,24 @@ test('a hand-edited objects list degrades instead of throwing', () => {
         objects: { 1: [
             { tile: 8, w: 2, h: 2, roles: 'SF' },      // short: padded
             { tile: 2816, w: 1, h: 1 },                // an autotile: dropped
-            { tile: 0 },                               // no tile: dropped
+            { tile: -1, w: 2, h: 2 },                  // not a place: dropped
             'nonsense'
         ] }
     });
     assert.equal(cleaned.objects['1'].length, 1);
     assert.equal(cleaned.objects['1'][0].roles, 'SFSS', 'padded to the rectangle');
+});
+
+test('an object anchored at the corner of a sheet is kept', () => {
+    // Tile 0 is two things at once: the top-left cell of the B sheet, and the
+    // engine's "no tile". It is refused as a *lookup*, because an empty map
+    // cell reads as 0 — but as an object's corner it is a real place, and
+    // dropping it meant a prop drawn there could not be declared at all.
+    const kept = C.normalize({
+        version: 1, tilesets: {},
+        objects: { 1: [{ tile: 0, w: 3, h: 2 }] }
+    });
+    assert.equal(kept.objects['1'].length, 1);
+    assert.ok(C.objectAt(kept, 1, 1), 'and its other cells find it');
+    assert.equal(C.objectAt(kept, 1, 0), null, 'while tile 0 itself still does not');
 });

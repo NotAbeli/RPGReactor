@@ -20,6 +20,18 @@ class SetMovementRouteEditor {
             wait: false,
             list: [{ code: 0 }]
         };
+        /*
+         * Editing a page's own movement rather than a Set Movement Route
+         * command.
+         *
+         * The same route, and the same forty-five commands to build it from —
+         * an autonomous custom route *is* a move route, which is why RPG Maker
+         * opens the same dialog for both. Two differences, and both are things
+         * the page has already answered: it is always this event, so there is
+         * nobody to choose; and nothing is waiting for it to finish, so there
+         * is nothing to wait for.
+         */
+        this.autonomous = false;
         this.selectedIndices = new Set();
         this.lastClickedIndex = -1;
         this.clipboard = [];
@@ -35,7 +47,42 @@ class SetMovementRouteEditor {
     //  Lifecycle
     // ----------------------------------------------------------------
 
+    /**
+     * Edit a page's autonomous custom route.
+     *
+     * Hands back the route itself rather than a command, because that is what
+     * the page stores — `page.moveRoute`, beside its speed and frequency.
+     */
+    showRoute(moveRoute, callback) {
+        this.autonomous = true;
+        this.callback = callback;
+        this.characterId = 0;
+        this.moveRoute = moveRoute
+            ? JSON.parse(JSON.stringify(moveRoute))
+            : { repeat: true, skippable: false, wait: false, list: [{ code: 0 }] };
+        this._openWithRoute();
+    }
+
+    /** The tail every entry point shares: fix the list, then put it on screen. */
+    _openWithRoute() {
+        if (!this.moveRoute.list || this.moveRoute.list.length === 0) {
+            this.moveRoute.list = [{ code: 0 }];
+        }
+        const last = this.moveRoute.list[this.moveRoute.list.length - 1];
+        if (!last || last.code !== 0) {
+            this.moveRoute.list.push({ code: 0 });
+        }
+        this.selectedIndices = new Set();
+        this.lastClickedIndex = -1;
+        if (!this.modal) {
+            this.createModal();
+        }
+        this.renderContent();
+        this.modal.style.display = 'flex';
+    }
+
     show(command, callback) {
+        this.autonomous = false;
         this.callback = callback;
 
         if (command && command.code === 205) {
@@ -54,23 +101,7 @@ class SetMovementRouteEditor {
             };
         }
 
-        // Ensure list invariant: must end with code 0
-        if (!this.moveRoute.list || this.moveRoute.list.length === 0) {
-            this.moveRoute.list = [{ code: 0 }];
-        }
-        const last = this.moveRoute.list[this.moveRoute.list.length - 1];
-        if (!last || last.code !== 0) {
-            this.moveRoute.list.push({ code: 0 });
-        }
-
-        this.selectedIndices = new Set();
-        this.lastClickedIndex = -1;
-
-        if (!this.modal) {
-            this.createModal();
-        }
-        this.renderContent();
-        this.modal.style.display = 'flex';
+        this._openWithRoute();
     }
 
     createModal() {
@@ -213,7 +244,7 @@ class SetMovementRouteEditor {
             overflow-y: auto;
         `;
 
-        this.renderCharacterDropdown(panel);
+        if (!this.autonomous) this.renderCharacterDropdown(panel);
         this.renderCommandListSection(panel);
         this.renderActionButtons(panel);
         this.renderOptions(panel);
@@ -427,8 +458,10 @@ class SetMovementRouteEditor {
             (v) => this.moveRoute.repeat = v));
         section.appendChild(this._checkbox('Skip If Cannot Move', this.moveRoute.skippable,
             (v) => this.moveRoute.skippable = v));
-        section.appendChild(this._checkbox('Wait for Completion', this.moveRoute.wait,
-            (v) => this.moveRoute.wait = v));
+        if (!this.autonomous) {
+            section.appendChild(this._checkbox('Wait for Completion', this.moveRoute.wait,
+                (v) => this.moveRoute.wait = v));
+        }
 
         parent.appendChild(section);
     }
@@ -1269,7 +1302,7 @@ class SetMovementRouteEditor {
 
     save() {
         if (this.callback) {
-            this.callback(this.buildCommand());
+            this.callback(this.autonomous ? this.moveRoute : this.buildCommand());
         }
         this.close();
     }

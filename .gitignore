@@ -49,6 +49,9 @@ npm-debug.log*
 tmp/
 temp/
 
+# Loose working files: rendered diagnostics, one-off scripts, measurement dumps.
+/scratchpad/
+
 # Track the bundled Demo starter; keep other local templates and editor saves out.
 /template/*
 !/template/Demo/

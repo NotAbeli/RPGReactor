@@ -248,7 +248,7 @@ test('clicking a tile cycles it through every class and back to automatic', () =
     const tileIndex = 1029;
 
     for (const expected of [classes.GROUND, classes.UPRIGHT, classes.SCENERY,
-        classes.FOLIAGE, classes.AUTO]) {
+        classes.FOLIAGE, classes.PANEL, classes.AUTO]) {
         editor.cycleTile3DClass(tileIndex);
         assert.equal(classes.classOf(editor._tileset3d, 4, tileIndex), expected);
     }
@@ -399,7 +399,7 @@ test('every flag mode explains its own marks', () => {
 
     // The tools are a palette, not a cycle: Select looks without changing.
     assert.match(source, /static tile3dTools\(\)/);
-    assert.match(source, /\['select', 'Select'/);
+    assert.match(source, /\['select', tt\('Select'\)/);
     assert.match(source, /this\.tile3dTool \|\| 'select'/);
     assert.match(source, /drawKeyMark\(/, 'the marks are drawn, not tinted squares');
 
@@ -433,8 +433,13 @@ test('the 3D preview draws the selected tile', () => {
     // From the cached base render, not the tab canvas: the tab has the flag
     // overlay painted onto it, so copying a cell from there carried the class
     // chevron into the preview as though it were part of the art.
+    // Seeded under the key the loader writes — the file named the way it was
+    // loaded, with its extension. Seeding the bare name instead is what let
+    // this test pass while the editor drew an empty box: the lookup agreed
+    // with the test and with nothing that fills the cache.
     editor.currentTileset.tilesetNames[1] = 'A2Sheet';
-    editor.imageCache.set('1_A2Sheet', { width: 384, height: 384 });
+    editor.imageCache.set('1_A2Sheet.png', { width: 384, height: 384 });
+    assert.equal(editor.baseCacheKey(1), '1_A2Sheet.png');
     editor._preview3dCell = { imageIndex: 1, x: 1, y: 0 };
     const autotile = editor.previewArtSource({ tile: 2816 + 48, w: 1, h: 1, roles: 'S' });
     assert.ok(autotile && autotile.image, 'an autotile finds art to draw');
@@ -499,10 +504,17 @@ test('a drag applies the tool over the whole rectangle', () => {
     assert.equal(declared.object.w, 2);
     assert.equal(declared.object.h, 2);
 
-    editor.tile3dTool = 'erase';
+    // Clear is the one destructive tool: undeclaring an object and forgetting
+    // a tile's class were two buttons that overlapped almost entirely, so they
+    // are one. Clearing a tile takes the whole object it belongs to with it.
+    editor.tile3dTool = 'clear';
     editor.applyTile3DTool({ imageIndex: 5, from: { x: 1, y: 1 }, to: { x: 1, y: 1 } }, 5, 8);
     assert.equal(classes.objectAt(store, editor.currentTileset.id, 18), null,
-        'and Remove undeclares it');
+        'and Clear undeclares it');
+    assert.equal(classes.classOf(store, editor.currentTileset.id, 9), classes.AUTO,
+        'along with the class on the tile that was cleared');
+    assert.equal(classes.classOf(store, editor.currentTileset.id, 18), classes.UPRIGHT,
+        'while a tile outside the drag keeps its own');
 
     editor.tile3dTool = 'select';
     editor._preview3dTile = null;
@@ -596,4 +608,44 @@ test('A5 declares objects; only A1-A4 cannot', () => {
     editor.applyTile3DTool({ imageIndex: 1, from: { x: 0, y: 0 }, to: { x: 1, y: 1 } }, 1, 8);
     assert.equal(classes.objectAt(store, editor.currentTileset.id,
         editor.getTileIndexForImage(1, 0, 0, 8)), null);
+});
+
+test('laying an object\'s rows flat is written to the file', () => {
+    /*
+     * The Role tool cycled the roles in memory and returned without saving.
+     * Every other tool in `applyTile3DTool` saves — Object, Clear, Roof and
+     * the class painters all do — so this one read as doing nothing at all,
+     * and reopening the project stood the rows back up.
+     *
+     * It matters more than most: roles are how an author says which rows of a
+     * drawing are the ground it stands on rather than its height. Without
+     * them a seven-row gateway is seven rows tall and plants itself on its
+     * southern edge, which is three tiles from where its island is.
+     */
+    const editor = tilesetEditor();
+    const store = editor._tileset3d;
+    editor.currentEditMode = 'tile3d';
+
+    editor.refreshOverlays = () => {};
+
+    // A 2x2 object on the B sheet, then lay its bottom row flat.
+    editor.tile3dTool = 'object';
+    editor.applyTile3DTool({ imageIndex: 5, from: { x: 1, y: 1 }, to: { x: 2, y: 2 } }, 5, 8);
+    const topLeft = editor.getTileIndexForImage(5, 1, 1, 8);
+    assert.ok(classes.objectAt(store, 4, topLeft), 'the object is declared');
+
+    const saves = [];
+    editor.saveTileset3DFile = () => saves.push(classes.objectAt(store, 4,
+        editor.getTileIndexForImage(5, 1, 2, 8)).role);
+
+    editor.tile3dTool = 'role';
+    editor.applyTile3DTool({ imageIndex: 5, from: { x: 1, y: 2 }, to: { x: 2, y: 2 } }, 5, 8);
+
+    const bottomLeft = editor.getTileIndexForImage(5, 1, 2, 8);
+    assert.equal(classes.roleOf(store, 4, bottomLeft), classes.FLAT,
+        'the bottom row lies flat');
+    assert.equal(classes.roleOf(store, 4, topLeft), classes.STAND,
+        'and the top row still stands');
+    assert.deepEqual(saves, [classes.FLAT],
+        'saved once, after the change rather than before it');
 });

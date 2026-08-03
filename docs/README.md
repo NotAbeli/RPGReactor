@@ -5,15 +5,13 @@ This folder contains release notes, audit history, and maintainer workflows that
 - [Deep Audit Backlog — 2026-07-25](AUDIT-BACKLOG-2026-07-25.md): open items from the 0.96.0 file-by-file correctness audit that need a project-owner decision rather than a code change.
 - [Deep Audit Backlog — 2026-07-13](AUDIT-BACKLOG-2026-07-13.md): cleared historical record of the seven-subsystem audit findings and their 0.95.0 disposition.
 - [Release Checklist](RELEASE-CHECKLIST.md): clean validation, signed candidate production, artifact inspection, GitHub/itch publication, rollback, and post-release checks.
+- [Building 3D worlds from 2D tilesets](DESIGN-3D-WORLDS.md): replacing the 0.96.0 renderer's inference with an authored shape/material/structure model — why billboards fail for gates, where facing can be derived rather than authored, and a phased order of work. Four of its eight phases are built (faces from autotile shape, per-face materials and roof pairing, the Panel shape, and 3D lighting); the rest is still a plan. It also records what was *tried and rejected* — five merge rules for where one structure ends, and why a point light per light does not survive a real map — so those are not re-fought.
 
 Release progress for GitHub visitors is tracked in the root [`CHANGELOG.md`](../CHANGELOG.md). Detailed editor/runtime change history is tracked in [`editor/CHANGELOG.md`](../editor/CHANGELOG.md).
 
-Current unpublished cycle draft:
-
-- [RPG Reactor 0.96.0: A Deep Correctness Audit](devlogs/2026-07-25-rpg-reactor-0.96.0.md)
-
 Published release explanations (one devlog per release):
 
+- [RPG Reactor 0.96.0: A Deep Correctness Audit](devlogs/2026-07-25-rpg-reactor-0.96.0.md)
 - [RPG Reactor 0.95.0: A More Complete Editor](devlogs/2026-07-18-rpg-reactor-0.95.0.md)
 - [RPG Reactor 0.94.8: Big Maps Without the Wait](devlogs/2026-07-13-rpg-reactor-0.94.8.md)
 - [RPG Reactor 0.94.7: Map Editing You Can Trust](devlogs/2026-07-13-rpg-reactor-0.94.7.md)

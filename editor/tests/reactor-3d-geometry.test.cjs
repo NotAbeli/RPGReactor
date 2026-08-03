@@ -479,7 +479,9 @@ test('a standing autotile uses its shape quadrants, not the block corner', () =>
         isUpright: () => true,
         uprightDepth: 0
     });
-    assert.equal(built.quads, 4, 'four quadrants make up the face');
+    // Four quadrants make up the face, and a wall is a box: the same four on
+    // the back, and four more on each end, since a lone cell is exposed at both.
+    assert.equal(built.quads, 4 * 4);
 
     const ground = Geometry.autotileQuads(grass, 48, TABLES);
     const size = { width: 768, height: 768 };
@@ -733,11 +735,26 @@ test('a wood is drawn once, as cut-outs, not also as a mat under them', () => {
     assert.ok(built.groups.some(group => group.billboard), 'and the cut-out standing on it');
 });
 
-test('a cut-out is drawn one cell wide and as tall as its art in proportion', () => {
-    // The lone variant of a forest is often drawn over a 2x2 block. Sampling
-    // only its first tile drew the top-left quarter of every tree.
-    const map = mapWith(1, 1, { 0: [500] });
-    const built = Geometry.build(map, {
+/** The world size of the one cut-out a single-cell map built. */
+function cutoutSize(built) {
+    const cutout = built.groups.find(group => group.billboard);
+    const xs = [0, 1, 2, 3].map(i => cutout.offsets[i * 2]);
+    const ys = [0, 1, 2, 3].map(i => cutout.offsets[i * 2 + 1]);
+    return {
+        wide: Math.max(...xs) - Math.min(...xs),
+        high: Math.max(...ys) - Math.min(...ys),
+        foot: Math.min(...ys),
+        left: Math.min(...xs),
+        right: Math.max(...xs)
+    };
+}
+
+test('a cut-out is as wide as its art and as tall as its art in proportion', () => {
+    // The lone variant of a forest is often drawn over a block of the sheet.
+    // Sampling only its first tile drew the top-left quarter of every tree;
+    // sizing it as though the block were a single tile then squeezed the whole
+    // picture into one cell of world space.
+    const built = Geometry.build(mapWith(1, 1, { 0: [500] }), {
         elevationAt: flat,
         isFoliage: id => id === 500,
         standInFor: () => ({ tileId: 900, w: 2, h: 4 }),
@@ -746,15 +763,50 @@ test('a cut-out is drawn one cell wide and as tall as its art in proportion', ()
         foliageSpread: 0
     });
 
-    const cutout = built.groups.find(group => group.billboard);
-    const xs = [0, 1, 2, 3].map(i => cutout.offsets[i * 2]);
-    const ys = [0, 1, 2, 3].map(i => cutout.offsets[i * 2 + 1]);
-    const wide = Math.max(...xs) - Math.min(...xs);
-    const high = Math.max(...ys) - Math.min(...ys);
+    const { wide, high, foot } = cutoutSize(built);
     // Sizes vary a little per tree, so the proportion is what is pinned.
     assert.ok(Math.abs(high / wide - 2) < 1e-6, 'twice as tall as wide, as the art is');
-    assert.ok(wide > 0.5 && wide < 1.5, 'and about a cell wide');
-    assert.equal(Math.min(...ys), 0, 'standing on the ground rather than sunk into it');
+    assert.ok(wide > 1.5 && wide < 2.5, 'and two cells wide, because the art is two tiles wide');
+    assert.equal(foot, 0, 'standing on the ground rather than sunk into it');
+});
+
+test('ordinary single-tile foliage is one cell wide, stood up in proportion', () => {
+    // The span multiplier is 1 here, so a wood is sized as it always was
+    // except for the floor: a cut-out is never narrower than the cell it
+    // stands on, where it used to be able to shrink to three quarters of one
+    // and let the ground show beside it.
+    const built = Geometry.build(mapWith(1, 1, { 0: [500] }), {
+        elevationAt: flat,
+        isFoliage: id => id === 500,
+        standInFor: () => 900,
+        foliageHeight: 1.4,
+        foliageDensity: 1,
+        foliageSpread: 0
+    });
+    const { wide, high } = cutoutSize(built);
+    assert.ok(wide > 0.7 && wide < 1.3, 'about a cell wide');
+    assert.ok(Math.abs(high / wide - 1.4) < 1e-6, 'and stood up by foliageHeight');
+});
+
+test('a cut-out covers the cell it stands on', () => {
+    // Why the size matters. A billboard is a rectangle, so where a cut-out is
+    // narrower than its cell the ground shows between it and its neighbour —
+    // with the straight vertical sides of the quads either side, which reads
+    // as a rectangular bite out of a mountain range rather than as scatter.
+    // A 2x2 stand-in built one cell wide left up to two thirds of a tile bare.
+    const built = Geometry.build(mapWith(1, 1, { 0: [500] }), {
+        elevationAt: flat,
+        isFoliage: id => id === 500,
+        standInFor: () => ({ tileId: 900, w: 2, h: 2 }),
+        foliageDensity: 1,
+        foliageSpread: 0.55
+    });
+    const cutout = built.groups.find(group => group.billboard);
+    // The anchor carries the scatter; the offsets are measured from it.
+    const anchorX = cutout.positions[0];
+    const { left, right } = cutoutSize(built);
+    assert.ok(anchorX + left <= 0, `reaches the cell's west edge (${anchorX + left})`);
+    assert.ok(anchorX + right >= 1, `and its east edge (${anchorX + right})`);
 });
 
 test('a cut-out samples the whole span of its stand-in', () => {
@@ -775,11 +827,14 @@ test('a cut-out samples the whole span of its stand-in', () => {
         'a two-tile-wide stand-in reads two tiles of the sheet');
 });
 
-test('an object is anchored on the middle of its footprint', () => {
+test('an object stands in the middle of its southern row', () => {
     // The anchor is the point the cut-out turns about, so it is also where the
-    // object appears to be. On the southern edge a wide structure sat over its
-    // cells from the south and a tile clear of them from the east, and a deep
-    // one swung around its own front edge as the camera moved.
+    // object appears to be, and it is the middle of the cell on both axes.
+    // Rows are *height* — `level = maxY - cell.y` stacks them upwards to build
+    // the picture — so centring on the rows as though they were a footprint put
+    // the object's feet halfway up its own height. Anchoring on the southern
+    // *edge* of that row instead left the object half a tile south of its own
+    // square, which only shows once the camera comes round.
     // Columns 8-10, rows 9-11 of a B sheet: one drawing, three tiles square.
     // The ids have to be laid out on the sheet the way they are on the map, or
     // they are not pieces of one picture and do not group.
@@ -804,8 +859,10 @@ test('an object is anchored on the middle of its footprint', () => {
         anchors.add(`${group.positions[i]},${group.positions[i + 1]},${group.positions[i + 2]}`);
     }
     assert.equal(anchors.size, 1, 'the whole object turns about one point');
-    // Columns 1-3 and rows 0-2: the middle of the footprint is x 2.5, z 1.5.
-    assert.equal(Array.from(anchors)[0], '2.5,0,1.5');
+    // Columns 1-3: the middle is x 2.5. Rows 0-2 are height, so the footprint
+    // is the southern one alone, and the anchor is the middle of it — z 2.5.
+    // Both axes centre on the cell, so the object turns about itself.
+    assert.equal(Array.from(anchors)[0], '2.5,0,2.5');
 
     // Its lowest corner sits on the ground rather than above it.
     const ys = [];
@@ -884,11 +941,12 @@ test('a roof rides on the wall it belongs to', () => {
     assert.equal(heights.get('0,0'), 0, 'and so does ground that touches no wall');
 });
 
-test('an object turns about the middle of its own footprint', () => {
+test('a tall thin prop stands on the tile it belongs to', () => {
     // The anchor is the axis the cut-out spins on, so anything off-centre makes
-    // the object orbit that point instead of turning where it stands. On the
-    // southern row the axis sat at the front edge, and a deep object visibly
-    // swung around it as the camera moved.
+    // the object orbit that point instead of turning where it stands. It sat on
+    // the southern row's front edge, half a tile out, and that showed as the
+    // object sliding off its own square as the camera came round — a column in
+    // the middle of a pool ended up on the pool's lip.
     const art = [200, 208, 216, 224];        // one column, four rows of a sheet
     const map = mapWith(3, 6, {
         0: [
@@ -912,11 +970,75 @@ test('an object turns about the middle of its own footprint', () => {
         anchors.add(`${group.positions[i]},${group.positions[i + 2]}`);
     }
     assert.equal(anchors.size, 1, 'one axis for the whole object');
-    // Column 1, rows 1-4: the middle is x 1.5, z 3.
-    assert.equal(Array.from(anchors)[0], '1.5,3');
+    // Column 1, rows 1-4 — a street light: four tiles tall, one tile deep. Its
+    // footprint is row 4 alone and it stands in the middle of it, at z 4.5.
+    // Anchored on the middle of *all four rows* it sat two and a half tiles
+    // north of that, which at a pitched camera reads as floating; anchored on
+    // row 4's southern edge it sat half a tile south of its own square.
+    assert.equal(Array.from(anchors)[0], '1.5,4.5');
 
     // The base still rests on the ground, so turning in place does not lift it.
     const ys = [];
     for (let i = 1; i < group.offsets.length; i += 2) ys.push(group.offsets[i]);
     assert.equal(Math.min(...ys), 0);
+});
+
+test('a wall is a box, not a plane', () => {
+    /*
+     * A wall used to be a single plane on the southern face of its run, which
+     * is right from the front and nothing at all from the side: walk round a
+     * shop and its front thinned to a line and vanished, because that is what a
+     * plane seen edge-on does.
+     *
+     * 2D never draws a building's sides, so there is no art for them — but the
+     * wall's own art is a better answer than a hole, and it is what an author
+     * reaching for a quick fix would put there themselves.
+     */
+    const wall = 4352 + 11 * 48;             // an A3 wall kind, shape 0
+    const map = mapWith(1, 1, { 0: [wall] });
+    const built = Geometry.build(map, {
+        elevationAt: flat, isUpright: id => id === wall, isAuthored: () => true
+    });
+
+    const depth = new Set();
+    for (const group of built.groups) {
+        for (let i = 2; i < group.positions.length; i += 3) {
+            depth.add(Number(group.positions[i].toFixed(3)));
+        }
+    }
+    assert.ok(depth.size > 1, 'it occupies depth, rather than one plane');
+    const sorted = [...depth].sort((a, b) => a - b);
+    assert.equal(sorted[sorted.length - 1] - sorted[0], Geometry.WALL_THICKNESS,
+        'a whole tile deep');
+    // The ends are split by the same quadrants as the front, so the depth they
+    // span has a seam down the middle of it.
+    assert.equal(sorted.length, 3, 'back, middle and front');
+});
+
+test('a run of walls is one block, not a row of boxes', () => {
+    /*
+     * Putting an end face between every pair of columns is geometry nobody can
+     * ever see, and two surfaces fighting over the same plane where they meet.
+     * Ends are emitted only where the wall actually ends.
+     */
+    const wall = 4352 + 11 * 48;
+    const options = { elevationAt: flat, isUpright: id => id === wall, isAuthored: () => true };
+    const one = Geometry.build(mapWith(1, 1, { 0: [wall] }), options).quads;
+    const three = Geometry.build(mapWith(3, 1, { 0: [wall, wall, wall] }), options).quads;
+
+    // Four quadrants front and back per cell, and two ends for the whole run
+    // however long it is.
+    assert.equal(one, 4 * 2 + 4 * 2);
+    assert.equal(three, 3 * 4 * 2 + 4 * 2, 'three cells, still two ends');
+});
+
+test('two walls on different footings keep their own ends', () => {
+    // Same column, different buildings: they are not one another's neighbour
+    // and neither loses the face where it stops.
+    const wall = 4352 + 11 * 48;
+    const map = mapWith(1, 3, { 0: [wall, 0, wall] });
+    const built = Geometry.build(map, {
+        elevationAt: flat, isUpright: id => id === wall, isAuthored: () => true
+    });
+    assert.equal(built.quads, 2 * (4 * 2 + 4 * 2), 'both are boxed in their own right');
 });

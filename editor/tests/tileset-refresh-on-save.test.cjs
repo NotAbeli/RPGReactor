@@ -189,3 +189,77 @@ test('the save announces itself and the listener coalesces bursts', () => {
     assert.match(controllerSource, /clearTimeout\(this\._tilesetSavedTimer\)/,
         'a burst of flag edits collapses into one refresh');
 });
+
+test('assigning a sheet announces it, without waiting for the Save button', () => {
+    // Reported as: adding tiles to E, F or G in the database does not make them
+    // selectable in those tabs until Save beside the name is pressed — and a
+    // tile placed from such a sheet vanishes, because the sheet it addresses
+    // was never loaded. Assigning only refreshed the database editor's own
+    // thumbnails; the map canvas and the palette captured the tileset when the
+    // map opened and heard nothing.
+    const assign = tilesetEditorSource.slice(
+        tilesetEditorSource.indexOf('assignTilesetToLayer(layerIndex'));
+    const body = assign.slice(0, assign.indexOf('\n    switchTab('));
+    assert.match(body, /RRTilesetSheets\.setNameAt\(/, 'it still assigns the name');
+    assert.match(body, /this\.notifyTilesetSaved\(\)/,
+        'and announces it so the map and palette reload the sheet');
+    // Announce only: writing Tilesets.json stays with the Database modal's own
+    // OK, or Cancel could no longer put things back.
+    assert.doesNotMatch(body, /this\.saveTilesetsFile\(\)/);
+});
+
+test('clearing a sheet announces it too', () => {
+    // The same call assigns and clears — an empty name is how a slot is
+    // emptied — so both go through one notification.
+    const assign = tilesetEditorSource.slice(
+        tilesetEditorSource.indexOf('assignTilesetToLayer(layerIndex'));
+    const body = assign.slice(0, assign.indexOf('\n    switchTab('));
+    const notifies = body.match(/this\.notifyTilesetSaved\(\)/g) || [];
+    assert.equal(notifies.length, 1, 'announced once, on every path through it');
+});
+
+test('a passability or star edit announces itself', () => {
+    // Reported as: change passability in the Database and the map editor keeps
+    // the old setting until the project is closed and reopened. The map canvas
+    // holds the tileset object it captured when the map opened, and the flag
+    // edit only repainted the Database's own canvas. ProjectController's
+    // listener was already written expecting this — its comment says "on every
+    // flag edit as well as on an image assignment" — it was simply never sent.
+    const edit = tilesetEditorSource.slice(
+        tilesetEditorSource.indexOf('if (currentFlag !== oldFlag) {'));
+    const body = edit.slice(0, edit.indexOf('\n    }'));
+    assert.match(body, /this\.currentTileset\.flags\[tileIndex\] = currentFlag/);
+    assert.match(body, /this\.notifyTilesetSaved\(\)/,
+        'so the map canvas re-reads the flags');
+});
+
+test('the refresh puts the new flags on the map canvas, not just the sheets', () => {
+    // Announcing is only half of it: what arrives has to replace the tileset
+    // the tilemap is reading flags out of.
+    assert.match(tilemapSource, /async refreshTilesetImages\(tileset\)/);
+    assert.match(tilemapSource, /this\.currentTileset = next;/);
+});
+
+test('a 3D classification change tells the 3D view', () => {
+    // The 3D view rebuilds from the classification, which is edited in the
+    // Database rather than on the map — so nothing announced it and the view
+    // kept the shapes it was built with until the map was next painted.
+    assert.match(tilesetEditorSource, /new CustomEvent\('rr-tileset-3d-saved'/);
+    const scene = fs.readFileSync(path.join(editorRoot, 'src', 'MapEditor3D.js'), 'utf8');
+    assert.match(scene, /addEventListener\('rr-tileset-3d-saved'/);
+    assert.match(scene, /removeEventListener\('rr-tileset-3d-saved'/,
+        'and lets go of it, or a second project would rebuild the first one too');
+});
+
+test('a map opened with the 3D box ticked comes up in 3D', () => {
+    // 3D is a view preference, not a property of the map, and the viewport is
+    // torn down when a project closes — so a project opened while the box was
+    // ticked showed a 2D canvas under a ticked box until it was unticked and
+    // reticked.
+    assert.match(controllerSource, /reconcileMap3DView/,
+        'the controller asks rather than assuming the viewport survived');
+    const main = fs.readFileSync(path.join(editorRoot, 'src', 'main.js'), 'utf8');
+    assert.match(main, /reconcileMap3DView = \(\) => \{/);
+    assert.match(main, /if \(!this\.optionsManager\.getMap3DView\(\)\) return;/,
+        'and only turns it on when the preference actually asks for it');
+});

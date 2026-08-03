@@ -14,6 +14,11 @@ class EventPageEditor {
         return typeof window !== 'undefined' && window.I18n ? window.I18n.t(key, params) : key;
     }
 
+    /** A phrase rather than a key, for the strings that have no key of their own. */
+    _tt(text) {
+        return typeof window !== 'undefined' && window.I18n ? window.I18n.tText(text) : text;
+    }
+
     /**
      * Render the complete page configuration
      */
@@ -440,7 +445,9 @@ class EventPageEditor {
         const currentTileset = tilesets[tilesetId];
         if (!currentTileset) return;
 
-        const TILE_SIZE = 48;
+        // The sheet is sampled in the project's own tile size; the 48s below
+        // are the format's shapes per autotile kind.
+        const TILE_SIZE = tilemapManager.TILE_WIDTH || 48;
 
         // Determine which tileset image to use based on tileId
         let layerIndex = null;
@@ -502,24 +509,16 @@ class EventPageEditor {
             srcX = tileX * TILE_SIZE;
             srcY = tileY * TILE_SIZE;
         } else {
-            // B-E tiles
-            let localTileId = tileId;
+            // B-E and the extended F-G sheets, addressed by the same
+            // definition the map canvas uses.
+            layerIndex = RRTilesetSheets.setNumberForNormalTileId(tileId);
 
-            if (tileId >= 768) {
-                layerIndex = 8; // E
-                localTileId = tileId - 768;
-            } else if (tileId >= 512) {
-                layerIndex = 7; // D
-                localTileId = tileId - 512;
-            } else if (tileId >= 256) {
-                layerIndex = 6; // C
-                localTileId = tileId - 256;
-            } else {
-                layerIndex = 5; // B
-            }
-
-            tileX = localTileId % 8;
-            tileY = Math.floor(localTileId / 8);
+            // Each sheet is 256 tiles split into two halves of 128, the right
+            // half drawn beside the left. Read as a plain 8-wide grid, every
+            // tile past the 128th sampled off the bottom of the sheet.
+            const localTileId = tileId % 256;
+            tileX = (Math.floor(localTileId / 128) % 2) * 8 + (localTileId % 8);
+            tileY = Math.floor((localTileId % 256) / 8) % 16;
             srcX = tileX * TILE_SIZE;
             srcY = tileY * TILE_SIZE;
         }
@@ -656,6 +655,14 @@ class EventPageEditor {
                         <option value="2" ${page.moveType === 2 ? 'selected' : ''}>${this._t('event.approach')}</option>
                         <option value="3" ${page.moveType === 3 ? 'selected' : ''}>${this._t('event.custom')}</option>
                     </select>
+                    <button class="movement-route-btn"
+                            data-page-index="${pageIndex}"
+                            title="${this._tt('Set the route this event follows on its own')}"
+                            ${page.moveType === 3 ? '' : 'disabled'}
+                            style="flex-shrink: 0; padding: 3px 8px; font-size: 11px;
+                                   background-color: var(--color-bg-menubar); color: var(--color-text);
+                                   border: 1px solid var(--color-border-input); border-radius: 3px;
+                                   cursor: pointer;">${this._tt('Route...')}</button>
                 </div>
 
                 <div style="display: flex; align-items: center; gap: 6px; min-width: 0;">
@@ -955,8 +962,55 @@ class EventPageEditor {
                 const page = this.parentEditor.currentEvent.pages[pageIndex];
 
                 page[field] = parseInt(e.target.value);
+
+                // Only a custom route has a route to edit, so the button
+                // follows the choice rather than sitting there inviting a
+                // click that would do nothing.
+                if (field === 'moveType') {
+                    const button = section.querySelector('.movement-route-btn');
+                    if (button) button.disabled = page.moveType !== 3;
+                }
             });
         });
+
+        /*
+         * Choosing Custom is only half of it.
+         *
+         * The type could be set and there was no way to say what the route
+         * actually was — the page kept whatever list it already had, and a new
+         * event kept an empty one, so Custom meant "stand still" and could not
+         * be made to mean anything else.
+         *
+         * It opens the movement route editor, which is the same dialog the Set
+         * Movement Route command uses because it is the same forty-five
+         * commands building the same structure. What the page has already
+         * answered is left out of it: it is always this event, and nothing is
+         * waiting on it to finish.
+         */
+        section.querySelectorAll('.movement-route-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                const pageIndex = parseInt(button.dataset.pageIndex);
+                const page = this.parentEditor.currentEvent.pages[pageIndex];
+                const editor = this.movementRouteEditor();
+                if (!page || !editor) return;
+                editor.showRoute(page.moveRoute, route => { page.moveRoute = route; });
+            });
+        });
+    }
+
+    /**
+     * The movement route editor, borrowed rather than built again.
+     *
+     * The command list owns one; a page editing its own route wants exactly
+     * the same dialog, and two of them would drift apart a command at a time.
+     */
+    movementRouteEditor() {
+        const owner = this.parentEditor && this.parentEditor.commandList;
+        if (owner && owner.setMovementRouteEditor) return owner.setMovementRouteEditor;
+        if (typeof SetMovementRouteEditor !== 'function') return null;
+        this._routeEditor = this._routeEditor
+            || new SetMovementRouteEditor(this.databaseManager, this.projectController);
+        return this._routeEditor;
     }
 
     /**

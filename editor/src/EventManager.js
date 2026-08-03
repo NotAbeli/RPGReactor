@@ -767,6 +767,12 @@ class EventManager {
             this.selectedTileX = event.x;
             this.selectedTileY = event.y;
             this.updateSelectionHighlight(); // Update map highlight
+        } else {
+            // Deselecting has to take the highlight with it, or the square an
+            // event used to be on stays marked with nothing selected.
+            this.selectedTileX = null;
+            this.selectedTileY = null;
+            this.updateSelectionHighlight();
         }
 
         // Update only the border color on affected sprites instead of full re-render
@@ -1578,6 +1584,28 @@ class EventManager {
     }
 
     // Render events on the map
+    /**
+     * Whether any event on this map draws itself with a tile rather than a
+     * character sheet.
+     *
+     * Those are the ones that depend on the tile palette's sheets, so they are
+     * the ones worth re-rendering once it has finished loading. A map without
+     * any is left alone: rebuilding every sprite costs real time on a map
+     * carrying hundreds of events.
+     */
+    hasTileGraphicEvents() {
+        const events = this.currentMap && this.currentMap.events;
+        if (!Array.isArray(events)) return false;
+        return events.some(event =>
+            event && event.pages && event.pages[0] && event.pages[0].image
+            && event.pages[0].image.tileId > 0);
+    }
+
+    /** Paths are only unique within one project, so a switch drops them. */
+    forgetCharacterImages() {
+        if (this._characterImages) this._characterImages.clear();
+    }
+
     renderEvents() {
         if (!this.eventContainer || !this.currentMap) return;
 
@@ -1612,6 +1640,15 @@ class EventManager {
 
         // Update selection highlight in case event status changed
         this.updateSelectionHighlight();
+
+        // The 3D view builds its own copy of every event — and reads each
+        // one's note for `<3d panel>` and the rest — so it has to hear about a
+        // change here. Tile edits announce themselves through `rr-map-edited`;
+        // events had nothing, so a note edited in the event window did not
+        // reach the 3D canvas until it was switched off and on.
+        if (typeof document !== 'undefined' && typeof CustomEvent === 'function') {
+            document.dispatchEvent(new CustomEvent('rr-events-changed'));
+        }
 
     }
 
@@ -1828,7 +1865,9 @@ class EventManager {
                 tileSprite.x = 2;
                 tileSprite.y = 2;
                 const maxSize = this.tilemapManager.TILE_WIDTH - 4;
-                const scale = maxSize / 48;
+                // The sprite is one tile of the sheet, so it is already the
+                // project's tile size; only the inset has to be taken off.
+                const scale = maxSize / this.tilemapManager.TILE_WIDTH;
                 tileSprite.scale.set(scale);
                 container.addChild(tileSprite);
                 hasGraphic = true;
@@ -1875,7 +1914,9 @@ class EventManager {
         }
 
         const textures = this.tilesetPaletteViewer.tilesetTextures;
-        const TILE_SIZE = 48;
+        // A sheet is sampled in the project's own tile size. The 48s that
+        // remain below are the format's shapes-per-autotile-kind.
+        const TILE_SIZE = this.tilemapManager?.TILE_WIDTH || 48;
 
         // Determine which tileset image to use based on tileId
         let layer = null;
@@ -1953,39 +1994,29 @@ class EventManager {
             tileX = localTileId % 8;
             tileY = Math.floor(localTileId / 8);
         } else {
-            // B-E tiles
-            let localTileId = tileId;
+            // B-E and the extended F-G sheets. The sheet a tile id belongs to
+            // is one definition shared with the map canvas, so an event's
+            // graphic and the same tile painted on the map cannot disagree.
+            layer = RRTilesetSheets.keyFromIndex(
+                RRTilesetSheets.setNumberForNormalTileId(tileId));
 
-            if (tileId >= 768) {
-                layer = 'E';
-                localTileId = tileId - 768;
-            } else if (tileId >= 512) {
-                layer = 'D';
-                localTileId = tileId - 512;
-            } else if (tileId >= 256) {
-                layer = 'C';
-                localTileId = tileId - 256;
-            } else {
-                layer = 'B';
-            }
-
-            tileX = localTileId % 8;
-            tileY = Math.floor(localTileId / 8);
+            // Each sheet is 256 tiles split into two halves of 128, the right
+            // half drawn beside the left. Reading it as a plain 8-wide grid
+            // put every tile past the 128th off the bottom of the sheet.
+            const localTileId = tileId % 256;
+            tileX = (Math.floor(localTileId / 128) % 2) * 8 + (localTileId % 8);
+            tileY = Math.floor((localTileId % 256) / 8) % 16;
         }
 
         // Get the tileset image for this layer
-        console.log('createTileSprite: layer =', layer, 'tileX =', tileX, 'tileY =', tileY);
         const img = textures[layer];
-        console.log('createTileSprite: img for layer', layer, '=', img);
         if (!img) {
-            console.log('createTileSprite: No image for layer', layer);
             return null;
         }
 
         // Calculate source position in the tileset image
         const srcX = tileX * TILE_SIZE;
         const srcY = tileY * TILE_SIZE;
-        console.log('createTileSprite: srcX =', srcX, 'srcY =', srcY);
 
         // Convert Image to PIXI.Texture first, then create cropped texture
         // The tilesetTextures are stored as HTMLImageElement, not PIXI.Texture
@@ -2019,9 +2050,19 @@ class EventManager {
 
         try {
             // Load as HTML Image element first, then convert to PIXI texture
-            // This is more reliable than PIXI.Texture.from() for file:// URLs
-            const htmlImg = new Image();
-            htmlImg.src = imgPath;
+            // This is more reliable than PIXI.Texture.from() for file:// URLs.
+            //
+            // Cached by path. A fresh Image every render meant a fresh source
+            // for PIXI, so every rebuild of the event layer allocated a new GPU
+            // texture per event and freed none of them — and a re-render is
+            // triggered by each image that finishes loading.
+            if (!this._characterImages) this._characterImages = new Map();
+            let htmlImg = this._characterImages.get(imgPath);
+            if (!htmlImg) {
+                htmlImg = new Image();
+                htmlImg.src = imgPath;
+                this._characterImages.set(imgPath, htmlImg);
+            }
 
             // Check if already loaded (cached)
             if (!htmlImg.complete || !htmlImg.width || !htmlImg.height) {
@@ -2079,8 +2120,10 @@ class EventManager {
 
             const sprite = new PIXI.Sprite(croppedTexture);
 
-            // Scale to fit tile size (will be inset in createEventSprite)
-            const TILE_SIZE = 48;
+            // Scale to fit tile size (will be inset in createEventSprite).
+            // The box this lands in is drawn at the project's tile size, so a
+            // fixed 48 here overflowed it by half on a 32-pixel project.
+            const TILE_SIZE = this.tilemapManager?.TILE_WIDTH || 48;
             const maxSize = TILE_SIZE - 4; // Leave room for border
             const scale = Math.min(maxSize / characterWidth, maxSize / characterHeight);
             sprite.scale.set(scale);

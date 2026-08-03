@@ -116,6 +116,20 @@ class OptionsManager {
         return this.settings.map3DView === true;
     }
 
+    /** Whether the tile grid is drawn over the map, in 2D and 3D alike. */
+    getShowGrid() {
+        return this.settings.showGrid === true;
+    }
+
+    setShowGrid(enabled) {
+        const next = enabled === true;
+        this.settings.showGrid = next;
+        this._saveSettings();
+        window.dispatchEvent(new CustomEvent('rr-show-grid-changed', {
+            detail: { enabled: next }
+        }));
+    }
+
     setMap3DView(enabled) {
         const next = enabled === true;
         this.settings.map3DView = next;

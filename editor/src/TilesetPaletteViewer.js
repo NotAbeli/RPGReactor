@@ -2,7 +2,15 @@
 // Displays tileset layers as tabs with tile graphics for map editing
 
 class TilesetPaletteViewer {
-    /** Re-read the project's tile size; the database loads after we are built. */
+    /**
+     * Re-read the project's tile size.
+     *
+     * The database loads after we are built, and — unlike the map canvas,
+     * which is rebuilt for each project — this viewer is created once and
+     * kept for the life of the editor. Opening a second project therefore has
+     * to re-read here, or the palette keeps the first project's size while the
+     * map beside it uses the new one.
+     */
     refreshTileMetrics() {
         const metrics = (typeof RRTileMetrics !== 'undefined' && RRTileMetrics)
             || (typeof window !== 'undefined' && window.RRTileMetrics);
@@ -12,6 +20,8 @@ class TilesetPaletteViewer {
         const size = metrics ? metrics.tileSizeOf(system) : 48;
         if (size === this.tileSize) return false;
         this.tileSize = size;
+        // Anything already drawn measured the old size.
+        this.cachedLayerCanvas = null;
         return true;
     }
 
@@ -91,7 +101,8 @@ class TilesetPaletteViewer {
                     ${this.createLayerTab('E')}
                     ${this.createLayerTab('F')}
                     ${this.createLayerTab('G')}
-                    ${this.createLayerTab('R', '📍')} <!-- Regions tab -->
+                    ${this.createLayerTab('R', TilesetPaletteViewer.tabIcon('region'))}
+                    ${this.createLayerTab('O', TilesetPaletteViewer.tabIcon('object3d'))}
                 </div>
 
                 <!-- Tileset Preview Canvas -->
@@ -103,7 +114,10 @@ class TilesetPaletteViewer {
                 </div>
 
                 <!-- Region UI Container (shown when R tab is active) -->
-                <div id="region-ui-container" style="flex: 1; display: none;"></div>
+                <div id="region-ui-container" style="flex: 1; display: none; min-height: 0;"></div>
+
+                <!-- 3D object UI Container (shown when O tab is active) -->
+                <div id="object3d-ui-container" style="flex: 1; display: none; min-height: 0;"></div>
 
                 <!-- Selection Info -->
                 <div id="selection-info" style="padding: 8px; background-color: var(--color-bg-list-item); border-top: 1px solid var(--color-border); font-size: 10px; color: var(--color-text-muted); flex-shrink: 0;">
@@ -115,9 +129,55 @@ class TilesetPaletteViewer {
         this.setupEventListeners();
     }
 
+    /**
+     * The mark on a tab that is not a letter.
+     *
+     * Drawn rather than typed: an emoji is the host's font, not the editor's,
+     * so it ignores the theme, sits on its own baseline and looks like a
+     * different piece of software on every platform.
+     *
+     * Coloured, and by their own palettes rather than by the text colour. At
+     * this size an outline in one hue is a smudge — a few pixels of stroke
+     * next to a letter of the same colour reads as a mark on the screen rather
+     * than as a picture of anything. Solid blocks of colour carry at twelve
+     * pixels where line work does not, and they tie each tab to the overlay it
+     * opens: the region swatches are drawn from across the wheel exactly as
+     * the region palette is, and the cube is in the warm half the object
+     * palette lives in.
+     *
+     * Mid-saturation and mid-lightness, so both hold up against a light
+     * background and a dark one.
+     */
+    static tabIcon(kind) {
+        const open = '<svg viewBox="0 0 16 16" width="13" height="13"'
+            + ' aria-hidden="true" style="vertical-align: -2px; flex-shrink: 0;">';
+        if (kind === 'region') {
+            // Four cells, four colours: an area of the map, told apart by number.
+            const cells = [
+                [1.5, 1.5, '#e05c4e'], [9, 1.5, '#e8a33d'],
+                [1.5, 9, '#35a89b'], [9, 9, '#5b7fe8']
+            ];
+            return open + cells.map(([x, y, fill]) =>
+                `<rect x="${x}" y="${y}" width="5.5" height="5.5" rx="1.2" fill="${fill}"/>`
+            ).join('') + '</svg>';
+        }
+        /*
+         * A cube, as three faces meeting in the middle rather than as an
+         * outline: the silhouette alone is a hexagon, and a hexagon at twelve
+         * pixels is a blob. Lit from the top left, which is the direction
+         * every other icon in the editor is lit from.
+         */
+        return open
+            + '<path d="M8 1.5 14.5 5.25 8 9 1.5 5.25z" fill="#f2c14e"/>'
+            + '<path d="M1.5 5.25 8 9v6.5L1.5 11.75z" fill="#d9822b"/>'
+            + '<path d="M14.5 5.25 8 9v6.5l6.5-3.75z" fill="#b3541e"/></svg>';
+    }
+
     createLayerTab(layerName, icon = '') {
         const isActive = layerName === this.currentLayer;
-        const displayText = icon ? `${icon} ${layerName}` : layerName;
+        const displayText = icon
+            ? `<span style="display: inline-flex; align-items: center; gap: 3px;">${icon}${layerName}</span>`
+            : layerName;
         return `
             <button
                 class="tileset-layer-tab ${isActive ? 'active' : ''}"
@@ -301,18 +361,30 @@ class TilesetPaletteViewer {
         const regionContainer = document.getElementById('region-ui-container');
         const selectionInfo = document.getElementById('selection-info');
 
+        const object3dContainer = document.getElementById('object3d-ui-container');
+
         if (layerName === 'R') {
             // Show region UI, hide tileset preview
             if (tilesetContainer) tilesetContainer.style.display = 'none';
             if (regionContainer) regionContainer.style.display = 'flex';
+            if (object3dContainer) object3dContainer.style.display = 'none';
             if (selectionInfo) selectionInfo.style.display = 'none';
 
             // Trigger region UI initialization (will be handled by main app)
             this.onRegionTabSelected?.();
+        } else if (layerName === 'O') {
+            // Which cells are one 3D object — the same shape of question as a
+            // region, and painted the same way.
+            if (tilesetContainer) tilesetContainer.style.display = 'none';
+            if (regionContainer) regionContainer.style.display = 'none';
+            if (object3dContainer) object3dContainer.style.display = 'flex';
+            if (selectionInfo) selectionInfo.style.display = 'none';
+            this.onObject3DTabSelected?.();
         } else {
             // Show tileset preview, hide region UI
             if (tilesetContainer) tilesetContainer.style.display = 'block';
             if (regionContainer) regionContainer.style.display = 'none';
+            if (object3dContainer) object3dContainer.style.display = 'none';
             if (selectionInfo) selectionInfo.style.display = 'block';
 
             // Hide regions overlay when switching away from R tab
@@ -334,6 +406,11 @@ class TilesetPaletteViewer {
     // Load tileset for the current map
     async loadTilesetForMap(mapData) {
         if (!mapData || !this.fs) return;
+
+        // Every map load passes through here, including the first one after a
+        // project is opened, which is the point at which a different tile size
+        // can arrive.
+        this.refreshTileMetrics();
 
         try {
             const tilesetsPath = this.path.join(this.projectPath, 'data', 'Tilesets.json');
@@ -536,8 +613,9 @@ class TilesetPaletteViewer {
             currentY += height;
         }
 
-        // Determine canvas width - use widest layer (A2/A3/A4/A5 are 8 cols = 384px)
-        const canvasWidth = 384; // 8 columns × 48px (A1 is narrower at 2 cols = 96px)
+        // Determine canvas width - use widest layer (A2/A3/A4/A5 are 8 cols).
+        // A1 is narrower at 2 cols and sits inside this.
+        const canvasWidth = 8 * this.tileSize;
         canvas.width = canvasWidth;
         canvas.height = currentY;
 

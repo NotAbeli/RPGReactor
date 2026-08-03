@@ -451,8 +451,12 @@ Sprite_Character.prototype.updateReactor3DPosition = function() {
     const character = this._character;
     const gx = character._realX;
     const gy = character._realY;
-    const ground = Reactor3D.elevationAt($dataMap, Math.round(gx), Math.round(gy));
-    const point = Reactor3D.projectToScreen(camera, gx + 0.5, ground, gy + 0.5);
+    // Where this character is standing, which is not always its own cell:
+    // a cell whose art was stood into a wall has moved onto that wall, and
+    // a sign hanging on it has to move with it.
+    const stand = Reactor3D.standingPlaceFor(character);
+    const at = Reactor3D.pointOf(camera, gx + 0.5, stand);
+    const point = Reactor3D.projectToScreen(camera, at.x, at.y, at.z);
     if (!point) return false;
 
     this.x = point.x;
@@ -462,6 +466,99 @@ Sprite_Character.prototype.updateReactor3DPosition = function() {
     this.z = character.screenZ();
     this._reactor3dBehindCamera = !point.visible;
     return true;
+};
+
+/**
+ * How much bigger than its 2D self this sprite has to be drawn.
+ *
+ * The 3D camera frames about half the map a 2D screen does, so a tile that
+ * covers 48 pixels flat covers nearer a hundred here. A character left at its
+ * own size is then half the height of the doorway it is standing in, and a
+ * sign no longer travels with the pole it is nailed to. Returns null on a flat
+ * map, where nothing should be touched at all.
+ */
+/**
+ * An event whose tile now stands in the scene must not be drawn again over it.
+ *
+ * Hidden here rather than while positioning, because `update` calls
+ * `updatePosition` and *then* `updateVisibility`, so a hide applied during
+ * positioning was recomputed away a moment later. The door was drawn twice —
+ * once as geometry standing in the world, once as a flat sprite over it — and
+ * because the flat one returned before it was ever placed, it kept whatever
+ * position it last had and slid about the screen as the camera moved. Six of
+ * them on Moletown looked exactly like sprites trailing the party.
+ */
+Sprite_Character.prototype._reactor3dBaseVisibility = Sprite_Character.prototype.updateVisibility;
+Sprite_Character.prototype.updateVisibility = function() {
+    this._reactor3dBaseVisibility();
+    if (typeof Reactor3D === "undefined") return;
+    const character = this._character;
+    if (!character || typeof character.eventId !== "function") return;
+    if (Reactor3D.isEventProp(character.eventId())) this.visible = false;
+};
+
+Sprite_Character.prototype.reactor3DScale = function() {
+    if (typeof Reactor3D === "undefined") return null;
+    const viewport = Reactor3D.viewport();
+    const camera = viewport && viewport.camera();
+    if (!camera || !Reactor3D.shouldRender3D($dataMap)) return null;
+    const character = this._character;
+    if (!character) return null;
+    const gx = character._realX;
+    const gy = character._realY;
+    const stand = Reactor3D.standingPlaceFor(character);
+    // The whole transform a declared 3D object gets on this cell: width,
+    // height and shear. All three come off the same two projected axes, so a
+    // sprite anchored at its feet, sheared by the lean and stretched by the
+    // two scales, has its corners where the billboard's corners are.
+    //
+    // The three only work together. Foreshortening without the lean leaves the
+    // top of a tall sign sideways of where it belongs; leaning without the
+    // foreshortening overshoots it the other way by about as much.
+    // Measured across this sprite's own frame rather than across one tile: a
+    // three-tile sign sized from a one-tile sample lands its top edge tens of
+    // pixels out, and the error moves with the camera.
+    const tileWidth = $gameMap.tileWidth();
+    const tileHeight = $gameMap.tileHeight();
+    const wide = this.patternWidth() / tileWidth;
+    const tall = this.patternHeight() / tileHeight;
+    const at = Reactor3D.pointOf(camera, gx + 0.5, stand);
+    return Reactor3D.standScaleAt(camera, at.x, at.y, at.z, wide, tall);
+};
+
+/**
+ * Apply it around everything else, rather than inside `updatePosition`.
+ *
+ * Setting the scale there did nothing visible, because plugins that scale
+ * character sprites — EventCustomizer's zoom, among others — assign
+ * `sprite.scale` from their own `update`, which runs afterwards and wins. So
+ * the sprite kept its flat size over a map drawn at twice that, and the whole
+ * change was invisible.
+ *
+ * Last frame's factor is taken back off first and this one multiplied on
+ * afterwards, which is how UltraMode7 does the same job here: a plugin that
+ * assigns an absolute scale still gets the scale it asked for, a plugin that
+ * multiplies still multiplies, and nothing compounds frame over frame.
+ */
+Sprite_Character.prototype._reactor3dBaseUpdate = Sprite_Character.prototype.update;
+Sprite_Character.prototype.update = function() {
+    const was = this._reactor3dStand;
+    if (was) {
+        this.scale.x /= was.x;
+        this.scale.y /= was.y;
+        this.skew.x -= was.skew;
+        this._reactor3dStand = null;
+    }
+    this._reactor3dBaseUpdate();
+    const stand = this.reactor3DScale();
+    if (!stand) return;
+    this.scale.x *= stand.x;
+    this.scale.y *= stand.y;
+    // Sheared about the anchor, which is already the middle of the feet: the
+    // ground line stays level and the top leans, which is the parallelogram a
+    // standing billboard actually projects to.
+    this.skew.x += stand.skew;
+    this._reactor3dStand = stand;
 };
 
 Sprite_Character.prototype.updateOther = function() {
@@ -1345,8 +1442,33 @@ Sprite_Animation.prototype.shouldWaitForPrevious = function() {
     return false;
 };
 
+/**
+ * How much bigger an animation has to be drawn than its 2D self.
+ *
+ * An animation is not a child of the sprite it plays on — it lives in the
+ * spriteset's effects container — so it did not inherit the scaling that puts
+ * a character in proportion with a 3D map. A looping effect on a shopfront was
+ * drawn at flat size over a world drawn larger, and the mismatch grew with
+ * distance because the map is in perspective and the effect was not.
+ *
+ * The average over the targets, so an animation on a group of them sits at one
+ * consistent size rather than picking whichever target happens to be first.
+ * Returns 1 anywhere the question does not apply, including every battle.
+ */
+Sprite_Animation.prototype.reactor3DScale = function() {
+    let total = 0;
+    let count = 0;
+    for (const target of this._targets || []) {
+        const scale = target && target.reactor3DScale && target.reactor3DScale();
+        // An animation is round; it takes one number. The vertical is the one
+        // the eye reads against the world.
+        if (scale && scale.y > 0) { total += scale.y; count++; }
+    }
+    return count ? total / count : 1;
+};
+
 Sprite_Animation.prototype.updateEffectGeometry = function() {
-    const scale = this._animation.scale / 100;
+    const scale = (this._animation.scale / 100) * this.reactor3DScale();
     const r = Math.PI / 180;
     // Compensate for the projection's y-flip by rotating the effect 180° on
     // the x-axis (AnimationPicker's recipe). Without this, particle motion
@@ -2000,6 +2122,21 @@ Sprite_AnimationMV.prototype.updateCellSprite = function(sprite, cell) {
     } else {
         sprite.visible = false;
     }
+};
+
+/**
+ * The same for an MV animation, applied to the whole sprite rather than to its
+ * cells: a cell carries a pixel offset as well as a size, and scaling only the
+ * art would leave the parts of an explosion spread at flat distances.
+ */
+Sprite_AnimationMV.prototype.reactor3DScale = Sprite_Animation.prototype.reactor3DScale;
+
+Sprite_AnimationMV.prototype._reactor3dBaseUpdate = Sprite_AnimationMV.prototype.update;
+Sprite_AnimationMV.prototype.update = function() {
+    this._reactor3dBaseUpdate();
+    const scale = this.reactor3DScale();
+    this.scale.x = scale;
+    this.scale.y = scale;
 };
 
 Sprite_AnimationMV.prototype.processTimingData = function(timing) {
@@ -3596,6 +3733,36 @@ Spriteset_Base.prototype.createAnimationSprite = function(
     sprite.targetObjects = targets;
     sprite.setup(targetSprites, animation, mirror, delay, previous);
     this._effectsContainer.addChild(sprite);
+    /*
+     * In 3D, an animation played *on* something belongs where that thing is.
+     *
+     * An animation carries no `z`, so the tilemap's sort leaves it wherever it
+     * was added — which is last, and therefore in front of everything. In 2D
+     * that is the convention and it is fine: the map is flat, and an effect
+     * over the top of it reads as an effect.
+     *
+     * 3D draws the world in two passes, one below the characters and one above
+     * them, and an animation floating over both is in front of the entire map
+     * however far away the thing playing it is. A banner animating on a wall
+     * at the back of a street drew over the sign standing in front of it.
+     *
+     * But only for animations that have somewhere to be. Head, centre and feet
+     * are all positions on a target, so they take the target's own place in the
+     * sort and are covered by whatever covers it. Screen animations are not on
+     * the map at all — they are played over the whole view, and clipping one
+     * behind a building would be a bug rather than a fix. The author has
+     * already said which of the two this is.
+     *
+     * Only on a map with a 3D scene: `_reactor3d` is a Spriteset_Map field, so
+     * battle animations keep the convention they have always had.
+     */
+    if (this._reactor3d && !this.isScreenAnimation(animation)) {
+        const host = targetSprites && targetSprites[0];
+        const hostZ = host && typeof host.z === "number" ? host.z : null;
+        // 3 is where an ordinary character sits, which is what an animation
+        // with no host to ask should be treated as.
+        sprite.z = hostZ === null ? 3 : hostZ;
+    }
     this._animationSprites.push(sprite);
     if (mv && sprite._rrPrimeFirstFrame) {
         sprite._rrPrimeFirstFrame();
@@ -3619,6 +3786,20 @@ Spriteset_Base.prototype.makeTargetSprites = function(targets) {
 
 Spriteset_Base.prototype.lastAnimationSprite = function() {
     return this._animationSprites[this._animationSprites.length - 1];
+};
+
+/**
+ * Whether an animation is played across the screen rather than on a target.
+ *
+ * The author already said which. MZ's `displayType` is 2 for screen — 0 is
+ * each target, 1 the centre of them all — and MV says the same thing with
+ * `position` 3. Nothing here is inferred.
+ */
+Spriteset_Base.prototype.isScreenAnimation = function(animation) {
+    if (!animation) return false;
+    return this.isMVAnimation(animation)
+        ? animation.position === 3
+        : animation.displayType === 2;
 };
 
 Spriteset_Base.prototype.isAnimationForEach = function(animation) {
@@ -3696,6 +3877,18 @@ Spriteset_Map.prototype.createLowerLayer = function() {
 };
 
 Spriteset_Map.prototype.update = function() {
+    // Aim the camera before anything projects through it.
+    //
+    // Character sprites place themselves during the child update below, and
+    // the 3D world is rendered from the camera in `updateReactor3D` after it.
+    // Aiming in between meant the sprites used last frame's camera and the
+    // world used this frame's — a frame apart. Standing still the two agree,
+    // which is why this looked fine until something moved; walking, everything
+    // drawn away from the focus slid by a frame of camera motion, and the
+    // further up the screen it was the more it slid, because perspective
+    // moves a distant point further per unit of camera travel than a near one.
+    // A sign over a shopfront drifted against its own building.
+    if (this._reactor3d) this.updateReactor3DCamera();
     Spriteset_Base.prototype.update.call(this);
     this.updateReactor3D();
     this.updateTileset();
@@ -3865,6 +4058,14 @@ Spriteset_Map.prototype.destroy = function(options) {
         this._reactor3d.scene.destroy();
         this._reactor3d.viewport.setVisible(false);
         this._reactor3d = null;
+        this.destroyReactor3DSprite();
+        // Whatever this map borrowed from the lighting plugin is given back.
+        if (this._reactor3dLit) {
+            Reactor3D.suppressFlatLighting(false);
+            Reactor3D.setLights([]);
+            Reactor3D.setAmbient(null);
+            this._reactor3dLit = false;
+        }
     }
     if (this._rrCullHolder) {
         for (const child of this._rrCullHolder.children.slice()) {
@@ -3915,24 +4116,205 @@ Spriteset_Map.prototype.createTilemap = function() {
  * ordinary PIXI sprites drawn over it — the HD-2D arrangement, and the reason
  * plugins that touch Sprite_Character keep working.
  */
+/**
+ * Whether every tileset sheet this map draws from has finished loading.
+ *
+ * `createTilemap` starts the sheet loads and builds the 3D scene in the same
+ * breath, but the textures come from those bitmaps — so building immediately
+ * reads them empty and the map comes up blank. The 2D tilemap has no such
+ * problem: it redraws itself as each sheet arrives.
+ */
+Spriteset_Map.prototype.isReactor3DTilesetReady = function() {
+    const bitmaps = this._tilemap && this._tilemap.bitmaps;
+    if (!bitmaps || !bitmaps.length) return false;
+    return bitmaps.every(bitmap => !bitmap || !bitmap.isReady || bitmap.isReady());
+};
+
 Spriteset_Map.prototype.createReactor3D = function() {
     this._reactor3d = null;
     if (typeof Reactor3D === "undefined") return;
-    if (!Reactor3D.shouldRender3D($dataMap)) return;
+    // Every map starts by covering the 3D canvas again. A 2D map must draw on
+    // an opaque canvas as it always has, and leaving the previous map's
+    // transparency behind would show the page through it.
+    Reactor3D.setGameCanvasTransparent(false);
+    if (!Reactor3D.shouldRender3D($dataMap)) {
+        // A map that asked for 3D and did not get it looks exactly like a map
+        // that never asked, so the reason is said out loud rather than left to
+        // be guessed at. Only for maps that asked: an ordinary 2D map is not a
+        // problem and must not print anything.
+        const blocker = Reactor3D.renderBlocker($dataMap);
+        if (blocker && Reactor3D.isMap3D($dataMap)) {
+            console.warn(`Reactor3D: this map is not being drawn in 3D — ${blocker}.`);
+        }
+        return;
+    }
+
+    // Wait for the sheets. `update` tries again each frame until they land,
+    // which costs nothing and is how the 2D tilemap already behaves.
+    if (!this.isReactor3DTilesetReady()) {
+        this._reactor3dPending = true;
+        return;
+    }
+    this._reactor3dPending = false;
 
     const viewport = Reactor3D.acquireViewport();
-    if (!viewport) return;
+    if (!viewport) return;   // acquireViewport has already said why
 
-    const scene = new Reactor3D.MapScene($dataMap, this._tilemap.bitmaps);
-    const settings = ($dataMap.reactor3d && $dataMap.reactor3d.camera) || {};
-    const camera = Reactor3D.createCamera(settings);
-    viewport.setScene(scene.scene(), camera);
-    viewport.setVisible(true);
+    // Building the scene must not be able to take the map down with it.
+    //
+    // This runs inside `createTilemap`, which runs inside `onMapLoaded`, which
+    // the scene calls from `isReady` — and `isReady` only marks the map loaded
+    // *after* it returns. So a throw in here left the scene retrying the whole
+    // map load every frame forever: a white screen, and a fresh WebGL context
+    // each time until the browser began evicting live ones. 3D is a view of the
+    // map; it can fail, and the map still has to draw.
+    try {
+        const scene = new Reactor3D.MapScene($dataMap, this._tilemap.bitmaps);
+        const settings = ($dataMap.reactor3d && $dataMap.reactor3d.camera) || {};
+        const camera = Reactor3D.createCamera(settings);
+        viewport.setScene(scene.scene(), camera);
+        viewport.setVisible(true);
 
-    this._reactor3d = { viewport, scene, camera, settings };
-    this._tilemap.lowerLayerVisible = false;
-    if (this._tilemap._lowerLayer) this._tilemap._lowerLayer.visible = false;
-    if (this._tilemap._upperLayer) this._tilemap._upperLayer.visible = false;
+        this._reactor3d = { viewport, scene, camera, settings };
+        this._tilemap.lowerLayerVisible = false;
+        if (this._tilemap._lowerLayer) this._tilemap._lowerLayer.visible = false;
+        if (this._tilemap._upperLayer) this._tilemap._upperLayer.visible = false;
+        // Aim it before anything is drawn. `createCamera` leaves the camera at
+        // the origin and only the frame update moves it, so the first frame
+        // was rendered from the map's corner looking off the edge.
+        this.updateReactor3DCamera();
+
+        // Said once per map, because an empty 3D view has several causes that
+        // look identical on screen and none of them throw.
+        // One line, because an empty 3D view has several causes that look
+        // identical on screen and none of them throw. `bounds` against
+        // `camera` is what tells "nothing was built" from "nothing is in view".
+        console.log("Reactor3D: 3D scene built.", Object.assign(scene.report(), {
+            bounds: scene.extent ? scene.extent() : "n/a",
+            camera: [camera.position.x, camera.position.y, camera.position.z]
+                .map(n => Math.round(n * 10) / 10).join(", ")
+        }));
+        // A parallax would sit over the 3D ground and hide it. 3D maps do not
+        // draw one yet; this is why, rather than an oversight.
+        if (this._parallax) this._parallax.visible = false;
+        // The 3D ground is drawn *into* the PIXI scene rather than onto a
+        // canvas behind it, so everything that composites against the map —
+        // the screen tone, fog, lighting overlays, blend modes — reaches it
+        // the way it reaches the 2D tilemap. Stacked canvases put it out of
+        // their reach: a MULTIPLY fog had nothing to multiply against and
+        // composited as a flat wash, which is why fog read heavier in 3D.
+        this.createReactor3DSprite(viewport, scene);
+    } catch (error) {
+        console.error("Reactor3D: building the 3D scene failed; "
+            + "the map is being drawn in 2D instead.", error);
+        this._reactor3d = null;
+        // Failed for a reason that will not change by trying again next frame.
+        this._reactor3dPending = false;
+        this._reactor3dFailed = true;
+        // The ground layers were never hidden if we threw before that, but say
+        // so plainly rather than relying on where the throw landed.
+        this._tilemap.lowerLayerVisible = true;
+        if (this._tilemap._lowerLayer) this._tilemap._lowerLayer.visible = true;
+        if (this._tilemap._upperLayer) this._tilemap._upperLayer.visible = true;
+        if (this._parallax) this._parallax.visible = true;
+        this.destroyReactor3DSprite();
+        Reactor3D.viewport()?.setVisible(false);
+    }
+};
+
+/**
+ * Put the 3D render into the PIXI scene, underneath everything else.
+ *
+ * The three.js canvas becomes a texture on a full-screen sprite sitting where
+ * the tilemap's ground used to be. It costs one full-canvas texture upload per
+ * frame — what a video sprite costs — and it buys back every effect that
+ * assumed the map was in the scene.
+ */
+Spriteset_Map.prototype.createReactor3DSprite = function(viewport, scene) {
+    this.destroyReactor3DSprite();
+    const canvas = viewport.canvas ? viewport.canvas() : null;
+    if (!canvas || typeof PIXI === "undefined") return;
+
+    viewport.detachFromPage();
+
+    // Two sprites, sandwiching the characters, mirroring what the 2D tilemap
+    // does with its lower and upper layers: the ground goes below them and the
+    // star-flagged tiles above, so a character can walk behind a tree or
+    // through a doorway here as well. Each takes its own copy of the canvas,
+    // because both are read from it in the same frame.
+    const make = (holder, index) => {
+        const surface = document.createElement("canvas");
+        surface.width = canvas.width;
+        surface.height = canvas.height;
+        const texture = PIXI.Texture.from(surface);
+        const sprite = new PIXI.Sprite(texture);
+        sprite.width = Graphics.width;
+        sprite.height = Graphics.height;
+        holder.addChildAt(sprite, Math.min(index, holder.children.length));
+        return { sprite, texture, surface, context: surface.getContext("2d") };
+    };
+
+    // Above the black screen, below the tilemap: where the ground used to be.
+    this._reactor3dBelow = make(this._baseSprite, 1);
+    // The upper pass goes *inside* the tilemap, as its last child — which is
+    // exactly the place the tilemap's own upper layer occupied, above the
+    // characters and below everything a plugin hangs off the spriteset. Made a
+    // sibling of the tilemap instead, it floated over fog and weather that
+    // ought to cover it.
+    this._reactor3dAbove = scene && scene.hasAbove && scene.hasAbove()
+        ? make(this._tilemap, this._tilemap.children.length)
+        : null;
+    if (this._reactor3dAbove) {
+        // The tilemap re-sorts its children by `z` every frame, so the index
+        // it was added at means nothing. With no `z` it sorted as 0 — under
+        // every character at 3 — and you walked in front of everything the
+        // pass contained however carefully the geometry was routed into it.
+        // Four is where the 2D tilemap's own upper layer sits, which is the
+        // job this pass is doing.
+        this._reactor3dAbove.sprite.z = 4;
+    }
+    // And the lights above all of it, added rather than drawn: light does not
+    // cover what is beneath it, and fog and weather are things light falls on.
+    // On the spriteset itself rather than the base sprite, so the screen tone
+    // does not dim the lights along with the world.
+    this._reactor3dLights = Reactor3D.wantsLights3D($dataMap)
+        ? make(this, this.children.length)
+        : null;
+    if (this._reactor3dLights) {
+        const sprite = this._reactor3dLights.sprite;
+        // v8 names blend modes, v5-v7 number them.
+        const modes = typeof PIXI !== "undefined" && PIXI.BLEND_MODES;
+        sprite.blendMode = modes && modes.ADD !== undefined ? modes.ADD : "add";
+    }
+};
+
+Spriteset_Map.prototype.destroyReactor3DSprite = function() {
+    for (const key of ["_reactor3dBelow", "_reactor3dAbove", "_reactor3dLights"]) {
+        const pass = this[key];
+        if (!pass) continue;
+        if (pass.sprite.parent) pass.sprite.parent.removeChild(pass.sprite);
+        pass.sprite.destroy({ texture: false, baseTexture: false });
+        pass.texture.destroy(false);
+        this[key] = null;
+    }
+};
+
+/**
+ * Hand this frame's 3D render to PIXI.
+ *
+ * The canvas is the texture's source, so only the upload has to be asked for;
+ * v8 keeps that on `source`, v5-v7 on `baseTexture`.
+ */
+Spriteset_Map.prototype.updateReactor3DTexture = function(pass, from) {
+    if (!pass) return;
+    // Copied off the three canvas rather than pointed at it: the second pass
+    // overwrites the first on that canvas within the same frame, so each needs
+    // its own surface to hold.
+    pass.context.clearRect(0, 0, pass.surface.width, pass.surface.height);
+    pass.context.drawImage(from, 0, 0);
+    const source = pass.texture.source || pass.texture.baseTexture;
+    if (source && source.update) source.update();
+    else if (source) source.needsUpdate = true;
 };
 
 Spriteset_Map.prototype.reactor3D = function() {
@@ -3947,17 +4329,102 @@ Spriteset_Map.prototype.reactor3D = function() {
  * previous one — otherwise they trail the ground by a frame while scrolling.
  */
 Spriteset_Map.prototype.updateReactor3D = function() {
+    // The sheets may have landed since `createTilemap` ran. Retried here rather
+    // than waited for up front, because the scene must not stall on a sheet
+    // that never arrives — a missing file leaves a 2D map, not a hung game.
+    if (this._reactor3dPending && !this._reactor3dFailed) {
+        this.createReactor3D();
+    }
+
     const state = this._reactor3d;
     if (!state) return;
 
     // _realX/_realY interpolate between cells, so the camera glides rather than
     // stepping a whole tile at a time.
+    this.updateReactor3DCamera();
+    this.updateReactor3DLights(state);
+    const canvas = state.viewport.canvas ? state.viewport.canvas() : null;
+
+    // Ground first, then — if the map has anything the 2D tilemap would have
+    // drawn over the characters — the upper pass. Both come off the same
+    // canvas, one after the other.
+    const split = this._reactor3dAbove || this._reactor3dLights;
+    state.viewport.renderPass(state.scene, split ? "below" : "all");
+    this.updateReactor3DTexture(this._reactor3dBelow, canvas);
+    if (this._reactor3dAbove) {
+        state.viewport.renderPass(state.scene, "above");
+        this.updateReactor3DTexture(this._reactor3dAbove, canvas);
+    }
+    if (this._reactor3dLights) {
+        state.viewport.renderPass(state.scene, "lights");
+        this.updateReactor3DTexture(this._reactor3dLights, canvas);
+        this.keepReactor3DLightsOnTop();
+    }
+
+};
+
+/**
+ * Point the camera at the player.
+ *
+ * Split out so the scene can be aimed the moment it is built rather than on
+ * the first frame update — otherwise the first frame is drawn from wherever
+ * `createCamera` left the camera, which is the origin.
+ */
+/**
+ * Give the scene this frame's lights, if the map asked for them.
+ *
+ * Collected from whichever lighting plugin is installed and translated into map
+ * coordinates by a shim, so a lantern becomes a sphere of light pooling on the
+ * ground and a torch a cone down a corridor, rather than a circle painted flat
+ * over the world.
+ *
+ * A map that has not asked keeps the plugin's own 2D lightmap and a fully lit
+ * scene, which is exactly what it had before.
+ */
+Spriteset_Map.prototype.updateReactor3DLights = function(state) {
+    const wants = Reactor3D.wantsLights3D($dataMap);
+    if (wants !== this._reactor3dLit) {
+        this._reactor3dLit = wants;
+        // The plugin's flat lightmap goes away only while its lights are being
+        // drawn for real, and comes straight back otherwise.
+        Reactor3D.suppressFlatLighting(wants);
+        Reactor3D.setAmbient(wants ? Reactor3D.ambientFor($dataMap) : null);
+    }
+    Reactor3D.setLights(wants ? Reactor3D.collectLights() : []);
+    // Around the player, because that is what the camera is looking at: the
+    // scene can only carry so many lights before the shader that samples them
+    // stops compiling, so the budget goes to the ones that can be seen.
+    const focus = $gamePlayer
+        ? { x: $gamePlayer._realX, y: $gamePlayer._realY }
+        : null;
+    if (state.scene.syncLights) state.scene.syncLights(focus);
+};
+
+/**
+ * Keep the light pass the last thing drawn.
+ *
+ * Plugins add their own layers to the spriteset long after it is built — fog,
+ * weather, overlays — and each one lands on top of whatever is already there.
+ * Light is the one thing that should be over all of it, so its place is
+ * re-asserted rather than claimed once. Only when something has actually got
+ * above it, so an ordinary frame costs a comparison.
+ */
+Spriteset_Map.prototype.keepReactor3DLightsOnTop = function() {
+    const pass = this._reactor3dLights;
+    const sprite = pass && pass.sprite;
+    const parent = sprite && sprite.parent;
+    if (!parent) return;
+    const last = parent.children.length - 1;
+    if (parent.children[last] !== sprite) parent.setChildIndex(sprite, last);
+};
+
+Spriteset_Map.prototype.updateReactor3DCamera = function() {
+    const state = this._reactor3d;
+    if (!state) return;
     const focusX = $gamePlayer ? $gamePlayer._realX : 0;
     const focusY = $gamePlayer ? $gamePlayer._realY : 0;
     const focusHeight = Reactor3D.elevationAt($dataMap, Math.round(focusX), Math.round(focusY));
-
     Reactor3D.aimCamera(state.camera, { x: focusX, y: focusHeight, z: focusY }, state.settings);
-    state.viewport.render();
 };
 
 Spriteset_Map.prototype.loadTileset = function() {

@@ -254,8 +254,16 @@ test('a 2D map takes none of the 3D path', () => {
     const at = spritesSource.indexOf('Spriteset_Map.prototype.createReactor3D');
     const body = spritesSource.slice(at, spritesSource.indexOf('\n};', at));
     assert.match(body, /if \(typeof Reactor3D === "undefined"\) return;/);
-    assert.match(body, /if \(!Reactor3D\.shouldRender3D\(\$dataMap\)\) return;/);
+    assert.match(body, /if \(!Reactor3D\.shouldRender3D\(\$dataMap\)\) \{/,
+        'the gate is still the first thing after the module check');
     assert.match(body, /this\._reactor3d = null;/, 'and leaves no state behind');
+
+    // It returns before anything is acquired: a 2D map must not create a
+    // viewport, a scene or a camera. The gate may explain itself on the way
+    // out — see `renderBlocker` — but it must still leave.
+    const gate = body.indexOf('shouldRender3D');
+    assert.ok(gate < body.indexOf('acquireViewport'), 'and before the viewport');
+    assert.ok(gate < body.indexOf('new Reactor3D.MapScene'), 'and before the scene');
 });
 
 test('the camera is aimed before the sprites that project through it', () => {

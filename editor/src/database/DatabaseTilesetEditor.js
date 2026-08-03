@@ -138,6 +138,7 @@ class DatabaseTilesetEditor {
 
     selectTileset(id) {
         this.currentTileset = this.tilesetList[id];
+        this.clearTile3DSelection();
     }
 
     saveTileset() {
@@ -268,11 +269,26 @@ class DatabaseTilesetEditor {
     }
 
     /** Persist classification alongside Tilesets.json outside the modal. */
+    /**
+     * Tell the open map that the 3D classification changed.
+     *
+     * Its own event rather than a tileset save: the 3D view rebuilds from the
+     * classification and needs to know, while the database list and the sheet
+     * diff do not — and this fires on every stroke of the Shape tool.
+     */
+    notifyTileset3DSaved() {
+        if (typeof document === 'undefined' || typeof CustomEvent !== 'function') return;
+        document.dispatchEvent(new CustomEvent('rr-tileset-3d-saved', {
+            detail: { tilesetId: this.currentTileset ? this.currentTileset.id : null }
+        }));
+    }
+
     saveTileset3DFile() {
         const classes = this.tileset3DClasses();
         if (!classes || !this.fs) return;
         const projectPath = this.getProjectPath();
         if (!projectPath) return;
+        this.notifyTileset3DSaved();
 
         if (this.databaseManager && typeof this.databaseManager.saveTileset3D === 'function') {
             this.databaseManager.saveTileset3D(projectPath);
@@ -342,6 +358,7 @@ class DatabaseTilesetEditor {
 
         // Set the current tileset
         this.currentTileset = tileset;
+        this.clearTile3DSelection();
 
         // Debug: Log initialization details
         console.log('=== Initializing Compact Tileset UI ===');
@@ -831,8 +848,7 @@ class DatabaseTilesetEditor {
         // Clear cache for old layer first (before overwriting)
         const oldFileName = this.currentTileset.tilesetNames[layerIndex];
         if (oldFileName) {
-            const oldCacheKey = `${layerIndex}_${oldFileName.endsWith('.png') ? oldFileName : oldFileName + '.png'}`;
-            this.imageCache.delete(oldCacheKey);
+            this.imageCache.delete(this.baseCacheKey(layerIndex, oldFileName));
         }
 
         // Update tileset data. Slots past the end of a legacy nine-entry
@@ -841,8 +857,7 @@ class DatabaseTilesetEditor {
         RRTilesetSheets.setNameAt(this.currentTileset.tilesetNames, layerIndex, baseName);
 
         // Clear cache for new layer as well
-        const newCacheKey = `${layerIndex}_${baseName}.png`;
-        this.imageCache.delete(newCacheKey);
+        this.imageCache.delete(this.baseCacheKey(layerIndex, baseName));
 
         // Switch to the tab that contains this layer
         const appropriateTab = this.getTabForLayerIndex(layerIndex);
@@ -850,6 +865,18 @@ class DatabaseTilesetEditor {
 
         // Refresh UI - reload thumbnails
         this.loadLayerListThumbnails();
+
+        // Announce it, exactly as saving the tileset does.
+        //
+        // Assigning a sheet only updated this editor's own thumbnails, so the
+        // map canvas and the tile palette — each of which captured the tileset
+        // when the map opened — knew nothing about it until the Save button
+        // beside the name was pressed. A sheet added to E, F or G was
+        // therefore not selectable in its tab, and a tile placed from one drew
+        // nothing at all, because the sheet it addresses had never been
+        // loaded. This only announces; the Database modal still owns writing
+        // the file, so Cancel can still put everything back.
+        this.notifyTilesetSaved();
 
         const shown = baseName || (window.I18n ? window.I18n.t('common.none') : '(None)');
         console.log(`Tileset ${shown} assigned to ${layerName} (index ${layerIndex})`);
@@ -996,7 +1023,7 @@ class DatabaseTilesetEditor {
                     const layerName = layerNames[index];
 
                     // Check if we have a cached base canvas
-                    const cacheKey = `${index}_${fileName}`;
+                    const cacheKey = this.baseCacheKey(index, fileName);
                     let baseCanvas = this.imageCache.get(cacheKey);
 
                     if (!baseCanvas) {
@@ -1140,6 +1167,10 @@ class DatabaseTilesetEditor {
                 // canvases already on screen have to be repainted.
                 const was3D = this.currentEditMode === 'tile3d';
                 this.currentEditMode = mode;
+                // Leaving 3D drops what was selected in it. Kept, it came back
+                // as a box round a rectangle the mode being returned to has no
+                // concept of.
+                if (was3D && mode !== 'tile3d') this.clearTile3DSelection();
                 if (was3D !== (mode === 'tile3d')) this.refreshOverlays();
                 this.refreshFlagKey();
                 this.refreshTile3DPreview();
@@ -1172,7 +1203,7 @@ class DatabaseTilesetEditor {
             const isSplitSheet = RRTilesetSheets.isNormalSheetIndex(imageIndex);
 
             // Check if we have a cached base image
-            const cacheKey = `${imageIndex}_${fileName}`;
+            const cacheKey = this.baseCacheKey(imageIndex, fileName);
             let baseCanvas = this.imageCache.get(cacheKey);
 
             if (!baseCanvas) {
@@ -1313,8 +1344,7 @@ class DatabaseTilesetEditor {
         // Get the cached base canvas for this layer
         const fileName = this.currentTileset.tilesetNames[imageIndex];
         // Normalize fileName to include .png extension (must match how it was cached)
-        const fileNameWithExt = fileName && (fileName.endsWith('.png') ? fileName : fileName + '.png');
-        const cacheKey = `${imageIndex}_${fileNameWithExt}`;
+        const cacheKey = this.baseCacheKey(imageIndex, fileName);
 
         console.log(`Attempting to redraw overlay for imageIndex ${imageIndex}, fileName: ${fileName}, cacheKey: ${cacheKey}`);
 
@@ -1588,6 +1618,24 @@ class DatabaseTilesetEditor {
         ctx.lineJoin = previousJoin;
     }
 
+    /**
+     * How much the overlay marks are scaled for the cell they sit in.
+     *
+     * The passage arrows, the flag icons and the 3D class marks are drawn at
+     * fixed sizes chosen for a 48-pixel cell, and deliberately kept at that
+     * size on a 32-pixel one so they stay legible rather than shrinking to
+     * nothing. Below that the cell is smaller than the mark: a margin of 8
+     * puts the left and right arrows of a 16-pixel tile on the same point, a
+     * ladder icon 16 pixels tall runs into the tile beneath it, and a width of
+     * `tileSize - 26` comes out negative — which `fillRect` draws *backwards*,
+     * into the neighbouring tile, rather than clipping away.
+     *
+     * Capped at 1 so 48 and 32 are untouched.
+     */
+    markScale() {
+        return Math.min(1, this.tileSize / 32);
+    }
+
     /** Filled rectangle with a dark border. */
     drawFlagRect(ctx, x, y, w, h, fill) {
         ctx.fillStyle = fill;
@@ -1613,6 +1661,15 @@ class DatabaseTilesetEditor {
         const tilesX = Math.floor(width / this.tileSize);
         const tilesY = Math.floor(height / this.tileSize);
 
+        // Which kinds are somebody's roof. Gathered once rather than searched
+        // per tile: the sheet is up to 256 cells and the list is short.
+        const roofTiles = new Set();
+        const named = store.materials && store.materials[String(tilesetId)];
+        for (const key of Object.keys(named || {})) {
+            const top = named[key] && named[key].top;
+            if (top) roofTiles.add(classes.keyFor(top));
+        }
+
         for (let y = 0; y < tilesY; y++) {
             for (let x = 0; x < tilesX; x++) {
                 const tileIndex = this.getTileIndexForImage(imageIndex, x, y, tilesX);
@@ -1630,88 +1687,160 @@ class DatabaseTilesetEditor {
                 const member = classes.objectAt(store, tilesetId, tileIndex);
                 if (member) {
                     const { object, dc, dr, role } = member;
-                    ctx.save();
-                    ctx.strokeStyle = 'rgba(255, 235, 130, 0.95)';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
+                    // The selection traces this same rectangle, so drawing the
+                    // object's own outline as well left two rings a pixel
+                    // apart round one object.
+                    const isSelected = this._selected3dObject
+                        && this._selected3dObject.tile === object.tile;
                     // Only the outer edges, so a block reads as one object
-                    // rather than as a grid of boxes.
-                    if (dr === 0) { ctx.moveTo(drawX, drawY + 1); ctx.lineTo(drawX + this.tileSize, drawY + 1); }
-                    if (dr === object.h - 1) {
-                        ctx.moveTo(drawX, drawY + this.tileSize - 1);
-                        ctx.lineTo(drawX + this.tileSize, drawY + this.tileSize - 1);
+                    // rather than as a grid of boxes. When the object is the
+                    // selected one the selection ring traces exactly this
+                    // rectangle, so this is left off and there is one box.
+                    if (!isSelected) {
+                        ctx.save();
+                        ctx.strokeStyle = 'rgba(255, 235, 130, 0.95)';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        if (dr === 0) { ctx.moveTo(drawX, drawY + 1); ctx.lineTo(drawX + this.tileSize, drawY + 1); }
+                        if (dr === object.h - 1) {
+                            ctx.moveTo(drawX, drawY + this.tileSize - 1);
+                            ctx.lineTo(drawX + this.tileSize, drawY + this.tileSize - 1);
+                        }
+                        if (dc === 0) { ctx.moveTo(drawX + 1, drawY); ctx.lineTo(drawX + 1, drawY + this.tileSize); }
+                        if (dc === object.w - 1) {
+                            ctx.moveTo(drawX + this.tileSize - 1, drawY);
+                            ctx.lineTo(drawX + this.tileSize - 1, drawY + this.tileSize);
+                        }
+                        ctx.stroke();
+                        ctx.restore();
                     }
-                    if (dc === 0) { ctx.moveTo(drawX + 1, drawY); ctx.lineTo(drawX + 1, drawY + this.tileSize); }
-                    if (dc === object.w - 1) {
-                        ctx.moveTo(drawX + this.tileSize - 1, drawY);
-                        ctx.lineTo(drawX + this.tileSize - 1, drawY + this.tileSize);
-                    }
-                    ctx.stroke();
-                    ctx.restore();
                     if (role === classes.FLAT) {
-                        this.drawFlagRect(ctx, drawX + 7, centerY - 2, this.tileSize - 14, 5,
-                            'rgba(255, 235, 130, 0.98)');
+                        const s = this.markScale();
+                        this.drawFlagRect(ctx, drawX + 7 * s, centerY - 2 * s,
+                            this.tileSize - 14 * s, 5 * s, 'rgba(255, 235, 130, 0.98)');
                     }
                 }
+                // A wall that has been given a roof, and the roof it was
+                // given. Drawn before the class check, because the pairing is
+                // worth seeing on a wall nobody has classified yet.
+                const material = classes.materialOf
+                    ? classes.materialOf(store, tilesetId, tileIndex) : null;
+                if (material && material.top) {
+                    this.drawRoofMark(ctx, drawX, drawY, 'wall');
+                }
+                if (roofTiles && roofTiles.has(classes.keyFor(tileIndex))) {
+                    this.drawRoofMark(ctx, drawX, drawY, 'top');
+                }
+
                 if (value === classes.AUTO) continue;
 
-                // Inside a declared object the class is drawn once, on the
-                // object's top-left cell. Drawn on every cell it read as four
+                // Inside a declared object the class is drawn once, in the
+                // middle of the object. Drawn on every cell it read as four
                 // separate mountains rather than one mountain drawn across
                 // four cells, which is the opposite of what the declaration
-                // says. The tint still covers the whole object.
+                // says; drawn in the object's top-left corner it read as one
+                // cell of the object standing up while the rest lay flat. The
+                // tint still covers the whole object.
                 const markHere = !member || (member.dc === 0 && member.dr === 0);
 
+                // The glyph keeps its size — it has to stay legible on a 32
+                // pixel tile — and moves to the centre of whatever it
+                // describes. Everything below places itself inside a
+                // tile-sized box around this point.
+                const glyphX = member
+                    ? (x - member.dc) * this.tileSize + member.object.w * this.tileSize / 2
+                    : centerX;
+                let glyphY = member
+                    ? (y - member.dr) * this.tileSize + member.object.h * this.tileSize / 2
+                    : centerY;
+
+                // A cell laid flat inside the object draws its own bar across
+                // the middle of that cell. Where the object's centre lands on
+                // one, the two marks sat on top of each other; the class rises
+                // clear of it, since the bar is about that cell and the class
+                // is about the whole object. Raised, the class drops its own
+                // ground line — the flat bar directly beneath it is a
+                // horizontal line already, and two of them in one cell is a
+                // muddle rather than a description.
+                const raised = !!member && markHere
+                    && this.tile3dCentreIsFlat(member, x, y, imageIndex, tilesX);
+                if (raised) {
+                    const objectTop = (y - member.dr) * this.tileSize;
+                    glyphY = Math.max(objectTop + 14 * this.markScale(), glyphY - this.tileSize / 3);
+                }
+                const boxX = glyphX - this.tileSize / 2;
+                const boxY = glyphY - this.tileSize / 2;
+
+                const panel = value === classes.PANEL;
                 const upright = value === classes.UPRIGHT;
                 const scenery = value === classes.SCENERY;
                 const foliage = value === classes.FOLIAGE;
 
-                ctx.fillStyle = foliage
-                    ? 'rgba(90, 210, 150, 0.22)'
-                    : scenery ? 'rgba(120, 230, 120, 0.20)'
-                        : upright ? 'rgba(255, 170, 40, 0.22)' : 'rgba(70, 190, 255, 0.18)';
+                ctx.fillStyle = panel
+                    ? 'rgba(200, 150, 255, 0.22)'
+                    : foliage ? 'rgba(90, 210, 150, 0.22)'
+                        : scenery ? 'rgba(120, 230, 120, 0.20)'
+                            : upright ? 'rgba(255, 170, 40, 0.22)' : 'rgba(70, 190, 255, 0.18)';
                 ctx.fillRect(drawX, drawY, this.tileSize, this.tileSize);
                 if (!markHere) continue;
 
-                if (foliage) {
+                // Every offset below is measured for a 48-pixel cell and holds
+                // at 32; on a smaller tile it has to come in with the cell or
+                // it draws outside it. See markScale.
+                const s = this.markScale();
+                if (panel) {
+                    // A slab with a visible edge: it faces a way and has a
+                    // little depth, which is what separates it from a cut-out
+                    // that turns to follow the camera.
+                    this.drawFlagRect(ctx, boxX + 11 * s, boxY + 12 * s, this.tileSize - 26 * s,
+                        this.tileSize - 24 * s, 'rgba(210, 170, 255, 0.98)');
+                    this.drawFlagRect(ctx, boxX + this.tileSize - 15 * s, boxY + 15 * s, 4 * s,
+                        this.tileSize - 28 * s, 'rgba(150, 110, 200, 0.98)');
+                } else if (foliage) {
                     // Two small chevrons over an unbroken ground line: this
                     // tile is a crowd of separate things standing on ground
                     // that stays where it is, rather than one mass or one wall.
                     this.drawFlagArrow(ctx, [
-                        centerX - 10, centerY + 2,
-                        centerX - 5, centerY - 7,
-                        centerX, centerY + 2
+                        glyphX - 10 * s, glyphY + 2 * s,
+                        glyphX - 5 * s, glyphY - 7 * s,
+                        glyphX, glyphY + 2 * s
                     ], 'rgba(130, 240, 185, 0.98)');
                     this.drawFlagArrow(ctx, [
-                        centerX + 1, centerY + 4,
-                        centerX + 6, centerY - 4,
-                        centerX + 11, centerY + 4
+                        glyphX + 1 * s, glyphY + 4 * s,
+                        glyphX + 6 * s, glyphY - 4 * s,
+                        glyphX + 11 * s, glyphY + 4 * s
                     ], 'rgba(130, 240, 185, 0.98)');
-                    this.drawFlagRect(ctx, drawX + 8, drawY + this.tileSize - 12, this.tileSize - 16, 3,
-                        'rgba(130, 240, 185, 0.98)');
+                    if (!raised) {
+                        this.drawFlagRect(ctx, boxX + 8 * s, boxY + this.tileSize - 12 * s,
+                            this.tileSize - 16 * s, 3 * s, 'rgba(130, 240, 185, 0.98)');
+                    }
                 } else if (scenery) {
                     // A single standing tile: one chevron on its own base, in
                     // contrast to Upright's chevron on a full-width ground line.
                     this.drawFlagArrow(ctx, [
-                        centerX - 7, centerY + 3,
-                        centerX, centerY - 7,
-                        centerX + 7, centerY + 3
+                        glyphX - 7 * s, glyphY + 3 * s,
+                        glyphX, glyphY - 7 * s,
+                        glyphX + 7 * s, glyphY + 3 * s
                     ], 'rgba(150, 245, 150, 0.98)');
-                    this.drawFlagRect(ctx, centerX - 7, drawY + this.tileSize - 13, 14, 4,
-                        'rgba(150, 245, 150, 0.98)');
+                    if (!raised) {
+                        this.drawFlagRect(ctx, glyphX - 7 * s, boxY + this.tileSize - 13 * s,
+                            14 * s, 4 * s, 'rgba(150, 245, 150, 0.98)');
+                    }
                 } else if (upright) {
                     // A chevron rising from a ground line: this tile is part of
                     // something that stands where it is painted.
                     this.drawFlagArrow(ctx, [
-                        centerX - 11, centerY + 5,
-                        centerX, centerY - 9,
-                        centerX + 11, centerY + 5
+                        glyphX - 11 * s, glyphY + 5 * s,
+                        glyphX, glyphY - 9 * s,
+                        glyphX + 11 * s, glyphY + 5 * s
                     ], 'rgba(255, 196, 80, 0.98)');
-                    this.drawFlagRect(ctx, drawX + 10, drawY + this.tileSize - 13, this.tileSize - 20, 4,
-                        'rgba(255, 196, 80, 0.98)');
+                    if (!raised) {
+                        this.drawFlagRect(ctx, boxX + 10 * s, boxY + this.tileSize - 13 * s,
+                            this.tileSize - 20 * s, 4 * s, 'rgba(255, 196, 80, 0.98)');
+                    }
                 } else {
-                    this.drawFlagRect(ctx, drawX + 9, centerY - 2, this.tileSize - 18, 5,
-                        'rgba(130, 220, 255, 0.98)');
+                    this.drawFlagRect(ctx, boxX + 9 * s, glyphY - 2 * s, this.tileSize - 18 * s,
+                        5 * s, 'rgba(130, 220, 255, 0.98)');
                 }
             }
         }
@@ -1720,12 +1849,19 @@ class DatabaseTilesetEditor {
         // is selected, so a 2x2 mountain highlights as a mountain rather than
         // as whichever of its four squares happened to be clicked.
         const chosen = this.selected3dRect;
-        if (chosen) {
+        if (chosen && (chosen.imageIndex === undefined || chosen.imageIndex === imageIndex)) {
+            const left = chosen.x * this.tileSize, top = chosen.y * this.tileSize;
+            const wide = chosen.w * this.tileSize, high = chosen.h * this.tileSize;
             ctx.save();
-            ctx.strokeStyle = 'rgba(90, 190, 255, 0.95)';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(chosen.x * this.tileSize + 1, chosen.y * this.tileSize + 1,
-                chosen.w * this.tileSize - 2, chosen.h * this.tileSize - 2);
+            // A declared object's own outline is suppressed while it is
+            // selected, so this ring is the only box drawn round it. The wash
+            // covers the whole rectangle, which is what says the selection is
+            // the object rather than the cell that was clicked.
+            ctx.fillStyle = 'rgba(90, 190, 255, 0.14)';
+            ctx.fillRect(left, top, wide, high);
+            ctx.strokeStyle = 'rgba(120, 205, 255, 0.98)';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(left + 1.5, top + 1.5, wide - 3, high - 3);
             ctx.restore();
         }
 
@@ -1774,7 +1910,7 @@ class DatabaseTilesetEditor {
                 // Draw O for fully passable tiles (bits 0-3 all clear, bit 4 also clear)
                 if (passageBits === 0 && !aboveChar) {
                     ctx.fillStyle = 'rgba(120, 255, 120, 0.95)';
-                    ctx.font = 'bold 28px Arial';
+                    ctx.font = `bold ${28 * this.markScale()}px Arial`;
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     this.drawFlagGlyph(ctx, 'O', centerX, centerY);
@@ -1783,7 +1919,7 @@ class DatabaseTilesetEditor {
                 // Draw X for fully impassable tiles (all direction bits set: 0x0F)
                 if (passageBits === 0x0F) {
                     ctx.fillStyle = 'rgba(255, 60, 60, 0.95)';
-                    ctx.font = 'bold 32px Arial';
+                    ctx.font = `bold ${32 * this.markScale()}px Arial`;
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     this.drawFlagGlyph(ctx, 'X', centerX, centerY);
@@ -1796,9 +1932,13 @@ class DatabaseTilesetEditor {
                 const isStar = aboveChar;
 
                 if (!isO && !isX && !isStar) {
-                    const margin = 8;
-                    const arrowSize = 6;
-                    const dotRadius = 3;
+                    // A margin of 8 lands the left and right markers of a
+                    // 16-pixel tile on the same point, so all four directions
+                    // read as one blob. See markScale.
+                    const s = this.markScale();
+                    const margin = 8 * s;
+                    const arrowSize = 6 * s;
+                    const dotRadius = 3 * s;
 
                     // Down: bit 0 (SET = blocked, CLEAR = passable)
                     if (flag & 0x01) {
@@ -1848,24 +1988,29 @@ class DatabaseTilesetEditor {
 
                 // Draw ladder icon (bit 5 set) - in top-left corner
                 if (flag & 0x20) {
-                    this.drawFlagRect(ctx, drawX + 4, drawY + 4, 8, 16, 'rgba(160, 210, 255, 0.95)');
+                    const s = this.markScale();
+                    this.drawFlagRect(ctx, drawX + 4 * s, drawY + 4 * s, 8 * s, 16 * s,
+                        'rgba(160, 210, 255, 0.95)');
                     // Rungs, drawn over the outlined stile
                     ctx.fillStyle = 'rgba(30, 30, 120, 0.95)';
-                    ctx.fillRect(drawX + 3, drawY + 7, 10, 2);
-                    ctx.fillRect(drawX + 3, drawY + 11, 10, 2);
-                    ctx.fillRect(drawX + 3, drawY + 15, 10, 2);
+                    ctx.fillRect(drawX + 3 * s, drawY + 7 * s, 10 * s, 2 * s);
+                    ctx.fillRect(drawX + 3 * s, drawY + 11 * s, 10 * s, 2 * s);
+                    ctx.fillRect(drawX + 3 * s, drawY + 15 * s, 10 * s, 2 * s);
                 }
 
                 // Draw bush icon (bit 6 set) - a shrub in the top-right corner.
                 // A plain dot was indistinguishable from every other dot on the
                 // sheet; a silhouette says which flag it is at a glance.
                 if (flag & 0x40) {
-                    this.drawBushMark(ctx, drawX + this.tileSize - 12, drawY + 4, 14);
+                    const s = this.markScale();
+                    this.drawBushMark(ctx, drawX + this.tileSize - 12 * s, drawY + 4 * s, 14 * s);
                 }
 
                 // Draw counter icon (bit 7 set) - purple bar in bottom-left
                 if (flag & 0x80) {
-                    this.drawFlagRect(ctx, drawX + 4, drawY + this.tileSize - 8, 16, 4, 'rgba(210, 160, 255, 0.95)');
+                    const s = this.markScale();
+                    this.drawFlagRect(ctx, drawX + 4 * s, drawY + this.tileSize - 8 * s,
+                        16 * s, 4 * s, 'rgba(210, 160, 255, 0.95)');
                 }
 
                 // Draw damage floor icon (bit 8 set) - warning symbol in bottom-right
@@ -1874,7 +2019,9 @@ class DatabaseTilesetEditor {
                     ctx.font = `bold ${this.tileSize / 3}px Arial`;
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
-                    this.drawFlagGlyph(ctx, '⚠', drawX + this.tileSize - 12, drawY + this.tileSize - 12, 3);
+                    const s = this.markScale();
+                    this.drawFlagGlyph(ctx, '⚠', drawX + this.tileSize - 12 * s,
+                        drawY + this.tileSize - 12 * s, 3);
                 }
 
                 // Draw terrain tag. Game_Map.terrainTag is `flags[tile] >> 12`
@@ -1888,10 +2035,12 @@ class DatabaseTilesetEditor {
                     // Draw black border
                     ctx.strokeStyle = '#000000';
                     ctx.lineWidth = 3;
-                    ctx.strokeText(terrainTag.toString(), drawX + this.tileSize - 4, drawY + 2);
+                    const s = this.markScale();
+                    ctx.strokeText(terrainTag.toString(), drawX + this.tileSize - 4 * s, drawY + 2 * s);
                     // Draw white fill
                     ctx.fillStyle = '#FFFFFF';
-                    this.drawFlagGlyph(ctx, terrainTag.toString(), drawX + this.tileSize - 4, drawY + 2, 3);
+                    this.drawFlagGlyph(ctx, terrainTag.toString(),
+                        drawX + this.tileSize - 4 * s, drawY + 2 * s, 3);
                 }
             }
         }
@@ -1899,6 +2048,12 @@ class DatabaseTilesetEditor {
 
     // Draw selection highlight overlay (like TilesetPaletteViewer)
     drawSelectionHighlight(ctx, tileX, tileY, isSplitSheet) {
+        // 3D classification selects whole objects, and draws that selection
+        // itself. Drawing this single cell as well put a second box inside the
+        // first, which reads as though the click had selected one square of the
+        // object rather than the object.
+        if (this.currentEditMode === 'tile3d') return;
+
         const scale = 1;
         const tileSize = this.tileSize * scale;
 
@@ -2062,6 +2217,12 @@ class DatabaseTilesetEditor {
             }
             console.log(`Flag changed: ${oldFlag} (0x${oldFlag.toString(16)}) -> ${currentFlag} (0x${currentFlag.toString(16)})`);
             this.repaintClickedCanvas(canvas, imageIndex, isSplitSheet);
+            // Announce it. The map canvas holds the tileset it captured when
+            // the map opened, so a passability or star change edited here
+            // reached it only when the project was closed and reopened.
+            // ProjectController already coalesces the burst a few seconds of
+            // clicking produces.
+            this.notifyTilesetSaved();
         } else {
             console.log('Flag unchanged');
         }
@@ -2125,19 +2286,6 @@ class DatabaseTilesetEditor {
             classes.tileAtCell(from.setNumber, col, row), width, height);
         console.log(`3D object declared: ${width}x${height} from tile ` +
             `${classes.tileAtCell(from.setNumber, col, row)}`);
-    }
-
-    /** Alt-click a tile inside an object to lay it flat, or stand it again. */
-    cycleTile3DRole(tileIndex) {
-        const classes = this.tileset3DClasses();
-        const store = this.tileset3DStore();
-        if (!classes || !store || !this.currentTileset) return;
-        const found = classes.objectAt(store, this.currentTileset.id, tileIndex);
-        if (!found) {
-            console.log('3D role: shift-click two corners to declare an object first');
-            return;
-        }
-        classes.cycleRole(store, this.currentTileset.id, tileIndex);
     }
 
     /**
@@ -2215,8 +2363,11 @@ class DatabaseTilesetEditor {
                 ['3d-upright', 'Upright - part of a standing object'],
                 ['3d-scenery', 'Scenery - raises the ground into a mass'],
                 ['3d-foliage', 'Foliage - a cut-out per cell, ground unchanged'],
+                ['3d-panel', 'Panel - faces a way: a gate, a door, a sign'],
                 ['3d-object', 'One declared 3D object'],
-                ['3d-role-flat', 'Lies flat within its object']
+                ['3d-role-flat', 'Lies flat within its object'],
+                ['3d-roof-wall', 'Wall capped with a roof (Roof tool)'],
+                ['3d-roof-top', 'The roof another wall is capped with']
             ]
         };
         return rows[mode] || null;
@@ -2246,16 +2397,23 @@ class DatabaseTilesetEditor {
      * click: Select only selects, and each of the others paints one thing.
      */
     static tile3dTools() {
+        // Named and described here rather than in the markup, so the labels
+        // and the hints go through the same table every other string does —
+        // the 3D palette shipped in English on every locale.
+        const tt = text => (typeof window !== 'undefined' && window.I18n)
+            ? window.I18n.tText(text) : text;
         return [
-            ['select', 'Select', 'Look at a tile without changing it'],
-            ['flat', 'Flat', 'Lies on the ground'],
-            ['upright', 'Upright', 'Part of a standing object'],
-            ['scenery', 'Scenery', 'Raises the ground into a mass'],
-            ['foliage', 'Foliage', 'A cut-out per cell'],
-            ['auto', 'Auto', 'Clear back to the flag heuristic'],
-            ['object', 'Object', 'Drag a rectangle to group those tiles as one object'],
-            ['erase', 'Remove', 'Drag over declared objects to undeclare them'],
-            ['role', 'Role', 'Lay tiles flat within their object, or stand them']
+            ['select', tt('Select'), tt('Look at a tile without changing it')],
+            ['flat', tt('Flat'), tt('Lies on the ground')],
+            ['upright', tt('Upright'), tt('Part of a standing object')],
+            ['scenery', tt('Scenery'), tt('Raises the ground into a mass')],
+            ['foliage', tt('Foliage'), tt('A cut-out per cell')],
+            ['panel', tt('Panel'), tt('Stands still and faces a way: a gate, door or sign')],
+            ['auto', tt('Auto'), tt('Clear the class back to the flag heuristic')],
+            ['clear', tt('Clear'), tt('Forget every 3D setting on these tiles: class, object, stand-in and roof')],
+            ['object', tt('Object'), tt('Drag a rectangle to group those tiles as one object')],
+            ['role', tt('Role'), tt('Lay tiles flat within their object, or stand them')],
+            ['top', tt('Roof'), tt('Click a wall, then the roof that covers it')]
         ];
     }
 
@@ -2274,7 +2432,23 @@ class DatabaseTilesetEditor {
             + `<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">${buttons}</div>`
             + `<p style="font-size:9px;color:var(--color-text-dim);margin:8px 0 0 0;line-height:1.4;">`
             + `Drag a rectangle to apply the tool. A click is a single tile. `
-            + `Select changes nothing.</p></div>`;
+            + `Select changes nothing.</p>`
+            + `<p id="tile3d-tool-notice" style="font-size:9px;line-height:1.4;`
+            + `color:var(--color-accent-bright);margin:6px 0 0 0;display:none;"></p></div>`;
+    }
+
+    /**
+     * Say why a tool did nothing.
+     *
+     * These refusals used to go to the console, which meant the button simply
+     * appeared not to work: the commonest of them is declaring an object on an
+     * autotile, and nothing on screen said so.
+     */
+    noteTile3DRefusal(message) {
+        const notice = document.getElementById('tile3d-tool-notice');
+        if (!notice) return;
+        notice.textContent = message;
+        notice.style.display = message ? 'block' : 'none';
     }
 
 
@@ -2361,6 +2535,28 @@ class DatabaseTilesetEditor {
                     'rgba(130, 240, 185, 0.98)');
                 this.drawFlagRect(ctx, 4, size - 8, size - 8, 3, 'rgba(130, 240, 185, 0.98)');
                 break;
+            case '3d-panel':
+                tint('rgba(200, 150, 255, 0.28)');
+                // A slab seen at a slight angle: a front with a visible edge,
+                // which is the whole difference from a billboard.
+                this.drawFlagRect(ctx, 5, 5, size - 14, size - 10, 'rgba(210, 170, 255, 0.98)');
+                this.drawFlagRect(ctx, size - 9, 8, 4, size - 16, 'rgba(150, 110, 200, 0.98)');
+                break;
+            case '3d-roof-wall': {
+                // A wall with a lid: the face, and a roof line across its top.
+                tint('rgba(120, 200, 255, 0.22)');
+                this.drawFlagRect(ctx, 5, mid, size - 10, size - mid - 5,
+                    'rgba(150, 210, 255, 0.9)');
+                this.drawFlagArrow(ctx, [4, mid, mid, 5, size - 4, mid],
+                    'rgba(190, 230, 255, 0.98)');
+                break;
+            }
+            case '3d-roof-top':
+                // The roof on its own, which is what the wall borrows.
+                tint('rgba(120, 200, 255, 0.16)');
+                this.drawFlagArrow(ctx, [4, mid + 3, mid, mid - 6, size - 4, mid + 3],
+                    'rgba(190, 230, 255, 0.98)');
+                break;
             case '3d-object':
                 ctx.strokeStyle = 'rgba(255, 235, 130, 0.95)';
                 ctx.lineWidth = 2;
@@ -2404,10 +2600,23 @@ class DatabaseTilesetEditor {
 
         const tilesetId = this.currentTileset.id;
         const member = classes.objectAt(store, tilesetId, tileIndex);
-        const object = member ? member.object : { tile: tileIndex, w: 1, h: 1, roles: 'S' };
+        const value = classes.classOf(store, tilesetId, tileIndex);
+        // An undeclared tile is one cell whose role is its class: a tile set
+        // to Flat lies down. It used to be given a standing role regardless,
+        // so the preview showed every tile standing and could not be used to
+        // check the one decision it exists to show.
+        const soloRole = value === classes.GROUND ? classes.FLAT : classes.STAND;
+        const object = member
+            ? member.object
+            : { tile: tileIndex, w: 1, h: 1, roles: soloRole };
+        const names = {
+            [classes.GROUND]: 'Flat', [classes.UPRIGHT]: 'Upright',
+            [classes.SCENERY]: 'Scenery', [classes.FOLIAGE]: 'Foliage'
+        };
+        const className = names[value] || 'unclassified — the runtime decides';
         const label = member
-            ? `${object.w}x${object.h} declared object`
-            : 'single tile';
+            ? `${object.w}x${object.h} declared object — ${className}`
+            : `single tile — ${className}`;
 
         host.innerHTML = `<div style="background:var(--color-bg-panel);border:1px solid `
             + `var(--color-border);border-radius:6px;padding:10px;">`
@@ -2576,10 +2785,25 @@ class DatabaseTilesetEditor {
      * what it was drawn over.
      */
     cachedBaseCanvas(imageIndex) {
-        if (!this.currentTileset || !this.imageCache) return null;
-        const fileName = this.currentTileset.tilesetNames[imageIndex];
-        if (!fileName) return null;
-        return this.imageCache.get(`${imageIndex}_${fileName}`) || null;
+        if (!this.imageCache) return null;
+        const key = this.baseCacheKey(imageIndex);
+        return (key && this.imageCache.get(key)) || null;
+    }
+
+    /**
+     * The key a layer's base render is cached under.
+     *
+     * Everywhere that writes the cache names the file with its extension,
+     * because that is the form it loaded. The 3D preview looked it up by the
+     * bare name held in `tilesetNames`, missed every time, and drew an empty
+     * box in place of the tile's art — which read as the preview not working
+     * at all on the A tabs.
+     */
+    baseCacheKey(imageIndex, fileName = null) {
+        const name = fileName
+            || (this.currentTileset && this.currentTileset.tilesetNames[imageIndex]);
+        if (!name) return null;
+        return `${imageIndex}_${name.endsWith('.png') ? name : name + '.png'}`;
     }
 
     /**
@@ -2680,9 +2904,16 @@ class DatabaseTilesetEditor {
             // store, so the pointer is scaled into canvas pixels first.
             const scaleX = canvas.width / rect.width;
             const scaleY = canvas.height / rect.height;
+            // Held inside the sheet. A drag that ran off the bottom edge kept
+            // counting rows, and the rectangle it declared reached down into
+            // tiles that were not on screen — so an object quietly claimed art
+            // the author could not see until they scrolled to it.
+            const lastX = Math.max(0, Math.floor(canvas.width / this.tileSize) - 1);
+            const lastY = Math.max(0, Math.floor(canvas.height / this.tileSize) - 1);
+            const clamp = (value, last) => Math.max(0, Math.min(last, value));
             return {
-                x: Math.floor(((event.clientX - rect.left) * scaleX) / this.tileSize),
-                y: Math.floor(((event.clientY - rect.top) * scaleY) / this.tileSize)
+                x: clamp(Math.floor(((event.clientX - rect.left) * scaleX) / this.tileSize), lastX),
+                y: clamp(Math.floor(((event.clientY - rect.top) * scaleY) / this.tileSize), lastY)
             };
         };
 
@@ -2690,7 +2921,7 @@ class DatabaseTilesetEditor {
             if (this.currentEditMode !== 'tile3d') return;
             event.preventDefault();
             const cell = cellAt(event);
-            this._tile3dDrag = { imageIndex, from: cell, to: cell };
+            this._tile3dDrag = { imageIndex, from: cell, to: cell, extend: !!event.shiftKey };
             canvas.setPointerCapture?.(event.pointerId);
             this.repaintClickedCanvas(canvas, imageIndex, isSplitSheet);
         });
@@ -2721,6 +2952,126 @@ class DatabaseTilesetEditor {
         });
     }
 
+    /**
+     * A small roof over a corner of the tile.
+     *
+     * In the corner rather than the middle, because a wall carries its class
+     * glyph there already and the two say different things: what this tile is,
+     * and what covers it. `kind` is `'wall'` for the wall that was given a
+     * roof and `'top'` for the tile serving as one.
+     */
+    drawRoofMark(ctx, drawX, drawY, kind) {
+        const right = drawX + this.tileSize - 4;
+        const top = drawY + 4;
+        const wide = Math.max(10, Math.round(this.tileSize / 4));
+        const high = Math.round(wide * 0.6);
+        const colour = kind === 'wall'
+            ? 'rgba(190, 230, 255, 0.98)' : 'rgba(140, 200, 245, 0.98)';
+        this.drawFlagArrow(ctx, [
+            right - wide, top + high,
+            right - wide / 2, top,
+            right, top + high
+        ], colour);
+        // The wall also gets the face beneath its roof, so the two are told
+        // apart at a glance rather than by colour alone.
+        if (kind === 'wall') {
+            this.drawFlagRect(ctx, right - wide + 1, top + high, wide - 2, 3, colour);
+        }
+    }
+
+    /**
+     * Whether the middle of an object is a cell that has been laid flat.
+     *
+     * `originX/originY` are the object's top-left cell on the canvas. An even
+     * width or height has no single middle cell — the centre falls on the join
+     * — so both candidates are examined.
+     */
+    tile3dCentreIsFlat(member, originX, originY, imageIndex, tilesX) {
+        const classes = this.tileset3DClasses();
+        const store = this.tileset3DStore();
+        if (!classes || !store || !this.currentTileset) return false;
+        const { object } = member;
+        const cols = [Math.floor((object.w - 1) / 2), Math.ceil((object.w - 1) / 2)];
+        const rows = [Math.floor((object.h - 1) / 2), Math.ceil((object.h - 1) / 2)];
+        for (const dc of new Set(cols)) {
+            for (const dr of new Set(rows)) {
+                const tile = this.getTileIndexForImage(
+                    imageIndex, originX + dc, originY + dr, tilesX);
+                if (classes.roleOf(store, this.currentTileset.id, tile) === classes.FLAT) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The rectangle covering an existing object and a newly dragged piece.
+     *
+     * Worked out in *sheet* coordinates rather than in the palette's, because
+     * the palette splits a sixteen-column sheet into two stacked halves: a prop
+     * crossing that seam looks like two separate pieces on screen while being
+     * one contiguous rectangle on the sheet. Returns null when the two are on
+     * different sheets, which cannot be one object.
+     */
+    mergeTile3DObject(existingTile, addedTile, addedW, addedH) {
+        const classes = this.tileset3DClasses();
+        const store = this.tileset3DStore();
+        if (!classes || !store || !this.currentTileset) return null;
+        // By origin rather than by lookup: an object anchored at the top-left
+        // of a sheet has origin 0, and a *lookup* for 0 is refused on purpose —
+        // an empty map cell reads as 0 and must not match anything.
+        const existing = classes.objectList(store, this.currentTileset.id)
+            .find(object => object.tile === existingTile);
+        // Each refusal says which one it is. All three used to be a bare null
+        // and the caller blamed the sheet for every one of them, so extending
+        // an object anchored at the top-left of a sheet reported that the two
+        // halves were on different sheets when they plainly were not.
+        if (!existing) {
+            return { error: 'The object being extended is no longer there — select it '
+                + 'again, then shift-drag.' };
+        }
+
+        const origin = classes.sheetCell(existing.tile);
+        const added = classes.sheetCell(addedTile);
+        if (origin.setNumber !== added.setNumber) {
+            return { error: 'That is on a different sheet from the object being extended.' };
+        }
+
+        const left = Math.min(origin.col, added.col);
+        const top = Math.min(origin.row, added.row);
+        const right = Math.max(origin.col + existing.w, added.col + addedW);
+        const bottom = Math.max(origin.row + existing.h, added.row + addedH);
+        // Bounds are checked here rather than read off `tileAtCell`, which
+        // answers 0 both for the top-left tile of a sheet and for a cell past
+        // its edge. Treating that 0 as failure is what broke this: an object
+        // anchored at the sheet's first tile could never be extended.
+        if (left < 0 || top < 0 || right > 16 || bottom > 16) {
+            return { error: 'That would reach past the edge of the sheet.' };
+        }
+        return {
+            tile: classes.tileAtCell(origin.setNumber, left, top),
+            w: right - left,
+            h: bottom - top
+        };
+    }
+
+    /**
+     * Forget what is selected in 3D mode.
+     *
+     * The selection is a rectangle on one sheet of one tileset, so it means
+     * nothing once either of those changes, and left behind it drew a box
+     * round whatever art now occupies those cells.
+     */
+    clearTile3DSelection() {
+        this.selected3dRect = null;
+        this._selected3dObject = null;
+        this._lastDeclaredObject = null;
+        this._preview3dTile = null;
+        this._preview3dCell = null;
+        this._tile3dCorner = null;
+    }
+
     /** The rectangle a drag covers, in tile coordinates. */
     static dragBounds(drag) {
         return {
@@ -2739,6 +3090,16 @@ class DatabaseTilesetEditor {
         const { x0, x1, y0, y1 } = DatabaseTilesetEditor.dragBounds(drag);
         const indexAt = (x, y) => this.getTileIndexForImage(imageIndex, x, y, tilesX);
 
+        // What a shift-drag joins on to, read *before* the drag reselects
+        // below. Shift used to extend only an object declared earlier in the
+        // same session, so selecting an existing object and shift-dragging the
+        // rest of it started a new object instead of extending that one —
+        // which is the whole gesture, for a tower that crosses the sheet seam.
+        const joinTo = drag.extend
+            ? ((this._selected3dObject && this._selected3dObject.tile)
+                || this._lastDeclaredObject || null)
+            : null;
+
         // Whatever the tool, the drag also selects, and selecting a tile that
         // belongs to a declared object selects the object: the whole point of
         // declaring one is that it stops being a collection of squares.
@@ -2748,11 +3109,77 @@ class DatabaseTilesetEditor {
         this._preview3dCell = { imageIndex, x: x0, y: y0 };
         const member = classes.objectAt(store, tilesetId, this._preview3dTile);
         this._selected3dObject = member ? member.object : null;
+        // Carries the sheet it was made on: every sheet draws this overlay, and
+        // a rectangle with no sheet on it was drawn at the same coordinates on
+        // all of them.
         this.selected3dRect = member
-            ? { x: x0 - member.dc, y: y0 - member.dr, w: member.object.w, h: member.object.h }
-            : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+            ? { x: x0 - member.dc, y: y0 - member.dr, w: member.object.w, h: member.object.h, imageIndex }
+            : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1, imageIndex };
 
         if (tool === 'select') return;
+
+        // Pairing a wall with the roof that covers it. Two clicks, because it
+        // names a relationship between two tiles rather than setting a property
+        // of one: the wall first, then the roof. A4 pairs these by its own
+        // layout and needs none of this; A3 is walls throughout, and a tileset
+        // that draws its roofs elsewhere has no rule to derive from either.
+        if (tool === 'top') {
+            const picked = indexAt(x0, y0);
+            if (!this._tile3dTopWall) {
+                if (!classes.isWallLike || !classes.isWallLike(picked)) {
+                    // Anything can be a roof; only a wall can want one.
+                    this.noteTile3DRefusal(
+                        'Start with the wall: click a wall autotile on A3 or A4, '
+                        + 'then click the tile that covers its top.');
+                    return;
+                }
+                this._tile3dTopWall = picked;
+                const named = classes.materialOf(store, tilesetId, picked);
+                this.noteTile3DRefusal(named
+                    ? 'Wall selected — click its roof, or click this wall again to clear.'
+                    : 'Wall selected — now click the tile that covers its top.');
+                this.refreshTile3DPreview();
+                return;
+            }
+            const wall = this._tile3dTopWall;
+            this._tile3dTopWall = null;
+            if (classes.keyFor(picked) === classes.keyFor(wall)) {
+                classes.setTopFace(store, tilesetId, wall, 0);
+                this.noteTile3DRefusal('Roof cleared — this wall keeps its own art on top.');
+            } else {
+                classes.setTopFace(store, tilesetId, wall, picked);
+                this.noteTile3DRefusal('Roof set.');
+            }
+            this.saveTileset3DFile();
+            this.refreshOverlays();
+            this.refreshTile3DPreview();
+            return;
+        }
+        this._tile3dTopWall = null;
+
+        // Clearing works everywhere, including on autotiles: anything that can
+        // be classified has to be un-classifiable, and it was not — Auto reset
+        // the class and left the stand-in, the roof pairing and the object
+        // membership behind, with no way back short of editing the file.
+        if (tool === 'clear') {
+            let cleared = 0;
+            for (let y = y0; y <= y1; y++) {
+                for (let x = x0; x <= x1; x++) {
+                    if (classes.clearTile(store, tilesetId, indexAt(x, y))) cleared++;
+                }
+            }
+            this._selected3dObject = null;
+            this._lastDeclaredObject = null;
+            this.selected3dRect = { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1, imageIndex };
+            this.noteTile3DRefusal(cleared
+                ? `Cleared ${cleared} tile${cleared === 1 ? '' : 's'} — class, object, `
+                    + 'stand-in and roof.'
+                : 'Nothing set on these tiles to clear.');
+            this.saveTileset3DFile();
+            this.refreshOverlays();
+            this.refreshTile3DPreview();
+            return;
+        }
 
         // Declaring is a B-E idea: an object is a rectangle of a sheet, and an
         // autotile id is a corner arrangement rather than a place in a drawing.
@@ -2760,31 +3187,64 @@ class DatabaseTilesetEditor {
         // A5 is not an autotile: whole tiles, eight to a row, so it declares
         // objects like B-G. Only A1-A4 cannot.
         const autotile = indexAt(x0, y0) >= 2048;
-        if ((tool === 'object' || tool === 'erase' || tool === 'role') && autotile) {
-            console.log('3D objects are declared on the B-G sheets; '
-                + 'use Flat/Upright/Scenery/Foliage for autotiles.');
+        if ((tool === 'object' || tool === 'role') && autotile) {
+            this.noteTile3DRefusal(
+                'Objects are declared on A5 and B-G. An autotile id is a corner '
+                + 'arrangement rather than a place in a drawing, so a rectangle '
+                + 'of the sheet means nothing here — classify the kind with '
+                + 'Flat, Upright, Scenery or Foliage instead.');
             return;
         }
+        this.noteTile3DRefusal('');
 
         if (tool === 'object') {
             const width = x1 - x0 + 1, height = y1 - y0 + 1;
             // A single click must never destroy a grouping. Redeclaring one
             // cell of a 2x2 replaced it with a 1x1 — one stray click and the
             // object was gone, which is far too easy to do by accident.
-            if (width === 1 && height === 1
+            if (!joinTo && width === 1 && height === 1
                 && classes.objectAt(store, tilesetId, indexAt(x0, y0))) {
-                console.log('Already part of an object — drag a rectangle to '
-                    + 'redeclare it, or use Remove.');
+                this.noteTile3DRefusal('Already part of an object — drag a rectangle '
+                    + 'to redeclare it, shift-drag to extend it, or use Clear.');
                 return;
             }
-            classes.defineObject(store, tilesetId, indexAt(x0, y0), width, height);
-            console.log(`3D object declared: ${width}x${height}`);
-            return;
-        }
-        if (tool === 'erase') {
-            for (let y = y0; y <= y1; y++) {
-                for (let x = x0; x <= x1; x++) classes.clearObject(store, tilesetId, indexAt(x, y));
+            // Shift extends what was declared last instead of starting again.
+            //
+            // A B-G sheet is sixteen columns shown as two eight-column halves
+            // stacked, so a prop wide enough to cross column eight — a tower, a
+            // smoke stack — appears as two pieces on different rows of the
+            // palette and cannot be dragged out in one go. It is still a single
+            // rectangle *on the sheet*, though, so both pieces are taken in
+            // sheet coordinates and the rectangle that covers them is declared.
+            if (joinTo) {
+                const merged = this.mergeTile3DObject(
+                    joinTo, indexAt(x0, y0), width, height);
+                if (!merged || merged.error) {
+                    this.noteTile3DRefusal((merged && merged.error)
+                        || 'That cannot be joined to the object being extended.');
+                    return;
+                }
+                classes.clearObject(store, tilesetId, joinTo);
+                classes.defineObject(store, tilesetId, merged.tile, merged.w, merged.h);
+                this._lastDeclaredObject = merged.tile;
+                // The piece just added stays outlined. Clearing the selection
+                // outright read as the gesture having done nothing, and the
+                // merged object cannot be drawn as one box anyway when it
+                // spans the seam the two halves of the sheet are split at.
+                this.selected3dRect = { x: x0, y: y0, w: width, h: height, imageIndex };
+                this._selected3dObject = classes.objectAt(store, tilesetId, merged.tile)?.object || null;
+                this.noteTile3DRefusal(`Object extended to ${merged.w}x${merged.h}. `
+                    + 'Shift-drag again to add more.');
+                this.saveTileset3DFile();
+                this.refreshOverlays();
+                return;
             }
+
+            classes.defineObject(store, tilesetId, indexAt(x0, y0), width, height);
+            this._lastDeclaredObject = indexAt(x0, y0);
+            this.noteTile3DRefusal(`Object declared: ${width}x${height}. `
+                + 'Shift-drag another part to add it to this one.');
+            this.saveTileset3DFile();
             return;
         }
         if (tool === 'role') {
@@ -2806,11 +3266,24 @@ class DatabaseTilesetEditor {
                     if (isStanding === anyStanding) classes.cycleRole(store, tilesetId, tile);
                 }
             }
+            // Every other tool saves here; this one returned without doing it,
+            // so laying an object's ground rows flat changed the store in
+            // memory and nothing else — not the file, not the open 3D map. It
+            // read as the tool doing nothing at all, and reopening the project
+            // put the rows back up.
+            this.saveTileset3DFile();
+            this.refreshOverlays();
             return;
         }
         for (let y = y0; y <= y1; y++) {
             for (let x = x0; x <= x1; x++) this.setTile3DClass(indexAt(x, y), tool);
         }
+        // Once for the whole drag, not once per cell. The Roof, Clear and
+        // Object tools already saved here; painting a class did not, so the
+        // change reached neither the file nor the open 3D map — which is why
+        // it only appeared after the 3D view was switched off and on, since
+        // that rebuilds from a store the editor had been updating in memory.
+        this.saveTileset3DFile();
     }
 
     /** Paint one 3D class onto a tile, the tool palette's job. */
@@ -2820,7 +3293,7 @@ class DatabaseTilesetEditor {
         if (!classes || !store || !this.currentTileset) return;
         const values = {
             auto: classes.AUTO, flat: classes.GROUND, upright: classes.UPRIGHT,
-            scenery: classes.SCENERY, foliage: classes.FOLIAGE
+            scenery: classes.SCENERY, foliage: classes.FOLIAGE, panel: classes.PANEL
         };
         if (!(tool in values)) return;
         classes.setClass(store, this.currentTileset.id, tileIndex, values[tool]);
@@ -2837,9 +3310,10 @@ class DatabaseTilesetEditor {
         const names = {
             [classes.AUTO]: 'auto', [classes.GROUND]: 'flat',
             [classes.UPRIGHT]: 'upright', [classes.SCENERY]: 'scenery',
-            [classes.FOLIAGE]: 'foliage'
+            [classes.FOLIAGE]: 'foliage', [classes.PANEL]: 'panel'
         };
         console.log(`3D class for tile ${tileIndex}: ${names[next]}`);
+        this.saveTileset3DFile();
     }
 
     // Render full tileset preview showing all layers stacked vertically (like RPG Maker)

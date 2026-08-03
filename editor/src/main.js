@@ -120,6 +120,10 @@ class RPGReactor {
 
         // Set up callback for when maps are loaded
         this.projectController.onMapLoaded = () => {
+            // The grid is rebuilt with the map canvas, which knows nothing of
+            // the preference — so it comes up hidden unless it is told again.
+            this.applyShowGridPreference(this.optionsManager?.getShowGrid());
+
             // Remember current event mode state
             const wasInEventMode = this.eventManager ? this.eventManager.eventMode : false;
 
@@ -146,6 +150,16 @@ class RPGReactor {
                 // Set up undo/redo state change callback
                 this.mapEditor.onUndoStateChange = (canUndo, canRedo) => {
                     this.uiManager.updateUndoRedoButtons(canUndo, canRedo);
+                };
+
+                // Painting height marks the map 3D, because the game reads the
+                // note rather than the sidecar to decide. Said out loud: it is
+                // a change to the map, and an author who did not want it needs
+                // to know where to undo it.
+                this.mapEditor.onMarkedMap3D = () => {
+                    this.uiManager.updateStatus(
+                        'Map marked <3d> so the game draws it in 3D. '
+                        + 'Remove the note in Map Properties to go back to 2D.');
                 };
 
                 // Register with project controller so it can update references when switching projects
@@ -285,6 +299,9 @@ class RPGReactor {
                 this.eventManager.showContextMenu(clientX, clientY, event.x, event.y, event);
             }
         };
+        // The height brush's controls only mean anything while it is on, so
+        // they are bound once here and shown with it.
+
         window.addEventListener('rr-map-3d-view-changed', (event) => {
             this.applyMap3DViewPreference(event.detail.enabled);
         });
@@ -296,6 +313,28 @@ class RPGReactor {
         // parsed until a viewport actually needs it.
         const map3DCheckbox = document.getElementById('map-3d-view');
         if (map3DCheckbox) map3DCheckbox.checked = this.optionsManager.getMap3DView();
+
+        // The tile grid, in both views. It is a guide rather than a mode, so
+        // it is a preference like the others and both canvases read the same
+        // one — turning it on in 2D and finding it off in 3D would be a bug of
+        // its own.
+        window.addEventListener('rr-show-grid-changed', (event) => {
+            this.applyShowGridPreference(event.detail.enabled);
+        });
+        document.getElementById('map-grid')?.addEventListener('change', (event) => {
+            this.optionsManager.setShowGrid(event.currentTarget.checked);
+        });
+        const gridCheckbox = document.getElementById('map-grid');
+        if (gridCheckbox) gridCheckbox.checked = this.optionsManager.getShowGrid();
+
+        this.installEscapeToDeselect();
+        // Asked for again whenever a map comes up with the viewport off, so a
+        // project opened while the preference is on builds its 3D canvas
+        // rather than showing a ticked box over a 2D one.
+        this.projectController.reconcileMap3DView = () => {
+            if (!this.optionsManager.getMap3DView()) return;
+            this.applyMap3DViewPreference(true);
+        };
 
         // Initialize Forge tool suite (character generator etc.)
         this.forgeManager = new ForgeManager(this.projectController);
@@ -388,6 +427,68 @@ class RPGReactor {
      * was asked for: three.js or the runtime directory can be missing in a
      * partial install, and a ticked box over a 2D canvas would be a lie.
      */
+    /**
+     * Escape lets go of whatever is held.
+     *
+     * Every selection in the map workspace was sticky: a tile picked from the
+     * palette, an area lifted with a right-drag, an event clicked on. The only
+     * way out of any of them was to pick something else, so there was no way to
+     * simply stop painting — and a held stamp keeps painting on the next click
+     * whether or not that was still wanted.
+     *
+     * Ordered, so one press does one thing: the stamp first, since it is the
+     * most surprising to be carrying, then the event, then the tile.
+     */
+    installEscapeToDeselect() {
+        if (typeof window === 'undefined') return;
+        window.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape' || event.defaultPrevented) return;
+            // A dialog, a menu or a text field owns Escape while it is up.
+            const target = event.target;
+            if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
+                || target.isContentEditable)) return;
+            if (document.querySelector('.modal-overlay, .rr-modal-overlay, #database-modal')) return;
+            if (this.releaseMapSelection()) event.preventDefault();
+        });
+    }
+
+    /** Drop the topmost held selection. Returns whether anything was let go. */
+    releaseMapSelection() {
+        if (this.mapEditor?.mapStamp) {
+            this.mapEditor.clearMapStamp();
+            return true;
+        }
+        if (this.eventManager?.selectedEvent) {
+            this.eventManager.selectEvent(null);
+            return true;
+        }
+        if (this.tilesetPaletteViewer?.selectedTiles?.length) {
+            this.tilesetPaletteViewer.clearSelection();
+            // The ghost under the cursor is drawn on hover and redrawn on the
+            // next move, so dropping the selection alone left the last tile
+            // sitting on the map until the mouse twitched.
+            this.mapEditor?.hideTilePreview?.();
+            this.mapEditor?.clearPreview?.();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Show or hide the tile grid on whichever canvas is up.
+     *
+     * Both are told, not just the visible one: switching between 2D and 3D
+     * rebuilds the other, and it has to come back with the grid the preference
+     * asks for rather than whatever it had when it was last shown.
+     */
+    applyShowGridPreference(enabled) {
+        const on = enabled === true;
+        this.projectController?.tilemapManager?.setGridVisible?.(on);
+        this.mapEditor3D?.setGridVisible?.(on);
+        const checkbox = document.getElementById('map-grid');
+        if (checkbox) checkbox.checked = on;
+    }
+
     async applyMap3DViewPreference(enabled) {
         if (!this.mapEditor3D) return;
         const active = await this.mapEditor3D.setEnabled(enabled === true);
@@ -629,13 +730,17 @@ class RPGReactor {
             // surface re-reads it and the map is redrawn, so the setting takes
             // effect where it was made rather than on the next launch.
             window.rpgReactorTileSizeChanged = () => {
+                // Resolved rather than captured: the map canvas is rebuilt for
+                // each project, so the one this closure was created with is
+                // destroyed the moment a second project is opened.
+                const tilemapManager = this.projectController?.getTilemapManager();
                 const moved = [
-                    this.tilemapManager.refreshTileMetrics(),
+                    tilemapManager?.refreshTileMetrics(),
                     this.tilesetPaletteViewer.refreshTileMetrics()
                 ].some(Boolean);
                 if (!moved) return;
                 this.tilesetPaletteViewer.renderCurrentLayer?.();
-                const openMap = this.tilemapManager?.currentMap?.id;
+                const openMap = tilemapManager?.currentMap?.id;
                 if (openMap != null) this.projectController?.loadMap(openMap, { force: true });
             };
             this.projectController.setTilesetPaletteViewer(this.tilesetPaletteViewer);
@@ -652,6 +757,23 @@ class RPGReactor {
                     regionManager.createRegionLayer();
                     regionManager.setVisible(true);
                 }
+                // Only one overlay of numbered cells at a time: two sets of
+                // coloured squares over the same map, answering different
+                // questions, cannot be told apart.
+                this.projectController.getObject3DManager()?.setVisible(false);
+            };
+
+            // The 3D object tab: which cells of the map are one object.
+            this.tilesetPaletteViewer.onObject3DTabSelected = () => {
+                const container = document.getElementById('object3d-ui-container');
+                const manager = this.projectController.getObject3DManager();
+                if (!container || !manager) return;
+                manager.mapEditor = this.mapEditor;
+                if (this.mapEditor) this.mapEditor.object3DManager = manager;
+                manager.initializeUI(container);
+                manager.createObjectLayer();
+                manager.setVisible(true);
+                this.projectController.getRegionManager()?.setVisible(false);
             };
 
             // Set up tileset layer selection callback - disable event mode when switching to tileset mode
@@ -661,6 +783,8 @@ class RPGReactor {
                 if (regionManager) {
                     regionManager.setVisible(false);
                 }
+                const object3DManager = this.projectController.getObject3DManager();
+                if (object3DManager) object3DManager.setVisible(false);
 
                 // If event mode is currently active, deactivate it
                 if (this.eventManager && this.eventManager.eventMode) {
@@ -700,6 +824,15 @@ class RPGReactor {
 
         // Load the tileset for the current map (wait for images to load)
         await this.tilesetPaletteViewer.loadTilesetForMap(mapData);
+
+        // An event whose graphic is a *tile* is drawn from the palette's
+        // sheets, and those have only just arrived: any preview rendered
+        // before now used whatever tileset the previous map left loaded, so
+        // switching maps showed the old map's art until something forced a
+        // redraw. Only worth redoing when the map actually has such an event.
+        if (this.eventManager && this.eventManager.hasTileGraphicEvents?.()) {
+            this.eventManager.renderEvents();
+        }
 
         // Update resize handles visibility and force layout recalculation
         if (this.sidebarResizer) {
@@ -940,7 +1073,6 @@ class RPGReactor {
 
     // Update map coordinates display (called from EventManager and MapEditor)
     updateMapCoordinates(x, y) {
-        // PERFORMANCE: Skip DOM update if coordinates haven't changed
         if (this.lastDisplayedCoords.x === x && this.lastDisplayedCoords.y === y) {
             return;
         }
@@ -949,13 +1081,8 @@ class RPGReactor {
         this.lastDisplayedCoords.y = y;
 
         const coordsEl = document.getElementById('map-coordinates');
-
         if (coordsEl) {
-            if (x !== null && y !== null) {
-                coordsEl.textContent = `${x}, ${y}`;
-            } else {
-                coordsEl.textContent = '--,--';
-            }
+            coordsEl.textContent = x !== null && y !== null ? `${x}, ${y}` : '--,--';
         }
     }
 

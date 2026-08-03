@@ -680,11 +680,25 @@ Scene_Map.prototype.create = function() {
 
 Scene_Map.prototype.isReady = function() {
     if (!this._mapLoaded && DataManager.isMapLoaded()) {
-        // three.js is fetched the first time a 3D map is entered, so the scene
-        // waits for it here rather than building a spriteset that would have to
-        // decide its renderer again later. A 2D map, or a failed load, reports
-        // ready immediately.
-        if (typeof Reactor3D !== "undefined") Reactor3D.beginPrepare($dataMap);
+        // three.js is fetched the first time a 3D map is entered, and the
+        // spriteset decides which renderer it is building the moment it is
+        // created — so the wait has to happen *before* `onMapLoaded`, not
+        // after it. It used to start the fetch and build the spriteset in the
+        // same tick, which meant a 3D map with three.js sitting right there in
+        // js/libs drew in 2D every time: the script had not arrived yet, and
+        // nothing asked again once it had.
+        //
+        // Started once. Calling `beginPrepare` on every frame of the wait
+        // would set `_prepared` back to false as fast as the load cleared it.
+        if (typeof Reactor3D !== "undefined") {
+            if (!this._reactor3dPrepareStarted) {
+                this._reactor3dPrepareStarted = true;
+                Reactor3D.beginPrepare($dataMap);
+            }
+            // A 2D map, an unsupported host, or a failed load is prepared
+            // immediately, so nothing here delays an ordinary map by a frame.
+            if (!Reactor3D.isPrepared()) return false;
+        }
         this.onMapLoaded();
         this._mapLoaded = true;
     }

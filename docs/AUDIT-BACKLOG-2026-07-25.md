@@ -7,9 +7,10 @@ the cycle — see the [root changelog](../CHANGELOG.md), the detailed
 [editor changelog](../editor/CHANGELOG.md), and the draft
 [0.96.0 devlog](devlogs/2026-07-25-rpg-reactor-0.96.0.md).
 
-**Status: OPEN — awaiting a project-owner decision.** Nothing here blocks the
-release. Current validation is 777 passing Node tests with no failures; 0.96.0
-has not been tagged or published.
+**Status: OPEN — awaiting a project-owner decision.** Nothing here blocked the
+release: 0.96.0 was tagged and published on 2026-07-27 with these items still
+open, and they carry forward. Validation stood at 777 passing Node tests at the
+time of the audit; it is 984 as of the 0.97.0 cycle.
 
 ## Authored data in the bundled projects
 

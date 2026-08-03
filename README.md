@@ -44,7 +44,18 @@ RPGReactor/
 - **Build & deploy**: one-click isolated playtests; cross-platform game packaging for Windows, macOS, Linux, and Web; optional Linux AppImages for games and the editor; configurable NW.js releases and runtime locales; optional staged PNG/OGG optimization; and an editor distribution builder with SHA-256 checksums.
 - **Source-audited 18-language localization** across editor-generated interface text, with locale-key and placeholder validation, Arabic right-to-left direction, and project-authored game content deliberately left untouched; plus a theme system with multiple color palettes in light and dark modes.
 
-## What's New in 0.96.0
+## In Development: 0.97.0
+
+Not published yet. The full list is in the [changelog](CHANGELOG.md) under
+*Unreleased*; the most recent work is written up in
+[docs/devlogs](docs/devlogs/2026-08-02-3d-objects-on-the-map.md).
+
+- **3D objects are declared on the map.** A tileset can say what a *tile* is and no more — an autotile id is a corner arrangement shared by forty-eight shapes, so every shop built from one wall kind is the same tile as every other. Which cells make up one building is a fact about a placement, so there is now an **Objects** tab beside Regions where object numbers are painted onto the map. Cells sharing a number are one object, with a **Footing** brush for the rows that are the ground it stands on rather than courses of its height. This is what holds a sign still against the wall it is painted on.
+- **Walls classed Upright are solid boxes**, not a single plane facing south, so walking round a building no longer thins it to a line.
+- **Flying the editor's 3D camera** with WASD, plus a hover outline for the cell under the cursor, boxes drawn round events, dragging events in 3D, and Escape to let go of whatever is held.
+- **A page set to Custom movement can be given a route**, through the same dialog the Set Movement Route command uses.
+
+## What's New in 0.96.0, the Latest Release
 
 - **3D maps (HD-2D)**: a map can be drawn in 3D — ground flat, walls and buildings standing, characters as 2D sprites on the same grid. Opt-in per map via a `<3d>` note, with elevation and camera in a sidecar so `Map###.json` stays standard RPG Maker data. Tiles are classified **Flat**, **Upright** or **Scenery** per tileset in the tileset editor. The map editor gains a **3D** checkbox that shows the same map in 3D, with event sprites, selection and right-click menus in step with the 2D canvas, and painting that runs through the same brush and undo stack. Battles remain 2D.
 - **A deep correctness audit of the whole codebase**: roughly forty verified bugs fixed, most of them silent — commands that rewrote themselves when reopened, records created without fields the engine reads, and editor maths that disagreed with the runtime. The bundled RPG Maker-authored projects are now used as an oracle: field sets, command parameter shapes and value types are derived from real authored data and checked in CI, so the editor cannot drift from the format it targets. Test coverage grew from 452 to 777.
@@ -167,7 +178,7 @@ cd editor
 npm test
 ```
 
-GitHub Actions runs the same suite from a clean checkout, including syntax, project scaffolding, runtime manifests, save safety, localization no-fallback checks, cross-instance clipboard transport, database and event-command serialization, map sampling and exact autotile placement, picture extensions, project lifecycle security, runtime compatibility, deployment, and release policy/signing gates. Current 0.96.0 validation completed with **809 passing tests and no failures**.
+GitHub Actions runs the same suite from a clean checkout, including syntax, project scaffolding, runtime manifests, save safety, localization no-fallback checks, cross-instance clipboard transport, database and event-command serialization, map sampling and exact autotile placement, picture extensions, project lifecycle security, runtime compatibility, deployment, and release policy/signing gates. Current 0.97.0 validation completed with **1,057 passing tests and no failures**.
 
 ## Runtime
 

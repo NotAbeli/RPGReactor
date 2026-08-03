@@ -164,3 +164,44 @@ test('right-drag selects a stamp without touching undo, then left-click places i
         global.PIXI = previousPixi;
     }
 });
+
+test('Escape lets go of whatever is held', () => {
+    // Every selection in the map workspace was sticky: a tile picked from the
+    // palette, an area lifted with a right-drag, an event clicked on. The only
+    // way out of any of them was to pick something else, so there was no way to
+    // simply stop painting — and a held stamp keeps painting on the next click
+    // whether that was still wanted or not.
+    const fs = require('node:fs');
+    const main = fs.readFileSync(path.join(editorRoot, 'src', 'main.js'), 'utf8');
+    assert.match(main, /installEscapeToDeselect\(\)/);
+    assert.match(main, /event\.key !== 'Escape'/);
+
+    const release = main.slice(main.indexOf('    releaseMapSelection() {'));
+    const body = release.slice(0, release.indexOf('\n    }'));
+    // Ordered, so one press does one thing, most surprising first.
+    assert.ok(body.indexOf('mapStamp') < body.indexOf('selectedEvent'),
+        'the stamp goes first — carrying one is the easiest to do by accident');
+    assert.ok(body.indexOf('selectedEvent') < body.indexOf('selectedTiles'),
+        'then the event, then the tile');
+
+    // A dialog or a text field owns Escape while it is up.
+    assert.match(main, /target\.tagName === 'INPUT'/);
+    assert.match(main, /modal-overlay/);
+
+    // The ghost under the cursor is drawn on hover and redrawn on the next
+    // move, so dropping the selection alone left the last tile sitting on the
+    // map until the mouse twitched.
+    assert.match(body, /hideTilePreview\?\.\(\)/, 'the hover ghost goes too');
+    assert.match(body, /clearPreview\?\.\(\)/);
+});
+
+test('deselecting an event takes its highlight with it', () => {
+    // `selectEvent(null)` cleared the selection but left the yellow square on
+    // the map, so the cell an event used to be on stayed marked.
+    const fs = require('node:fs');
+    const events = fs.readFileSync(path.join(editorRoot, 'src', 'EventManager.js'), 'utf8');
+    const select = events.slice(events.indexOf('    selectEvent(event) {'));
+    const body = select.slice(0, select.indexOf('\n    }'));
+    assert.match(body, /this\.selectedTileX = null;/);
+    assert.match(body, /this\.selectedTileY = null;/);
+});

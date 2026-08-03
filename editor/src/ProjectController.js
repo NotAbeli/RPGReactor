@@ -34,6 +34,7 @@ class ProjectController {
         this.app = null;
         this.tilemapManager = null;
         this.regionManager = null;
+        this.object3DManager = null;
         this.mapEditor = null;
         this.tilesetPaletteViewer = null;
         this.eventManager = null;
@@ -634,10 +635,17 @@ class ProjectController {
 
             // Initialize region manager
             this.regionManager = new RegionManager(this.tilemapManager);
+            this.object3DManager = new Object3DManager(this.tilemapManager);
 
             // Update TilesetPaletteViewer project path if it exists
             if (this.tilesetPaletteViewer) {
                 this.tilesetPaletteViewer.setProjectPath(this.currentProject.path);
+            }
+            // Character sheets are cached by path, and a path only identifies a
+            // file within one project: two projects with a `People1` would show
+            // the first one's art in the second.
+            if (this.eventManager && this.eventManager.forgetCharacterImages) {
+                this.eventManager.forgetCharacterImages();
             }
 
             // Note: MapEditor and EventManager will be reinitialized in the onMapLoaded callback
@@ -1338,7 +1346,15 @@ class ProjectController {
      * A no-op — and free — while the viewport is off.
      */
     refreshMap3DView() {
-        if (!this.mapEditor3D?.isEnabled?.()) return;
+        if (!this.mapEditor3D?.isEnabled?.()) {
+            // 3D is a view preference rather than a property of the map, and
+            // the viewport is torn down when a project closes — so a project
+            // opened with the box already ticked came up with a 2D canvas
+            // under a ticked box, and only unticking and reticking it put the
+            // two back in agreement. Reconcile instead of assuming.
+            if (typeof this.reconcileMap3DView === 'function') this.reconcileMap3DView();
+            return;
+        }
         this.mapEditor3D.rebuild().catch(error => {
             console.error('Failed to rebuild the 3D view:', error);
         });
@@ -1346,6 +1362,10 @@ class ProjectController {
 
     getRegionManager() {
         return this.regionManager;
+    }
+
+    getObject3DManager() {
+        return this.object3DManager;
     }
 
     getMapInfos() {
