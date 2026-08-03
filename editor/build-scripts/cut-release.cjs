@@ -143,7 +143,17 @@ function main() {
         say(`  git push origin main --follow-tags`);
         return;
     }
-    run('git', ['push', 'origin', 'HEAD', '--follow-tags']);
+    /*
+     * The push inherits the terminal.
+     *
+     * An HTTPS remote with no credential helper asks for a username and a
+     * password, and that exchange has to reach the person running this. With
+     * the output captured the prompt is swallowed and the release looks like it
+     * hung — so this one command is handed the terminal rather than read.
+     */
+    say('Pushing branch and tag (git will ask for your GitHub username and token)...');
+    execFileSync('git', ['push', 'origin', 'HEAD', '--follow-tags'],
+        { cwd: repoRoot, stdio: 'inherit' });
     say('Pushed branch and tag');
 
     // A tag is not a release. This is the step whose absence looks exactly
