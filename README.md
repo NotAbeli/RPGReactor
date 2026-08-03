@@ -150,8 +150,18 @@ for third-party files or user/project content.
 
 ## Cutting a release
 
+One command, run from the repository root. It is the whole process — there is
+no separate `git push` step, and nothing else needs remembering.
+
 ```
-GITHUB_TOKEN=... node editor/build-scripts/cut-release.cjs 0.97.0
+GITHUB_TOKEN=ghp_yourtoken node editor/build-scripts/cut-release.cjs 0.97.0
+```
+
+In fish, either that same line or:
+
+```
+set -x GITHUB_TOKEN ghp_yourtoken
+node editor/build-scripts/cut-release.cjs 0.97.0
 ```
 
 Runs the editor test suite, rolls the version surfaces (changelog heading,
@@ -160,6 +170,38 @@ publishes the GitHub release with that version's changelog section as its body.
 `--dry-run` reports what it would do and leaves the tree untouched; `--no-push`
 stops after tagging. Without a token it stops after the push and prints the URL
 to create the release by hand — a tag alone does not make one.
+
+### The token, once
+
+The `origin` remote is HTTPS, so the push needs a credential and GitHub has not
+accepted passwords for years. The token in `GITHUB_TOKEN` can serve both the
+push and the release API, which is what this repository is configured to do:
+
+```
+git config --local credential.helper '!f() { echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f'
+```
+
+Already set here, and recorded so it can be restored on a fresh clone. It reads
+the environment rather than writing anything to disk, so the token lives only in
+the shell that runs the release. Check it with:
+
+```
+GITHUB_TOKEN=test git credential fill <<< $'protocol=https\nhost=github.com\n'
+```
+
+which should echo the token back as `password=test`.
+
+The token needs `repo` scope — `Contents: read and write` on a fine-grained one.
+
+### Downloads are a separate step
+
+This publishes the tag and the release notes. It does not build or sign
+binaries: `release-candidate.yml` builds and signs the native artifacts and
+`release.yml` attaches them and pushes to itch.io. Both are GitHub Actions
+workflows, started from the repository's Actions tab or with the `gh` CLI, which
+is not installed here. A release without them is a source release — the GitHub
+Release exists and is marked latest, with no files attached. See
+[docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md) sections 5 to 8.
 
 This does not build or sign downloads. `release-candidate.yml` builds and signs
 the native artifacts and `release.yml` attaches them and pushes to itch.io; run
