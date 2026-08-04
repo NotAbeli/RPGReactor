@@ -3699,6 +3699,7 @@ Spriteset_Map.prototype.update = function() {
     Spriteset_Base.prototype.update.call(this);
     this.updateReactor3D();
     this.updateTileset();
+    this._buildStamps();
     this.updateParallax();
     this.updateTilemap();
     this.updateShadow();
@@ -3901,6 +3902,7 @@ Spriteset_Map.prototype.createTilemap = function() {
     this._effectsContainer = tilemap;
     this._tilemap = tilemap;
     this.loadTileset();
+    this.createStamps();
     this.createReactor3D();
 };
 
@@ -3971,6 +3973,82 @@ Spriteset_Map.prototype.loadTileset = function() {
         this._tilemap.setBitmaps(bitmaps);
         this._tilemap.flags = $gameMap.tilesetFlags();
     }
+    this._stampsBuilt = false;
+    if (this._stampLayer) this._stampLayer.removeChildren();
+};
+
+Spriteset_Map.prototype.createStamps = function() {
+    this._stampLayer = new PIXI.Container();
+    this._tilemap.addChild(this._stampLayer);
+    this._stampsBuilt = false;
+};
+
+Spriteset_Map.prototype._buildStamps = function() {
+    if (this._stampsBuilt || !this._stampLayer) return;
+    const bitmaps = this._tilemap._bitmaps || [];
+    for (const bm of bitmaps) {
+        if (bm && !bm.isReady()) return;
+    }
+    this._stampsBuilt = true;
+    const stamps = ($dataMap && $dataMap.stampTiles) || [];
+    const ts = $gameMap.tileWidth();
+    for (const s of stamps) {
+        if (!s || typeof s.x !== "number") continue;
+        const rect = this._stampSourceRect(s.tileId);
+        if (!rect) continue;
+        const bm = bitmaps[rect.setNumber];
+        if (!bm || !bm.baseTexture) continue;
+        const tex = new PIXI.Texture({
+            source: bm.baseTexture.source,
+            frame: new PIXI.Rectangle(rect.sx, rect.sy, ts, ts)
+        });
+        const sprite = new PIXI.Sprite(tex);
+        sprite.anchor.set(0.5);
+        sprite.x = s.x;
+        sprite.y = s.y;
+        this._stampLayer.addChild(sprite);
+    }
+};
+
+Spriteset_Map.prototype._stampSourceRect = function(tileId) {
+    if (tileId == null || tileId <= 0) return null;
+    const ts = $gameMap.tileWidth();
+    if (Tilemap.isAutotile(tileId)) {
+        const kind = Tilemap.getAutotileKind(tileId);
+        const tx = kind % 8;
+        const ty = Math.floor(kind / 8);
+        let setNumber, bx, by;
+        if (Tilemap.isTileA1(tileId)) {
+            setNumber = 0;
+            if (kind === 0) { bx = 0; by = 0; }
+            else if (kind === 1) { bx = 0; by = 3; }
+            else if (kind === 2) { bx = 6; by = 0; }
+            else if (kind === 3) { bx = 6; by = 3; }
+            else {
+                bx = Math.floor(tx / 4) * 8;
+                by = ty * 6 + (Math.floor(tx / 2) % 2) * 3;
+                if (kind % 2 !== 0) bx += 6;
+            }
+        } else if (Tilemap.isTileA2(tileId)) {
+            setNumber = 1; bx = tx * 2; by = (ty - 2) * 3;
+        } else if (Tilemap.isTileA3(tileId)) {
+            setNumber = 2; bx = tx * 2; by = (ty - 6) * 2;
+        } else if (Tilemap.isTileA4(tileId)) {
+            setNumber = 3; bx = tx * 2;
+            const rowInA4 = ty - 10;
+            const pairIndex = Math.floor(rowInA4 / 2);
+            const isWall = rowInA4 % 2 === 1;
+            by = pairIndex * 5 + (isWall ? 3 : 0);
+        } else {
+            return null;
+        }
+        return { setNumber, sx: bx * ts, sy: by * ts };
+    }
+    if (tileId >= 1536 && !Tilemap.isTileA5(tileId)) return null;
+    const setNumber = Tilemap.isTileA5(tileId) ? 4 : (5 + Math.floor(tileId / 256));
+    const sx = ((Math.floor(tileId / 128) % 2) * 8 + (tileId % 8)) * ts;
+    const sy = (Math.floor((tileId % 256) / 8) % 16) * ts;
+    return { setNumber, sx, sy };
 };
 
 Spriteset_Map.prototype.createCharacters = function() {

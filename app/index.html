@@ -172,6 +172,9 @@
             <div class="toolbar-separator"></div>
             <button class="tool-button" data-action="playtest" title="Playtest" data-i18n-title="toolbar.title.playtest"><img src="images/icon-playtest.png"></button>
             <div class="toolbar-separator"></div>
+            <button id="tile-grid-btn" class="tool-button" title="Grid snap for B-E placement: 48 / 24 / Off (locked 48 when A or R tileset is active)" style="min-width: 70px; font-size: 12px; padding: 0 8px;">Grid: 48</button>
+            <button id="show-hitboxes-btn" class="tool-button" title="Show stamp hitboxes (red = collision area)" style="min-width: 40px; font-size: 12px; padding: 0 8px;">HB</button>
+            <div class="toolbar-separator"></div>
             <!-- Drawing Tools -->
             <span class="toolbar-label" data-i18n="toolbar.tileset">Tileset:</span>
             <button class="tool-button tool-draw-mode active" data-tool="pencil" title="Single Tile Tool" data-i18n-title="toolbar.title.singleTile"><img src="images/icon-single.png"></button>
@@ -959,6 +962,7 @@
     <script src="src/PerformanceProfiler.js"></script>
     <script src="src/EditorInstanceBroker.js"></script>
     <!-- Core data managers -->
+    <script src="src/collision.js"></script>
     <script src="src/ProjectManager.js"></script>
     <script src="src/DatabaseManager.js"></script>
     <script src="src/ReactorClipboard.js"></script>

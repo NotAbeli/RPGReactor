@@ -40,6 +40,22 @@ class UIManager {
             });
         });
 
+        // Grid snap button (48 / 24 / Off, click to cycle)
+        const gridBtn = document.getElementById('tile-grid-btn');
+        if (gridBtn) {
+            gridBtn.addEventListener('click', () => {
+                if (this.callbacks.cycleGrid) this.callbacks.cycleGrid();
+            });
+        }
+
+        // Show hitboxes toggle
+        const hbBtn = document.getElementById('show-hitboxes-btn');
+        if (hbBtn) {
+            hbBtn.addEventListener('click', () => {
+                if (this.callbacks.toggleHitboxes) this.callbacks.toggleHitboxes();
+            });
+        }
+
         // Sidebar tree items - delegate event to handle dynamically added items
         document.addEventListener('click', (e) => {
             if (e.target.classList.contains('tree-item')) {
@@ -1062,12 +1078,30 @@ class UIManager {
         document.getElementById('toolbar').style.display = 'flex';
         this.projectLoaded = true;
 
+        this.refreshGridButton();
+
         // Scale toolbar icons after toolbar becomes visible
         requestAnimationFrame(() => {
             if (window.reactor) {
                 window.reactor.scaleToolbarIcons();
             }
         });
+    }
+
+    setGrid(value, locked) {
+        const btn = document.getElementById('tile-grid-btn');
+        if (!btn) return;
+        const label = value === 0 ? 'Off' : String(value);
+        btn.textContent = 'Grid: ' + label;
+        btn.disabled = !!locked;
+        btn.style.opacity = locked ? '0.5' : '';
+    }
+
+    refreshGridButton() {
+        const locked = this.callbacks.isGridLockedTileset ? this.callbacks.isGridLockedTileset() : false;
+        let value = this.callbacks.getGrid ? this.callbacks.getGrid() : 48;
+        if (locked) value = 48;
+        this.setGrid(value, locked);
     }
 
     updateStatus(message) {

@@ -10,6 +10,7 @@ class MapEditor {
         this.previousTool = 'pencil'; // Remember tool before shadow/eraser mode
         this.eraserMode = false;
         this.shadowPenMode = false;
+        this.snapGrid = 48;
         this.isDrawing = false;
         this.drawStart = null;
         this.previewLayer = null;
@@ -471,8 +472,10 @@ class MapEditor {
 
         // Save a copy of the current map data (flat numeric array — slice is
         // a full snapshot at a fraction of the JSON round-trip cost)
-        const mapData = this.tilemapManager.currentMap.data.slice();
-        this.undoStack.push(mapData);
+        this.undoStack.push({
+            data: this.tilemapManager.currentMap.data.slice(),
+            stamps: (this.tilemapManager.currentMap.stampTiles || []).slice()
+        });
 
         // Clear redo stack on new action
         this.redoStack = [];
@@ -492,9 +495,21 @@ class MapEditor {
         // Flat numeric array: slice + element compare replaces three
         // whole-map JSON serializations per stroke (tens of ms of jank at
         // pointer-down and pointer-up on a 256×256 map).
+        const map = this.tilemapManager.currentMap;
         this.activeEditState = {
-            beforeData: this.tilemapManager.currentMap.data.slice()
+            beforeData: map.data.slice(),
+            beforeStamps: (map.stampTiles || []).slice()
         };
+    }
+
+    _stampsChanged(before) {
+        const now = this.tilemapManager.currentMap.stampTiles || [];
+        if (!before) return now.length > 0;
+        if (before.length !== now.length) return true;
+        for (let i = 0; i < before.length; i++) {
+            if (before[i] !== now[i]) return true;
+        }
+        return false;
     }
 
     _editStateChanged() {
@@ -504,7 +519,7 @@ class MapEditor {
         for (let i = 0; i < now.length; i++) {
             if (before[i] !== now[i]) return true;
         }
-        return false;
+        return this._stampsChanged(this.activeEditState.beforeStamps);
     }
 
     commitEditState() {
@@ -514,7 +529,10 @@ class MapEditor {
         }
 
         if (this._editStateChanged()) {
-            this.undoStack.push(this.activeEditState.beforeData);
+            this.undoStack.push({
+                data: this.activeEditState.beforeData,
+                stamps: this.activeEditState.beforeStamps
+            });
             this.redoStack = [];
 
             if (this.undoStack.length > this.maxUndoSteps) {
@@ -576,8 +594,9 @@ class MapEditor {
      */
     isUndoSnapshotValid(snapshot) {
         const map = this.tilemapManager && this.tilemapManager.currentMap;
-        if (!map || !Array.isArray(snapshot)) return false;
-        return snapshot.length === map.width * map.height * 6;
+        const data = snapshot && snapshot.data;
+        if (!map || !Array.isArray(data)) return false;
+        return data.length === map.width * map.height * 6;
     }
 
     dropStaleUndoStates() {
@@ -592,11 +611,18 @@ class MapEditor {
         if (this.undoStack.length === 0) return;
 
         // Save current state to redo stack
-        this.redoStack.push(this.tilemapManager.currentMap.data.slice());
+        this.redoStack.push({
+            data: this.tilemapManager.currentMap.data.slice(),
+            stamps: (this.tilemapManager.currentMap.stampTiles || []).slice()
+        });
 
         // Restore previous state
-        const previousData = this.undoStack.pop();
-        this.tilemapManager.currentMap.data = previousData;
+        const prev = this.undoStack.pop();
+        this.tilemapManager.currentMap.data = prev.data;
+        if (prev.stamps) {
+            this.tilemapManager.currentMap.stampTiles = prev.stamps.slice();
+            this.tilemapManager.renderStamps();
+        }
 
         // Re-render the map without yanking the view back to the origin
         this.tilemapManager.renderMap({ preserveScroll: true });
@@ -616,11 +642,18 @@ class MapEditor {
         if (this.redoStack.length === 0) return;
 
         // Save current state to undo stack
-        this.undoStack.push(this.tilemapManager.currentMap.data.slice());
+        this.undoStack.push({
+            data: this.tilemapManager.currentMap.data.slice(),
+            stamps: (this.tilemapManager.currentMap.stampTiles || []).slice()
+        });
 
         // Restore next state
-        const nextData = this.redoStack.pop();
-        this.tilemapManager.currentMap.data = nextData;
+        const next = this.redoStack.pop();
+        this.tilemapManager.currentMap.data = next.data;
+        if (next.stamps) {
+            this.tilemapManager.currentMap.stampTiles = next.stamps.slice();
+            this.tilemapManager.renderStamps();
+        }
 
         // Re-render the map without yanking the view back to the origin
         this.tilemapManager.renderMap({ preserveScroll: true });
@@ -724,6 +757,30 @@ class MapEditor {
             // Don't process if map editor is disabled (event mode is active)
             if (!this.enabled) return;
 
+            // Free B-G stamp placement (A/R stay on the grid below).
+            // Only left (place) and right (erase); СКМ / Shift-drag must reach
+            // the panning handler, so return WITHOUT stopPropagation for them.
+            if (this.isFreePlacementSelected()) {
+                const btn = event.data.button;
+                if (btn !== 0 && btn !== 2) return;
+                const sp = event.data.getLocalPosition(container);
+                const rawX = Math.floor(sp.x);
+                const rawY = Math.floor(sp.y);
+                this.beginEditState();
+                if (btn === 2) {
+                    this.tilemapManager.removeStampAtPoint(rawX, rawY);
+                } else {
+                    const snap = this.snapGrid || 0;
+                    const half = this.tilemapManager.TILE_SIZE / 2;
+                    const px = snap > 0 ? Math.floor(rawX / snap) * snap + half : rawX;
+                    const py = snap > 0 ? Math.floor(rawY / snap) * snap + half : rawY;
+                    this.placeStampAt(px, py);
+                }
+                this.commitEditState();
+                event.stopPropagation();
+                return;
+            }
+
             // Shift+left-click on an autotile pencil selection preserves the exact
             // selected shape. Every other Shift gesture remains map panning.
             const preserveAutotileShape = this.claimsShiftAutotilePaint(event);
@@ -749,6 +806,11 @@ class MapEditor {
             }
 
             this.beginEditState();
+
+            // Eraser also removes free-placed B-G stamps at the cursor
+            if (this.eraserMode) {
+                this.tilemapManager.removeStampAtPoint(Math.floor(pos.x), Math.floor(pos.y));
+            }
 
             // PERFORMANCE: Reset last painted tile for new drawing operation
             this.lastPaintedTile = { x: -1, y: -1, quadrant: -1 };
@@ -814,6 +876,7 @@ class MapEditor {
 
             if (this.isDrawing) {
                 if (this.eraserMode && this.currentTool !== 'rectangle' && this.currentTool !== 'circle') {
+                    this.tilemapManager.removeStampAtPoint(Math.floor(pos.x), Math.floor(pos.y));
                     this.paintTile(tileX, tileY);
                     this.updateTilePreview(tileX, tileY);
                 } else if (this.currentTool === 'pencil' || this.shadowPenMode) {
@@ -827,7 +890,16 @@ class MapEditor {
                 }
             } else {
                 // Show tile preview when hovering (not drawing)
-                this.updateTilePreview(tileX, tileY);
+                if (this.isFreePlacementSelected()) {
+                    const snap = this.snapGrid || 0;
+                    const rawX = Math.floor(pos.x);
+                    const rawY = Math.floor(pos.y);
+                    const px = snap > 0 ? Math.floor(rawX / snap) * snap + this.tilemapManager.TILE_SIZE / 2 : rawX;
+                    const py = snap > 0 ? Math.floor(rawY / snap) * snap + this.tilemapManager.TILE_SIZE / 2 : rawY;
+                    this.updateStampPreview(px, py);
+                } else {
+                    this.updateTilePreview(tileX, tileY);
+                }
             }
         });
 
@@ -2688,6 +2760,66 @@ class MapEditor {
         outlineGraphics.stroke({ width: 2, color: 0xffffff, alpha: 0.8 }); // White border
         this.tilePreviewContainer.addChild(outlineGraphics);
 
+        this.tilePreviewContainer.visible = true;
+    }
+
+    isFreePlacementSelected() {
+        if (this.eraserMode || this.shadowPenMode) return false;
+        const palette = this.tilesetPaletteViewer;
+        if (!palette || !Array.isArray(palette.selectedTiles) || palette.selectedTiles.length === 0) return false;
+        const sel = palette.selectedTiles[0];
+        const layer = sel.layer || palette.currentLayer;
+        return ['B', 'C', 'D', 'E', 'F', 'G'].includes(layer);
+    }
+
+    isGridLockedTileset() {
+        const palette = this.tilesetPaletteViewer;
+        if (!palette) return false;
+        const layer = palette.currentLayer;
+        return !layer || layer.startsWith('A') || layer === 'R';
+    }
+
+    refreshBackgroundGrid() {
+        if (!this.tilemapManager || typeof this.tilemapManager.setGridSize !== 'function') return;
+        const size = this.isGridLockedTileset() ? 48 : (this.snapGrid || 0);
+        this.tilemapManager.setGridSize(size);
+    }
+
+    placeStampAt(px, py) {
+        const palette = this.tilesetPaletteViewer;
+        if (!palette || !Array.isArray(palette.selectedTiles) || palette.selectedTiles.length === 0) return;
+        const sel = palette.selectedTiles[0];
+        const layer = sel.layer || palette.currentLayer;
+        const tileId = this.getTileIdFromPalettePosition(sel.x, sel.y, layer, 0, 0);
+        if (tileId == null || tileId <= 0) return;
+        this.tilemapManager.addStamp({ x: px, y: py, tileId });
+    }
+
+    updateStampPreview(px, py) {
+        if (!this.tilePreviewContainer || !this.tilemapManager) return;
+        this.tilePreviewContainer.removeChildren();
+        const palette = this.tilesetPaletteViewer;
+        if (!palette || !Array.isArray(palette.selectedTiles) || palette.selectedTiles.length === 0) {
+            this.tilePreviewContainer.visible = false;
+            return;
+        }
+        const sel = palette.selectedTiles[0];
+        const layer = sel.layer || palette.currentLayer;
+        const tileId = this.getTileIdFromPalettePosition(sel.x, sel.y, layer, 0, 0);
+        const tex = this.tilemapManager.getStampTexture(tileId);
+        if (!tex) {
+            this.tilePreviewContainer.visible = false;
+            return;
+        }
+        const sprite = new PIXI.Sprite(tex);
+        sprite.anchor.set(0.5);
+        sprite.x = px;
+        sprite.y = py;
+        sprite.width = this.tilemapManager.TILE_SIZE;
+        sprite.height = this.tilemapManager.TILE_SIZE;
+        sprite.alpha = 0.6;
+        sprite.roundPixels = true;
+        this.tilePreviewContainer.addChild(sprite);
         this.tilePreviewContainer.visible = true;
     }
 

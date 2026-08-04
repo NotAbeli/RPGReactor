@@ -44,6 +44,7 @@ class TilemapManager {
         this.TILE_WIDTH = 48;
         this.TILE_HEIGHT = 48;
         this.TILE_SIZE = 48;  // Tiles are square (48x48)
+        this.gridSize = 48;   // Background grid spacing (follows snap mode; 0 = hidden)
         this.TILESET_COLS = 8;  // A1-A5 tiles are 8 columns wide
         this.TILESET_ROWS_PER_SHEET = 16;
 
@@ -215,12 +216,15 @@ class TilemapManager {
             this.currentTileset = tileset;
             this.tilesetTextures = tilesetTextures;
             this._a2DecorKinds = null;
+            this._eventColliderShapes = undefined;
+            if (this.gridSize === 0) this.gridSize = 48;
 
             // Create tilemap container
             this.createTilemapContainer();
 
             // Render the map
             this.renderMap();
+            try { this.renderStamps(); } catch (e) { console.error('[stamps] renderStamps failed:', e); }
 
             // Start with map at origin
             this.container.x = 0;
@@ -404,6 +408,7 @@ class TilemapManager {
             this.app.stage.removeChild(this.container);
             this.container.destroy({ children: true });
         }
+        this.hitboxGraphics = null;
 
         // Create new container for tilemap
         this.container = new PIXI.Container();
@@ -416,6 +421,13 @@ class TilemapManager {
         // Enable interactive for dragging
         this.container.interactive = true;
         this.container.buttonMode = true;
+        if (this.currentMap) {
+            this.container.hitArea = new PIXI.Rectangle(
+                0, 0,
+                this.currentMap.width * this.TILE_WIDTH,
+                this.currentMap.height * this.TILE_HEIGHT
+            );
+        }
 
         // Create layers
         this.layers.checkerboard = new PIXI.Container();
@@ -444,6 +456,7 @@ class TilemapManager {
         this.layers.a1lower3 = new PIXI.Container();
         this.layers.shadow = new PIXI.Container();
         this.layers.layerHighlight = new PIXI.Container();
+        this.layers.stamps = new PIXI.Container();
 
         // PERFORMANCE: Enable culling on all layers to skip rendering off-screen sprites
         this.layers.ground.cullable = true;
@@ -509,6 +522,7 @@ class TilemapManager {
         this.container.addChild(this.layers.upper1);
         this.container.addChild(this.layers.upper2);
         this.container.addChild(this.layers.upper3);
+        this.container.addChild(this.layers.stamps);
         this.container.addChild(this.layers.layerHighlight);
 
         // Containers are recreated on setup — re-apply any active layer
@@ -1712,39 +1726,30 @@ class TilemapManager {
 
     // Render checkerboard background for transparency visualization
     renderCheckerboard(mapWidth, mapHeight) {
-        const tileSize = 48; // Size of each checkerboard square
+        if (this.gridSize === 0) return;
+        const tileSize = this.gridSize;
         const pixelWidth = mapWidth * this.TILE_WIDTH;
         const pixelHeight = mapHeight * this.TILE_HEIGHT;
-
-        // PERFORMANCE: Create a tiny 2x2 tile checkerboard texture and tile it
-        // instead of drawing thousands of individual rects
         const lightColor = 0x404040;
         const darkColor = 0x2A2A2A;
-
-        // Create a 2-tile wide, 2-tile tall pattern using Graphics, then use as TilingSprite source
-        const patternSize = tileSize * 2;
-        const pattern = new PIXI.Graphics();
-        pattern.rect(0, 0, tileSize, tileSize).fill(lightColor);
-        pattern.rect(tileSize, 0, tileSize, tileSize).fill(darkColor);
-        pattern.rect(0, tileSize, tileSize, tileSize).fill(darkColor);
-        pattern.rect(tileSize, tileSize, tileSize, tileSize).fill(lightColor);
-
-        // Render the small pattern to a texture ONCE and reuse it — render
-        // textures are exempt from PIXI's texture GC, so allocating a fresh
-        // one per full re-render (every undo/redo/large-fill fallback)
-        // leaked a GPU framebuffer each time.
-        if (!this._checkerboardTexture) {
+        if (!this._checkerboardTexture || this._checkerboardGridSize !== tileSize) {
+            if (this._checkerboardTexture) this._checkerboardTexture.destroy(true);
+            const patternSize = tileSize * 2;
+            const pattern = new PIXI.Graphics();
+            pattern.rect(0, 0, tileSize, tileSize).fill(lightColor);
+            pattern.rect(tileSize, 0, tileSize, tileSize).fill(darkColor);
+            pattern.rect(0, tileSize, tileSize, tileSize).fill(darkColor);
+            pattern.rect(tileSize, tileSize, tileSize, tileSize).fill(lightColor);
             this._checkerboardTexture = PIXI.RenderTexture.create({ width: patternSize, height: patternSize });
+            this._checkerboardGridSize = tileSize;
             this.app.renderer.render({ container: pattern, target: this._checkerboardTexture });
+            pattern.destroy();
         }
-        pattern.destroy();
-
         const checkerboard = new PIXI.TilingSprite({
             texture: this._checkerboardTexture,
             width: pixelWidth,
             height: pixelHeight
         });
-
         this.layers.checkerboard.addChild(checkerboard);
     }
 
@@ -2483,6 +2488,323 @@ class TilemapManager {
         delete data.id;
         delete data.name;
         return data;
+    }
+
+    getStampTexture(tileId) {
+        if (tileId == null || tileId <= 0) return null;
+        let setNumber, sx, sy;
+        const ts = this.TILE_SIZE;
+        if (this.isAutotile(tileId)) {
+            const kind = this.getAutotileKind(tileId);
+            const tx = kind % 8;
+            const ty = Math.floor(kind / 8);
+            let bx, by;
+            if (this.isTileA1(tileId)) {
+                setNumber = 0;
+                if (kind === 0) { bx = 0; by = 0; }
+                else if (kind === 1) { bx = 0; by = 3; }
+                else if (kind === 2) { bx = 6; by = 0; }
+                else if (kind === 3) { bx = 6; by = 3; }
+                else {
+                    bx = Math.floor(tx / 4) * 8;
+                    by = ty * 6 + (Math.floor(tx / 2) % 2) * 3;
+                    if (kind % 2 !== 0) bx += 6;
+                }
+            } else if (this.isTileA2(tileId)) {
+                setNumber = 1; bx = tx * 2; by = (ty - 2) * 3;
+            } else if (this.isTileA3(tileId)) {
+                setNumber = 2; bx = tx * 2; by = (ty - 6) * 2;
+            } else if (this.isTileA4(tileId)) {
+                setNumber = 3; bx = tx * 2;
+                const rowInA4 = ty - 10;
+                const pairIndex = Math.floor(rowInA4 / 2);
+                const isWall = rowInA4 % 2 === 1;
+                by = pairIndex * 5 + (isWall ? 3 : 0);
+            } else { return null; }
+            sx = bx * ts; sy = by * ts;
+        } else if (this.isTileA5(tileId)) {
+            setNumber = 4;
+            const localTileId = tileId - this.TILE_ID_A5;
+            sx = (localTileId % 8) * ts;
+            sy = Math.floor(localTileId / 8) * ts;
+        } else if (tileId < 1536) {
+            setNumber = 5 + Math.floor(tileId / 256);
+            const localTileId = tileId % 256;
+            sx = ((Math.floor(localTileId / 128) % 2) * 8 + (localTileId % 8)) * ts;
+            sy = (Math.floor(localTileId / 8) % 16) * ts;
+        } else { return null; }
+        const texture = this.tilesetTextures[setNumber];
+        if (!texture) return null;
+        const cacheKey = 'stamp_' + setNumber + '_' + sx + '_' + sy;
+        let tileTexture = this.textureCache[cacheKey];
+        if (!tileTexture) {
+            tileTexture = new PIXI.Texture({
+                source: texture.source,
+                frame: new PIXI.Rectangle(sx, sy, ts, ts)
+            });
+            this.textureCache[cacheKey] = tileTexture;
+        }
+        return tileTexture;
+    }
+
+    renderStamps() {
+        if (!this.layers.stamps) return;
+        this.layers.stamps.removeChildren();
+        if (!this.currentMap) return;
+        const stamps = this.currentMap.stampTiles || [];
+        const ts = this.TILE_SIZE;
+        for (const s of stamps) {
+            if (!s || typeof s.x !== 'number') continue;
+            const tex = this.getStampTexture(s.tileId);
+            if (!tex) continue;
+            const sprite = new PIXI.Sprite(tex);
+            sprite.anchor.set(0.5);
+            sprite.x = s.x;
+            sprite.y = s.y;
+            sprite.width = ts;
+            sprite.height = ts;
+            sprite.roundPixels = true;
+            sprite.eventMode = 'none';
+            this.layers.stamps.addChild(sprite);
+        }
+        if (this.showHitboxes) {
+            try { this.renderHitboxes(); } catch (e) { console.error('[hitboxes]', e); }
+        }
+    }
+
+    addStamp(stamp) {
+        if (!this.currentMap) return;
+        if (!Array.isArray(this.currentMap.stampTiles)) this.currentMap.stampTiles = [];
+        this.currentMap.stampTiles.push(stamp);
+        this.renderStamps();
+    }
+
+    removeStampAtPoint(px, py) {
+        if (!this.currentMap || !Array.isArray(this.currentMap.stampTiles)) return false;
+        const stamps = this.currentMap.stampTiles;
+        const half = this.TILE_SIZE / 2;
+        for (let i = stamps.length - 1; i >= 0; i--) {
+            const s = stamps[i];
+            if (px >= s.x - half && px <= s.x + half && py >= s.y - half && py <= s.y + half) {
+                stamps.splice(i, 1);
+                this.renderStamps();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    setGridSize(size) {
+        const s = (size === 24 || size === 48) ? size : 0;
+        if (this.gridSize === s) return;
+        this.gridSize = s;
+        if (this.currentMap && this.layers.checkerboard) {
+            this.layers.checkerboard.removeChildren();
+            this.renderCheckerboard(this.currentMap.width, this.currentMap.height);
+        }
+    }
+
+    setShowHitboxes(on) {
+        this.showHitboxes = !!on;
+        this.renderHitboxes();
+    }
+
+    _parseColliderShapes(xml) {
+        const shapes = [];
+        function parseAttrs(tag) {
+            const a = {};
+            const re = /(\w+)\s*=\s*['"]([^'"]*)['"]/g;
+            let m;
+            while ((m = re.exec(tag)) !== null) a[m[1]] = parseFloat(m[2]);
+            return a;
+        }
+        let m;
+        const rectRe = /<rect\b([^>]*)\/>/g;
+        while ((m = rectRe.exec(xml)) !== null) {
+            const a = parseAttrs(m[1]);
+            shapes.push({ type: 'rect', x: a.x || 0, y: a.y || 0, w: a.width || 1, h: a.height || 1 });
+        }
+        const circRe = /<circle\b([^>]*)\/>/g;
+        while ((m = circRe.exec(xml)) !== null) {
+            const a = parseAttrs(m[1]);
+            shapes.push({ type: 'circle', cx: a.cx || 0.5, cy: a.cy || 0.5, r: a.r || 0.3 });
+        }
+        return shapes;
+    }
+
+    _getEventColliderShapes() {
+        if (this._eventColliderShapes !== undefined) return this._eventColliderShapes;
+        this._eventColliderShapes = [];
+        if (!this.fs || !this.path || !this.projectPath) return this._eventColliderShapes;
+        try {
+            const pluginsPath = this.path.join(this.projectPath, 'js', 'plugins.js');
+            if (!this.fs.existsSync(pluginsPath)) return this._eventColliderShapes;
+            const content = this.fs.readFileSync(pluginsPath, 'utf8');
+            const getPlugins = new Function(content + '; return $plugins;');
+            const plugins = getPlugins();
+            const sd = plugins.find(p => p.name === 'SuperDuperMovement' && p.status);
+            if (!sd || !sd.parameters) return this._eventColliderShapes;
+            let raw = sd.parameters.event_character_collider_list;
+            if (!raw) return this._eventColliderShapes;
+            try { raw = JSON.parse(raw); } catch (e2) {}
+            this._eventColliderShapes = this._parseColliderShapes(raw);
+        } catch (e) {
+            console.error('[collision] Failed to read event collider params:', e);
+        }
+        return this._eventColliderShapes;
+    }
+
+    _resolveEventCollider(ev, defaultShapes) {
+        if (!ev) return defaultShapes || [];
+
+        // Priority 2: page comments <collider>...</collider> (SuperDuper lines 2094-2121)
+        const pages = ev.pages || [];
+        for (let pi = pages.length - 1; pi >= 0; pi--) {
+            const page = pages[pi];
+            if (!page || !page.list) continue;
+            const comments = [];
+            for (let ci = 0; ci < page.list.length; ci++) {
+                const cmd = page.list[ci];
+                if (cmd.code === 108 || cmd.code === 408) {
+                    comments.push(cmd.parameters[0]);
+                }
+            }
+            if (comments.length > 0) {
+                const joined = comments.join('\n');
+                if (joined.includes('<collider')) {
+                    const parsed = this._parseColliderShapes(joined);
+                    if (parsed.length > 0) return parsed;
+                }
+            }
+        }
+
+        // Priority 3: note meta.collider → preset name (SuperDuper lines 2124-2134)
+        if (ev.note) {
+            const metaMatch = ev.note.match(/<collider:\s*(.+?)\s*>/i);
+            if (metaMatch) {
+                const presetName = metaMatch[1].trim();
+                if (typeof Collider !== 'undefined' && Collider.getPreset) {
+                    try {
+                        const preset = Collider.getPreset(presetName);
+                        if (preset && preset.type !== undefined) {
+                            return [this._colliderToShape(preset)];
+                        }
+                    } catch (e) {}
+                }
+                const presetNum = +presetName;
+                if (!isNaN(presetNum) && typeof Collider !== 'undefined' && Collider.getPreset) {
+                    try {
+                        const preset = Collider.getPreset(presetNum);
+                        if (preset && preset.type !== undefined) {
+                            return [this._colliderToShape(preset)];
+                        }
+                    } catch (e) {}
+                }
+            }
+        }
+
+        // Priority 4: default params
+        return defaultShapes || [];
+    }
+
+    _colliderToShape(c) {
+        if (c.type === Collider.CIRCLE) {
+            return { type: 'circle', cx: c.x, cy: c.y, r: c.radius };
+        } else if (c.type === Collider.POLYGON && c.vertices && c.vertices.length >= 2) {
+            const xs = c.vertices.map(v => v[0]);
+            const ys = c.vertices.map(v => v[1]);
+            return {
+                type: 'rect',
+                x: Math.min(...xs),
+                y: Math.min(...ys),
+                w: Math.max(...xs) - Math.min(...xs),
+                h: Math.max(...ys) - Math.min(...ys)
+            };
+        }
+        return { type: 'rect', x: 0, y: 0, w: 1, h: 1 };
+    }
+
+    renderHitboxes() {
+        if (!this.container) return;
+        if (!this.hitboxGraphics) {
+            this.hitboxGraphics = new PIXI.Graphics();
+            this.container.addChild(this.hitboxGraphics);
+        }
+        const g = this.hitboxGraphics;
+        g.clear();
+        if (!this.showHitboxes || !this.currentMap) return;
+        const map = this.currentMap;
+        const ts = this.TILE_SIZE;
+        const tileset = (this.databaseManager && this.databaseManager.getTileset)
+            ? this.databaseManager.getTileset(map.tilesetId) : null;
+        const flags = tileset ? tileset.flags : null;
+
+        // --- Native collision mesh (same Collider/CollisionMesh code as the game) ---
+        if (typeof CollisionMesh !== 'undefined' && typeof Collider !== 'undefined' && flags) {
+            const W = map.width, H = map.height;
+            const mockMap = {
+                width: () => W, height: () => H,
+                isLoopHorizontal: () => !!map.scrollType && map.scrollType !== 0,
+                isLoopVertical: () => !!map.scrollType && map.scrollType === 3,
+                roundX: x => x, roundY: y => y,
+            };
+            // Exact replica of MV checkPassage: layers top-to-bottom (z=3,2,1,0),
+            // respects [*] (0x10), [o] passable, [x] impassable.
+            const passFunc = function(x, y, d) {
+                const bit = (1 << (d / 2 - 1)) & 0x0f;
+                for (let i = 0; i < 4; i++) {
+                    const z = 3 - i;
+                    const tileId = map.data[(z * H + y) * W + x] || 0;
+                    if (!tileId) continue;
+                    const flag = flags[tileId];
+                    if (flag === undefined) continue;
+                    if ((flag & 0x10) !== 0) continue;
+                    if ((flag & bit) === 0) return true;
+                    if ((flag & bit) === bit) return false;
+                }
+                return false;
+            };
+            const stampRects = (map.stampTiles || []).filter(s => {
+                if (!s) return false;
+                const f = flags[s.tileId];
+                return f !== undefined && (f & 0x0f) === 0x0f;
+            }).map(s => ({ x: s.x / ts - 0.5, y: s.y / ts - 0.5, w: 1, h: 1 }));
+            const mesh = CollisionMesh.makeCollisionMesh(mockMap, passFunc, stampRects);
+            const colliders = CollisionMesh.collectColliders(mesh);
+            for (const c of colliders) {
+                if (c.type === Collider.POLYGON && c.vertices && c.vertices.length >= 2) {
+                    const pts = c.vertices.flatMap(v => [v[0] * ts, v[1] * ts]);
+                    g.poly(pts).stroke({ width: 1, color: 0x4080ff, alpha: 0.6 });
+                } else if (c.type === Collider.CIRCLE) {
+                    g.circle(c.x * ts, c.y * ts, c.radius * ts)
+                        .stroke({ width: 1, color: 0x4080ff, alpha: 0.6 });
+                }
+            }
+        }
+
+        // --- Event colliders (green) — per-event resolution ---
+        const defaultEvShapes = this._getEventColliderShapes();
+        const events = map.events || [];
+        for (let i = 0; i < events.length; i++) {
+            const ev = events[i];
+            if (!ev) continue;
+            const ex = ev.x * ts, ey = ev.y * ts;
+            const shapes = this._resolveEventCollider(ev, defaultEvShapes);
+            if (!shapes.length) {
+                g.rect(ex + ts * 0.25, ey + ts * 0.25, ts * 0.5, ts * 0.5)
+                    .fill({ color: 0x30ff60, alpha: 0.4 });
+            } else {
+                for (const sh of shapes) {
+                    if (sh.type === 'circle') {
+                        g.circle(ex + sh.cx * ts, ey + sh.cy * ts, sh.r * ts)
+                            .stroke({ width: 1.5, color: 0x00ff00, alpha: 0.85 });
+                    } else if (sh.type === 'rect') {
+                        g.rect(ex + sh.x * ts, ey + sh.y * ts, sh.w * ts, sh.h * ts)
+                            .stroke({ width: 1.5, color: 0x00ff00, alpha: 0.85 });
+                    }
+                }
+            }
+        }
     }
 
     captureSavedMapState() {

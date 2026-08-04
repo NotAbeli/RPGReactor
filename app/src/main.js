@@ -71,6 +71,10 @@ class RPGReactor {
             saveProject: () => this.projectController.saveProject(),
             saveAll: () => this.projectController.saveAll(),
             playtest: () => this.playtest(),
+            getGrid: () => (this.mapEditor ? this.mapEditor.snapGrid : 48),
+            cycleGrid: () => this.cycleGrid(),
+            isGridLockedTileset: () => (this.mapEditor ? this.mapEditor.isGridLockedTileset() : false),
+            toggleHitboxes: () => this.toggleHitboxes(),
             openDatabase: (type) => this.openDatabase(type),
             showAudioPlayer: () => this.audioPlayer.showAudioPlayer(),
             showOptions: () => this.optionsManager.show(),
@@ -670,6 +674,10 @@ class RPGReactor {
                 if (tilemapManager && tilemapManager.renderLayerHighlights) {
                     tilemapManager.renderLayerHighlights();
                 }
+                if (this.mapEditor) this.mapEditor.refreshBackgroundGrid();
+                if (this.uiManager && this.uiManager.refreshGridButton) {
+                    this.uiManager.refreshGridButton();
+                }
             };
         }
 
@@ -819,6 +827,26 @@ class RPGReactor {
         if (this.databaseEditorUI) {
             this.databaseEditorUI.showTermsEditor();
         }
+    }
+
+    cycleGrid() {
+        if (this.mapEditor && !this.mapEditor.isGridLockedTileset()) {
+            const cur = this.mapEditor.snapGrid;
+            this.mapEditor.snapGrid = (cur === 48) ? 24 : (cur === 24) ? 0 : 48;
+        }
+        if (this.mapEditor) this.mapEditor.refreshBackgroundGrid();
+        if (this.uiManager) this.uiManager.refreshGridButton();
+    }
+
+    toggleHitboxes() {
+        const tm = (this.projectController && typeof this.projectController.getTilemapManager === 'function')
+            ? this.projectController.getTilemapManager()
+            : this.tilemapManager;
+        if (!tm || typeof tm.setShowHitboxes !== 'function') return;
+        const next = !tm.showHitboxes;
+        tm.setShowHitboxes(next);
+        const btn = document.getElementById('show-hitboxes-btn');
+        if (btn) btn.classList.toggle('active', next);
     }
 
     async loadMap(mapId) {
