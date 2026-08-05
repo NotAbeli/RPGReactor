@@ -68,7 +68,25 @@ class MapEditor {
             }
         }
 
-        return { width, height, data, tilesetId: map.tilesetId };
+        const capturedStamps = [];
+        if (Array.isArray(map.stampTiles)) {
+            const ts = this.tilemapManager.TILE_SIZE;
+            const areaMinX = minX * ts;
+            const areaMinY = minY * ts;
+            const areaMaxX = (maxX + 1) * ts;
+            const areaMaxY = (maxY + 1) * ts;
+            for (const s of map.stampTiles) {
+                if (s.x >= areaMinX && s.x < areaMaxX && s.y >= areaMinY && s.y < areaMaxY) {
+                    capturedStamps.push({
+                        x: s.x - areaMinX,
+                        y: s.y - areaMinY,
+                        tileId: s.tileId
+                    });
+                }
+            }
+        }
+
+        return { width, height, data, tilesetId: map.tilesetId, capturedStamps };
     }
 
     applyMapStamp(map, stamp, anchor) {
@@ -187,6 +205,17 @@ class MapEditor {
             }
         }
 
+        if (stamp.capturedStamps && stamp.capturedStamps.length > 0) {
+            for (const cs of stamp.capturedStamps) {
+                this.tilemapManager.drawTileToCanvas(
+                    ctx, cs.tileId,
+                    (cs.x - tileSize / 2) / tileSize,
+                    (cs.y - tileSize / 2) / tileSize,
+                    images, tileSize
+                );
+            }
+        }
+
         const texture = PIXI.Texture.from(canvas);
         if (texture.source?.style) texture.source.style.scaleMode = 'nearest';
         return texture;
@@ -225,11 +254,6 @@ class MapEditor {
         // kind instead makes it paint like any autotile chosen from the
         // palette. A dragged area keeps its shapes, which is what makes it
         // useful for copying a finished piece of map.
-        if (start.x === current.x && start.y === current.y
-            && this.selectPickedAutotile(start.x, start.y)) {
-            return;
-        }
-
         const stamp = this.captureMapStamp(
             this.tilemapManager.currentMap, start, current);
         if (stamp) {
@@ -296,8 +320,44 @@ class MapEditor {
         if (!map || !this.mapStamp) return;
         const ox = this.mapStamp.grabOX || 0;
         const oy = this.mapStamp.grabOY || 0;
-        const result = this.applyMapStamp(map, this.mapStamp, { x: x - ox, y: y - oy });
-        if (!result.changed) return;
+        const anchorX = x - ox;
+        const anchorY = y - oy;
+        const result = this.applyMapStamp(map, this.mapStamp, { x: anchorX, y: anchorY });
+
+        let stampsChanged = false;
+        const ts = this.tilemapManager.TILE_SIZE;
+        const half = ts / 2;
+
+        if (Array.isArray(map.stampTiles) && map.stampTiles.length > 0) {
+            const paintMinX = anchorX * ts;
+            const paintMaxX = (anchorX + this.mapStamp.width) * ts;
+            const paintMinY = anchorY * ts;
+            const paintMaxY = (anchorY + this.mapStamp.height) * ts;
+            for (let i = map.stampTiles.length - 1; i >= 0; i--) {
+                const s = map.stampTiles[i];
+                if (s.x + half > paintMinX && s.x - half < paintMaxX &&
+                    s.y + half > paintMinY && s.y - half < paintMaxY) {
+                    map.stampTiles.splice(i, 1);
+                    stampsChanged = true;
+                }
+            }
+        }
+
+        if (this.mapStamp.capturedStamps && this.mapStamp.capturedStamps.length > 0) {
+            if (!Array.isArray(map.stampTiles)) map.stampTiles = [];
+            for (const cs of this.mapStamp.capturedStamps) {
+                map.stampTiles.push({
+                    x: anchorX * ts + cs.x,
+                    y: anchorY * ts + cs.y,
+                    tileId: cs.tileId
+                });
+                stampsChanged = true;
+            }
+        }
+
+        if (stampsChanged) this.tilemapManager.renderStamps();
+
+        if (!result.changed && !stampsChanged) return;
         if (result.visualUpdates.length) this.tilemapManager.updateTiles(result.visualUpdates);
         if (result.regionUpdates.length && this.regionManager?.enabled) {
             if (result.regionUpdates.length > 1000) this.regionManager.renderRegions();
@@ -2955,6 +3015,8 @@ class MapEditor {
             this.tilePreviewContainer.addChild(sprite);
             anyShown = true;
         }
+        if (anyShown) {
+        }
         this.tilePreviewContainer.visible = anyShown;
     }
 
@@ -3094,7 +3156,6 @@ class MapEditor {
         if (this.tilePreviewContainer) {
             this.tilePreviewContainer.visible = false;
         }
-        // PERFORMANCE: Reset tracking so next preview will be created
         this.lastPreviewTile = { x: -1, y: -1, quadrant: -1 };
     }
 
