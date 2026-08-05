@@ -638,6 +638,19 @@
             min-height: 0;
         }
 
+        /* Canvas overlay controls (top-right floating buttons) */
+        .overlay-ctrl {
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .overlay-ctrl:hover {
+            background: rgba(60,60,60,0.85) !important;
+            border-color: var(--color-text-strong);
+        }
+        .overlay-ctrl.active {
+            background: rgba(80,128,255,0.7) !important;
+            border-color: #80a0ff;
+        }
+
         /* Custom Scrollbars */
         .custom-scrollbar {
             position: absolute;

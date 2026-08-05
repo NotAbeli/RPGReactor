@@ -237,7 +237,8 @@ class TilesetPaletteViewer {
                 isSelecting = false;
             });
 
-            canvas.addEventListener('mouseleave', () => {
+            // Safety: also handle mouseup outside the canvas (document-level)
+            document.addEventListener('mouseup', () => {
                 isSelecting = false;
             });
         }
@@ -722,6 +723,9 @@ class TilesetPaletteViewer {
                 this.selectedTiles.push({ x, y, layer: actualLayer });
             }
         }
+
+        // Track the anchor tile = the END of the selection drag (last cursor position)
+        this.anchorTile = { x: end.x, y: end.y, layer: end.layer || actualLayer };
 
         // OPTIMIZATION: Use cached layer instead of re-rendering
         this.restoreCachedLayer();

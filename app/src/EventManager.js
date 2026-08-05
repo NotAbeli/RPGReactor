@@ -22,6 +22,10 @@ class EventManager {
         this.isDragging = false; // Whether we're currently dragging an event
         this.draggedEvent = null; // The event being dragged
         this.dragOffset = { x: 0, y: 0 }; // Offset from event position to mouse position
+        this.snapGrid = 48; // Grid snap for event placement (shared with MapEditor)
+        this._dragStartX = 0; // Axis-lock: drag start position
+        this._dragStartY = 0;
+        this._dragAxisLock = null; // null | 'x' | 'y' (set when Shift held)
         this.startingPositionContainer = null; // Container for starting position markers
         this.contextMenuCloseHandler = null; // Context menu close handler reference
         this.tilesetPaletteViewer = null; // Reference to tileset palette viewer for tile selection
@@ -329,8 +333,10 @@ class EventManager {
 
             // Cancel any ongoing drag
             if (this.isDragging) {
-                this.isDragging = false;
-                this.draggedEvent = null;
+        this.isDragging = false;
+        this.draggedEvent = null;
+        this._dragAxisLock = null;
+        this._clearDragGuides();
                 this.dragOffset = { x: 0, y: 0 };
                 if (this.tilemapManager.container) {
                     this.tilemapManager.container.cursor = 'default';
@@ -338,14 +344,17 @@ class EventManager {
             }
 
             const pos = event.data.getLocalPosition(container);
-            const tileX = Math.floor(pos.x / this.tilemapManager.TILE_WIDTH);
-            const tileY = Math.floor(pos.y / this.tilemapManager.TILE_HEIGHT);
+            const ts = this.tilemapManager.TILE_WIDTH;
+            const px = pos.x / ts;
+            const py = pos.y / ts;
+            const tileX = Math.floor(px);
+            const tileY = Math.floor(py);
 
             // Update selection to this tile
             this.selectTile(tileX, tileY);
 
-            // Check if there's an event at this position
-            const eventAtPos = this.getEventAt(tileX, tileY);
+            // Check if there's an event at this position (use fractional for hitbox)
+            const eventAtPos = this.getEventAt(px, py);
 
             // Use the original mouse event position for context menu
             const mouseX = event.data.originalEvent.clientX;
@@ -425,8 +434,13 @@ class EventManager {
         }
 
         const pos = event.data.getLocalPosition(container);
-        const tileX = Math.floor(pos.x / this.tilemapManager.TILE_WIDTH);
-        const tileY = Math.floor(pos.y / this.tilemapManager.TILE_HEIGHT);
+        const ctrl = event.data.originalEvent?.ctrlKey;
+        const snap = ctrl ? 0 : (this.snapGrid || 0);
+        const ts = this.tilemapManager.TILE_WIDTH;
+        const evX = snap > 0 ? Math.floor(pos.x / snap) * snap / ts : pos.x / ts;
+        const evY = snap > 0 ? Math.floor(pos.y / snap) * snap / ts : pos.y / ts;
+        const tileX = Math.floor(evX);
+        const tileY = Math.floor(evY);
         if (tileX < 0 || tileX >= this.currentMap.width || tileY < 0 || tileY >= this.currentMap.height) {
             this.resetMapClickTracking();
             return;
@@ -438,9 +452,9 @@ class EventManager {
 
         if (isDoubleClick) {
             this.resetMapClickTracking();
-            const eventAtPos = this.getEventAt(tileX, tileY);
+            const eventAtPos = this.getEventAt(evX, evY);
             if (eventAtPos) this.editEvent(eventAtPos);
-            else this.createNewEvent(tileX, tileY);
+            else this.createNewEvent(evX, evY);
             return;
         }
 
@@ -449,14 +463,14 @@ class EventManager {
         this._lastMapClickY = tileY;
         this.selectTile(tileX, tileY);
 
-        const eventAtPos = this.getEventAt(tileX, tileY);
+        const eventAtPos = this.getEventAt(evX, evY);
         if (!eventAtPos && this.tilesetPaletteViewer) {
             const selectedTiles = this.tilesetPaletteViewer.getSelectedTiles();
             if (selectedTiles && selectedTiles.length > 0) {
                 const tile = selectedTiles[0];
                 const tileId = this.convertToTileId(tile.layer, tile.x, tile.y);
                 if (tileId > 0) {
-                    this.createNewEventWithTileset(tileX, tileY, tileId);
+                    this.createNewEventWithTileset(evX, evY, tileId);
                     this.tilesetPaletteViewer.clearSelection();
                     return;
                 }
@@ -471,8 +485,9 @@ class EventManager {
     selectTile(tileX, tileY) {
         if (!this.currentMap) return;
 
-        // Check if tile is within map bounds
-        if (tileX < 0 || tileX >= this.currentMap.width || tileY < 0 || tileY >= this.currentMap.height) {
+        // Check if tile is within map bounds (use floor for fractional coords)
+        const bx = Math.floor(tileX), by = Math.floor(tileY);
+        if (bx < 0 || bx >= this.currentMap.width || by < 0 || by >= this.currentMap.height) {
             return;
         }
 
@@ -750,9 +765,8 @@ class EventManager {
     // Get event at position
     getEventAt(x, y) {
         if (!this.currentMap || !this.currentMap.events) return null;
-
         return this.currentMap.events.find(event =>
-            event && event.x === x && event.y === y
+            event && event.x <= x && x < event.x + 1 && event.y <= y && y < event.y + 1
         );
     }
 
@@ -762,12 +776,14 @@ class EventManager {
         this.selectedEvent = event;
         this.notifyEventSelected(event);
 
-        // Update selected tile coordinates for yellow highlight
         if (event) {
             this.selectedTileX = event.x;
             this.selectedTileY = event.y;
-            this.updateSelectionHighlight(); // Update map highlight
         }
+
+        // Hide tile-cell highlight when an event is selected — the sprite
+        // border is the selection visual now.
+        if (this.selectionHighlight) this.selectionHighlight.visible = false;
 
         // Update only the border color on affected sprites instead of full re-render
         if (previousEvent && previousEvent.id !== (event && event.id)) {
@@ -792,13 +808,14 @@ class EventManager {
         const tileWidth = this.tilemapManager.TILE_WIDTH;
         const tileHeight = this.tilemapManager.TILE_HEIGHT;
         const borderColor = isSelected ? 0x00ff00 : 0xffffff;
+        const borderWidth = isSelected ? 2 : 1;
 
         // Rebuild graphics (background + border)
         graphics.clear();
         graphics.rect(0, 0, tileWidth, tileHeight);
         graphics.fill({ color: 0x000000, alpha: 0.75 });
         graphics.rect(0, 0, tileWidth, tileHeight);
-        graphics.stroke({ width: 1, color: borderColor });
+        graphics.stroke({ width: borderWidth, color: borderColor, alpha: 1.0 });
     }
 
     // Select an event by ID
@@ -827,29 +844,22 @@ class EventManager {
 
     // Start dragging an event
     startDragging(event, pointerEvent) {
-        // Undo state is captured lazily on the FIRST actual move — every
-        // left-click on an event lands here, and an unconditional saveState
-        // wiped the redo stack and pushed a full event-list snapshot even
-        // when the event never moved.
         this._dragStateSaved = false;
-
         this.isDragging = true;
         this.draggedEvent = event;
+        this._dragStartX = event.x;
+        this._dragStartY = event.y;
+        this._dragAxisLock = null;
 
-        // Calculate offset from event position to mouse position
         const pos = pointerEvent.data.getLocalPosition(this.tilemapManager.container);
         const eventPixelX = event.x * this.tilemapManager.TILE_WIDTH;
         const eventPixelY = event.y * this.tilemapManager.TILE_HEIGHT;
-
         this.dragOffset.x = pos.x - eventPixelX;
         this.dragOffset.y = pos.y - eventPixelY;
 
-        // Change cursor to grabbing
         if (this.tilemapManager.container) {
             this.tilemapManager.container.cursor = 'grabbing';
         }
-
-        console.log(`Started dragging event ${event.name} from (${event.x}, ${event.y})`);
     }
 
     // Update drag position
@@ -857,51 +867,141 @@ class EventManager {
         if (!this.isDragging || !this.draggedEvent) return;
 
         const pos = pointerEvent.data.getLocalPosition(this.tilemapManager.container);
+        const shift = pointerEvent.data.originalEvent?.shiftKey;
+        const ctrl = pointerEvent.data.originalEvent?.ctrlKey;
+        const ts = this.tilemapManager.TILE_WIDTH;
+        const snap = ctrl ? 0 : (this.snapGrid || 0);
 
-        // Calculate new tile position based on mouse position
-        const newPixelX = pos.x - this.dragOffset.x;
-        const newPixelY = pos.y - this.dragOffset.y;
-        const newTileX = Math.floor((newPixelX + this.tilemapManager.TILE_WIDTH / 2) / this.tilemapManager.TILE_WIDTH);
-        const newTileY = Math.floor((newPixelY + this.tilemapManager.TILE_HEIGHT / 2) / this.tilemapManager.TILE_HEIGHT);
+        let newPixelX = pos.x - this.dragOffset.x;
+        let newPixelY = pos.y - this.dragOffset.y;
 
-        // Check if position changed
-        if (newTileX !== this.draggedEvent.x || newTileY !== this.draggedEvent.y) {
-            // Check bounds
-            if (newTileX >= 0 && newTileX < this.currentMap.width &&
-                newTileY >= 0 && newTileY < this.currentMap.height) {
+        // Shift = axis lock: determine dominant axis on first significant move
+        if (shift) {
+            if (!this._dragAxisLock) {
+                const dx = Math.abs(newPixelX - this._dragStartX * ts);
+                const dy = Math.abs(newPixelY - this._dragStartY * ts);
+                if (dx > 3 || dy > 3) {
+                    this._dragAxisLock = dx >= dy ? 'x' : 'y';
+                }
+            }
+            if (this._dragAxisLock === 'x') {
+                newPixelY = this._dragStartY * ts;
+            } else if (this._dragAxisLock === 'y') {
+                newPixelX = this._dragStartX * ts;
+            }
+        } else {
+            this._dragAxisLock = null;
+        }
 
-                // Check if there's another event at the target position (but not the dragged one)
-                const existingEvent = this.getEventAt(newTileX, newTileY);
-                if (!existingEvent || existingEvent.id === this.draggedEvent.id) {
-                    // First real movement: capture the pre-drag state for
-                    // undo (the event still holds its original position here)
-                    if (!this._dragStateSaved) {
-                        this._dragStateSaved = true;
-                        this.resetMapClickTracking();
-                        this.saveState();
+        // Snap to grid (or free if snap=0/Ctrl)
+        let newX = snap > 0 ? Math.floor(newPixelX / snap) * snap / ts : newPixelX / ts;
+        let newY = snap > 0 ? Math.floor(newPixelY / snap) * snap / ts : newPixelY / ts;
+
+        // Magnetic alignment in free mode (snap=0, no Ctrl)
+        if (snap === 0 && !ctrl) {
+            const anchors = this._collectDragAnchors();
+            const threshold = 8;
+            let bestX = null, bestXDist = threshold;
+            let bestY = null, bestYDist = threshold;
+            let guideX = null, guideY = null;
+            const px = newX * ts, py = newY * ts;
+            const xCands = [px, px + ts / 2, px + ts];
+            const yCands = [py, py + ts / 2, py + ts];
+            for (const a of anchors) {
+                if (a.axis === 'x') {
+                    for (let i = 0; i < xCands.length; i++) {
+                        const d = Math.abs(xCands[i] - a.pos);
+                        if (d < bestXDist) { bestXDist = d; bestX = a.pos - i * (ts / 2); guideX = a.pos; }
                     }
-                    // Update event position
-                    this.draggedEvent.x = newTileX;
-                    this.draggedEvent.y = newTileY;
-
-                    // Update selection to follow the dragged event
-                    this.selectTile(newTileX, newTileY);
-
-                    // Move just the dragged sprite. A full renderEvents()
-                    // per tile step rebuilt every event sprite and the
-                    // sidebar list (resetting its scroll); the final
-                    // renderEvents() happens once in finishDragging.
-                    const sprite = this.eventSprites.get(this.draggedEvent.id);
-                    if (sprite) {
-                        sprite.x = newTileX * this.tilemapManager.TILE_WIDTH;
-                        sprite.y = newTileY * this.tilemapManager.TILE_HEIGHT;
-                        this.updateSelectionHighlight();
-                    } else {
-                        this.renderEvents();
+                } else {
+                    for (let i = 0; i < yCands.length; i++) {
+                        const d = Math.abs(yCands[i] - a.pos);
+                        if (d < bestYDist) { bestYDist = d; bestY = a.pos - i * (ts / 2); guideY = a.pos; }
                     }
                 }
             }
+            if (bestX !== null) newX = bestX / ts;
+            if (bestY !== null) newY = bestY / ts;
+            this._drawDragGuides(guideX, guideY);
+        } else {
+            this._clearDragGuides();
         }
+
+        if (newX !== this.draggedEvent.x || newY !== this.draggedEvent.y) {
+            if (newX >= 0 && newX < this.currentMap.width &&
+                newY >= 0 && newY < this.currentMap.height) {
+
+                if (!this._dragStateSaved) {
+                    this._dragStateSaved = true;
+                    this.resetMapClickTracking();
+                    this.saveState();
+                }
+                this.draggedEvent.x = newX;
+                this.draggedEvent.y = newY;
+
+                const sprite = this.eventSprites.get(this.draggedEvent.id);
+                if (sprite) {
+                    sprite.x = newX * ts;
+                    sprite.y = newY * ts;
+                    this.updateSelectionHighlight();
+                } else {
+                    this.renderEvents();
+                }
+            }
+        }
+    }
+
+    // Draw alignment guide lines during event drag
+    _drawDragGuides(guideX, guideY) {
+        if (!this.tilemapManager || !this.tilemapManager.container || !this.tilemapManager.currentMap) return;
+        if (!this._dragGuideGraphics) {
+            this._dragGuideGraphics = new PIXI.Graphics();
+            this.tilemapManager.container.addChild(this._dragGuideGraphics);
+        }
+        const g = this._dragGuideGraphics;
+        g.clear();
+        const ts = this.tilemapManager.TILE_WIDTH;
+        const mapW = this.tilemapManager.currentMap.width * ts;
+        const mapH = this.tilemapManager.currentMap.height * ts;
+        if (guideX !== null) {
+            g.moveTo(guideX, 0).lineTo(guideX, mapH)
+                .stroke({ width: 1, color: 0x00ffff, alpha: 0.7 });
+        }
+        if (guideY !== null) {
+            g.moveTo(0, guideY).lineTo(mapW, guideY)
+                .stroke({ width: 1, color: 0x00ffff, alpha: 0.7 });
+        }
+    }
+
+    _clearDragGuides() {
+        if (this._dragGuideGraphics) {
+            this._dragGuideGraphics.clear();
+        }
+    }
+
+    // Collect alignment anchors from all events + stamps (except the dragged one)
+    _collectDragAnchors() {
+        const anchors = [];
+        const ts = this.tilemapManager.TILE_WIDTH;
+        const map = this.currentMap;
+        if (!map) return anchors;
+
+        const events = map.events || [];
+        for (const ev of events) {
+            if (!ev || ev === this.draggedEvent) continue;
+            const px = ev.x * ts, py = ev.y * ts;
+            anchors.push({ axis: 'x', pos: px }, { axis: 'x', pos: px + ts / 2 }, { axis: 'x', pos: px + ts });
+            anchors.push({ axis: 'y', pos: py }, { axis: 'y', pos: py + ts / 2 }, { axis: 'y', pos: py + ts });
+        }
+
+        const stamps = map.stampTiles || [];
+        for (const s of stamps) {
+            if (!s || typeof s.x !== 'number') continue;
+            anchors.push({ axis: 'x', pos: s.x - ts / 2 }, { axis: 'x', pos: s.x }, { axis: 'x', pos: s.x + ts / 2 });
+            anchors.push({ axis: 'y', pos: s.y - ts / 2 }, { axis: 'y', pos: s.y }, { axis: 'y', pos: s.y + ts / 2 });
+        }
+
+        return anchors;
     }
 
     // Finish dragging
@@ -921,6 +1021,42 @@ class EventManager {
 
         // Final render to update appearance
         this.renderEvents();
+    }
+
+    // Nudge selected event with arrow keys
+    nudgeSelectedEvent(dx, dy) {
+        if (!this.selectedEvent || !this.currentMap) return;
+
+        const ev = this.selectedEvent;
+        const ts = this.tilemapManager.TILE_WIDTH;
+        const newX = ev.x + dx;
+        const newY = ev.y + dy;
+
+        if (newX < 0 || newX >= this.currentMap.width ||
+            newY < 0 || newY >= this.currentMap.height) return;
+
+        // Lazy save state (first nudge in a sequence)
+        if (!this._nudgeStateSaved) {
+            this._nudgeStateSaved = true;
+            this.saveState();
+        }
+
+        ev.x = newX;
+        ev.y = newY;
+
+        // Update sprite position
+        const sprite = this.eventSprites.get(ev.id);
+        if (sprite) {
+            sprite.x = newX * ts;
+            sprite.y = newY * ts;
+        }
+        this.selectedTileX = newX;
+        this.selectedTileY = newY;
+    }
+
+    // Reset nudge undo tracking (call on keyup or selection change)
+    resetNudgeTracking() {
+        this._nudgeStateSaved = false;
     }
 
     // Convert layer, x, y to RPG Maker tileId
@@ -996,7 +1132,7 @@ class EventManager {
             console.warn('No map loaded');
             return null;
         }
-        if (x < 0 || x >= this.currentMap.width || y < 0 || y >= this.currentMap.height || this.getEventAt(x, y)) {
+        if (x < 0 || x >= this.currentMap.width || y < 0 || y >= this.currentMap.height) {
             return null;
         }
 
@@ -1068,7 +1204,7 @@ class EventManager {
             console.warn('No map loaded');
             return null;
         }
-        if (x < 0 || x >= this.currentMap.width || y < 0 || y >= this.currentMap.height || this.getEventAt(x, y)) {
+        if (x < 0 || x >= this.currentMap.width || y < 0 || y >= this.currentMap.height) {
             return null;
         }
 

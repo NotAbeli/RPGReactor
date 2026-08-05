@@ -230,8 +230,13 @@ class MapEditor {
             return;
         }
 
-        this.activateMapStamp(this.captureMapStamp(
-            this.tilemapManager.currentMap, start, current));
+        const stamp = this.captureMapStamp(
+            this.tilemapManager.currentMap, start, current);
+        if (stamp) {
+            stamp.grabOX = current.x - Math.min(start.x, current.x);
+            stamp.grabOY = current.y - Math.min(start.y, current.y);
+        }
+        this.activateMapStamp(stamp);
     }
 
     /**
@@ -289,7 +294,9 @@ class MapEditor {
     paintMapStamp(x, y) {
         const map = this.tilemapManager.currentMap;
         if (!map || !this.mapStamp) return;
-        const result = this.applyMapStamp(map, this.mapStamp, { x, y });
+        const ox = this.mapStamp.grabOX || 0;
+        const oy = this.mapStamp.grabOY || 0;
+        const result = this.applyMapStamp(map, this.mapStamp, { x: x - ox, y: y - oy });
         if (!result.changed) return;
         if (result.visualUpdates.length) this.tilemapManager.updateTiles(result.visualUpdates);
         if (result.regionUpdates.length && this.regionManager?.enabled) {
@@ -766,12 +773,13 @@ class MapEditor {
                 const sp = event.data.getLocalPosition(container);
                 const rawX = Math.floor(sp.x);
                 const rawY = Math.floor(sp.y);
+                const ctrl = event.data.originalEvent?.ctrlKey;
+                const snap = ctrl ? 0 : (this.snapGrid || 0);
+                const half = this.tilemapManager.TILE_SIZE / 2;
                 this.beginEditState();
                 if (btn === 2) {
                     this.tilemapManager.removeStampAtPoint(rawX, rawY);
                 } else {
-                    const snap = this.snapGrid || 0;
-                    const half = this.tilemapManager.TILE_SIZE / 2;
                     const px = snap > 0 ? Math.floor(rawX / snap) * snap + half : rawX;
                     const py = snap > 0 ? Math.floor(rawY / snap) * snap + half : rawY;
                     this.placeStampAt(px, py);
@@ -891,13 +899,24 @@ class MapEditor {
             } else {
                 // Show tile preview when hovering (not drawing)
                 if (this.isFreePlacementSelected()) {
-                    const snap = this.snapGrid || 0;
+                    const ctrl = event.data.originalEvent?.ctrlKey;
+                    const snap = ctrl ? 0 : (this.snapGrid || 0);
                     const rawX = Math.floor(pos.x);
                     const rawY = Math.floor(pos.y);
-                    const px = snap > 0 ? Math.floor(rawX / snap) * snap + this.tilemapManager.TILE_SIZE / 2 : rawX;
-                    const py = snap > 0 ? Math.floor(rawY / snap) * snap + this.tilemapManager.TILE_SIZE / 2 : rawY;
+                    let px = snap > 0 ? Math.floor(rawX / snap) * snap + this.tilemapManager.TILE_SIZE / 2 : rawX;
+                    let py = snap > 0 ? Math.floor(rawY / snap) * snap + this.tilemapManager.TILE_SIZE / 2 : rawY;
+                    // Magnetic alignment in free mode (snap=0, no Ctrl)
+                    if (snap === 0 && !ctrl) {
+                        const align = this._checkAlignment(px, py, 8);
+                        px = align.px;
+                        py = align.py;
+                        this._drawAlignmentGuides(align.guides);
+                    } else {
+                        this._clearAlignmentGuides();
+                    }
                     this.updateStampPreview(px, py);
                 } else {
+                    this._clearAlignmentGuides();
                     this.updateTilePreview(tileX, tileY);
                 }
             }
@@ -2506,34 +2525,33 @@ class MapEditor {
 
         const tileWidth = this.tilemapManager.TILE_WIDTH;
         const tileHeight = this.tilemapManager.TILE_HEIGHT;
-        const visibleWidth = Math.min(this.mapStamp.width, map.width - tileX);
-        const visibleHeight = Math.min(this.mapStamp.height, map.height - tileY);
+
+        const ox = this.mapStamp.grabOX || 0;
+        const oy = this.mapStamp.grabOY || 0;
+        const anchorX = tileX - ox;
+        const anchorY = tileY - oy;
+
+        const visibleWidth = Math.min(this.mapStamp.width, map.width - anchorX);
+        const visibleHeight = Math.min(this.mapStamp.height, map.height - anchorY);
+        const px = anchorX * tileWidth;
+        const py = anchorY * tileHeight;
+
         const footprint = new PIXI.Graphics();
-        footprint.rect(
-            tileX * tileWidth,
-            tileY * tileHeight,
-            visibleWidth * tileWidth,
-            visibleHeight * tileHeight
-        );
+        footprint.rect(px, py, visibleWidth * tileWidth, visibleHeight * tileHeight);
         footprint.fill({ color: 0xffffff, alpha: 0.16 });
         this.tilePreviewContainer.addChild(footprint);
 
         if (this._mapStampPreviewTexture) {
             const sprite = new PIXI.Sprite(this._mapStampPreviewTexture);
-            sprite.x = tileX * tileWidth;
-            sprite.y = tileY * tileHeight;
+            sprite.x = px;
+            sprite.y = py;
             sprite.alpha = 0.72;
             sprite.eventMode = 'none';
             this.tilePreviewContainer.addChild(sprite);
         }
 
         const outline = new PIXI.Graphics();
-        outline.rect(
-            tileX * tileWidth,
-            tileY * tileHeight,
-            visibleWidth * tileWidth,
-            visibleHeight * tileHeight
-        );
+        outline.rect(px, py, visibleWidth * tileWidth, visibleHeight * tileHeight);
         outline.stroke({ width: 2, color: 0xffffff, alpha: 0.95 });
         this.tilePreviewContainer.addChild(outline);
         this.tilePreviewContainer.visible = true;
@@ -2773,8 +2791,9 @@ class MapEditor {
     }
 
     isGridLockedTileset() {
+        if (!this.enabled) return false;
         const palette = this.tilesetPaletteViewer;
-        if (!palette) return false;
+        if (!palette) return true; // Default: locked (A layer is default selection)
         const layer = palette.currentLayer;
         return !layer || layer.startsWith('A') || layer === 'R';
     }
@@ -2785,14 +2804,125 @@ class MapEditor {
         this.tilemapManager.setGridSize(size);
     }
 
+    // === Magnetic alignment system ===
+    // Collects anchor points (left/centerX/right, top/centerY/bottom) from
+    // all visible events and stamps. Returns [{axis:'x'|'y', pos:px}].
+    _collectAlignmentAnchors() {
+        const anchors = [];
+        const ts = this.tilemapManager.TILE_SIZE;
+        const map = this.tilemapManager.currentMap;
+        if (!map) return anchors;
+
+        // Events
+        const events = map.events || [];
+        for (const ev of events) {
+            if (!ev) continue;
+            const px = ev.x * ts, py = ev.y * ts;
+            anchors.push({ axis: 'x', pos: px });
+            anchors.push({ axis: 'x', pos: px + ts / 2 });
+            anchors.push({ axis: 'x', pos: px + ts });
+            anchors.push({ axis: 'y', pos: py });
+            anchors.push({ axis: 'y', pos: py + ts / 2 });
+            anchors.push({ axis: 'y', pos: py + ts });
+        }
+
+        // Stamps
+        const stamps = map.stampTiles || [];
+        for (const s of stamps) {
+            if (!s || typeof s.x !== 'number') continue;
+            anchors.push({ axis: 'x', pos: s.x - ts / 2 });
+            anchors.push({ axis: 'x', pos: s.x });
+            anchors.push({ axis: 'x', pos: s.x + ts / 2 });
+            anchors.push({ axis: 'y', pos: s.y - ts / 2 });
+            anchors.push({ axis: 'y', pos: s.y });
+            anchors.push({ axis: 'y', pos: s.y + ts / 2 });
+        }
+
+        return anchors;
+    }
+
+    // Check if px/py should snap to nearby anchors. Returns adjusted {px, py}
+    // plus guide lines to draw. threshold in pixels.
+    _checkAlignment(px, py, threshold) {
+        const anchors = this._collectAlignmentAnchors();
+        const ts = this.tilemapManager.TILE_SIZE;
+        const guides = [];
+        let bestX = null, bestXDist = threshold;
+        let bestY = null, bestYDist = threshold;
+
+        // Check candidate X positions: left (px - ts/2), center (px), right (px + ts/2)
+        const xCandidates = [px - ts / 2, px, px + ts / 2];
+        const yCandidates = [py - ts / 2, py, py + ts / 2];
+
+        for (const a of anchors) {
+            if (a.axis === 'x') {
+                for (let i = 0; i < xCandidates.length; i++) {
+                    const d = Math.abs(xCandidates[i] - a.pos);
+                    if (d < bestXDist) {
+                        bestXDist = d;
+                        bestX = a.pos - (i - 1) * (ts / 2); // adjust px so candidate aligns
+                    }
+                }
+            } else {
+                for (let i = 0; i < yCandidates.length; i++) {
+                    const d = Math.abs(yCandidates[i] - a.pos);
+                    if (d < bestYDist) {
+                        bestYDist = d;
+                        bestY = a.pos - (i - 1) * (ts / 2);
+                    }
+                }
+            }
+        }
+
+        if (bestX !== null) { px = bestX; guides.push({ axis: 'x', pos: bestX }); }
+        if (bestY !== null) { py = bestY; guides.push({ axis: 'y', pos: bestY }); }
+        return { px, py, guides };
+    }
+
+    _drawAlignmentGuides(guides) {
+        this._clearAlignmentGuides();
+        if (!guides.length || !this.tilemapManager.container) return;
+        if (!this._alignmentGraphics) {
+            this._alignmentGraphics = new PIXI.Graphics();
+            this.tilemapManager.container.addChild(this._alignmentGraphics);
+        }
+        const g = this._alignmentGraphics;
+        g.clear();
+        const map = this.tilemapManager.currentMap;
+        if (!map) return;
+        const mapW = map.width * this.tilemapManager.TILE_WIDTH;
+        const mapH = map.height * this.tilemapManager.TILE_HEIGHT;
+        for (const guide of guides) {
+            if (guide.axis === 'x') {
+                g.moveTo(guide.pos, 0).lineTo(guide.pos, mapH)
+                    .stroke({ width: 1, color: 0x00ffff, alpha: 0.6 });
+            } else {
+                g.moveTo(0, guide.pos).lineTo(mapW, guide.pos)
+                    .stroke({ width: 1, color: 0x00ffff, alpha: 0.6 });
+            }
+        }
+    }
+
+    _clearAlignmentGuides() {
+        if (this._alignmentGraphics) {
+            this._alignmentGraphics.clear();
+        }
+    }
+
     placeStampAt(px, py) {
         const palette = this.tilesetPaletteViewer;
         if (!palette || !Array.isArray(palette.selectedTiles) || palette.selectedTiles.length === 0) return;
-        const sel = palette.selectedTiles[0];
-        const layer = sel.layer || palette.currentLayer;
-        const tileId = this.getTileIdFromPalettePosition(sel.x, sel.y, layer, 0, 0);
-        if (tileId == null || tileId <= 0) return;
-        this.tilemapManager.addStamp({ x: px, y: py, tileId });
+        const ts = this.tilemapManager.TILE_SIZE;
+        const sels = palette.selectedTiles;
+        const anchor = palette.anchorTile || sels[0];
+        for (const sel of sels) {
+            const layer = sel.layer || palette.currentLayer;
+            const tileId = this.getTileIdFromPalettePosition(sel.x, sel.y, layer, 0, 0);
+            if (tileId == null || tileId <= 0) continue;
+            const offsetX = (sel.x - anchor.x) * ts;
+            const offsetY = (sel.y - anchor.y) * ts;
+            this.tilemapManager.addStamp({ x: px + offsetX, y: py + offsetY, tileId });
+        }
     }
 
     updateStampPreview(px, py) {
@@ -2803,24 +2933,29 @@ class MapEditor {
             this.tilePreviewContainer.visible = false;
             return;
         }
-        const sel = palette.selectedTiles[0];
-        const layer = sel.layer || palette.currentLayer;
-        const tileId = this.getTileIdFromPalettePosition(sel.x, sel.y, layer, 0, 0);
-        const tex = this.tilemapManager.getStampTexture(tileId);
-        if (!tex) {
-            this.tilePreviewContainer.visible = false;
-            return;
+        const ts = this.tilemapManager.TILE_SIZE;
+        const sels = palette.selectedTiles;
+        const anchor = palette.anchorTile || sels[sels.length - 1];
+        let anyShown = false;
+        for (const sel of sels) {
+            const layer = sel.layer || palette.currentLayer;
+            const tileId = this.getTileIdFromPalettePosition(sel.x, sel.y, layer, 0, 0);
+            const tex = this.tilemapManager.getStampTexture(tileId);
+            if (!tex) continue;
+            const offsetX = (sel.x - anchor.x) * ts;
+            const offsetY = (sel.y - anchor.y) * ts;
+            const sprite = new PIXI.Sprite(tex);
+            sprite.anchor.set(0.5);
+            sprite.x = px + offsetX;
+            sprite.y = py + offsetY;
+            sprite.width = ts;
+            sprite.height = ts;
+            sprite.alpha = 0.6;
+            sprite.roundPixels = true;
+            this.tilePreviewContainer.addChild(sprite);
+            anyShown = true;
         }
-        const sprite = new PIXI.Sprite(tex);
-        sprite.anchor.set(0.5);
-        sprite.x = px;
-        sprite.y = py;
-        sprite.width = this.tilemapManager.TILE_SIZE;
-        sprite.height = this.tilemapManager.TILE_SIZE;
-        sprite.alpha = 0.6;
-        sprite.roundPixels = true;
-        this.tilePreviewContainer.addChild(sprite);
-        this.tilePreviewContainer.visible = true;
+        this.tilePreviewContainer.visible = anyShown;
     }
 
     // Get texture for a tile from the palette

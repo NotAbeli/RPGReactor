@@ -40,21 +40,21 @@ class UIManager {
             });
         });
 
-        // Grid snap button (48 / 24 / Off, click to cycle)
-        const gridBtn = document.getElementById('tile-grid-btn');
-        if (gridBtn) {
-            gridBtn.addEventListener('click', () => {
+        // Canvas overlay controls (Grid, HB)
+        const ovGrid = document.getElementById('overlay-grid-btn');
+        if (ovGrid) {
+            ovGrid.addEventListener('click', () => {
                 if (this.callbacks.cycleGrid) this.callbacks.cycleGrid();
             });
         }
-
-        // Show hitboxes toggle
-        const hbBtn = document.getElementById('show-hitboxes-btn');
-        if (hbBtn) {
-            hbBtn.addEventListener('click', () => {
+        const ovHb = document.getElementById('overlay-hb-btn');
+        if (ovHb) {
+            ovHb.addEventListener('click', () => {
                 if (this.callbacks.toggleHitboxes) this.callbacks.toggleHitboxes();
             });
         }
+
+        // Mode toggle is a toolbar button now (handled via data-action in handleToolbarAction)
 
         // Sidebar tree items - delegate event to handle dynamically added items
         document.addEventListener('click', (e) => {
@@ -184,6 +184,11 @@ class UIManager {
                 break;
             case 'audio-player':
                 this.callbacks.showAudioPlayer();
+                break;
+            case 'mode-tiles':
+                if (this.callbacks.disableEventModeIfActive) {
+                    this.callbacks.disableEventModeIfActive();
+                }
                 break;
             case 'toggle-event-mode':
                 if (this.callbacks.toggleEventMode) {
@@ -463,11 +468,11 @@ class UIManager {
 
             const shortcut = (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey
                 ? {
-                    n: this.callbacks.newProject,
-                    o: this.callbacks.openProject,
-                    s: this.callbacks.saveProject,
-                    r: this.callbacks.playtest
-                }[e.key.toLowerCase()]
+                    KeyN: this.callbacks.newProject,
+                    KeyO: this.callbacks.openProject,
+                    KeyS: this.callbacks.saveProject,
+                    KeyR: this.callbacks.playtest
+                }[e.code]
                 : null;
             if (shortcut) {
                 e.preventDefault();
@@ -483,7 +488,7 @@ class UIManager {
             }
 
             // Ctrl+Z - Undo (only when not in a text input)
-            if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+            if (e.ctrlKey && e.code === 'KeyZ' && !e.shiftKey) {
                 const activeElement = document.activeElement;
                 const isTextInput = activeElement && (
                     activeElement.tagName === 'INPUT' ||
@@ -514,7 +519,7 @@ class UIManager {
             }
 
             // Ctrl+Y or Ctrl+Shift+Z - Redo (only when not in a text input)
-            if ((e.ctrlKey && e.key === 'y') || (e.ctrlKey && e.shiftKey && e.key === 'z')) {
+            if ((e.ctrlKey && e.code === 'KeyY') || (e.ctrlKey && e.shiftKey && e.code === 'KeyZ')) {
                 const activeElement = document.activeElement;
                 const isTextInput = activeElement && (
                     activeElement.tagName === 'INPUT' ||
@@ -545,7 +550,7 @@ class UIManager {
             }
 
             // Ctrl+C - Copy event (only in event mode)
-            if (e.ctrlKey && e.key === 'c') {
+            if (e.ctrlKey && e.code === 'KeyC') {
                 const activeElement = document.activeElement;
                 const isTextInput = activeElement && (
                     activeElement.tagName === 'INPUT' ||
@@ -573,7 +578,7 @@ class UIManager {
             }
 
             // Ctrl+X - Cut event (only in event mode)
-            if (e.ctrlKey && e.key === 'x') {
+            if (e.ctrlKey && e.code === 'KeyX') {
                 const activeElement = document.activeElement;
                 const isTextInput = activeElement && (
                     activeElement.tagName === 'INPUT' ||
@@ -605,7 +610,7 @@ class UIManager {
             }
 
             // Ctrl+V - Paste event (only in event mode)
-            if (e.ctrlKey && e.key === 'v') {
+            if (e.ctrlKey && e.code === 'KeyV') {
                 const activeElement = document.activeElement;
                 const isTextInput = activeElement && (
                     activeElement.tagName === 'INPUT' ||
@@ -671,7 +676,37 @@ class UIManager {
                     }
                 }
             }
+
+            // Arrow keys — nudge selected event (event mode only)
+            if (this.callbacks.getEventManager && !this.isEditorModalOpenForGlobalShortcuts()) {
+                const em = this.callbacks.getEventManager();
+                if (em && em.eventMode && em.selectedEvent) {
+                    const tag = document.activeElement?.tagName;
+                    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+                    const ctrl = e.ctrlKey || e.metaKey;
+                    const ts = 48; // tile size in tile-coords units
+                    const snap = em.snapGrid || 0;
+                    const step = snap > 0 ? snap / ts : 0.02; // grid step or ~1px in tile coords
+                    const mult = ctrl ? 10 : 1;
+                    let handled = false;
+                    if (e.key === 'ArrowLeft') { em.nudgeSelectedEvent(-step * mult, 0); handled = true; }
+                    else if (e.key === 'ArrowRight') { em.nudgeSelectedEvent(step * mult, 0); handled = true; }
+                    else if (e.key === 'ArrowUp') { em.nudgeSelectedEvent(0, -step * mult); handled = true; }
+                    else if (e.key === 'ArrowDown') { em.nudgeSelectedEvent(0, step * mult); handled = true; }
+                    if (handled) { e.preventDefault(); e.stopPropagation(); return; }
+                }
+            }
         }, true); // Use capture phase
+
+        // Reset nudge undo tracking on keyup
+        window.addEventListener('keyup', (e) => {
+            if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) {
+                if (this.callbacks.getEventManager) {
+                    const em = this.callbacks.getEventManager();
+                    if (em && em.resetNudgeTracking) em.resetNudgeTracking();
+                }
+            }
+        }, true);
     }
 
     isEditorModalOpenForGlobalShortcuts() {
@@ -987,6 +1022,11 @@ class UIManager {
                     }
                 }
                 break;
+            case 'mode-tiles':
+                if (this.callbacks.disableEventModeIfActive) {
+                    this.callbacks.disableEventModeIfActive();
+                }
+                break;
             case 'toggle-event-mode':
                 if (this.callbacks.toggleEventMode) {
                     this.callbacks.toggleEventMode();
@@ -1089,12 +1129,13 @@ class UIManager {
     }
 
     setGrid(value, locked) {
-        const btn = document.getElementById('tile-grid-btn');
+        const btn = document.getElementById('overlay-grid-btn');
         if (!btn) return;
         const label = value === 0 ? 'Off' : String(value);
-        btn.textContent = 'Grid: ' + label;
-        btn.disabled = !!locked;
+        btn.textContent = label;
+        btn.classList.toggle('active', value !== 48);
         btn.style.opacity = locked ? '0.5' : '';
+        btn.style.pointerEvents = locked ? 'none' : '';
     }
 
     refreshGridButton() {

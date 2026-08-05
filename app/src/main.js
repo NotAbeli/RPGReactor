@@ -73,7 +73,7 @@ class RPGReactor {
             playtest: () => this.playtest(),
             getGrid: () => (this.mapEditor ? this.mapEditor.snapGrid : 48),
             cycleGrid: () => this.cycleGrid(),
-            isGridLockedTileset: () => (this.mapEditor ? this.mapEditor.isGridLockedTileset() : false),
+            isGridLockedTileset: () => (this.mapEditor ? this.mapEditor.isGridLockedTileset() : true),
             toggleHitboxes: () => this.toggleHitboxes(),
             openDatabase: (type) => this.openDatabase(type),
             showAudioPlayer: () => this.audioPlayer.showAudioPlayer(),
@@ -233,20 +233,10 @@ class RPGReactor {
                 if (this.mapEditor) {
                     this.mapEditor.setEnabled(false);
                 }
-                // Make sure button shows active state
-                const button = document.getElementById('toolbar-event-manager-btn');
-                if (button) {
-                    button.classList.add('active');
-                }
             } else {
                 // Make sure tileset mode is properly enabled
                 if (this.mapEditor) {
                     this.mapEditor.setEnabled(true);
-                }
-                // Make sure button shows inactive state
-                const button = document.getElementById('toolbar-event-manager-btn');
-                if (button) {
-                    button.classList.remove('active');
                 }
             }
 
@@ -513,14 +503,20 @@ class RPGReactor {
             });
         }
 
-        // Update button appearance
-        const button = document.getElementById('toolbar-event-manager-btn');
-        if (button) {
+        // Update toolbar mode toggle button (icon + active state)
+        // active = Tiles mode (default), not-active = Events mode
+        const modeBtn = document.getElementById('mode-toggle-btn');
+        if (modeBtn) {
+            modeBtn.classList.toggle('active', !newMode);
+            const img = modeBtn.querySelector('img');
             if (newMode) {
-                button.classList.add('active');
+                if (img) { img.src = 'images/icon-event.png'; img.onerror = function() { this.style.display='none'; this.parentElement.innerHTML='EV'; }; }
             } else {
-                button.classList.remove('active');
+                if (img) { img.src = 'images/icon-single.png'; img.onerror = function() { this.style.display='none'; this.parentElement.innerHTML='TL'; }; }
             }
+            // Refresh grid lock state for the new mode
+            if (this.mapEditor) this.mapEditor.refreshBackgroundGrid();
+            if (this.uiManager) this.uiManager.refreshGridButton();
         }
 
         // Update undo/redo button states based on the current mode
@@ -578,11 +574,16 @@ class RPGReactor {
                 }
             });
 
-            // Update button appearance
-            const button = document.getElementById('toolbar-event-manager-btn');
-            if (button) {
-                button.classList.remove('active');
+            // Update toolbar mode button back to Tiles (active = Tiles)
+            const modeBtn = document.getElementById('mode-toggle-btn');
+            if (modeBtn) {
+                modeBtn.classList.add('active');
+                const img = modeBtn.querySelector('img');
+                if (img) { img.src = 'images/icon-single.png'; img.onerror = function() { this.style.display='none'; this.parentElement.innerHTML='TL'; }; }
             }
+            // Refresh grid lock for tile mode
+            if (this.mapEditor) this.mapEditor.refreshBackgroundGrid();
+            if (this.uiManager) this.uiManager.refreshGridButton();
 
             // Update status
             this.uiManager.updateStatus('Tileset mode enabled');
@@ -657,10 +658,12 @@ class RPGReactor {
                         this.mapEditor.setupMapInteraction();
                     }
 
-                    // Update button appearance
-                    const button = document.getElementById('toolbar-event-manager-btn');
-                    if (button) {
-                        button.classList.remove('active');
+                    // Update overlay mode button back to Tiles
+                    const modeBtn = document.getElementById('mode-toggle-btn');
+                    if (modeBtn) {
+                        modeBtn.classList.remove('active');
+                        const img = modeBtn.querySelector('img');
+                        if (img) { img.src = 'images/icon-single.png'; img.onerror = function() { this.style.display='none'; this.parentElement.innerHTML='T'; }; }
                     }
 
                     // Update status
@@ -833,6 +836,7 @@ class RPGReactor {
         if (this.mapEditor && !this.mapEditor.isGridLockedTileset()) {
             const cur = this.mapEditor.snapGrid;
             this.mapEditor.snapGrid = (cur === 48) ? 24 : (cur === 24) ? 0 : 48;
+            if (this.eventManager) this.eventManager.snapGrid = this.mapEditor.snapGrid;
         }
         if (this.mapEditor) this.mapEditor.refreshBackgroundGrid();
         if (this.uiManager) this.uiManager.refreshGridButton();
@@ -845,7 +849,7 @@ class RPGReactor {
         if (!tm || typeof tm.setShowHitboxes !== 'function') return;
         const next = !tm.showHitboxes;
         tm.setShowHitboxes(next);
-        const btn = document.getElementById('show-hitboxes-btn');
+        const btn = document.getElementById('overlay-hb-btn');
         if (btn) btn.classList.toggle('active', next);
     }
 
@@ -871,6 +875,11 @@ class RPGReactor {
 
             // Initialize and show tileset palette viewer
             this.showTilesetPalette();
+
+            // Refresh grid button lock state (A/R tileset check)
+            if (this.uiManager && this.uiManager.refreshGridButton) {
+                this.uiManager.refreshGridButton();
+            }
 
             // Initialize map editor for tile painting
             if (!this.mapEditor && this.tilesetPaletteViewer) {
