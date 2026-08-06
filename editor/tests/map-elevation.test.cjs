@@ -415,8 +415,22 @@ test('the 3D ground is drawn into the PIXI scene, not behind it', () => {
         'the three canvas stops presenting itself');
     assert.match(sprites, /holder\.addChildAt\(sprite/,
         'and becomes a child of the spriteset, under the tone filter');
-    assert.match(sprites, /this\._reactor3dBelow = make\(this\._baseSprite, 1\);/,
+    // Inside the tilemap, at the layer it stands in for — not merely beneath
+    // it. Parked outside, anything a plugin adds *inside* the tilemap draws
+    // over the 3D ground, and parallax plugins do exactly that: MultiParallax
+    // adds a TilingSprite per layer to the tilemap, which hid the whole world
+    // while the star-flagged pass, sorted to `z` 4, came through untouched.
+    // The symptom is oddly specific and reads as a Reactor bug with no cause:
+    // tiles marked `*` appear in 3D and tiles marked `X` or `O` do not.
+    assert.match(sprites, /this\._reactor3dBelow = make\(this\._tilemap, 0\);/,
         'the ground goes where the tilemap ground was');
+    assert.match(sprites, /this\._reactor3dBelow\.sprite\.z = 0;/,
+        'sorted to the lower layer, since the tilemap re-sorts by z every frame');
+    // Sorting rather than suppressing: a layer the author put behind the map
+    // stays behind it, so a starfield still shows around the world instead of
+    // being turned off with it.
+    assert.doesNotMatch(sprites, /suppressReactor3DParallaxLayers/,
+        'a backdrop is sorted behind, never hidden');
 
     // The render has to reach PIXI every frame or the sprite shows frame one
     // forever, and each pass must be uploaded before the next overwrites the

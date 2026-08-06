@@ -6,7 +6,31 @@ This root changelog summarizes public release progress for GitHub; larger releas
 
 ## [Unreleased - 0.98.0]
 
+### Added
+
+- **A parallax is chosen by looking at it.** Map Properties offered a dropdown of filenames, and a filename is a poor description of a picture. A **Browse…** button opens the editor's own image picker — the whole folder, searchable, current choice highlighted, full-size preview — and a thumbnail of the current parallax now sits under the dropdown with its pixel dimensions, so "is this the one?" is answered without opening anything.
+
 ### Fixed
+
+- **Object designations can be painted again after switching project or map.** The editor was handed the rebuilt 3D object overlay only when the Objects tab was *clicked*, and a tab already open is never clicked — so the paint path found no manager and returned quietly, producing no mark and no error. Every surface the editor paints through is bound in one place now, and a tab that is already open is re-opened so its panel and overlay are rebuilt with it.
+
+- **An event can say which layer its animations play on**, with `<animation z: 6>` in its note or `<animation over>` for the layer RPG Maker uses — in 2D as well as 3D. Where an animation belongs is a question about the scene, and one map will want a glow behind a table top and a flame over everything. Saying nothing keeps the behaviour that was there before.
+
+- **A tile samples inside its own square of the sheet at every zoom.** Each quad carries the rectangle it is entitled to and the shader clamps to it, which no fixed inset can do: zoomed out, one screen pixel covers many texels and the sample can land in the next tile along.
+
+- **The 3D camera looks at the middle of the view**, rather than half a tile past it.
+
+- **An animation takes its place on the frame it appears**, instead of drawing in front of everything for one frame each time a looping effect restarts.
+
+- **A new event can be made in the 3D view.** Right-clicking stopped at the event cube, so the only cell you could open a menu on was one that already had an event on it — and *New Event…* lives on the menu for a cell that does not. Bare ground now gets the same menu the 2D map gives it.
+
+- **One click of the shadow pen paints.** The pen paints a *quadrant* of a cell and worked out which one from the last position a mouse *move* had recorded — which a press with no move before it had never set. So a click declined to paint while a drag worked perfectly, the drag's first move having filled the field in.
+
+- **The editor's 3D preview draws the map's parallax**, which it could not before: the runtime asks ImageManager for it and there is no game running in the editor. More than one is honoured, stacked in the author's order — the map's own and any declared in its note.
+
+- **A plugin that renders somewhere else and hands the picture to PIXI as a canvas now shows it.** MZ3D draws its world in babylon.js and passes the result through as a texture; under Reactor it drew nothing and the map was the parallax sky behind it. Two v5-era behaviours are quietly gone in PIXI 8: `Texture.update()` no longer pushes the source to the GPU — which is also where a canvas's current size is read back off the element, so a texture built before its canvas is sized stays at the 300×150 HTML default — and a Sprite only tracks its texture when that texture is flagged `dynamic`, which is a v8 concept no MZ-era plugin knows to set. Neither leaves a mark: nothing throws and the picture is simply absent. Both are restored in the compatibility layer, so the plugin is unmodified.
+
+- **A 3D map lit by PSYCHRONIC_RaveLighting is no longer hidden behind its own darkness, and its lights reach the scene.** A lighting plugin draws in two parts and only one of them is the lights: Reactor put away the glow sprites and left the darkness, a full-screen bitmap filled with the screen tone, which on a night map is opaque black over a world that had already been lit for real. It also has to be told every frame, because the plugin rewrites that visibility from the options setting on every frame of its own update. Separately, the lights themselves were read out of a container the plugin only fills lazily, so a map with five lit braziers put no lights in the 3D scene at all; they are read from the characters that own them now.
 
 - **The audio player's track list fills the dialog.** It was a flat 475px — the height of the A-Z strip standing beside it, 26 tabs at 17px plus padding — so the list was sized to fit the alphabet rather than the window, and everything below it was an empty grey band that could have been holding twice as many track names.
 

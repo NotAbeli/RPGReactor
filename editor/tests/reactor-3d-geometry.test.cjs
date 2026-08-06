@@ -147,12 +147,42 @@ test('UVs point at the tile and are flipped into texture space', () => {
     });
     const uvs = Array.from(built.groups[0].uvs.slice(0, 8));
     const rect = Geometry.sheetRectFor(1);
-    const u0 = rect.sx / 768;
-    const u1 = (rect.sx + 48) / 768;
-    const v0 = 1 - (rect.sy + 48) / 768;
-    const v1 = 1 - rect.sy / 768;
-    assert.deepEqual(uvs, [u0, v1, u1, v1, u1, v0, u0, v0]);
+    const { u0, u1, v0, v1 } = Geometry.uvRect(rect, { width: 768, height: 768 });
+    // Compared with a tolerance rather than exactly: the geometry stores UVs in
+    // a Float32Array and these are computed in double precision, so they agree
+    // to about 1e-8 and never bit for bit.
+    const expected = [u0, v1, u1, v1, u1, v0, u0, v0];
+    uvs.forEach((value, i) => assert.ok(Math.abs(value - expected[i]) < 1e-6,
+        `uv ${i}: ${value} vs ${expected[i]}`));
     assert.ok(v1 > v0, 'the top of the tile is the higher V');
+});
+
+test('a quad samples inside its own tile, never across the seam', () => {
+    // Tiles sit shoulder to shoulder on a shared sheet, so a quad's edge is
+    // also its neighbour's. Sampled exactly on that boundary a projected quad
+    // takes a thread of whatever is next to it, and the map comes out ruled
+    // with a fine grid along every tile boundary. The 2D tilemap blits whole
+    // rectangles and never shows it, which is why the same map is clean in 2D
+    // and ruled in 3D.
+    const size = { width: 768, height: 768 };
+    const rect = Geometry.sheetRectFor(1);
+    const { u0, u1, v0, v1 } = Geometry.uvRect(rect, size);
+
+    assert.ok(u0 > rect.sx / size.width, 'the left edge is pulled in');
+    assert.ok(u1 < (rect.sx + rect.width) / size.width, 'and the right edge');
+    assert.ok(v1 < 1 - rect.sy / size.height, 'the top edge is pulled in');
+    assert.ok(v0 > 1 - (rect.sy + rect.height) / size.height, 'and the bottom');
+
+    const inset = Geometry.UV_INSET_TEXELS / size.width;
+    assert.ok(Math.abs((u0 - rect.sx / size.width) - inset) < 1e-9,
+        'by half a texel, which at nearest filtering samples the same texel');
+
+    // A panel's edge strip is three pixels wide. Half a texel each side has to
+    // stay a positive rectangle rather than inverting into a mirrored sliver.
+    const thin = { sx: 100, sy: 100, width: 1, height: 1 };
+    const tight = Geometry.uvRect(thin, size);
+    assert.ok(tight.u1 > tight.u0, 'a one-texel strip does not invert');
+    assert.ok(tight.v1 > tight.v0);
 });
 
 test('ground sits at the cell elevation and walls drop to the neighbour', () => {
@@ -354,11 +384,17 @@ test('a cliff face under an autotile uses that autotile\'s quadrants', () => {
     // Four quarter-cells of ground, and each of the four rim walls likewise.
     assert.equal(built.quads, 4 + 4 * 4);
 
-    const quadrants = new Set(Geometry.autotileQuads(2816, 48, TABLES).map(q => q.sx / 768));
+    // Through uvRect, because a quad samples half a texel inside its own
+    // rectangle rather than exactly on the boundary — see the seam test above.
+    const size = { width: 768, height: 768 };
+    const quadrants = Geometry.autotileQuads(2816, 48, TABLES)
+        .map(q => Geometry.uvRect(q, size).u0);
+    // Float32Array storage against double-precision arithmetic, so near rather
+    // than equal.
+    const near = (value) => quadrants.some(q => Math.abs(q - value) < 1e-6);
     const uvs = built.groups[0].uvs;
     for (let i = 0; i < uvs.length; i += 8) {
-        assert.ok(quadrants.has(uvs[i]) || quadrants.has(uvs[i + 2]),
-            'every face samples a quadrant');
+        assert.ok(near(uvs[i]) || near(uvs[i + 2]), 'every face samples a quadrant');
     }
 });
 
@@ -485,7 +521,10 @@ test('a standing autotile uses its shape quadrants, not the block corner', () =>
 
     const ground = Geometry.autotileQuads(grass, 48, TABLES);
     const size = { width: 768, height: 768 };
-    const expected = new Set(ground.map(q => (q.sx / size.width).toFixed(6)));
+    // Through uvRect: a quad samples half a texel inside its own rectangle, so
+    // the comparison has to be against what the ground would actually sample
+    // rather than against the raw rectangle edge.
+    const expected = new Set(ground.map(q => Geometry.uvRect(q, size).u0.toFixed(6)));
     const actual = new Set();
     const uvs = built.groups[0].uvs;
     for (let i = 0; i < uvs.length; i += 8) actual.add(uvs[i].toFixed(6));
@@ -1041,4 +1080,66 @@ test('two walls on different footings keep their own ends', () => {
         elevationAt: flat, isUpright: id => id === wall, isAuthored: () => true
     });
     assert.equal(built.quads, 2 * (4 * 2 + 4 * 2), 'both are boxed in their own right');
+});
+
+test('every quad carries the rectangle it is allowed to sample', () => {
+    /*
+     * The half-texel inset fixes the boundary case: it moves the sample off the
+     * fence between two tiles. It cannot fix the far case. Zoomed out, one
+     * screen pixel covers many texels and the GPU picks one from somewhere in
+     * that footprint — which at the edge of a tile is somewhere in the next
+     * tile along. The inset would have to grow with the zoom, and the zoom is
+     * not a constant, so the rule is carried per vertex and enforced in the
+     * fragment shader instead.
+     */
+    const built = Geometry.build(mapWith(2, 2, { 0: [1, 2, 3, 4] }), {
+        elevationAt: flat,
+        sheetSize: () => ({ width: 768, height: 768 })
+    });
+    const group = built.groups[0];
+    assert.ok(group.bounds, 'the attribute exists');
+    assert.equal(group.bounds.length, (group.uvs.length / 2) * 4, 'four floats a vertex');
+
+    // Every quad's four vertices carry one rectangle, so it interpolates to
+    // itself rather than sliding across the quad.
+    for (let q = 0; q < group.bounds.length / 16; q++) {
+        const first = Array.from(group.bounds.slice(q * 16, q * 16 + 4));
+        for (let v = 1; v < 4; v++) {
+            assert.deepEqual(Array.from(group.bounds.slice(q * 16 + v * 4, q * 16 + v * 4 + 4)),
+                first, `quad ${q}, vertex ${v}`);
+        }
+        assert.ok(first[2] > first[0] && first[3] > first[1], 'and it is a real rectangle');
+    }
+
+    // And every UV of that quad lies inside its own rectangle.
+    for (let v = 0; v < group.uvs.length / 2; v++) {
+        const [u, uv] = [group.uvs[v * 2], group.uvs[v * 2 + 1]];
+        const [u0, v0, u1, v1] = group.bounds.slice(v * 4, v * 4 + 4);
+        assert.ok(u >= u0 - 1e-6 && u <= u1 + 1e-6, `u ${u} within [${u0}, ${u1}]`);
+        assert.ok(uv >= v0 - 1e-6 && uv <= v1 + 1e-6, `v ${uv} within [${v0}, ${v1}]`);
+    }
+});
+
+test('the clamp is injected where no other patch can remove it', () => {
+    /*
+     * At `void main`, not at a chunk. The billboard material's own
+     * onBeforeCompile *replaces* `#include <begin_vertex>` with the code that
+     * builds its quad, so a second patch anchored there finds nothing to
+     * replace and silently does nothing — leaving the varying unwritten, which
+     * clamps every sample to a zero-sized rectangle. Every cut-out on the map
+     * became one transparent texel and no shader failed to compile.
+     */
+    const runtime = require('node:fs').readFileSync(
+        path.join(repoRoot, 'runtime', 'reactor_3d.js'), 'utf8');
+    const clamp = runtime.slice(runtime.indexOf('Reactor3D.clampToTile = function'));
+    const body = clamp.slice(0, clamp.indexOf('\n};'));
+    assert.match(body, /replace\(\s*"void main\(\) \{",/, 'anchored at void main');
+    // The prose above explains why, so the check is on what is replaced rather
+    // than on the word appearing at all.
+    assert.doesNotMatch(body, /replace\(\s*"#include <begin_vertex>"/);
+    // Composed, never assigned over: the billboard material already has one.
+    assert.match(body, /const earlier = material\.onBeforeCompile;/);
+    assert.match(body, /if \(typeof earlier === "function"\) earlier\.call/);
+    // And the sample itself is clamped to the vertex's own rectangle.
+    assert.match(body, /clamp\( vMapUv, vUvBounds\.xy, vUvBounds\.zw \)/);
 });

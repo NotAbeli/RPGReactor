@@ -276,12 +276,22 @@ test('events can only be picked with the event tool up', () => {
     assert.match(methodBody('updateHover'),
         /this\.canSelectEvents\(\) && this\.eventAt\(clientX, clientY\)/,
         'and the cursor does not offer what a click will not do');
-    // The right-click menu and double-click-to-open go the same way.
-    assert.match(source,
-        /const cube = this\.canSelectEvents\(\) && this\.eventAt\(event\.clientX, event\.clientY\);/g);
-    assert.equal(
-        source.match(/canSelectEvents\(\) && this\.eventAt\(event\.clientX/g).length, 2,
-        'both of them');
+    // The right-click menu and double-click-to-open go the same way. Stated as
+    // the rule rather than as one spelling of it: the context menu asks the
+    // question up front now, because it has a second thing to refuse — the
+    // menu on bare ground, which offers to create an event and so has no more
+    // business appearing outside event mode than the one on an event does.
+    const doubleClick = source.slice(source.indexOf('this._onDoubleClick = event =>'));
+    assert.match(doubleClick.slice(0, doubleClick.indexOf('this._onWheel')),
+        /this\.canSelectEvents\(\) && this\.eventAt\(event\.clientX, event\.clientY\)/,
+        'double-click to open');
+
+    const contextMenu = source.slice(source.indexOf('this._onContextMenu = event =>'));
+    const body = contextMenu.slice(0, contextMenu.indexOf('this._onPointerLeave'));
+    assert.match(body, /if \(!this\.canSelectEvents\(\)\) return;/, 'the right-click menu');
+    const gate = body.indexOf('canSelectEvents');
+    assert.ok(gate < body.indexOf('this.eventAt('), 'before it looks for an event');
+    assert.ok(gate < body.indexOf('this.tileAt('), 'and before it looks for a cell');
 });
 
 //-----------------------------------------------------------------------------
@@ -429,4 +439,38 @@ test('the keys still move the camera', () => {
     assert.match(body, /keys\.has\('forward'\)\) move\.add\(forward\)/);
     assert.match(body, /keys\.has\('up'\)\) move\.y \+= speed/);
     assert.match(body, /this\.view\.target\.x \+= move\.x/);
+});
+
+test('right-clicking bare ground offers a new event, as it does in 2D', () => {
+    /*
+     * The menu used to stop at the cube: a right-click that hit no event
+     * returned, so the only cell you could open a menu on in 3D was one that
+     * already had an event on it — and "New Event…" lives on the menu for a
+     * cell that does not. Existing events could be edited and none could be
+     * created, which reads as the tool half working rather than as a case
+     * nobody had written.
+     */
+    const handler = source.slice(source.indexOf('this._onContextMenu = event =>'));
+    const body = handler.slice(0, handler.indexOf('this._onPointerLeave'));
+
+    // Still guarded the same way: event mode, and not at the end of a pan.
+    assert.match(body, /if \(!this\.canSelectEvents\(\)\) return;/);
+    assert.match(body, /Math\.hypot\(event\.clientX - drag\.startX/);
+
+    // An event under the cursor keeps the menu it always had...
+    assert.match(body, /this\.onEventContextMenu\(picked, event\.clientX, event\.clientY\)/);
+    // ...and bare ground now gets one too, from the same raycast that draws
+    // the hover outline, so the menu opens on the cell being pointed at.
+    assert.match(body, /const tile = this\.tileAt\(event\.clientX, event\.clientY\);/);
+    assert.match(body, /this\.onMapContextMenu\(tile, event\.clientX, event\.clientY\)/);
+    // The old unconditional bail is gone.
+    assert.doesNotMatch(body, /if \(!cube\) return;/);
+
+    // And the controller routes it through the same three calls the 2D map
+    // makes, so the cell is selected, the panel follows, and the menu is built
+    // from what is actually on that cell.
+    const main = fs.readFileSync(path.join(editorRoot, 'src', 'main.js'), 'utf8');
+    const wiring = main.slice(main.indexOf('this.mapEditor3D.onMapContextMenu'));
+    assert.match(wiring, /this\.eventManager\.selectTile\(tile\.x, tile\.y\)/);
+    assert.match(wiring, /getEventAt\(tile\.x, tile\.y\)/);
 });

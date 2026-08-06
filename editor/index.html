@@ -498,9 +498,20 @@
 
                             <div style="margin-bottom: 8px;">
                                 <label style="display: block; font-size: 11px; color: var(--color-text-muted); margin-bottom: 3px;" data-i18n="mapProps.image">Image:</label>
-                                <select id="map-parallax-image-select" style="width: 100%; padding: 5px 6px; background-color: var(--color-bg-input); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 3px; font-size: 12px;">
-                                    <option value="" data-i18n="common.none">(None)</option>
-                                </select>
+                                <div style="display: flex; gap: 6px; align-items: stretch;">
+                                    <select id="map-parallax-image-select" style="flex: 1; min-width: 0; padding: 5px 6px; background-color: var(--color-bg-input); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 3px; font-size: 12px;">
+                                        <option value="" data-i18n="common.none">(None)</option>
+                                    </select>
+                                    <button id="map-parallax-browse-btn" type="button" title="Preview and choose a parallax image" style="flex: 0 0 auto; padding: 5px 12px; background-color: var(--color-border-subtle); border: 1px solid var(--color-border-input); color: var(--color-text-strong); border-radius: 3px; font-size: 12px; cursor: pointer;" data-i18n="mapProps.browse">Browse…</button>
+                                </div>
+                                <!-- A parallax is the map's picture: it is chosen by looking at
+                                     it, not by reading a filename off a list. The thumbnail is
+                                     the current choice, and clicking it opens the same picker
+                                     the button does. -->
+                                <div id="map-parallax-preview" style="margin-top: 6px; display: none; border: 1px solid var(--color-border); border-radius: 3px; background-color: var(--color-bg-deep); padding: 4px; cursor: pointer;" title="Click to choose a different parallax">
+                                    <img id="map-parallax-preview-img" alt="" style="display: block; width: 100%; max-height: 110px; object-fit: contain; image-rendering: pixelated;">
+                                    <div id="map-parallax-preview-caption" style="font-size: 10px; color: var(--color-text-muted); text-align: center; margin-top: 3px;"></div>
+                                </div>
                             </div>
 
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
@@ -571,7 +582,12 @@
     </div>
 
     <!-- Image Picker Modal -->
-    <div id="image-picker-modal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.8); display: none; justify-content: center; align-items: center; z-index: 1001;">
+    <!-- Above every other modal, at 10001. The picker is always opened *from*
+         something, and until the map properties dialog gained a parallax
+         browser everything that opened it happened to be below 1001 — so it
+         opened behind that dialog, having plainly been asked to open, with no
+         way to tell it had. -->
+    <div id="image-picker-modal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.8); display: none; justify-content: center; align-items: center; z-index: 10001;">
         <div style="background-color: var(--color-bg-surface); border: 1px solid var(--color-border); border-radius: 8px; width: 90%; max-width: 900px; height: 80%; display: flex; flex-direction: column; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);">
             <div style="background-color: var(--color-bg-toolbar); padding: 12px 16px; border-bottom: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center; border-radius: 8px 8px 0 0;">
                 <div id="image-picker-title" style="font-size: 16px; font-weight: 600; color: var(--color-text);" data-i18n="imgPick.title">Select Image</div>

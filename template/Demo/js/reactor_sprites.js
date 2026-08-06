@@ -3733,6 +3733,31 @@ Spriteset_Base.prototype.createAnimationSprite = function(
     sprite.targetObjects = targets;
     sprite.setup(targetSprites, animation, mirror, delay, previous);
     this._effectsContainer.addChild(sprite);
+
+    /*
+     * An event may say for itself which layer its animations play on.
+     *
+     * Where an animation belongs is a question about the *scene*, not about
+     * the engine: a spell cast over a character should be in front of the
+     * furniture, and a glow on a console set into a table should be behind the
+     * table's own top. One map will want both, so the answer cannot be a
+     * setting — it is written on the event the animation is played on, which is
+     * the only place that knows.
+     *
+     *   <animation z: 6>   put this event's animations on layer 6
+     *   <animation over>   put them where RPG Maker puts them, above everything
+     *
+     * The layers are the tilemap's own: 0 the ground tiles, 3 the characters,
+     * 4 the tiles drawn over characters — which in 3D is the star-flagged pass
+     * — and 8 where an animation goes by default. A half above a layer sits
+     * clear of everything on it.
+     *
+     * Read in both views. 2D has the same question and no way to answer it,
+     * since an animation there is always at 8 and so always over everything.
+     */
+    const authored = this.authoredAnimationZ(targets);
+    if (authored !== null) sprite.z = authored;
+
     /*
      * In 3D, an animation played *on* something belongs where that thing is.
      *
@@ -3756,18 +3781,87 @@ Spriteset_Base.prototype.createAnimationSprite = function(
      * Only on a map with a 3D scene: `_reactor3d` is a Spriteset_Map field, so
      * battle animations keep the convention they have always had.
      */
-    if (this._reactor3d && !this.isScreenAnimation(animation)) {
+    if (authored === null && this._reactor3d && !this.isScreenAnimation(animation)) {
         const host = targetSprites && targetSprites[0];
         const hostZ = host && typeof host.z === "number" ? host.z : null;
         // 3 is where an ordinary character sits, which is what an animation
         // with no host to ask should be treated as.
-        sprite.z = hostZ === null ? 3 : hostZ;
+        //
+        // A hair in front of its host, never level with it. The tilemap breaks
+        // a tie in `z` on `y`, and an animation's `y` moves while a pass
+        // sprite's is fixed at zero, so an animation given exactly its host's
+        // z crosses that comparison mid-playback and flips from in front of
+        // the thing it is playing on to behind it, frame by frame. The half
+        // is invisible to every other `z` in the tilemap, which are whole
+        // numbers a layer apart, and says the thing that is actually meant:
+        // an animation played *on* something is in front of it.
+        sprite.z = hostZ === null ? 3 : hostZ + 0.5;
     }
+    /*
+     * Sorted whichever way the `z` was decided, the default included.
+     *
+     * The holder sorts its children inside its own update, and MZ creates
+     * animation sprites *after* the spriteset has updated its children — so a
+     * sprite added this frame is still wherever `addChild` left it, which is
+     * last, and last means in front of everything. It takes its proper place
+     * on the frame after.
+     *
+     * One frame is enough to see. A looping animation restarts every few
+     * frames, so three of them on a table flickered continuously between in
+     * front of it and behind it, and no amount of getting the `z` right could
+     * settle it: on the frame it appeared the sprite was not being sorted by
+     * `z` at all.
+     */
+    const holder = this._effectsContainer;
+    if (holder && typeof holder._sortChildren === "function") holder._sortChildren();
     this._animationSprites.push(sprite);
     if (mv && sprite._rrPrimeFirstFrame) {
         sprite._rrPrimeFirstFrame();
     }
 };
+
+/**
+ * The layer an event asks its animations to play on, or null for the default.
+ *
+ *   <animation z: 6>   an exact layer
+ *   <animation over>   where RPG Maker puts one, above everything
+ *
+ * Read off the *event*, because that is the thing the animation is played on
+ * and the only thing that knows what it is. A map-wide setting cannot answer
+ * it: one room will hold a console whose glow belongs under the table top it is
+ * set into and a brazier whose flame belongs over everything, and both are
+ * right.
+ *
+ * The first target that has asked wins. An animation played on several targets
+ * at once is one sprite on one layer, so there is a single answer to give, and
+ * taking the first stated one is at least predictable — where averaging or
+ * refusing would be neither.
+ *
+ * `Game_Player`, followers and vehicles carry no note, so they never answer and
+ * never need to: an animation on the player is on the thing the camera is
+ * following, which is exactly the case the default already suits.
+ */
+Spriteset_Base.prototype.authoredAnimationZ = function(targets) {
+    if (!targets) return null;
+    for (const target of targets) {
+        // `event()` is the *data* record, which is where a note lives; the
+        // Game_Event beside it is the running state and has none.
+        const data = target && typeof target.event === "function" ? target.event() : null;
+        const note = data && typeof data.note === "string" ? data.note : "";
+        if (!note) continue;
+        const stated = note.match(/<\s*anim(?:ation)?\s+z\s*:\s*(-?\d+(?:\.\d+)?)\s*>/i);
+        if (stated) {
+            const z = Number(stated[1]);
+            if (Number.isFinite(z)) return z;
+        }
+        // The shorthand for the one layer that has a name worth using.
+        if (/<\s*anim(?:ation)?\s+over\s*>/i.test(note)) return Spriteset_Base.ANIMATION_Z;
+    }
+    return null;
+};
+
+/** Where RPG Maker puts an animation: above the tiles drawn over characters. */
+Spriteset_Base.ANIMATION_Z = 8;
 
 Spriteset_Base.prototype.isMVAnimation = function(animation) {
     return !!animation.frames;
@@ -4254,8 +4348,26 @@ Spriteset_Map.prototype.createReactor3DSprite = function(viewport, scene) {
         return { sprite, texture, surface, context: surface.getContext("2d") };
     };
 
-    // Above the black screen, below the tilemap: where the ground used to be.
-    this._reactor3dBelow = make(this._baseSprite, 1);
+    /*
+     * Inside the tilemap, at the layer it stands in for.
+     *
+     * The ground pass replaces the tilemap's *lower* layer exactly as the pass
+     * below replaces its upper one, so it belongs in the same place: a child of
+     * the tilemap sorted to `z` 0. Parked outside the tilemap instead, anything
+     * a plugin adds *inside* it draws over the 3D ground — and parallax plugins
+     * do exactly that. MultiParallax adds a TilingSprite per layer to the
+     * tilemap, so the world vanished beneath them while the star-flagged pass,
+     * sorted to 4, came through untouched. The symptom reads as a Reactor bug
+     * with no obvious cause: tiles marked `*` appear in 3D and tiles marked `X`
+     * or `O` do not.
+     *
+     * Sorting rather than suppressing is what keeps a backdrop a backdrop. A
+     * layer the author put behind the map — MultiParallax documents `z: -1` for
+     * exactly this — is still behind it, so a starfield or a warp-speed streak
+     * shows around and beneath the world instead of being turned off with it.
+     */
+    this._reactor3dBelow = make(this._tilemap, 0);
+    this._reactor3dBelow.sprite.z = 0;
     // The upper pass goes *inside* the tilemap, as its last child — which is
     // exactly the place the tilemap's own upper layer occupied, above the
     // characters and below everything a plugin hangs off the spriteset. Made a
@@ -4385,11 +4497,15 @@ Spriteset_Map.prototype.updateReactor3DLights = function(state) {
     const wants = Reactor3D.wantsLights3D($dataMap);
     if (wants !== this._reactor3dLit) {
         this._reactor3dLit = wants;
-        // The plugin's flat lightmap goes away only while its lights are being
-        // drawn for real, and comes straight back otherwise.
-        Reactor3D.suppressFlatLighting(wants);
         Reactor3D.setAmbient(wants ? Reactor3D.ambientFor($dataMap) : null);
     }
+    // The plugin's flat lightmap goes away while its lights are being drawn for
+    // real, and comes straight back otherwise. Applied every frame rather than
+    // on the change, because a plugin is entitled to rebuild its own overlay
+    // whenever it likes -- and because walking from one lit 3D map to another
+    // never crosses this boundary at all, so a one-shot would leave the second
+    // map's freshly built overlay covering it.
+    Reactor3D.suppressFlatLighting(wants);
     Reactor3D.setLights(wants ? Reactor3D.collectLights() : []);
     // Around the player, because that is what the camera is looking at: the
     // scene can only carry so many lights before the shader that samples them
@@ -4418,13 +4534,71 @@ Spriteset_Map.prototype.keepReactor3DLightsOnTop = function() {
     if (parent.children[last] !== sprite) parent.setChildIndex(sprite, last);
 };
 
+/**
+ * Point the camera at what the map says it is showing.
+ *
+ * Not at the player. Following the player is what the map *usually* does, and
+ * taking it as the rule welds the camera to them: Scroll Map, Set Zoom, and
+ * every camera plugin move `displayX`/`displayY` and the zoom, and a 3D map
+ * ignored all of it — the view simply would not leave the player's shoulder.
+ *
+ * `displayX`/`displayY` is the same number the 2D tilemap draws from, so the
+ * two views agree about where the camera is by construction rather than by
+ * being kept in step, and following the player still happens for free because
+ * that is what moves the display in the first place.
+ */
 Spriteset_Map.prototype.updateReactor3DCamera = function() {
     const state = this._reactor3d;
     if (!state) return;
-    const focusX = $gamePlayer ? $gamePlayer._realX : 0;
-    const focusY = $gamePlayer ? $gamePlayer._realY : 0;
-    const focusHeight = Reactor3D.elevationAt($dataMap, Math.round(focusX), Math.round(focusY));
-    Reactor3D.aimCamera(state.camera, { x: focusX, y: focusHeight, z: focusY }, state.settings);
+    const focus = this.reactor3DCameraFocus();
+    const height = Reactor3D.elevationAt(
+        $dataMap, Math.round(focus.x), Math.round(focus.y));
+    // Zoom is a scale on the 2D screen, and a distance in three dimensions:
+    // zooming in halves how far away the camera stands rather than making the
+    // picture bigger, which is the same thing on a flat map and the right thing
+    // on this one.
+    const zoom = typeof $gameScreen !== "undefined" && $gameScreen
+        && typeof $gameScreen.zoomScale === "function"
+        ? Number($gameScreen.zoomScale()) || 1
+        : 1;
+    const settings = zoom === 1
+        ? state.settings
+        : Object.assign({}, state.settings, {
+            distance: (state.settings.distance
+                || Reactor3D.defaultCameraDistance(state.camera)) / zoom
+        });
+    Reactor3D.aimCamera(state.camera, { x: focus.x, y: height, z: focus.y }, settings);
+};
+
+/**
+ * The centre of what the map is displaying, in map coordinates.
+ *
+ * `displayX` is the left-hand edge, so half a screen is added to reach the
+ * middle — the point the 2D view has at its centre, which is the point the 3D
+ * camera should be looking at.
+ */
+Spriteset_Map.prototype.reactor3DCameraFocus = function() {
+    if (typeof $gameMap === "undefined" || !$gameMap || !$gameMap.displayX) {
+        return { x: $gamePlayer ? $gamePlayer._realX : 0,
+                 y: $gamePlayer ? $gamePlayer._realY : 0 };
+    }
+    const wide = $gameMap.screenTileX ? $gameMap.screenTileX() : 0;
+    const tall = $gameMap.screenTileY ? $gameMap.screenTileY() : 0;
+    /*
+     * Given as a cell index, because that is what `aimCamera` is given.
+     *
+     * It adds half a tile to whatever it receives, to turn the *corner* of a
+     * character's cell into the middle of it. `displayX + screenTileX / 2` is
+     * not a cell corner though — it is already the exact point at the centre of
+     * the view — so handing it over as-is bought a second half tile and the
+     * camera looked half a cell past the middle of the screen. On screen that
+     * is everything sitting slightly left of where it belongs, by a margin just
+     * small enough to doubt.
+     */
+    return {
+        x: $gameMap.displayX() + wide / 2 - 0.5,
+        y: $gameMap.displayY() + tall / 2 - 0.5
+    };
 };
 
 Spriteset_Map.prototype.loadTileset = function() {

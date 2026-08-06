@@ -1064,6 +1064,21 @@ class MapEditor {
             }
 
             const pos = event.data.getLocalPosition(container);
+            /*
+             * Where the press landed, not where the pointer was last seen.
+             *
+             * The shadow pen paints a quadrant of a cell, and it works out
+             * which quadrant from `lastMousePos` — which only `pointermove`
+             * used to set. A press with no move before it therefore had
+             * nothing to read: `toggleShadow` takes a missing position as
+             * "cannot tell which quarter" and returns, so a single click
+             * painted nothing at all while a drag worked perfectly, because
+             * the drag's first move filled the field in. Reading a stale
+             * position was the same bug wearing a disguise — the quadrant came
+             * from wherever the pointer had last moved rather than from where
+             * it was pressed.
+             */
+            this.lastMousePos = pos;
             const tileX = Math.floor(pos.x / this.tilemapManager.TILE_WIDTH);
             const tileY = Math.floor(pos.y / this.tilemapManager.TILE_HEIGHT);
 

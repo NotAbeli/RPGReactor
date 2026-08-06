@@ -636,6 +636,20 @@ class ProjectController {
             // Initialize region manager
             this.regionManager = new RegionManager(this.tilemapManager);
             this.object3DManager = new Object3DManager(this.tilemapManager);
+            /*
+             * Handed straight to the map editor, because it holds its own
+             * reference and both of these are rebuilt with the tilemap they
+             * draw on.
+             *
+             * The object manager used to be given to the editor only when the
+             * Objects tab was *clicked*. Open a project with that tab already
+             * selected — which is where the last session left it — and the
+             * editor was still holding the manager built for the project before
+             * it, or none at all. `paintTile` checks for one and returns
+             * quietly when it is missing, so painting an object designation
+             * did nothing whatsoever: no mark, no error, no clue.
+             */
+            this.bindMapEditorSurfaces();
 
             // Update TilesetPaletteViewer project path if it exists
             if (this.tilesetPaletteViewer) {
@@ -1378,6 +1392,27 @@ class ProjectController {
 
     setMapEditor(mapEditor) {
         this.mapEditor = mapEditor;
+        this.bindMapEditorSurfaces();
+    }
+
+    /**
+     * Give the map editor the surfaces it paints through.
+     *
+     * One place, called from both ends — whenever the surfaces are rebuilt and
+     * whenever the editor arrives — so neither has to remember about the other.
+     * Each of these is constructed around a TilemapManager, and that is rebuilt
+     * per project, so a reference kept across a project switch points at the
+     * previous project's map.
+     */
+    bindMapEditorSurfaces() {
+        if (!this.mapEditor) return;
+        if (this.tilemapManager) this.mapEditor.tilemapManager = this.tilemapManager;
+        if (this.regionManager) this.mapEditor.regionManager = this.regionManager;
+        if (this.object3DManager) {
+            this.mapEditor.object3DManager = this.object3DManager;
+            // The manager reaches back for undo and for the palette's brush.
+            this.object3DManager.mapEditor = this.mapEditor;
+        }
     }
 
     /**
@@ -1819,6 +1854,7 @@ class ProjectController {
             parallaxSelect.appendChild(option);
             parallaxSelect.value = parallaxValue;
         }
+        this.updateParallaxPreview();
 
         document.getElementById('map-parallax-loop-x-checkbox').checked = mapData.parallaxLoopX || false;
         document.getElementById('map-parallax-loop-y-checkbox').checked = mapData.parallaxLoopY || false;
@@ -2327,8 +2363,124 @@ class ProjectController {
             document.getElementById('map-battleback-picker').style.display = e.target.checked ? 'grid' : 'none';
         });
 
+        // A parallax is the map's picture, so it is chosen by looking at it.
+        // The dropdown stays — it is the fastest way back to a name you already
+        // know — and the thumbnail beneath it is both the answer to "which one
+        // is this?" and a second way into the picker.
+        this._bindMapPropertiesListener('map-parallax-browse-btn', 'click',
+            () => this.openParallaxPicker());
+        this._bindMapPropertiesListener('map-parallax-preview', 'click',
+            () => this.openParallaxPicker());
+        this._bindMapPropertiesListener('map-parallax-image-select', 'change',
+            () => this.updateParallaxPreview());
+
         this.setupMapAudioPreviewControls('bgm');
         this.setupMapAudioPreviewControls('bgs');
+    }
+
+    /** The folder a project keeps its parallaxes in, or null outside one. */
+    parallaxFolder() {
+        if (!this.currentProject || !this.currentProject.path) return null;
+        if (typeof nw === 'undefined' && !window.RPGReactorHost) return null;
+        return require('path').join(this.currentProject.path, 'img', 'parallaxes');
+    }
+
+    /**
+     * Show the chosen parallax under the dropdown.
+     *
+     * A filename is a poor description of a picture, and parallax names run to
+     * things like `!Aeheri-Leader-Room` — enough to tell two apart only if you
+     * already know both. The thumbnail is hidden rather than blanked when
+     * nothing is chosen, so an unused section takes no room.
+     */
+    updateParallaxPreview() {
+        const wrap = document.getElementById('map-parallax-preview');
+        const img = document.getElementById('map-parallax-preview-img');
+        const caption = document.getElementById('map-parallax-preview-caption');
+        const select = document.getElementById('map-parallax-image-select');
+        if (!wrap || !img || !select) return;
+
+        const name = select.value || '';
+        const folder = this.parallaxFolder();
+        const assets = window.RRAssetFiles;
+        if (!name || !folder || !assets) {
+            wrap.style.display = 'none';
+            img.removeAttribute('src');
+            return;
+        }
+        img.src = assets.urlFor(folder, name, ['.png']);
+        // A name still in the map data whose file has gone says so here rather
+        // than showing a broken image and leaving it to be puzzled over.
+        img.onerror = () => {
+            wrap.style.display = 'none';
+            if (caption) caption.textContent = '';
+        };
+        img.onload = () => {
+            wrap.style.display = 'block';
+            if (caption) {
+                caption.textContent = `${name} — ${img.naturalWidth}x${img.naturalHeight}`;
+            }
+        };
+    }
+
+    /**
+     * Choose a parallax by looking at it.
+     *
+     * Reuses the editor's own image picker, so this list behaves like every
+     * other image list in the program. `(None)` is offered as an entry rather
+     * than as a separate button, because clearing the parallax is the same kind
+     * of choice as picking one and belongs in the same place.
+     */
+    openParallaxPicker() {
+        const tt = text => this._tt(text);
+        const folder = this.parallaxFolder();
+        const assets = window.RRAssetFiles;
+        const picker = typeof window !== 'undefined' ? window.reactor?.databaseEditorUI : null;
+        if (!folder || !assets || !picker || typeof picker.showImagePicker !== 'function') return;
+
+        let files = [];
+        try {
+            files = assets.listNames(folder, ['.png']);
+        } catch (error) {
+            console.error('Error reading parallaxes folder:', error);
+        }
+        if (files.length === 0) {
+            alert(tt('No parallax images found in img/parallaxes folder'));
+            return;
+        }
+
+        const select = document.getElementById('map-parallax-image-select');
+        const current = select ? select.value : '';
+        // A sentinel rather than an empty string: the picker labels every
+        // entry with its own name, and a blank row cannot be clicked with
+        // any confidence about what it will do.
+        const NONE = tt('(None)');
+        // The picker shows an image for whichever entry is highlighted, so
+        // this one gets a transparent pixel rather than a broken-image icon.
+        const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+        picker.showImagePicker(
+            tt('Select Parallax Background'),
+            [NONE, ...files],
+            (chosen) => {
+                const name = chosen === NONE ? '' : chosen;
+                if (!select) return;
+                // A file on disk that the dropdown has not been rebuilt for
+                // would otherwise silently refuse the assignment.
+                if (![...select.options].some(option => option.value === name)) {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    option.textContent = name || tt('(None)');
+                    select.appendChild(option);
+                }
+                select.value = name;
+                this.updateParallaxPreview();
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+            },
+            (name) => name === NONE ? BLANK : assets.urlFor(folder, name, ['.png']),
+            current || undefined,
+            { selectButtonLabel: tt('Use This Parallax') }
+        );
     }
 
     writeMapDataFile(mapData) {

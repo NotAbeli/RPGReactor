@@ -75,7 +75,7 @@ test('PIXI 8 tiling sprites accept legacy parallax children without warning stat
 
 test('VideoSource ignores intentional empty-src teardown but logs real media failures', () => {
     const compat = source('runtime/libs/pixi_compat.js');
-    const start = compat.indexOf('    if (PIXI.Texture && PIXI.VideoSource && !PIXI.Texture.__videoFromWrapped)');
+    const start = compat.indexOf('    if (PIXI.Texture && PIXI.Texture.from && !PIXI.Texture.__videoFromWrapped)');
     const end = compat.indexOf('\n\n    // -------------------------------------------------------------------------', start);
     assert.ok(start >= 0 && end > start);
 

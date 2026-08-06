@@ -178,9 +178,23 @@ class RPGReactor {
             } else if (this.mapEditor) {
                 // Update MapEditor's references in case they changed (e.g., project switch)
                 // This ensures it has the current TilemapManager
-                this.mapEditor.tilemapManager = this.projectController.getTilemapManager();
-                this.mapEditor.regionManager = this.projectController.getRegionManager();
+                this.projectController.bindMapEditorSurfaces();
             }
+
+            /*
+             * A palette tab that is already open is opened again.
+             *
+             * The Regions and Objects tabs do their setting up when they are
+             * *selected* — build their panel, make their overlay layer, show
+             * it. Nothing selects a tab on a project switch, because it is
+             * already the selected one, so the surfaces rebuilt for the new
+             * project arrived with no panel and no layer to draw on. Painting
+             * went nowhere and nothing appeared, on the one tab an author who
+             * uses it leaves open.
+             */
+            const openTab = this.tilesetPaletteViewer?.currentLayer;
+            if (openTab === 'O') this.tilesetPaletteViewer.onObject3DTabSelected?.();
+            else if (openTab === 'R') this.tilesetPaletteViewer.onRegionTabSelected?.();
 
             // Re-setup map interaction for the new map (important when switching maps)
             if (this.mapEditor) {
@@ -298,6 +312,16 @@ class RPGReactor {
             if (this.eventManager) {
                 this.eventManager.showContextMenu(clientX, clientY, event.x, event.y, event);
             }
+        };
+        // Right-clicking bare ground, which is where "New Event…" comes from.
+        // Routed through the same three calls the 2D map makes, so the cell is
+        // selected, the events panel follows, and the menu is built from
+        // whatever is actually on that cell rather than from the raycast alone.
+        this.mapEditor3D.onMapContextMenu = (tile, clientX, clientY) => {
+            if (!this.eventManager) return;
+            this.eventManager.selectTile(tile.x, tile.y);
+            this.eventManager.showContextMenu(clientX, clientY, tile.x, tile.y,
+                this.eventManager.getEventAt(tile.x, tile.y));
         };
         // The height brush's controls only mean anything while it is on, so
         // they are bound once here and shown with it.

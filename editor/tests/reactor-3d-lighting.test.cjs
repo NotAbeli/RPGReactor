@@ -103,24 +103,36 @@ test('MVNovaLighting: a missing plugin is not an error', () => {
 //-----------------------------------------------------------------------------
 // Rave
 
-test('PSYCHRONIC_RaveLighting: lights follow the character, not the screen', () => {
-    // A light sprite's x/y are screen pixels for a 2D map and mean nothing once
-    // the ground is projected. The character it belongs to knows its cell.
-    const lights = withGlobals({
-        $gameMap: gameMap,
-        SceneManager: { _scene: { _spriteset: { _lightContainer: { children: [
-            { _lightType: 'light', _lightRadius: 300, _lightColor: '#ff0000',
-              _character: { _realX: 6, _realY: 9, direction: () => 2 }, alpha: 1 },
-            { _lightType: 'flashlight', _coneLengthPx: 480, _coneWidthPx: 240,
-              _lightColor: '#ffffff',
-              _character: { _realX: 2, _realY: 2, direction: () => 4 }, alpha: 1 },
-            { _lightType: 'light', _lightRadius: 300, _character: null },
-            { _lightType: 'light', _lightRadius: 300, visible: false,
-              _character: { _realX: 0, _realY: 0, direction: () => 2 } }
-        ] } } } }
-    }, () => Reactor3D.LightShims.rave());
+/** A map whose events carry the light configs, the way Rave stores them. */
+function raveWorld(events, player = { _realX: 0, _realY: 0, direction: () => 2 }) {
+    return {
+        $gameMap: Object.assign({ events: () => events }, gameMap),
+        $gamePlayer: player,
+        $gameSystem: { isLightOn: (id) => id !== 'off' }
+    };
+}
 
-    assert.equal(lights.length, 2, 'no character and hidden are both skipped');
+test('PSYCHRONIC_RaveLighting: lights are read from the character, not a sprite', () => {
+    // A light belongs to a character, as a config on `_lights`. The plugin also
+    // builds glow sprites from those configs into the spriteset's
+    // `_lightContainer`, and reading THOSE is the mistake this replaced: they
+    // are pooled, made lazily and left invisible when unused, so a fully lit
+    // map can present an empty container. Freelancers' map 342 did exactly
+    // that -- five lit events, nothing in the container, no lights in 3D.
+    const lights = withGlobals(raveWorld([
+        { _realX: 6, _realY: 9, direction: () => 2, _lights: [
+            { _lightId: 'a', _lightType: 'light', _lightRadius: 300,
+              _lightColor: '#ff0000' }] },
+        { _realX: 2, _realY: 2, direction: () => 4, _lights: [
+            { _lightId: 'b', _lightType: 'flashlight', _coneLengthPx: 480,
+              _coneWidthPx: 240, _lightColor: '#ffffff' }] },
+        { _realX: 1, _realY: 1, direction: () => 2, _lights: [
+            { _lightId: 'off', _lightType: 'light', _lightRadius: 300 }] },
+        { _realX: 0, _realY: 0, direction: () => 2, _lights: [
+            { _lightId: 'c', _lightType: 'light', _lightRadius: 0 }] }
+    ]), () => Reactor3D.LightShims.rave());
+
+    assert.equal(lights.length, 2, 'a switched-off light and a zero radius are dropped');
 
     const [lamp, torch] = lights;
     assert.equal(lamp.x, 6);
@@ -134,6 +146,56 @@ test('PSYCHRONIC_RaveLighting: lights follow the character, not the screen', () 
     assert.equal(torch.radius, 480 / 48);
     assert.equal(torch.yaw, 90, 'facing west');
     assert.ok(torch.angle > 0 && torch.angle < 90, `a cone has a spread, got ${torch.angle}`);
+});
+
+test('PSYCHRONIC_RaveLighting: each shape keeps its reach in its own field', () => {
+    const [fire, pulse, beam] = withGlobals(raveWorld([
+        // Offsets are per shape too, and in pixels.
+        { _realX: 4, _realY: 4, direction: () => 2, _lights: [
+            { _lightId: 'f', _lightType: 'fire', _lightRadius: 200,
+              _fireOffsetX: 24, _fireOffsetY: -48, _lightColor: '#9d6228' }] },
+        // Pulsate's radius is where it is now; its reach is where it gets to.
+        { _realX: 0, _realY: 0, direction: () => 2, _lights: [
+            { _lightId: 'p', _lightType: 'pulsate', _lightRadius: 96,
+              _pulsateMaxRadius: 336 }] },
+        { _realX: 0, _realY: 0, direction: () => 2, _lights: [
+            { _lightId: 'b', _lightType: 'beam', _beamLength: 240, _beamWidth: 48 }] }
+    ]), () => Reactor3D.LightShims.rave());
+
+    assert.equal(fire.radius, 200 / 48);
+    assert.equal(fire.x, 4 + 0.5, 'a pixel offset lands in tiles');
+    assert.equal(fire.y, 4 - 1);
+    assert.equal(fire.colour, 0x9d6228);
+    assert.equal(pulse.radius, 336 / 48, 'the reach, not the current radius');
+    assert.equal(beam.type, Reactor3D.LIGHT_SPOT);
+    assert.equal(beam.radius, 240 / 48);
+});
+
+test('PSYCHRONIC_RaveLighting: a flashlight points where it is turned', () => {
+    // It turns smoothly and can track a target, so the plugin's own running
+    // angle is the truthful answer wherever it has one -- radians clockwise
+    // from south, which is this codebase's own convention.
+    const [tracked] = withGlobals(raveWorld([
+        { _realX: 0, _realY: 0, direction: () => 8, _lights: [
+            { _lightId: 'a', _lightType: 'flashlight', _coneLengthPx: 96,
+              _smoothFlashlightAngle: Math.PI / 2 }] }
+    ]), () => Reactor3D.LightShims.rave());
+    assert.equal(tracked.yaw, 90, 'the running angle wins over the facing');
+
+    const [plain] = withGlobals(raveWorld([
+        { _realX: 0, _realY: 0, direction: () => 8, _lights: [
+            { _lightId: 'a', _lightType: 'flashlight', _coneLengthPx: 96 }] }
+    ]), () => Reactor3D.LightShims.rave());
+    assert.equal(plain.yaw, 180, 'and the facing is the fallback');
+});
+
+test('PSYCHRONIC_RaveLighting: the player carries lights too', () => {
+    const lights = withGlobals(raveWorld([],
+        { _realX: 3, _realY: 7, direction: () => 2, _lights: [
+            { _lightId: 'lamp', _lightType: 'light', _lightRadius: 144 }] }
+    ), () => Reactor3D.LightShims.rave());
+    assert.equal(lights.length, 1, 'a lantern the player is holding is a light');
+    assert.equal(lights[0].x, 3);
 });
 
 test('a colour is read however it is written', () => {
@@ -188,30 +250,70 @@ test('both plugins can be present at once', () => {
         Anisoft: { Nova: { LightManager: { currentMapLights: () => [
             { type: 'light', position: { x: 1, y: 1 }, scale: { x: 96 }, active: true }
         ] } } },
-        SceneManager: { _scene: { _spriteset: { _lightContainer: { children: [
-            { _lightType: 'light', _lightRadius: 96, _lightColor: '#00ff00',
-              _character: { _realX: 5, _realY: 5, direction: () => 2 } }
-        ] } } } }
-    }, () => Reactor3D.collectLights());
+        $gameSystem: { isLightOn: () => true },
+        $gamePlayer: { _realX: 0, _realY: 0, direction: () => 2 },
+        SceneManager: { _scene: { _spriteset: {} } }
+    }, () => {
+        global.$gameMap = Object.assign({ events: () => [
+            { _realX: 5, _realY: 5, direction: () => 2, _lights: [
+                { _lightId: 'a', _lightType: 'light', _lightRadius: 96,
+                  _lightColor: '#00ff00' }] }
+        ] }, gameMap);
+        return Reactor3D.collectLights();
+    });
     assert.equal(lights.length, 2);
 });
 
 test('the flat lightmap is hidden, never modified', () => {
     // Turning 3D lighting off has to bring the plugin's own lighting straight
     // back, so nothing may be destroyed or rewritten.
-    const nova = { visible: true };
-    const rave = { visible: true };
+    //
+    // `renderable`, not `visible`. Rave rewrites `_lightContainer.visible` from
+    // the options setting on every frame of its own Spriteset_Map.update, so a
+    // one-shot `visible = false` is undone before it is ever drawn -- and
+    // writing `visible` back each frame would overrule the player turning
+    // lighting effects off. `visible` is the plugin's; `renderable` is nobody's.
+    const nova = { visible: true, renderable: true };
+    const raveLights = { visible: true, renderable: true };
+    const raveDark = { visible: true, renderable: true };
     withGlobals({
         Anisoft: { Nova: { lightMapContainer: nova } },
-        SceneManager: { _scene: { _spriteset: { _lightContainer: rave } } }
+        SceneManager: { _scene: { _spriteset: {
+            _lightContainer: raveLights, _toneSprite: raveDark } } }
     }, () => {
         Reactor3D.suppressFlatLighting(true);
-        assert.equal(nova.visible, false);
-        assert.equal(rave.visible, false);
+        assert.equal(nova.renderable, false);
+        assert.equal(raveLights.renderable, false);
+        // The darkness, which is the half that was being missed: Rave's
+        // `_toneSprite` is a full-screen bitmap filled with the screen tone.
+        // On a night map that is opaque black over a 3D world already lit for
+        // real, so hiding only `_lightContainer` left the map unviewable.
+        assert.equal(raveDark.renderable, false, 'the darkness goes too, not just the lights');
+
+        for (const part of [nova, raveLights, raveDark]) {
+            assert.equal(part.visible, true, 'the plugin keeps ownership of visible');
+        }
+
         Reactor3D.suppressFlatLighting(false);
-        assert.equal(nova.visible, true);
-        assert.equal(rave.visible, true);
+        assert.equal(nova.renderable, true);
+        assert.equal(raveLights.renderable, true);
+        assert.equal(raveDark.renderable, true);
     });
+});
+
+test('suppression is re-applied every frame, not only when it changes', () => {
+    // Walking from one lit 3D map to another never crosses the boundary, so a
+    // one-shot leaves the second map's freshly built overlay covering it -- and
+    // a plugin is entitled to rebuild its own overlay whenever it likes.
+    const sprites = fs.readFileSync(
+        path.join(repoRoot, 'runtime', 'reactor_sprites.js'), 'utf8');
+    const update = sprites.slice(
+        sprites.indexOf('Spriteset_Map.prototype.updateReactor3DLights = function'));
+    const guard = update.indexOf('if (wants !== this._reactor3dLit)');
+    const call = update.indexOf('Reactor3D.suppressFlatLighting(wants)');
+    assert.ok(call >= 0, 'suppression still happens');
+    assert.ok(call > update.indexOf('}', guard),
+        'and outside the changed-this-frame guard');
 });
 
 test('the renderer is told to light the scene every frame', () => {

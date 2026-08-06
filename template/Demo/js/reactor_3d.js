@@ -746,6 +746,109 @@ Reactor3D.Geometry.PANEL_THICKNESS = 0.12;
 Reactor3D.Geometry.PANEL_EDGE_PIXELS = 3;
 
 /**
+ * How far inside its own rectangle a quad samples, in texels.
+ *
+ * Tiles live shoulder to shoulder on a shared sheet, so a quad's edge is also
+ * its neighbour's. Sampled exactly on that boundary the rasteriser is entitled
+ * to either side of it, and at the far edge of a tile it takes the wrong one:
+ * every tile picks up a thread of whatever is next to it on the sheet, and a
+ * 3D map is ruled with a fine grid of lines that follow the tile boundaries.
+ *
+ * The 2D tilemap never shows this because it blits whole rectangles rather than
+ * sampling a texture across a projected quad — which is why the same map is
+ * clean in 2D and ruled in 3D, and why this cannot be fixed in the art.
+ *
+ * Half a texel in from every side is the standard correction and is what mz3d
+ * exposes as its `edgefix` parameter, at the same default. It costs half a
+ * texel of the tile's outermost row, which at nearest filtering is invisible:
+ * the sample still lands inside the same texel it always did.
+ */
+Reactor3D.Geometry.UV_INSET_TEXELS = 0.5;
+
+/**
+ * A rectangle of a sheet as texture coordinates, inset against bleed.
+ *
+ * Image space counts down from the top and texture space counts up, so V is
+ * flipped here and callers never deal with it.
+ */
+/**
+ * Stop a quad sampling outside its own tile, at any distance.
+ *
+ * The half-texel inset in `uvRect` fixes the boundary case: it moves the
+ * sample off the fence between two tiles. It cannot fix the *far* case. Zoomed
+ * out, one screen pixel covers many texels, and the GPU picks one from
+ * somewhere in that footprint — which at the edge of a tile is somewhere in the
+ * next tile along. The inset would have to grow with the zoom, and the zoom is
+ * not a constant.
+ *
+ * So the rule is stated where it can be enforced exactly: every vertex carries
+ * the rectangle of the sheet its quad is entitled to, and the fragment shader
+ * clamps to it before sampling. View-independent, and correct at every zoom by
+ * construction rather than by choosing a big enough number.
+ *
+ * Mipmaps are not the answer here and would make it worse: a mip level of an
+ * unpadded atlas is built by averaging across tile boundaries, so the bleeding
+ * is baked into the texture rather than merely sampled from it.
+ *
+ * Composed rather than assigned, because the billboard material already has an
+ * `onBeforeCompile` building its quad in the vertex shader.
+ */
+Reactor3D.clampToTile = function(material, cacheKey) {
+    if (!material || material.__reactorUvClamped) return material;
+    const earlier = material.onBeforeCompile;
+    material.onBeforeCompile = function(shader, renderer) {
+        if (typeof earlier === "function") earlier.call(this, shader, renderer);
+        // Injected at `void main`, not at a chunk. The billboard material's own
+        // patch *replaces* `#include <begin_vertex>` with the code that builds
+        // its quad, so a second patch anchored there finds nothing to replace
+        // and silently does nothing — leaving `vUvBounds` unwritten, which
+        // clamps every sample to a zero-sized rectangle. Every cut-out on the
+        // map became one transparent texel, and no shader failed to compile.
+        shader.vertexShader = "attribute vec4 uvBounds;\nvarying vec4 vUvBounds;\n"
+            + shader.vertexShader.replace(
+                "void main() {",
+                "void main() {\n\tvUvBounds = uvBounds;"
+            );
+        // The chunk as three.js writes it, with the sample clamped. Replaced
+        // whole rather than patched, because `vMapUv` is a varying and a
+        // fragment shader may not assign to one.
+        shader.fragmentShader = "varying vec4 vUvBounds;\n"
+            + shader.fragmentShader.replace(
+                "#include <map_fragment>",
+                [
+                    "#ifdef USE_MAP",
+                    "	vec4 sampledDiffuseColor = texture2D( map, clamp( vMapUv, vUvBounds.xy, vUvBounds.zw ) );",
+                    "	#ifdef DECODE_VIDEO_TEXTURE",
+                    "		sampledDiffuseColor = sRGBTransferEOTF( sampledDiffuseColor );",
+                    "	#endif",
+                    "	diffuseColor *= sampledDiffuseColor;",
+                    "#endif"
+                ].join("\n")
+            );
+    };
+    material.__reactorUvClamped = true;
+    // three.js keys its program cache on the material's own properties and
+    // cannot see injected code, so without this every material compiles its own
+    // program — and with a shared key, two materials that inject *different*
+    // code would share one.
+    material.customProgramCacheKey = () => cacheKey;
+    return material;
+};
+
+Reactor3D.Geometry.uvRect = function(rect, size) {
+    // Never past the middle: a panel's edge strip is three pixels wide and a
+    // sliver narrower than two texels would otherwise invert.
+    const insetX = Math.min(this.UV_INSET_TEXELS, Math.max(0, rect.width / 2 - 0.01));
+    const insetY = Math.min(this.UV_INSET_TEXELS, Math.max(0, rect.height / 2 - 0.01));
+    return {
+        u0: (rect.sx + insetX) / size.width,
+        u1: (rect.sx + rect.width - insetX) / size.width,
+        v0: 1 - (rect.sy + rect.height - insetY) / size.height,
+        v1: 1 - (rect.sy + insetY) / size.height
+    };
+};
+
+/**
  * How deep a wall is, in tiles.
  *
  * A wall used to be a single plane on the southern face of its run, which is
@@ -1590,6 +1693,10 @@ Reactor3D.Geometry.build = function(mapData, options) {
             groups.set(key, {
                 setNumber, billboard: !!billboard, above: !!above,
                 positions: [], uvs: [], indices: [], vertexCount: 0,
+                // The rectangle of the sheet each vertex's quad is allowed to
+                // sample, as [u0, v0, u1, v1]. Four vertices of a quad all
+                // carry the same one, so it interpolates to itself.
+                bounds: [],
                 // Corner offsets, in tiles, from the anchor the vertex shares
                 // with the rest of its quad. Only billboards carry them.
                 offsets: [],
@@ -1610,12 +1717,9 @@ Reactor3D.Geometry.build = function(mapData, options) {
         // A static quad's vertices are already where they belong; a zero offset
         // keeps the attribute the same length as the others if it is ever read.
         if (group.billboard) for (let i = 0; i < 4; i++) group.offsets.push(0, 0);
-        const u0 = rect.sx / size.width;
-        const u1 = (rect.sx + rect.width) / size.width;
-        // Image space counts down from the top; texture space counts up.
-        const v0 = 1 - (rect.sy + rect.height) / size.height;
-        const v1 = 1 - rect.sy / size.height;
+        const { u0, u1, v0, v1 } = Reactor3D.Geometry.uvRect(rect, size);
         group.uvs.push(u0, v1, u1, v1, u1, v0, u0, v0);
+        for (let i = 0; i < 4; i++) group.bounds.push(u0, v0, u1, v1);
         // Normalised the same way as the UVs so the consumer just adds it.
         const du = (rect.animU || 0) / size.width;
         // Negated: a waterfall's next frame is further *down* the sheet, and V
@@ -1645,11 +1749,9 @@ Reactor3D.Geometry.build = function(mapData, options) {
             group.positions.push(anchor[0], anchor[1], anchor[2]);
         }
         for (const corner of corners) group.offsets.push(corner[0], corner[1]);
-        const u0 = rect.sx / size.width;
-        const u1 = (rect.sx + rect.width) / size.width;
-        const v0 = 1 - (rect.sy + rect.height) / size.height;
-        const v1 = 1 - rect.sy / size.height;
+        const { u0, u1, v0, v1 } = Reactor3D.Geometry.uvRect(rect, size);
         group.uvs.push(u0, v1, u1, v1, u1, v0, u0, v0);
+        for (let i = 0; i < 4; i++) group.bounds.push(u0, v0, u1, v1);
         const du = (rect.animU || 0) / size.width;
         const dv = -(rect.animV || 0) / size.height;
         for (let i = 0; i < 4; i++) group.anim.push(du, dv);
@@ -2664,6 +2766,9 @@ Reactor3D.Geometry.build = function(mapData, options) {
         offsets: group.billboard ? Float32Array.from(group.offsets) : null,
         positions: Float32Array.from(group.positions),
         uvs: Float32Array.from(group.uvs),
+        // What each quad may sample, so the shader can refuse to stray out of
+        // its own tile however few pixels the tile has been shrunk to.
+        bounds: Float32Array.from(group.bounds),
         // Only animated groups carry the stride; the rest would be all zeroes.
         anim: group.animated ? Float32Array.from(group.anim) : null,
         // 16-bit indices top out at 65535 vertices, which a large map passes.
@@ -3485,6 +3590,201 @@ Reactor3D.Viewport.prototype.canvas = function() {
     return this._canvas;
 };
 
+/**
+ * A parallax-mapped map's picture, laid flat as the ground it is.
+ *
+ * On a parallax map the art is the parallax and the tile layers are
+ * scaffolding: a blank tile for passability, a handful of real tiles for the
+ * things that stand up. Reactor's 3D view read only the tiles, so a room drawn
+ * as a 3,504 x 1,392 painting came out as whatever its filler tile happened to
+ * be — on Freelancers' maps, one opaque black autotile across the entire floor,
+ * which is a map that renders perfectly and shows nothing but the seams where
+ * the few real tiles sit.
+ *
+ * Only a *zero* parallax is laid down, which is what the `!` prefix means:
+ * `Game_Map.parallaxOx` returns a plain multiple of the tile size for those, so
+ * the image is pinned to the map at one image pixel per map pixel and the
+ * placement is exact. A looping or scrolling parallax is a moving backdrop
+ * rather than a floor and is left alone — it is not ground and pretending
+ * otherwise would nail the sky to the map.
+ */
+Reactor3D.parallaxIsGround = function(mapData) {
+    const name = mapData && mapData.parallaxName;
+    if (!name) return false;
+    if (mapData.parallaxLoopX || mapData.parallaxLoopY) return false;
+    // ImageManager where there is one; the editor draws this same scene with no
+    // game loaded, and the rule is a single character either way.
+    if (typeof ImageManager !== "undefined" && ImageManager
+        && typeof ImageManager.isZeroParallax === "function") {
+        return ImageManager.isZeroParallax(name);
+    }
+    return name.charAt(0) === "!";
+};
+
+/**
+ * Every parallax that is ground on this map, in the order they stack.
+ *
+ * The map's own is one of them. A parallax *plugin* can declare more, and
+ * MultiParallax's are readable here because it takes them from the map note —
+ * `<MultiParallax>` blocks with an `image:` line, the same `!` prefix deciding
+ * whether each is pinned to the map or a moving backdrop.
+ *
+ * Layers the author adds with a plugin *command* are deliberately absent. They
+ * do not exist until an event runs, so there is nothing to read at the moment a
+ * map is built; the running game gains them when the command executes and the
+ * editor cannot know about them at all.
+ */
+Reactor3D.parallaxGroundLayers = function(mapData) {
+    const layers = [];
+    if (this.parallaxIsGround(mapData)) {
+        layers.push({ name: mapData.parallaxName, z: 0 });
+    }
+    for (const layer of this.noteParallaxLayers(mapData)) {
+        // The same rule as the map's own: pinned to the map is ground, and
+        // anything that scrolls or loops is a backdrop and left alone.
+        if (!layer.name.startsWith("!")) continue;
+        if (layer.scrollX || layer.scrollY) continue;
+        layers.push(layer);
+    }
+    // Stacked the way the plugin stacks them, so a decal declared over a floor
+    // is drawn over that floor here too.
+    return layers.sort((a, b) => a.z - b.z);
+};
+
+/** `<MultiParallax>` blocks in a map note, as plain records. */
+Reactor3D.noteParallaxLayers = function(mapData) {
+    const note = mapData && mapData.note;
+    if (!note || note.indexOf("<MultiParallax>") < 0) return [];
+    const found = [];
+    const blocks = /<MultiParallax>([\s\S]*?)<\/MultiParallax>/gi;
+    let block;
+    while ((block = blocks.exec(note)) !== null) {
+        const props = {};
+        for (const line of block[1].split("\n")) {
+            const pair = line.match(/^\s*(\w+)\s*:\s*(.+?)\s*$/);
+            if (pair) props[pair[1].toLowerCase()] = pair[2];
+        }
+        if (!props.image) continue;
+        found.push({
+            name: props.image,
+            z: Number(props.z || 0),
+            scrollX: Number(props.scrollx || 0),
+            scrollY: Number(props.scrolly || 0),
+            opacity: props.opacity === undefined ? 255 : Number(props.opacity)
+        });
+    }
+    return found;
+};
+
+/**
+ * Load a parallax by name.
+ *
+ * The running game has ImageManager; the editor draws this same scene with no
+ * game loaded and hands in its own loader instead. Either way the answer is
+ * something with a width, a height and an `image` or `canvas` to read pixels
+ * from — which is all `textureFor` asks of it.
+ */
+Reactor3D.defaultParallaxLoader = function(name) {
+    if (typeof ImageManager === "undefined" || !ImageManager
+        || typeof ImageManager.loadParallax !== "function") {
+        return null;
+    }
+    return ImageManager.loadParallax(name);
+};
+
+/**
+ * Lay the parallax under the map.
+ *
+ * A hair below the tile ground rather than level with it, so a real tile
+ * painted over the parallax still wins the depth test instead of fighting it.
+ */
+Reactor3D.MapScene.prototype.addParallaxGrounds = function(layers, load, tileSize) {
+    if (!layers || !layers.length || typeof load !== "function") return;
+    layers.forEach((layer, index) => {
+        let bitmap = null;
+        // One bad name costs its own layer, not the map.
+        try {
+            bitmap = load(layer.name);
+        } catch (error) {
+            console.warn(`Reactor3D: parallax "${layer.name}" could not be loaded.`, error);
+        }
+        // Stacked a hair apart so the depth buffer keeps the author's order
+        // rather than letting two coplanar floors fight over every pixel.
+        this.addParallaxGround(bitmap, tileSize, index, layer.opacity);
+    });
+};
+
+Reactor3D.MapScene.prototype.addParallaxGround = function(bitmap, tileSize, index, opacity) {
+    if (!bitmap) return;
+    // A bitmap still loading has no pixels to hand three.js, and its size reads
+    // as zero — which would lay down a quad of nothing. Wait for it and lay it
+    // down then; the map is already on screen by that point and gains its floor
+    // a frame or two later rather than never.
+    if (bitmap.isReady && !bitmap.isReady()) {
+        if (typeof bitmap.addLoadListener === "function") {
+            bitmap.addLoadListener(() => {
+                if (this._scene) this.addParallaxGround(bitmap, tileSize, index, opacity);
+            });
+        }
+        return;
+    }
+    const texture = this.textureFor(bitmap);
+    if (!texture) return;
+
+    const size = tileSize || 48;
+    const width = (bitmap.width || 0) / size;
+    const height = (bitmap.height || 0) / size;
+    if (!(width > 0) || !(height > 0)) return;
+
+    const geometry = new THREE.PlaneGeometry(width, height);
+    // PlaneGeometry stands up in XY and is centred on its origin; the ground
+    // lies in XZ with the map's corner at zero.
+    geometry.rotateX(-Math.PI / 2);
+    // Each layer a hair above the last, in the order the author stacked them,
+    // so two coplanar floors do not fight over every pixel.
+    const lift = Reactor3D.PARALLAX_GROUND_DROP
+        + (index || 0) * Reactor3D.PARALLAX_LAYER_STEP;
+    geometry.translate(width / 2, lift, height / 2);
+
+    const material = new THREE.MeshBasicMaterial({
+        map: texture,
+        // A parallax is rarely a full rectangle of picture. A room drawn on a
+        // map larger than itself leaves the surround transparent, and an opaque
+        // material ignores that alpha and fills it with whatever the texels
+        // happen to hold — white, on this art — turning the backdrop into a
+        // sheet spread under the map. `alphaTest` rather than blending, and a
+        // low one: it discards only what is genuinely not there, so a soft
+        // painted edge survives, and it keeps the ground in the unsorted pass
+        // where a floor belongs.
+        transparent: true,
+        alphaTest: 0.01,
+        side: THREE.DoubleSide,
+        depthWrite: true,
+        // A layer the author faded stays faded.
+        opacity: opacity === undefined ? 1 : Math.max(0, Math.min(1, opacity / 255))
+    });
+    // Lit like everything else, so an unlit corner of a parallax room is as
+    // dark as an unlit corner of a tiled one.
+    material.__reactorShaded = true;
+    this._materials.push(material);
+
+    const mesh = new THREE.Mesh(geometry, material);
+    // Beneath the tile geometry in the same pass, so anything actually painted
+    // on the map still draws over the picture of it.
+    mesh.renderOrder = -1;
+    // The first layer is the floor everything else is measured against; the
+    // rest are dressing laid over it.
+    if (!this._parallaxGround) this._parallaxGround = mesh;
+    this.belowGroup().add(mesh);
+    this._meshes.push(mesh);
+};
+
+/** How far under the tile ground the parallax sits, in tiles. */
+Reactor3D.PARALLAX_GROUND_DROP = -0.01;
+
+/** How far each further parallax layer sits above the one below it. */
+Reactor3D.PARALLAX_LAYER_STEP = 0.002;
+
 /** The geometry drawn under the characters. */
 Reactor3D.MapScene.prototype.belowGroup = function() {
     if (!this._belowGroup) {
@@ -3864,6 +4164,15 @@ Reactor3D.MapScene.prototype.build = function(mapData, bitmaps, options) {
     // running a game, and rebuilds it on every edit.
     this._facade = Reactor3D._facade;
 
+    // A parallax map's art is the parallax, not its tiles. Laid down first so
+    // everything the tiles do contribute draws over it. The loader is handed in
+    // by the editor, which has no ImageManager to fall back on.
+    this.addParallaxGrounds(
+        Reactor3D.parallaxGroundLayers(mapData),
+        settings.loadParallax || (name => Reactor3D.defaultParallaxLoader(name)),
+        tileSize
+    );
+
     for (const group of built.groups) {
         const texture = this.textureFor(bitmaps && bitmaps[group.setNumber]);
         if (!texture) continue;
@@ -3871,6 +4180,11 @@ Reactor3D.MapScene.prototype.build = function(mapData, bitmaps, options) {
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute("position", new THREE.BufferAttribute(group.positions, 3));
         geometry.setAttribute("uv", new THREE.BufferAttribute(group.uvs, 2));
+        // What each quad may sample. See `clampToTile`: this is what keeps a
+        // tile inside its own square of the sheet at any zoom.
+        if (group.bounds) {
+            geometry.setAttribute("uvBounds", new THREE.BufferAttribute(group.bounds, 4));
+        }
         if (group.offsets) {
             geometry.setAttribute("offset", new THREE.BufferAttribute(group.offsets, 2));
         }
@@ -3939,6 +4253,10 @@ Reactor3D.MapScene.prototype.build = function(mapData, bitmaps, options) {
             });
         // Every material now takes the ambient level, not just the cut-outs.
         material.__reactorShaded = true;
+        // Two keys, because the billboard material injects a vertex shader the
+        // flat one does not and they must not share a compiled program.
+        Reactor3D.clampToTile(material,
+            group.billboard ? "reactor3d-billboard-clamped" : "reactor3d-tile-clamped");
 
         const target = group.above ? this.aboveGroup() : this.belowGroup();
 
@@ -3960,6 +4278,11 @@ Reactor3D.MapScene.prototype.build = function(mapData, bitmaps, options) {
             depthOnly.depthWrite = true;
             depthOnly.alphaTest = 0.5;
             depthOnly.colorWrite = false;
+            // Clamped like the pass it stands in for. It writes no colour, but
+            // it decides which fragments are solid enough to own a depth — and
+            // a neighbouring tile bled into that decision would carve the wrong
+            // silhouette out of everything drawn behind it.
+            Reactor3D.clampToTile(depthOnly, "reactor3d-billboard-clamped");
             const depthMesh = new THREE.Mesh(geometry, depthOnly);
             depthMesh.renderOrder = -1;
             target.add(depthMesh);
@@ -4334,6 +4657,9 @@ Reactor3D.MapScene.prototype.clear = function() {
     this._animated = [];
     this._frame = -1;
     this._facade = null;
+    // Disposed with the rest below, since it is in `_meshes`; dropped by name
+    // so a late-arriving load listener does not attach it to a cleared scene.
+    this._parallaxGround = null;
     // The light pools live in the pass groups rather than in `_meshes`, so
     // they have to be let go of by name or a rebuilt map keeps the old ones.
     for (const kind of Object.keys(this._pools || {})) {
@@ -4787,46 +5113,114 @@ Reactor3D.LightShims.nova = function() {
 /**
  * PSYCHRONIC_RaveLighting.
  *
- * Its lights are sprites in the spriteset's own container, each carrying the
- * parsed note it was built from and the character it follows. The character is
- * what matters here: a sprite's x/y are screen pixels for a 2D map and mean
- * nothing once the ground is projected, but the character it belongs to knows
- * which cell it is standing in.
+ * A light belongs to a *character*, as a parsed config on `_lights`, and that
+ * is the only place it certainly exists. The plugin also builds additive glow
+ * sprites from those configs into the spriteset's `_lightContainer`, and
+ * reading those instead is a mistake: they are pooled, created lazily, left
+ * invisible when unused, and skipped entirely on a map whose overlay pass
+ * returns early — so a fully lit map can present an empty container and Reactor
+ * would find no lights at all while the plugin drew a dozen.
+ *
+ * The character also answers the question a sprite cannot. A sprite's x/y are
+ * screen pixels, which mean nothing once the ground is projected; the character
+ * knows which cell it is standing in.
  */
 Reactor3D.LightShims.rave = function() {
-    const scene = typeof SceneManager !== "undefined" && SceneManager._scene;
-    const container = scene && scene._spriteset && scene._spriteset._lightContainer;
-    if (!container || !container.children) return null;
+    if (typeof $gameMap === "undefined" || !$gameMap) return null;
+    const characters = Reactor3D.litCharacters();
+    if (!characters.length) return null;
 
-    const tile = typeof $gameMap !== "undefined" && $gameMap.tileWidth
-        ? $gameMap.tileWidth() : 48;
+    const tile = $gameMap.tileWidth ? $gameMap.tileWidth() : 48;
+    const on = typeof $gameSystem !== "undefined" && $gameSystem
+        && typeof $gameSystem.isLightOn === "function"
+        ? (id) => $gameSystem.isLightOn(id)
+        : () => true;
+
     const lights = [];
-    for (const sprite of container.children) {
-        if (!sprite || sprite.visible === false || !sprite._lightType) continue;
-        const character = sprite._character;
-        if (!character) continue;
-        const cone = sprite._lightType === "flashlight" || sprite._lightType === "beam";
-        const pixels = cone
-            ? Number(sprite._coneLengthPx) || 0
-            : Number(sprite._lightRadius) || 0;
-        const radius = pixels / tile;
-        if (!(radius > 0)) continue;
-        lights.push({
-            type: cone ? Reactor3D.LIGHT_SPOT : Reactor3D.LIGHT_POINT,
-            x: character._realX + (Number(sprite._offsetX) || 0) / tile,
-            y: character._realY + (Number(sprite._offsetY) || 0) / tile,
-            radius,
-            colour: Reactor3D.parseColour(sprite._lightColor),
-            intensity: sprite.alpha === undefined ? 1 : sprite.alpha,
-            // A cone's spread is authored as a width in squares at its far end,
-            // which is the angle it subtends from where it stands.
-            angle: cone && sprite._coneWidthPx
-                ? (Math.atan2((sprite._coneWidthPx / tile) / 2, radius) * 360) / Math.PI
-                : undefined,
-            yaw: Reactor3D.facingYaw(character.direction ? character.direction() : 2)
-        });
+    for (const character of characters) {
+        for (const cfg of character._lights) {
+            if (!cfg || !on(cfg._lightId)) continue;
+            const cone = cfg._lightType === "flashlight" || cfg._lightType === "beam";
+            // Each shape keeps its reach in its own field, and pulsate's radius
+            // is the one it is currently at rather than the one it reaches.
+            let pixels;
+            if (cfg._lightType === "beam") {
+                pixels = Number(cfg._beamLength) || Number(cfg._coneLengthPx) || 0;
+            } else if (cone) {
+                pixels = Number(cfg._coneLengthPx) || 0;
+            } else if (cfg._lightType === "pulsate") {
+                pixels = Math.max(Number(cfg._lightRadius) || 0,
+                    Number(cfg._pulsateMaxRadius) || 0);
+            } else {
+                pixels = Number(cfg._lightRadius) || 0;
+            }
+            const radius = pixels / tile;
+            if (!(radius > 0)) continue;
+
+            const offset = Reactor3D.raveOffset(cfg);
+            const width = Number(cfg._coneWidthPx) || Number(cfg._beamWidth) || 0;
+            lights.push({
+                type: cone ? Reactor3D.LIGHT_SPOT : Reactor3D.LIGHT_POINT,
+                x: character._realX + offset.x / tile,
+                y: character._realY + offset.y / tile,
+                radius,
+                colour: Reactor3D.parseColour(cfg._lightColor),
+                intensity: 1,
+                // A cone's spread is authored as a width at its far end, which
+                // is the angle it subtends from where it stands.
+                angle: cone && width
+                    ? (Math.atan2((width / tile) / 2, radius) * 360) / Math.PI
+                    : undefined,
+                yaw: Reactor3D.raveYaw(cfg, character)
+            });
+        }
     }
     return lights;
+};
+
+/** Every character on the map that carries a RaveLighting config. */
+Reactor3D.litCharacters = function() {
+    const found = [];
+    const consider = (character) => {
+        if (character && character._lights && character._lights.length) {
+            found.push(character);
+        }
+    };
+    if (typeof $gamePlayer !== "undefined" && $gamePlayer) {
+        consider($gamePlayer);
+        const followers = $gamePlayer.followers && $gamePlayer.followers();
+        if (followers && followers._data) followers._data.forEach(consider);
+    }
+    if ($gameMap.events) $gameMap.events().forEach(consider);
+    if ($gameMap.vehicles) $gameMap.vehicles().forEach(consider);
+    return found;
+};
+
+/** Where a light sits relative to its character, in pixels. Per shape. */
+Reactor3D.raveOffset = function(cfg) {
+    const at = (x, y) => ({ x: Number(x) || 0, y: Number(y) || 0 });
+    switch (cfg._lightType) {
+        case "fire": return at(cfg._fireOffsetX, cfg._fireOffsetY);
+        case "beam": return at(cfg._beamOffsetX, cfg._beamOffsetY);
+        case "pulsate": return at(cfg._pulsateOffsetX, cfg._pulsateOffsetY);
+        case "light": return at(cfg._lightOffsetX, cfg._lightOffsetY);
+        case "flicker": return at(cfg._flickerOffsetX, cfg._flickerOffsetY);
+        // A flashlight is lifted half a tile up the sprite in 2D, which is a
+        // fact about where the art's hand is and not about the ground.
+        case "flashlight": return at(cfg._offsetX, cfg._offsetY);
+        default: return at(cfg._offsetX, cfg._offsetY);
+    }
+};
+
+/** Which way a cone points, in degrees, with south at zero. */
+Reactor3D.raveYaw = function(cfg, character) {
+    // A flashlight turns smoothly and can track a target, so the plugin's own
+    // running angle is the truthful answer where it has one. It is measured in
+    // radians clockwise from south, which is this function's own convention.
+    if (cfg._lightType === "flashlight" && cfg._smoothFlashlightAngle != null) {
+        return (Number(cfg._smoothFlashlightAngle) * 180) / Math.PI;
+    }
+    return Reactor3D.facingYaw(character.direction ? character.direction() : 2);
 };
 
 /** `#rrggbb` or a number, to a number. White for anything unreadable. */
@@ -4859,13 +5253,41 @@ Reactor3D.facingYaw = function(direction) {
 Reactor3D.LightShims.nova.suppress = function(hide) {
     const nova = typeof Anisoft !== "undefined" && Anisoft.Nova;
     const container = nova && nova.lightMapContainer;
-    if (container) container.visible = !hide;
+    // `renderable`, for the same reason as the rave shim below: suppression is
+    // re-applied every frame, and writing `visible` every frame would overrule
+    // the plugin's own reasons for hiding its lightmap rather than merely
+    // adding ours.
+    if (container) container.renderable = !hide;
 };
 
+/*
+ * RaveLighting draws in two parts and only one of them is the lights.
+ *
+ * `_lightContainer` holds additive glow sprites. `_toneSprite` is the darkness:
+ * a full-screen bitmap filled with the screen tone, with light-shaped holes
+ * punched through it. On a night or interior map the tone is [-255,-255,-255],
+ * so that sprite is opaque black over the entire screen — including over a 3D
+ * ground that has already been lit for real. Hiding only the container left the
+ * black wash in place, which is a 3D map that renders perfectly and cannot be
+ * seen: black, with the seams of the geometry seeping through the punched holes
+ * and the lights apparently floating on top of nothing.
+ *
+ * `renderable` rather than `visible`, and *only* `renderable`. The plugin
+ * rewrites `_lightContainer.visible` from the options setting on every single
+ * frame of `Spriteset_Map.update`, so a one-shot `visible = false` is undone
+ * before it is ever drawn — and writing `visible` back ourselves would be worse
+ * than useless, because it would overrule the player turning lighting effects
+ * off. `visible` is the plugin's to own and `renderable` is nobody's; taking
+ * only the second suppresses the overlay without having an opinion about the
+ * first, and restoring it gives back exactly what was there.
+ */
 Reactor3D.LightShims.rave.suppress = function(hide) {
     const scene = typeof SceneManager !== "undefined" && SceneManager._scene;
-    const container = scene && scene._spriteset && scene._spriteset._lightContainer;
-    if (container) container.visible = !hide;
+    const spriteset = scene && scene._spriteset;
+    if (!spriteset) return;
+    for (const part of [spriteset._lightContainer, spriteset._toneSprite]) {
+        if (part) part.renderable = !hide;
+    }
 };
 
 /** Put every plugin's 2D lightmap away, or bring them all back. */

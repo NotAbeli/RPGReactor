@@ -358,18 +358,30 @@ class MapEditor3D {
         if (projectPath !== this._cachedProjectPath) {
             this.sheetImages = {};
             this.characterImages = {};
+            // Dropped with the rest: two projects can hold a parallax of the
+            // same name, and keeping the first one's picture would draw the
+            // wrong floor under the second one's map.
+            this.parallaxImages = {};
             this._cachedProjectPath = projectPath;
         }
 
         this.attachSidecar(mapData);
         this.loadClassification();
         const bitmaps = await this.loadSheets(tileset);
+        // Loaded before the scene is built, because building it is synchronous
+        // and a parallax that arrives afterwards would arrive to no scene.
+        const parallaxes = await this.loadParallaxes(mapData);
 
         this.clearScene();
         this.mapScene = new Reactor3D.MapScene(mapData, bitmaps, {
             flags: tileset.flags,
             tilesetId: tileset.id,
-            tileSize: this.tilePixels()
+            tileSize: this.tilePixels(),
+            // The runtime reaches for ImageManager here. There is no game
+            // running in the editor, so the pictures come off disk instead —
+            // without which a parallax-mapped map previews as its bare tile
+            // layers, which on a parallax map is very close to nothing.
+            loadParallax: name => parallaxes[name] || null
         });
         this.applyAtmosphere(mapData);
         this.buildGrid(mapData);
@@ -539,6 +551,56 @@ class MapEditor3D {
 
         await Promise.all(pending);
         return bitmaps;
+    }
+
+    /**
+     * The parallaxes this map lays on the ground, by name.
+     *
+     * The map's own, plus any `<MultiParallax>` blocks in its note — which is
+     * everything that can be known from the map data. Layers an author adds
+     * with a plugin *command* are created when an event runs, so there is
+     * nothing for the editor to read and they cannot appear in the preview.
+     */
+    async loadParallaxes(mapData) {
+        const projectPath = this.projectPath();
+        if (!projectPath || !this.path || typeof Reactor3D === 'undefined') return {};
+
+        const layers = Reactor3D.parallaxGroundLayers(mapData);
+        if (!layers.length) return {};
+
+        if (!this.parallaxImages) this.parallaxImages = {};
+        const directory = this.path.join(projectPath, 'img', 'parallaxes');
+        const loaded = {};
+        const pending = [];
+
+        for (const layer of layers) {
+            const name = layer.name;
+            if (loaded[name]) continue;
+            const cached = this.parallaxImages[name];
+            if (cached) {
+                loaded[name] = cached;
+                continue;
+            }
+            const filePath = this.path.join(directory, `${name}.png`);
+            if (this.fs && !this.fs.existsSync(filePath)) continue;
+
+            pending.push(new Promise(resolve => {
+                const image = new Image();
+                image.onload = () => {
+                    const bitmap = { image, width: image.naturalWidth, height: image.naturalHeight };
+                    this.parallaxImages[name] = bitmap;
+                    loaded[name] = bitmap;
+                    resolve();
+                };
+                // One parallax that will not load costs its own layer, the way
+                // a missing sheet costs its own tiles.
+                image.onerror = () => resolve();
+                image.src = this.assetUrl(filePath);
+            }));
+        }
+
+        await Promise.all(pending);
+        return loaded;
     }
 
     assetUrl(filePath) {
@@ -1240,16 +1302,41 @@ class MapEditor3D {
         };
         this._onContextMenu = event => {
             // The browser menu is never wanted here — right-drag pans — but a
-            // right-click that lands on an event gets the same menu the 2D map
-            // gives it, judged by the same four-pixel test as a left-click.
+            // right-click otherwise gets the same menu the 2D map gives it,
+            // judged by the same four-pixel test as a left-click.
             event.preventDefault();
             const drag = this.pointer;
             if (drag && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4) return;
-            const cube = this.canSelectEvents() && this.eventAt(event.clientX, event.clientY);
-            if (!cube) return;
-            const picked = this.select(cube);
-            if (picked && typeof this.onEventContextMenu === 'function') {
-                this.onEventContextMenu(picked, event.clientX, event.clientY);
+            if (!this.canSelectEvents()) return;
+
+            const cube = this.eventAt(event.clientX, event.clientY);
+            if (cube) {
+                const picked = this.select(cube);
+                if (picked && typeof this.onEventContextMenu === 'function') {
+                    this.onEventContextMenu(picked, event.clientX, event.clientY);
+                }
+                return;
+            }
+
+            /*
+             * Empty ground is where a *new* event comes from.
+             *
+             * This used to stop at the cube: a right-click that hit nothing
+             * returned, so the only cell you could open a menu on in 3D was one
+             * that already had an event on it — and "New Event…" lives on the
+             * menu for a cell that does not. Existing events could be edited
+             * and none could be created, which reads as the tool half working
+             * rather than as a missing case.
+             *
+             * The cell comes from the same raycast the hover outline uses, so
+             * the menu opens on the cell being pointed at rather than on
+             * wherever the last click happened to leave the selection.
+             */
+            const tile = this.tileAt(event.clientX, event.clientY);
+            if (!tile) return;
+            this.updateHoverCell(tile);
+            if (typeof this.onMapContextMenu === 'function') {
+                this.onMapContextMenu(tile, event.clientX, event.clientY);
             }
         };
         // The outline is a cursor, so it leaves with the cursor rather than

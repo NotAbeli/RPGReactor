@@ -583,9 +583,20 @@ test('an animation is drawn where the thing playing it is', () => {
      */
     const sprites = fs.readFileSync(
         path.join(repoRoot, 'runtime', 'reactor_sprites.js'), 'utf8');
+    /*
+     * A hair in front of its host, never level with it. The tilemap breaks a
+     * tie in `z` on `y`, and an animation's `y` moves while a pass sprite's is
+     * fixed at zero — so an animation given exactly its host's z crosses that
+     * comparison mid-playback and flips between in front of the thing it is
+     * playing on and behind it, frame by frame. Three animations on a table
+     * whose top is flagged `*` flickered against it for this reason.
+     */
     assert.match(sprites,
-        /if \(this\._reactor3d && !this\.isScreenAnimation\(animation\)\) \{[\s\S]*?sprite\.z = hostZ === null \? 3 : hostZ;/,
+        /if \(authored === null && this\._reactor3d && !this\.isScreenAnimation\(animation\)\) \{[\s\S]*?sprite\.z = hostZ === null \? 3 : hostZ \+ 0\.5;/,
         'an animation played on a target takes that target\'s place in the sort');
+    // Unless the event it is played on has said otherwise — see
+    // animation-layer-note.test.cjs. The default is what is asserted here.
+    assert.match(sprites, /if \(authored !== null\) sprite\.z = authored;/);
 
     // Which of the two it is was authored, not inferred: MZ's displayType is 2
     // for screen — 0 is each target, 1 the centre of them all — and MV says the
@@ -728,4 +739,59 @@ test('pushing a version tag publishes the release from the changelog', () => {
     const script = fs.readFileSync(
         path.join(repoRoot, 'editor', 'build-scripts', 'cut-release.cjs'), 'utf8');
     assert.match(script, /if \(options\.printNotes\) \{\s*\n\s*process\.stdout\.write\(changelogSection\(version\)\);/);
+});
+
+test('an animation is sorted into place on the frame it appears', () => {
+    /*
+     * The tilemap sorts its children inside its own update, and MZ creates
+     * animation sprites *after* the spriteset has updated its children — so a
+     * sprite added this frame is still wherever `addChild` left it, which is
+     * last, and last means in front of everything. It takes its proper place on
+     * the following frame.
+     *
+     * One frame is enough to see. An animation that loops restarts every few
+     * frames, so three of them on a table flickered continuously between in
+     * front of it and behind it, and no amount of getting the `z` right could
+     * settle it: on the frame it appeared the sprite was not being sorted by
+     * `z` at all. Measured on Freelancers' map 342 — one frame in eight had an
+     * animation drawn over the star-flagged pass before this, and none in forty
+     * after it.
+     */
+    const sprites = fs.readFileSync(
+        path.join(repoRoot, 'runtime', 'reactor_sprites.js'), 'utf8');
+    const block = sprites.slice(sprites.indexOf('const authored = this.authoredAnimationZ(targets);'));
+    const body = block.slice(0, block.indexOf('this._animationSprites.push(sprite)'));
+    assert.match(body, /sprite\.z = hostZ === null \? 3 : hostZ \+ 0\.5;/);
+    // Sorted whichever way the layer was decided — the authored one included.
+    assert.match(body, /holder\._sortChildren\(\)/, 'and sorted before the frame is drawn');
+    // Guarded, because the holder is the battle field in a battle and a plain
+    // container has no sorting of its own.
+    assert.match(body, /typeof holder\._sortChildren === "function"/);
+});
+
+test('the 3D camera looks at the middle of the view, not half a tile past it', () => {
+    /*
+     * `aimCamera` adds half a tile to whatever it is given, to turn the corner
+     * of a character's cell into the middle of it. The display centre is not a
+     * cell corner — it is already the exact point at the centre of the view —
+     * so handing it over as-is bought a second half tile and everything sat
+     * slightly left of where it belonged, by a margin just small enough to
+     * doubt.
+     */
+    const sprites = fs.readFileSync(
+        path.join(repoRoot, 'runtime', 'reactor_sprites.js'), 'utf8');
+    const focus = sprites.slice(sprites.indexOf('Spriteset_Map.prototype.reactor3DCameraFocus'));
+    const body = focus.slice(0, focus.indexOf('\n};'));
+    assert.match(body, /x: \$gameMap\.displayX\(\) \+ wide \/ 2 - 0\.5/);
+    assert.match(body, /y: \$gameMap\.displayY\(\) \+ tall \/ 2 - 0\.5/);
+    // And it is still the display, not the player: that is what lets Scroll Map
+    // and every camera plugin move the 3D view at all. The player is named once
+    // more here, as the answer when there is no map to ask.
+    assert.match(body, /\$gameMap\.displayX\(\)/);
+    // The player is named only in the branch that runs when there is no map to
+    // ask — never in the answer itself.
+    const fallback = body.slice(0, body.indexOf('const wide'));
+    assert.ok(fallback.includes('$gamePlayer'), 'the no-map fallback still has one');
+    assert.ok(!body.slice(body.indexOf('const wide')).includes('$gamePlayer'),
+        'and the real answer reads the display, not the player');
 });

@@ -1245,6 +1245,83 @@
         }
     }
 
+    // -------------------------------------------------------------------------
+    // v8 changed what Texture.update() means, and the change is silent.
+    //
+    // In v5/v6/v7 it was "push this texture to the GPU":
+    //
+    //     update() {
+    //         if (this.baseTexture.resource) this.baseTexture.resource.update();
+    //         this.onBaseTextureUpdated(this.baseTexture);
+    //     }
+    //
+    // In v8 it only recomputes UVs and emits; v8's own docstring says "if you
+    // have modified this texture's source, you must separately call
+    // texture.source.update()". Any plugin that wraps a canvas it draws into
+    // -- an offscreen renderer, a procedural texture, a lightmap -- calls
+    // texture.update() every frame and is entitled to expect the picture to
+    // arrive. On v8 it never does, and nothing throws.
+    //
+    // The size half of it is worse than the pixels half. TextureSource.update()
+    // is where a canvas's *current* dimensions are read back off the element,
+    // so a texture built from a canvas before that canvas is resized is stuck
+    // at whatever it measured then -- for a bare document.createElement, the
+    // 300x150 HTML default. mz3d builds its PIXI texture in setup() and sizes
+    // its babylon canvas afterwards, so its entire 3D view was a blank
+    // 300x150 patch in the corner of the screen.
+    //
+    // This is applied per texture rather than to Texture.prototype, and that
+    // is not fastidiousness -- the prototype version breaks the renderer.
+    //
+    // v8's Texture subscribes to its source's "resize" event with update()
+    // itself, and CanvasSource.resize() emits that event from inside
+    // TextureSource.resize(), BEFORE it has resized the canvas element to
+    // match. A prototype-wide version therefore runs in the middle of every
+    // resize, reads a canvas that has not been updated yet, and resizes the
+    // source straight back to the size it was leaving. The renderer's own view
+    // is a Texture over a CanvasSource, so `Graphics.resize` silently did
+    // nothing: the canvas element became 1280x720, the render target stayed at
+    // PIXI's default 800x600, and the game drew into the bottom-left corner of
+    // its own canvas. Nothing threw and every DOM measurement read correctly.
+    //
+    // Scoping it to textures Reactor hands out keeps PIXI's internals on stock
+    // behaviour, where the resize ordering is theirs to know about.
+    // -------------------------------------------------------------------------
+    function makeCanvasTextureSelfUpdating(texture) {
+        if (!texture || texture.__reactorUploadsSource) return texture;
+        // v8's Sprite only tracks a texture flagged `dynamic`. Without it the
+        // sprite bakes in whatever the canvas measured when the sprite was
+        // built and never grows, so the picture arrives correctly and is drawn
+        // at 300x150 in a corner. The video path below sets this for the same
+        // reason; a canvas is the same situation with a different source.
+        try { texture.dynamic = true; } catch (e) {}
+        let updating = false;
+        try {
+            texture.update = function() {
+                const src = this.source;
+                // Re-entrancy: our own src.update() resizes, which emits
+                // "resize", which lands back here. The inner pass has nothing
+                // left to do.
+                if (src && typeof src.update === "function" && !updating) {
+                    updating = true;
+                    try {
+                        src.update();
+                    } catch (e) {
+                        // A destroyed or half-built source must not take down
+                        // the caller's frame; the UV work still has to happen.
+                    } finally {
+                        updating = false;
+                    }
+                }
+                return PIXI.Texture.prototype.update.apply(this, arguments);
+            };
+            texture.__reactorUploadsSource = true;
+        } catch (e) {
+            console.warn("pixi_compat: failed to install canvas Texture.update compat", e);
+        }
+        return texture;
+    }
+
     // Static factory methods used by legacy MZ plugins (PSYCHRONIC_RaveLighting,
     // etc.) to create BaseTextures from canvases/images. Just construct via
     // the shim if not already provided by the running PIXI.
@@ -1277,11 +1354,16 @@
     // autoPlay:false (plugin owns playback) but autoLoad:true (so VideoSource's
     // play/pause/canplay listeners are registered -- _onPlayStart drives the
     // per-frame texture update once the plugin calls play()).
+    //
+    // The same wrapper carries the canvas case below. It is guarded on
+    // Texture.from alone rather than on VideoSource, because the canvas half
+    // has nothing to do with video and must not be lost with it.
     // -------------------------------------------------------------------------
-    if (PIXI.Texture && PIXI.VideoSource && !PIXI.Texture.__videoFromWrapped) {
+    if (PIXI.Texture && PIXI.Texture.from && !PIXI.Texture.__videoFromWrapped) {
         const _origTextureFrom = PIXI.Texture.from.bind(PIXI.Texture);
         PIXI.Texture.from = function(source, skipCache) {
-            if (typeof HTMLVideoElement !== "undefined" &&
+            if (PIXI.VideoSource &&
+                typeof HTMLVideoElement !== "undefined" &&
                 source instanceof HTMLVideoElement) {
                 const videoSource = new PIXI.VideoSource({
                     resource: source,
@@ -1304,9 +1386,27 @@
                 });
                 return tex;
             }
-            return _origTextureFrom(source, skipCache);
+            const tex = _origTextureFrom(source, skipCache);
+            // A canvas handed to Texture.from is one the caller intends to
+            // draw into -- an offscreen renderer, a procedural texture, a
+            // lightmap -- so it gets the v5-era contract restored on it. See
+            // makeCanvasTextureSelfUpdating above for what that is and why it
+            // is per texture rather than on the prototype.
+            if (isDrawableCanvas(source)) {
+                return makeCanvasTextureSelfUpdating(tex);
+            }
+            return tex;
         };
         PIXI.Texture.__videoFromWrapped = true;
+    }
+
+    function isDrawableCanvas(source) {
+        if (!source) return false;
+        if (typeof HTMLCanvasElement !== "undefined" &&
+            source instanceof HTMLCanvasElement) return true;
+        if (typeof OffscreenCanvas !== "undefined" &&
+            source instanceof OffscreenCanvas) return true;
+        return false;
     }
 
     // -------------------------------------------------------------------------
