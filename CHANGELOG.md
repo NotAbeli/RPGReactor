@@ -8,6 +8,8 @@ This root changelog summarizes public release progress for GitHub; larger releas
 
 ### Added
 
+- **An event can decline to join the object painted over its cell**, with `<3d ground>` in its note. Grouping is right for the things that *are* the building — a sign, a lit window, a shop door — and wrong for a character who merely stops walking on its square.
+
 - **A parallax is chosen by looking at it.** Map Properties offered a dropdown of filenames, and a filename is a poor description of a picture. A **Browse…** button opens the editor's own image picker — the whole folder, searchable, current choice highlighted, full-size preview — and a thumbnail of the current parallax now sits under the dropdown with its pixel dimensions, so "is this the one?" is answered without opening anything.
 
 ### Fixed
@@ -21,6 +23,10 @@ This root changelog summarizes public release progress for GitHub; larger releas
 - **The 3D camera looks at the middle of the view**, rather than half a tile past it.
 
 - **An animation takes its place on the frame it appears**, instead of drawing in front of everything for one frame each time a looping effect restarts.
+
+- **An event that is part of a 3D object sits on it, not half a tile above it.** Cut-outs are stepped half a cell towards the camera and sprites were not, so an event pinned to a painted object floated above the art it belongs to.
+
+- **A parallax the 3D ground was built from is no longer also pasted flat over it**, so the same picture is not on screen twice. Scrolling backdrops are untouched.
 
 - **A new event can be made in the 3D view.** Right-clicking stopped at the event cube, so the only cell you could open a menu on was one that already had an event on it — and *New Event…* lives on the menu for a cell that does not. Bare ground now gets the same menu the 2D map gives it.
 

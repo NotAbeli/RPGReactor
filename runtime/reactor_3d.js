@@ -3122,11 +3122,43 @@ Reactor3D.loadClassification = function() {
 Reactor3D.pointOf = function(camera, x, stand) {
     const up = this.billboardUp(camera);
     const lift = stand.lift || 0;
+    // Standing on the art means standing where the art is. The shader steps
+    // every cut-out half a cell towards the camera, so a sprite placed without
+    // that step is half a cell further away than the picture it belongs to —
+    // and under a pitched camera "further away" reads as "higher up the
+    // screen". A sign on a shopfront floated half a tile above its own board.
+    const step = stand.onArt ? this.footward(camera) : null;
     return {
-        x: x + up.x * lift,
+        x: x + up.x * lift + (step ? step.x : 0),
         y: stand.height + up.y * lift,
-        z: stand.z + up.z * lift
+        z: stand.z + up.z * lift + (step ? step.z : 0)
     };
+};
+
+/**
+ * Half a cell towards the camera, along the ground.
+ *
+ * The same step the billboard shader takes, and for the same reason: a thing
+ * standing on a cell fills it front to back, and what the eye reads as "where
+ * it stands" is the near edge of that circle rather than its centre. Kept
+ * horizontal, so it moves a sprite nearer without lifting it.
+ */
+Reactor3D.footward = function(camera) {
+    // Read straight off the camera's own matrix, which is where the shader
+    // reads it: the third column is the axis pointing back towards the camera.
+    // No THREE.Vector3, so this is a plain calculation that can be checked
+    // without a renderer — and one fewer allocation per sprite per frame.
+    const m = camera && camera.matrixWorld && camera.matrixWorld.elements;
+    if (!m) return null;
+    const x = m[8];
+    const z = m[10];
+    // Flattened onto the ground, so it moves a sprite nearer without lifting
+    // it. An overhead camera has no horizontal direction to step along and
+    // needs none: nothing is foreshortened when it is looked at square on.
+    const reach = Math.hypot(x, z);
+    if (!(reach > 0.0001)) return null;
+    const scale = 0.5 / reach;
+    return { x: x * scale, y: 0, z: z * scale };
 };
 
 /** The up axis a cut-out is built on: world up, leaned by the tilt. */
@@ -3189,15 +3221,24 @@ Reactor3D.standingPlaceFor = function(character) {
      * built there; one that has walked off does not, and drops to the ground
      * the moment it moves.
      */
+    const data = typeof character.event === "function" ? character.event() : null;
+
+    // Said outright by the author, and so believed outright: an event that has
+    // asked to stand on the ground stands on it even where a building was
+    // painted over its cell.
+    if (data && this.eventStaysOnGround(data.note)) return ground;
+
     const page = character.page && character.page();
     if (page && page.moveType) {
-        const home = typeof character.event === "function" ? character.event() : null;
-        if (!home || x !== home.x || y !== home.y) return ground;
+        if (!data || x !== data.x || y !== data.y) return ground;
     }
 
     const facade = this.facadeAt(x, y);
+    // `onArt` because this is no longer a thing standing on the ground: its
+    // picture has moved onto a cut-out, and it has to be placed the way a
+    // cut-out is placed.
     return facade
-        ? { height: facade.height, z: facade.z, lift: facade.lift }
+        ? { height: facade.height, z: facade.z, lift: facade.lift, onArt: true }
         : ground;
 };
 
@@ -3395,7 +3436,9 @@ Reactor3D.eventTiles = function(mapData) {
         for (const page of event.pages) {
             const tileId = page && page.image && page.image.tileId;
             if (!tileId) continue;
-            found.push({ id: event.id, x: event.x, y: event.y, tileId });
+            // The note travels with it: whether this becomes part of the map
+            // is the author's to say, and this is the only place it is asked.
+            found.push({ id: event.id, x: event.x, y: event.y, tileId, note: event.note });
             break;
         }
     }
@@ -3449,6 +3492,33 @@ Reactor3D.eventShapeFromNote = function(note) {
     };
 };
 
+/**
+ * Whether an event refuses to join whatever is built at its cell.
+ *
+ *   <3d ground>        stand on the ground, never on the object at this cell
+ *   <no 3d object>     the same thing said the other way round
+ *
+ * Painting a group on the map takes everything standing on those cells and
+ * makes it one object, which is exactly right for the things that *are* the
+ * building: an animated sign, a lit window, a swinging shop door. They ride the
+ * building's plane, so they hold still against it as the camera comes round,
+ * which is the whole reason grouping exists.
+ *
+ * It is wrong for anything merely passing through. A character walking behind a
+ * shop crosses its cells, and the moment they stop walking they are pinned to
+ * the shopfront and carried up it — because "is this part of the building?" and
+ * "is this standing on the building's square?" are the same question to
+ * everything except the author.
+ *
+ * So the author answers it. Only for the exceptions: a townsperson who walks is
+ * already excluded by having left home, and the tag is for the ones that stand
+ * still somewhere a building was painted.
+ */
+Reactor3D.eventStaysOnGround = function(note) {
+    if (typeof note !== "string" || !note) return false;
+    return /<\s*3d\s+ground\s*>/i.test(note) || /<\s*no\s+3d\s+object\s*>/i.test(note);
+};
+
 /** The turn about the vertical axis that points a plane the named way. */
 Reactor3D.facingRotation = function(facing) {
     const turns = { south: 0, east: Math.PI / 2, north: Math.PI, west: -Math.PI / 2 };
@@ -3462,7 +3532,13 @@ Reactor3D.mapWithEventTiles = function(mapData, tilesetId) {
 
     const isUpright = this.uprightPredicate(tilesetId);
     const candidates = this.eventTiles(mapData).filter(tile =>
-        this.isClassified(tilesetId, tile.tileId) && isUpright(tile.tileId));
+        // An event that has said it stands on the ground is not written into
+        // the map as a standing prop either. The tag means one thing — "I am
+        // not part of what is built here" — and it would be a poor sort of
+        // exemption that applied to the building beside it and not to the
+        // building it was about to become.
+        !this.eventStaysOnGround(tile.note)
+        && this.isClassified(tilesetId, tile.tileId) && isUpright(tile.tileId));
     if (!candidates.length) return mapData;
 
     const { width, height } = mapData;
@@ -3674,6 +3750,28 @@ Reactor3D.noteParallaxLayers = function(mapData) {
         });
     }
     return found;
+};
+
+/**
+ * Which parallax a bitmap came from, by name.
+ *
+ * A sprite holds a Bitmap and a Bitmap remembers the URL it was loaded from,
+ * which is the only thread back to the name an author wrote. The path is
+ * URL-encoded — `!` survives, but a space or an accent does not — so it is
+ * decoded before the basename is taken.
+ */
+Reactor3D.parallaxNameOf = function(bitmap) {
+    const url = bitmap && typeof bitmap._url === "string" ? bitmap._url : "";
+    if (!url) return null;
+    const file = url.split("/").pop();
+    if (!file) return null;
+    let name = file.replace(/\.[^.]+$/, "");
+    try {
+        name = decodeURIComponent(name);
+    } catch (error) {
+        /* A malformed escape is not worth losing the name over. */
+    }
+    return name || null;
 };
 
 /**

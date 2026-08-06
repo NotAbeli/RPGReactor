@@ -4311,6 +4311,7 @@ Spriteset_Map.prototype.createReactor3D = function() {
         if (this._tilemap._lowerLayer) this._tilemap._lowerLayer.visible = true;
         if (this._tilemap._upperLayer) this._tilemap._upperLayer.visible = true;
         if (this._parallax) this._parallax.visible = true;
+        this.suppressReactor3DGroundParallaxes(false);
         this.destroyReactor3DSprite();
         Reactor3D.viewport()?.setVisible(false);
     }
@@ -4455,6 +4456,9 @@ Spriteset_Map.prototype.updateReactor3D = function() {
     // stepping a whole tile at a time.
     this.updateReactor3DCamera();
     this.updateReactor3DLights(state);
+    // The flat copy of whatever the ground was built from, every frame: a
+    // parallax plugin rebuilds its layers on its own schedule.
+    this.suppressReactor3DGroundParallaxes(true);
     const canvas = state.viewport.canvas ? state.viewport.canvas() : null;
 
     // Ground first, then — if the map has anything the 2D tilemap would have
@@ -4525,6 +4529,44 @@ Spriteset_Map.prototype.updateReactor3DLights = function(state) {
  * re-asserted rather than claimed once. Only when something has actually got
  * above it, so an ordinary frame costs a comparison.
  */
+/**
+ * Put away the flat copy of a parallax the 3D ground has already drawn.
+ *
+ * A parallax plugin adds a TilingSprite per layer to the tilemap, and the 3D
+ * ground pass sits inside the tilemap too — sorted above them, so a backdrop
+ * stays a backdrop. That is right for a starfield and wrong for the layer the
+ * ground was *built from*: the same picture is then on screen twice, once laid
+ * on the world and once pasted flat over it, at slightly different depths.
+ *
+ * Only the ones the ground took. `parallaxGroundLayers` is the same list the
+ * ground was built from — map-pinned layers, the `!` ones — so a layer that
+ * scrolls or loops is untouched and keeps drawing exactly as it did.
+ *
+ * `renderable` rather than `visible`, and every frame, for the same reason as
+ * the lighting overlays: the plugin owns `visible` and rebuilds its layers
+ * whenever it likes.
+ */
+Spriteset_Map.prototype.suppressReactor3DGroundParallaxes = function(hide) {
+    if (!this._tilemap || typeof TilingSprite === "undefined") return;
+    const taken = hide ? this.reactor3DGroundParallaxNames() : null;
+    for (const child of this._tilemap.children) {
+        if (!(child instanceof TilingSprite)) continue;
+        if (!hide) {
+            child.renderable = true;
+            continue;
+        }
+        const name = Reactor3D.parallaxNameOf(child.bitmap);
+        if (name && taken.has(name)) child.renderable = false;
+    }
+};
+
+/** The parallaxes this map's 3D ground was built from, by name. */
+Spriteset_Map.prototype.reactor3DGroundParallaxNames = function() {
+    const names = new Set();
+    for (const layer of Reactor3D.parallaxGroundLayers($dataMap)) names.add(layer.name);
+    return names;
+};
+
 Spriteset_Map.prototype.keepReactor3DLightsOnTop = function() {
     const pass = this._reactor3dLights;
     const sprite = pass && pass.sprite;

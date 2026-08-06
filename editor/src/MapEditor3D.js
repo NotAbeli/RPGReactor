@@ -678,7 +678,11 @@ class MapEditor3D {
             mesh.userData.asked = !!asked;
             // Standing against a wall means standing still: a sprite that is
             // part of the art beside it must not turn away from it.
-            const onFacade = sprite && !asked
+            // An event that has asked to stand on the ground never joins the
+            // object painted over its cell, here as in the running game.
+            const loose = Reactor3D.eventStaysOnGround?.(event.note);
+            mesh.userData.loose = !!loose;
+            const onFacade = sprite && !asked && !loose
                 && !!this.mapScene?.facadeAt?.(event.x, event.y);
             if (!sprite || !asked) {
                 if (sprite && !onFacade) this.billboards.push(mesh);
@@ -756,7 +760,7 @@ class MapEditor3D {
          * An explicit note wins: someone who has said how an event stands has
          * said it about this cell too.
          */
-        const facade = mesh.userData.asked
+        const facade = (mesh.userData.asked || mesh.userData.loose)
             ? null
             : this.mapScene?.facadeAt?.(event.x, event.y);
         const elevation = facade

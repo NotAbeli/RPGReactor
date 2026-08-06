@@ -102,3 +102,47 @@ test('layers a plugin command creates are knowingly out of reach', () => {
         path.join(repoRoot, 'runtime', 'reactor_3d.js'), 'utf8');
     assert.match(runtime, /plugin \*command\* are deliberately absent/);
 });
+
+test('a parallax the ground was built from is not also pasted flat over it', () => {
+    /*
+     * A parallax plugin adds a TilingSprite per layer to the tilemap, and the
+     * 3D ground pass sits inside the tilemap too — sorted above them, so a
+     * backdrop stays a backdrop. Right for a starfield, wrong for the layer the
+     * ground was *built from*: the same picture is then on screen twice, once
+     * laid on the world and once pasted flat over it.
+     */
+    const sprites = fs.readFileSync(
+        path.join(repoRoot, 'runtime', 'reactor_sprites.js'), 'utf8');
+    const suppress = sprites.slice(
+        sprites.indexOf('Spriteset_Map.prototype.suppressReactor3DGroundParallaxes'));
+    const body = suppress.slice(0, suppress.indexOf('\n};'));
+
+    // Only the ones the ground took, which is the same list it was built from.
+    assert.match(body, /Reactor3D\.parallaxNameOf\(child\.bitmap\)/);
+    assert.match(body, /if \(name && taken\.has\(name\)\) child\.renderable = false;/);
+    // A scrolling or looping layer is never in that list, so it is untouched.
+    assert.match(sprites,
+        /for \(const layer of Reactor3D\.parallaxGroundLayers\(\$dataMap\)\) names\.add\(layer\.name\)/);
+    // `renderable`, and every frame, because the plugin owns `visible` and
+    // rebuilds its layers on its own schedule.
+    assert.match(sprites, /this\.suppressReactor3DGroundParallaxes\(true\);/);
+    // And handed back when the scene fails or the map stops being 3D.
+    assert.match(sprites, /this\.suppressReactor3DGroundParallaxes\(false\);/);
+});
+
+test('a bitmap is traced back to the parallax it came from', () => {
+    // A sprite holds a Bitmap, and the URL it was loaded from is the only
+    // thread back to the name an author wrote.
+    const Reactor3D = require(path.join(repoRoot, 'runtime', 'reactor_3d.js'));
+    assert.equal(Reactor3D.parallaxNameOf({ _url: 'img/parallaxes/!Valiant-Bridge.png' }),
+        '!Valiant-Bridge');
+    // Percent-encoded, which is how a path with a space or an accent arrives.
+    assert.equal(Reactor3D.parallaxNameOf({ _url: 'img/parallaxes/%21Aeheri%20Room.png' }),
+        '!Aeheri Room');
+    assert.equal(Reactor3D.parallaxNameOf({ _url: 'Starfield.png' }), 'Starfield');
+    for (const bad of [null, undefined, {}, { _url: '' }, { _url: 42 }]) {
+        assert.equal(Reactor3D.parallaxNameOf(bad), null, JSON.stringify(bad));
+    }
+    // A malformed escape costs the decode, not the name.
+    assert.equal(Reactor3D.parallaxNameOf({ _url: 'img/parallaxes/100%.png' }), '100%');
+});

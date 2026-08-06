@@ -240,14 +240,18 @@ test('an event standing against a wall stands still', () => {
     // Half the fix. Putting it in the right place but leaving it turning
     // would still swing it out of the wall as the camera came round.
     const body = methodBody('buildEvents');
-    assert.match(body, /const onFacade = sprite && !asked\s*\n\s*&& !!this\.mapScene\?\.facadeAt\?\.\(event\.x, event\.y\)/);
+    // `loose` joined the condition: an event whose note says it stands on the
+    // ground never joins the object painted over its cell — see
+    // event-stays-on-ground.test.cjs.
+    assert.match(body, /const onFacade = sprite && !asked && !loose\s*\n\s*&& !!this\.mapScene\?\.facadeAt\?\.\(event\.x, event\.y\)/);
     assert.match(body, /if \(sprite && !onFacade\) this\.billboards\.push\(mesh\)/);
 });
 
 test('a note still wins over the wall behind it', () => {
     // Someone who has said how an event stands has said it about this cell.
     assert.match(methodBody('buildEvents'), /mesh\.userData\.asked = !!asked/);
-    assert.match(methodBody('placeEvent'), /mesh\.userData\.asked\s*\n\s*\? null/);
+    assert.match(methodBody('placeEvent'),
+        /\(mesh\.userData\.asked \|\| mesh\.userData\.loose\)\s*\n\s*\? null/);
 });
 
 test('a scene can be asked about its own facade', () => {

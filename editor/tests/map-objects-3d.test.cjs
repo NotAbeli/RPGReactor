@@ -640,7 +640,11 @@ test('a routed event that never leaves its cell rides the building', () => {
             _realX: realX, _realY: realY, eventId: () => 1, isMoving: () => false,
             page: () => ({ moveType }), event: () => ({ x: homeX, y: homeY })
         });
-        const onWall = { height: 2, z: 9.5, lift: 3 };
+        // `onArt` rides along: a thing on the facade is standing on a cut-out
+        // and has to be placed the way a cut-out is placed — half a cell
+        // towards the camera, which is what `pointOf` does with this flag. See
+        // event-stays-on-ground.test.cjs.
+        const onWall = { height: 2, z: 9.5, lift: 3, onArt: true };
 
         assert.deepEqual(Reactor3D.standingPlaceFor(event(1, 1, 0, 1, 1)), onWall,
             'no route at all, as before');
