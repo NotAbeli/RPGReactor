@@ -23,6 +23,9 @@ class EventManager {
         this.draggedEvent = null; // The event being dragged
         this.dragOffset = { x: 0, y: 0 }; // Offset from event position to mouse position
         this.snapGrid = 48; // Grid snap for event placement (shared with MapEditor)
+        this.eventViewMode = 'game'; // 'game' | 'minimal'
+        this._sheetCache = {};
+        this._tilesetNamesCache = null;
         this._dragStartX = 0; // Axis-lock: drag start position
         this._dragStartY = 0;
         this._dragAxisLock = null; // null | 'x' | 'y' (set when Shift held)
@@ -231,6 +234,8 @@ class EventManager {
     setCurrentMap(mapData) {
         this.currentMap = mapData;
         this.selectedEvent = null;
+        this._sheetCache = {};
+        this._tilesetNamesCache = null;
 
         // Re-initialize event layer for the new map
         if (this.tilemapManager) {
@@ -1636,14 +1641,11 @@ class EventManager {
         // Get current map ID from the loaded map
         const mapId = this.currentMap ? (this.currentMap.id || 1) : 1;
 
-        // Update starting position based on type
         switch (type) {
             case 'player':
                 systemData.startMapId = mapId;
                 systemData.startX = x;
                 systemData.startY = y;
-                console.log(`Player starting position set to (${x}, ${y}) on map ${mapId}`);
-                alert(`${tt('Player')} ${tt('starting position set to')} (${x}, ${y}) ${tt('on Map')} ${mapId}`);
                 break;
             case 'boat':
                 if (!systemData.boat) {
@@ -1659,8 +1661,6 @@ class EventManager {
                 systemData.boat.startMapId = mapId;
                 systemData.boat.startX = x;
                 systemData.boat.startY = y;
-                console.log(`Boat starting position set to (${x}, ${y}) on map ${mapId}`);
-                alert(`${tt('Boat')} ${tt('starting position set to')} (${x}, ${y}) ${tt('on Map')} ${mapId}`);
                 break;
             case 'ship':
                 if (!systemData.ship) {
@@ -1676,8 +1676,6 @@ class EventManager {
                 systemData.ship.startMapId = mapId;
                 systemData.ship.startX = x;
                 systemData.ship.startY = y;
-                console.log(`Ship starting position set to (${x}, ${y}) on map ${mapId}`);
-                alert(`${tt('Ship')} ${tt('starting position set to')} (${x}, ${y}) ${tt('on Map')} ${mapId}`);
                 break;
             case 'airship':
                 if (!systemData.airship) {
@@ -1693,19 +1691,14 @@ class EventManager {
                 systemData.airship.startMapId = mapId;
                 systemData.airship.startX = x;
                 systemData.airship.startY = y;
-                console.log(`Airship starting position set to (${x}, ${y}) on map ${mapId}`);
-                alert(`${tt('Airship')} ${tt('starting position set to')} (${x}, ${y}) ${tt('on Map')} ${mapId}`);
                 break;
         }
 
-        // Save the System.json file
         try {
             const projectPath = currentProject.path;
             await this.databaseManager.saveJSON(projectPath, 'System.json', systemData);
-            console.log('System.json saved with new starting position');
         } catch (error) {
             console.error('Error saving System.json:', error);
-            alert(tt('Error saving starting position. Check console for details.'));
         }
 
         // Re-render starting position markers for the current map
@@ -1928,7 +1921,6 @@ class EventManager {
         this.startingPositionContainer.addChild(container);
     }
 
-    // Create sprite for an event
     createEventSprite(event) {
         const container = new PIXI.Container();
         container.x = event.x * this.tilemapManager.TILE_WIDTH;
@@ -1936,34 +1928,61 @@ class EventManager {
 
         const isDragging = this.isDragging && this.draggedEvent && this.draggedEvent.id === event.id;
         const isSelected = this.selectedEvent && this.selectedEvent.id === event.id;
+        const tw = this.tilemapManager.TILE_WIDTH;
+        const th = this.tilemapManager.TILE_HEIGHT;
 
-        // Always draw the black background box with white border (RPG Maker style)
+        const tileId = event.pages && event.pages[0] && event.pages[0].image ? event.pages[0].image.tileId : 0;
+        const image = event.pages && event.pages[0] ? event.pages[0].image : null;
+        let hasGraphic = false;
+
+        if (this.eventViewMode === 'game') {
+            if (tileId > 0) {
+                const tileSprite = this.createTileSprite(tileId);
+                if (tileSprite) {
+                    container.addChild(tileSprite);
+                    hasGraphic = true;
+                }
+            }
+            if (!hasGraphic && image && image.characterName) {
+                const characterSprite = this.createCharacterSprite(image, true);
+                if (characterSprite) {
+                    container.addChild(characterSprite);
+                    hasGraphic = true;
+                }
+            }
+            if (!hasGraphic) {
+                const g = new PIXI.Graphics();
+                g.rect(2, 2, tw - 4, th - 4);
+                g.fill({ color: 0x000000, alpha: 0.2 });
+                g.stroke({ width: 1, color: 0xffffff, alpha: 0.35 });
+                container.addChild(g);
+            }
+            if (isSelected || isDragging) {
+                const sel = new PIXI.Graphics();
+                sel.rect(0, 0, tw, th);
+                sel.stroke({ width: 2, color: 0x00ff00 });
+                container.addChild(sel);
+            }
+            return container;
+        }
+
         const graphics = new PIXI.Graphics();
-
-        // Black background - more opaque - PIXI v8 API
         const bgAlpha = isDragging ? 0.9 : 0.75;
-        graphics.rect(0, 0, this.tilemapManager.TILE_WIDTH, this.tilemapManager.TILE_HEIGHT);
+        graphics.rect(0, 0, tw, th);
         graphics.fill({ color: 0x000000, alpha: bgAlpha });
 
-        // White border (or green if selected) - narrow border - PIXI v8 API
         const borderColor = isSelected ? 0x00ff00 : 0xffffff;
-        graphics.rect(0, 0, this.tilemapManager.TILE_WIDTH, this.tilemapManager.TILE_HEIGHT);
+        graphics.rect(0, 0, tw, th);
         graphics.stroke({ width: 1, color: borderColor });
 
         container.addChild(graphics);
 
-        // Check if event has a tileset graphic
-        const tileId = event.pages && event.pages[0] && event.pages[0].image ? event.pages[0].image.tileId : 0;
-        let hasGraphic = false;
-
-        if (tileId > 0 && this.tilesetPaletteViewer && this.tilesetPaletteViewer.tilesetTextures) {
-            // Render tileset graphic on top of the background
+        if (tileId > 0) {
             const tileSprite = this.createTileSprite(tileId);
             if (tileSprite) {
-                // Make sprite fit within the border (inset by 2px for the border)
                 tileSprite.x = 2;
                 tileSprite.y = 2;
-                const maxSize = this.tilemapManager.TILE_WIDTH - 4;
+                const maxSize = tw - 4;
                 const scale = maxSize / 48;
                 tileSprite.scale.set(scale);
                 container.addChild(tileSprite);
@@ -1971,13 +1990,10 @@ class EventManager {
             }
         }
 
-        // If no tileset graphic, check for character sprite
         if (!hasGraphic) {
-            const image = event.pages && event.pages[0] && event.pages[0].image;
             if (image && image.characterName) {
                 const characterSprite = this.createCharacterSprite(image);
                 if (characterSprite) {
-                    // Character sprite is already positioned and scaled, just add inset
                     characterSprite.x += 2;
                     characterSprite.y += 2;
                     container.addChild(characterSprite);
@@ -1986,7 +2002,6 @@ class EventManager {
             }
         }
 
-        // Add event name text at the bottom of the tile
         const text = new PIXI.Text({
             text: event.name,
             style: {
@@ -1996,146 +2011,132 @@ class EventManager {
                 stroke: { color: 0x000000, width: 2 }
             }
         });
-        text.x = this.tilemapManager.TILE_WIDTH / 2;
-        text.y = this.tilemapManager.TILE_HEIGHT - 6; // Position near bottom
+        text.x = tw / 2;
+        text.y = th - 6;
         text.anchor.set(0.5);
         container.addChild(text);
 
         return container;
     }
 
-    // Create a PIXI sprite from a tileId
-    createTileSprite(tileId) {
-        if (!this.tilesetPaletteViewer || !this.tilesetPaletteViewer.tilesetTextures) {
-            return null;
+    _getTilesetNames() {
+        if (this._tilesetNamesCache) return this._tilesetNamesCache;
+        const currentProject = this.projectController?.getCurrentProject?.();
+        if (!currentProject || !this.currentMap) return null;
+        const path = require('path');
+        const fs = require('fs');
+        const tilesetsPath = path.join(currentProject.path, 'data', 'Tilesets.json');
+        if (!fs.existsSync(tilesetsPath)) return null;
+        const tilesets = JSON.parse(fs.readFileSync(tilesetsPath, 'utf8'));
+        const tilesetId = this.currentMap.tilesetId || 1;
+        const tileset = tilesets[tilesetId];
+        this._tilesetNamesCache = tileset?.tilesetNames || null;
+        return this._tilesetNamesCache;
+    }
+
+    _getSheetTexture(layer) {
+        const LAYER_INDEX = { 'A1': 0, 'A2': 1, 'A3': 2, 'A4': 3, 'A5': 4, 'B': 5, 'C': 6, 'D': 7, 'E': 8 };
+        const idx = LAYER_INDEX[layer];
+        if (idx == null) return null;
+
+        if (this.tilesetPaletteViewer?.tilesetTextures?.[layer]) {
+            return this.tilesetPaletteViewer.tilesetTextures[layer];
         }
 
-        const textures = this.tilesetPaletteViewer.tilesetTextures;
+        const names = this._getTilesetNames();
+        if (!names || !names[idx]) return null;
+
+        const currentProject = this.projectController?.getCurrentProject?.();
+        if (!currentProject) return null;
+
+        const path = require('path');
+        const imgPath = path.join(currentProject.path, 'img', 'tilesets', names[idx] + '.png');
+        const url = (typeof RRAssetFiles !== 'undefined' && RRAssetFiles.toUrl)
+            ? RRAssetFiles.toUrl(imgPath)
+            : 'file://' + imgPath.replace(/\\/g, '/');
+
+        if (this._sheetCache[url]) {
+            return this._sheetCache[url].loaded ? this._sheetCache[url].img : null;
+        }
+
+        const entry = { img: null, loaded: false };
+        this._sheetCache[url] = entry;
+
+        const htmlImg = new Image();
+        htmlImg.onload = () => {
+            entry.img = htmlImg;
+            entry.loaded = true;
+            this.renderEvents();
+        };
+        htmlImg.onerror = () => {
+            console.error('Failed to load tileset sheet:', url);
+        };
+        htmlImg.src = url;
+        return null;
+    }
+
+    createTileSprite(tileId) {
         const TILE_SIZE = 48;
 
-        // Determine which tileset image to use based on tileId
         let layer = null;
         let tileX = 0;
         let tileY = 0;
 
         if (tileId >= 2048) {
-            // Autotiles A1-A4
             const kind = Math.floor((tileId - 2048) / 48);
-
-            if (kind < 16) {
-                // A1 (0-15)
-                layer = 'A1';
-                tileX = kind % 8;
-                tileY = Math.floor(kind / 8);
-            } else if (kind < 48) {
-                // A2 (16-47)
-                layer = 'A2';
-                const localKind = kind - 16;
-                tileX = localKind % 8;
-                tileY = Math.floor(localKind / 8);
-            } else if (kind < 80) {
-                // A3 (48-79)
-                layer = 'A3';
-                const localKind = kind - 48;
-                tileX = localKind % 8;
-                tileY = Math.floor(localKind / 8);
-            } else if (kind < 128) {
-                // A4 (80-127)
-                layer = 'A4';
-                const localKind = kind - 80;
-                tileX = localKind % 8;
-                tileY = Math.floor(localKind / 8);
-            }
-
-            // For autotiles, extract the top-left preview tile (first 48x48 from the 2x3 or 2x2 block)
-            const img = textures[layer];
-            if (!img) return null;
-
-            // Calculate source position in the original tileset image
-            let srcX = tileX * TILE_SIZE * 2; // Each autotile block is 2 tiles (96px) wide
-            let srcY;
-
-            if (layer === 'A1') {
-                // A1 has special layout
-                srcY = tileY * TILE_SIZE * 3; // 3 tiles tall per row
-            } else if (layer === 'A2') {
-                srcY = tileY * TILE_SIZE * 3; // 3 tiles tall
-            } else if (layer === 'A3') {
-                srcY = tileY * TILE_SIZE * 2; // 2 tiles tall
-            } else if (layer === 'A4') {
-                // A4 alternates between floor (3 tall) and wall (2 tall)
-                srcY = 0;
-                for (let r = 0; r < tileY; r++) {
-                    if (r % 2 === 0) {
-                        srcY += TILE_SIZE * 3; // Floor type
-                    } else {
-                        srcY += TILE_SIZE * 2; // Wall type
-                    }
-                }
-            }
-
-            // Create sprite from texture (from the loaded image element —
-            // Texture.from(url) would kick off a second async load and
-            // render blank until it finished)
-            const texture = PIXI.Texture.from(img);
-            const rect = new PIXI.Rectangle(srcX, srcY, TILE_SIZE, TILE_SIZE);
-            const croppedTexture = new PIXI.Texture({ source: texture.source, frame: rect });
-            return new PIXI.Sprite(croppedTexture);
-
+            if (kind < 16) { layer = 'A1'; tileX = kind % 8; tileY = Math.floor(kind / 8); }
+            else if (kind < 48) { layer = 'A2'; tileX = (kind-16) % 8; tileY = Math.floor((kind-16) / 8); }
+            else if (kind < 80) { layer = 'A3'; tileX = (kind-48) % 8; tileY = Math.floor((kind-48) / 8); }
+            else if (kind < 128) { layer = 'A4'; tileX = (kind-80) % 8; tileY = Math.floor((kind-80) / 8); }
         } else if (tileId >= 1536) {
-            // A5 tiles
             layer = 'A5';
             const localTileId = tileId - 1536;
             tileX = localTileId % 8;
             tileY = Math.floor(localTileId / 8);
         } else {
-            // B-E tiles
             let localTileId = tileId;
-
-            if (tileId >= 768) {
-                layer = 'E';
-                localTileId = tileId - 768;
-            } else if (tileId >= 512) {
-                layer = 'D';
-                localTileId = tileId - 512;
-            } else if (tileId >= 256) {
-                layer = 'C';
-                localTileId = tileId - 256;
-            } else {
-                layer = 'B';
-            }
-
+            if (tileId >= 768) { layer = 'E'; localTileId = tileId - 768; }
+            else if (tileId >= 512) { layer = 'D'; localTileId = tileId - 512; }
+            else if (tileId >= 256) { layer = 'C'; localTileId = tileId - 256; }
+            else { layer = 'B'; }
             tileX = localTileId % 8;
             tileY = Math.floor(localTileId / 8);
+            if (tileY >= 16) {
+                tileX += 8;
+                tileY -= 16;
+            }
         }
 
-        // Get the tileset image for this layer
-        console.log('createTileSprite: layer =', layer, 'tileX =', tileX, 'tileY =', tileY);
-        const img = textures[layer];
-        console.log('createTileSprite: img for layer', layer, '=', img);
-        if (!img) {
-            console.log('createTileSprite: No image for layer', layer);
-            return null;
+        if (!layer) return null;
+
+        const tex = this._getSheetTexture(layer);
+        if (!tex) return null;
+
+        let srcX = tileX * TILE_SIZE;
+        let srcY = tileY * TILE_SIZE;
+
+        if (tileId >= 2048) {
+            srcX = tileX * TILE_SIZE * 2;
+            if (layer === 'A1' || layer === 'A2') srcY = tileY * TILE_SIZE * 3;
+            else if (layer === 'A3') srcY = tileY * TILE_SIZE * 2;
+            else if (layer === 'A4') {
+                srcY = 0;
+                for (let r = 0; r < tileY; r++) {
+                    srcY += (r % 2 === 0) ? TILE_SIZE * 3 : TILE_SIZE * 2;
+                }
+            }
         }
 
-        // Calculate source position in the tileset image
-        const srcX = tileX * TILE_SIZE;
-        const srcY = tileY * TILE_SIZE;
-        console.log('createTileSprite: srcX =', srcX, 'srcY =', srcY);
-
-        // Convert Image to PIXI.Texture first, then create cropped texture
-        // The tilesetTextures are stored as HTMLImageElement, not PIXI.Texture
-        const baseTexture = PIXI.Texture.from(img);
+        const baseTex = PIXI.Texture.from(tex);
         const croppedTexture = new PIXI.Texture({
-            source: baseTexture.source,
+            source: baseTex.source,
             frame: new PIXI.Rectangle(srcX, srcY, TILE_SIZE, TILE_SIZE)
         });
-
         return new PIXI.Sprite(croppedTexture);
     }
 
     // Create a PIXI sprite from character image data
-    createCharacterSprite(image) {
+    createCharacterSprite(image, gameMode) {
         if (!image || !image.characterName) {
             return null;
         }
@@ -2203,7 +2204,7 @@ class EventManager {
             }
 
             // Get the frame to display (pattern 0, 1, or 2)
-            const pattern = image.pattern || 1; // Default to middle frame
+            const pattern = image.pattern != null ? image.pattern : 1;
             const sourceX = baseX + pattern * characterWidth;
             const sourceY = baseY;
 
@@ -2215,7 +2216,13 @@ class EventManager {
 
             const sprite = new PIXI.Sprite(croppedTexture);
 
-            // Scale to fit tile size (will be inset in createEventSprite)
+            if (gameMode) {
+                sprite.anchor.set(0.5, 1);
+                sprite.x = this.tilemapManager.TILE_WIDTH / 2;
+                sprite.y = this.tilemapManager.TILE_HEIGHT;
+                return sprite;
+            }
+
             const TILE_SIZE = 48;
             const maxSize = TILE_SIZE - 4; // Leave room for border
             const scale = Math.min(maxSize / characterWidth, maxSize / characterHeight);

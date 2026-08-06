@@ -75,6 +75,7 @@ class RPGReactor {
             cycleGrid: () => this.cycleGrid(),
             isGridLockedTileset: () => (this.mapEditor ? this.mapEditor.isGridLockedTileset() : true),
             toggleHitboxes: () => this.toggleHitboxes(),
+            toggleEventView: () => this.toggleEventView(),
             openDatabase: (type) => this.openDatabase(type),
             showAudioPlayer: () => this.audioPlayer.showAudioPlayer(),
             showOptions: () => this.optionsManager.show(),
@@ -851,6 +852,14 @@ class RPGReactor {
         tm.setShowHitboxes(next);
         const btn = document.getElementById('overlay-hb-btn');
         if (btn) btn.classList.toggle('active', next);
+    }
+
+    toggleEventView() {
+        if (!this.eventManager) return;
+        this.eventManager.eventViewMode = this.eventManager.eventViewMode === 'game' ? 'minimal' : 'game';
+        this.eventManager.renderEvents();
+        const btn = document.getElementById('overlay-ev-btn');
+        if (btn) btn.classList.toggle('active', this.eventManager.eventViewMode === 'game');
     }
 
     async loadMap(mapId) {

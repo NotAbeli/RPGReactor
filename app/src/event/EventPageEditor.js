@@ -240,6 +240,9 @@ class EventPageEditor {
                 <div style="display: flex; align-items: center; gap: 4px; min-width: 0;">
                     <button class="image-browse-button rr-btn-browse"
                             data-page-index="${pageIndex}">${this._t('event.browse')}</button>
+                    <button class="image-tile-button"
+                            data-page-index="${pageIndex}"
+                            style="padding:3px 8px;cursor:pointer;background:var(--color-bg-panel,#3c3c3c);color:var(--color-text,#eee);border:1px solid var(--color-border-input,#555);border-radius:3px;font-size:11px;">Tile</button>
                     <input type="text"
                            class="image-input image-name-display"
                            data-field="characterName"
@@ -292,12 +295,7 @@ class EventPageEditor {
         const ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        console.log('renderCharacterPreview - image data:', image);
-        console.log('renderCharacterPreview - tileId:', image.tileId);
-
-        // Check if this is a tileset graphic (tileId > 0)
         if (image.tileId && image.tileId > 0) {
-            console.log('Rendering tileset preview for tileId:', image.tileId);
             this.renderTilesetPreview(canvas, ctx, image.tileId);
             return;
         }
@@ -321,8 +319,6 @@ class EventPageEditor {
         // Add .png extension if not already present (RPG Maker stores names without extension)
         const filename = image.characterName.endsWith('.png') ? image.characterName : image.characterName + '.png';
         const imgPath = RRAssetFiles.toUrl(path.join(currentProject.path, 'img', 'characters', filename));
-
-        console.log('Loading character preview:', imgPath);
 
         img.onload = () => {
             const shouldAnimate = page.stepAnime; // Check stepping animation option
@@ -520,6 +516,10 @@ class EventPageEditor {
 
             tileX = localTileId % 8;
             tileY = Math.floor(localTileId / 8);
+            if (tileY >= 16) {
+                tileX += 8;
+                tileY -= 16;
+            }
             srcX = tileX * TILE_SIZE;
             srcY = tileY * TILE_SIZE;
         }
@@ -878,7 +878,6 @@ class EventPageEditor {
             browseButton.addEventListener('mouseup', () => browseButton.style.backgroundColor = 'var(--color-bg-deep)');
 
             browseButton.addEventListener('click', () => {
-                // Create character graphic picker
                 const picker = new CharacterGraphicPicker(this.projectController);
 
                 picker.show(
@@ -887,16 +886,32 @@ class EventPageEditor {
                     page.image.pattern,
                     page.image.direction,
                     (result) => {
-                        // Update page image data
                         page.image.characterName = result.characterName;
                         page.image.characterIndex = result.characterIndex;
                         page.image.pattern = result.pattern;
                         page.image.direction = result.direction;
+                        page.image.tileId = 0;
 
-                        // Re-render the page configuration to show updated values
                         this.parentEditor.renderCurrentPage();
                     }
                 );
+            });
+        }
+
+        const tileButton = section.querySelector('.image-tile-button');
+        if (tileButton) {
+            tileButton.addEventListener('mouseenter', () => tileButton.style.backgroundColor = 'var(--color-bg-deep)');
+            tileButton.addEventListener('mouseleave', () => tileButton.style.backgroundColor = 'var(--color-bg-panel)');
+
+            tileButton.addEventListener('click', () => {
+                const picker = new TilesetGraphicPicker(this.projectController);
+                picker.show(page.image.tileId || 0, (result) => {
+                    page.image.tileId = result.tileId;
+                    if (result.tileId > 0) {
+                        page.image.characterName = '';
+                    }
+                    this.parentEditor.renderCurrentPage();
+                });
             });
         }
     }

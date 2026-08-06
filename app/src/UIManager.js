@@ -53,6 +53,12 @@ class UIManager {
                 if (this.callbacks.toggleHitboxes) this.callbacks.toggleHitboxes();
             });
         }
+        const ovEv = document.getElementById('overlay-ev-btn');
+        if (ovEv) {
+            ovEv.addEventListener('click', () => {
+                if (this.callbacks.toggleEventView) this.callbacks.toggleEventView();
+            });
+        }
 
         // Mode toggle is a toolbar button now (handled via data-action in handleToolbarAction)
 

@@ -1264,7 +1264,9 @@ class ProjectController {
         tilemapManager.cancelPendingMapLoad?.();
 
         if (tilemapManager.currentMap?.id === mapId && !options.forceReload) return true;
-        if (!options.skipDirtyCheck && !await this.confirmUnsavedChanges('map')) return false;
+        if (!options.skipDirtyCheck && tilemapManager.isMapDirty?.()) {
+            tilemapManager.saveMap?.();
+        }
         if (request !== this._mapLoadRequest || tilemapManager !== this.tilemapManager) return false;
 
         this.uiManager.updateStatus(`Loading map ${mapId}...`);
