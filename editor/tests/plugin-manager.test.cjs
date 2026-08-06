@@ -272,3 +272,71 @@ test('complex plugin lists use themed draggable rows and aligned parameter grids
     assert.match(source, /type\.includes\('struct<'\) \|\| type\.includes\('\[\]'\)/);
     assert.match(source, /!structName && !isArray/);
 });
+
+/*
+ * A plugin whose annotations have been stripped out.
+ *
+ * A plugin's parameter schema exists only in the `/*:` comment block at the
+ * top of its file. Obfuscated releases ship without it: of the 46 VisuStella
+ * plugins in a real protected distribution, not one still has an @param, an
+ * @plugindesc, or a `/*:` block at all. There is nothing to parse — the same
+ * is true in RPG Maker's own Plugin Manager — so the plugins carrying the most
+ * configuration are exactly the ones that appear to have none.
+ *
+ * The values survive in plugins.js under their own names, so they can still be
+ * listed and edited. Only the labels, help and typed pickers are gone.
+ */
+test('a plugin with no annotations still shows its saved parameters', () => {
+    const PluginManager = loadBrowserClass(
+        path.join(repoRoot, 'src', 'PluginManager.js'), 'PluginManager');
+    const manager = new PluginManager({ getCurrentProject: () => ({ path: '/nowhere' }) });
+
+    // A stripped VisuStella file: section banners, no annotations.
+    const stripped = [
+        '//=====================================',
+        '// VisuStella MZ - Core Engine',
+        '//=====================================',
+        'var Imported = Imported || {};',
+        '/* ------------------------------------',
+        ' * Quality of Life Settings',
+        ' * ------------------------------------',
+        ' */'
+    ].join('\n');
+    assert.equal(Object.keys(manager.parsePluginParameterMetadata(stripped)).length, 0,
+        'nothing to parse, and the parser does not pretend otherwise');
+
+    const metadata = manager.parameterMetadataFromSavedValues({
+        QoL: '{"AutoLoad":"false"}',
+        ScreenShake: 'true',
+        MenuBg: JSON.stringify([1, 2, 3].map(n => `{"Name":"Layer ${n}","Opacity":"192"}`))
+    });
+
+    assert.deepEqual(Object.keys(metadata), ['QoL', 'ScreenShake', 'MenuBg']);
+    // Short values get a plain field; a whole struct array gets a textarea,
+    // because editing one through a single-line input means scrolling
+    // sideways through JSON.
+    assert.equal(metadata.ScreenShake.type, 'string');
+    assert.equal(metadata.MenuBg.type, 'note');
+    // No @default was seen, so nothing may be presented as one.
+    assert.equal(metadata.QoL.default, null);
+    assert.equal(metadata.QoL.parent, null);
+    assert.equal(metadata.QoL.options.length, 0);
+});
+
+test('nothing is invented for a plugin that genuinely has no parameters', () => {
+    const PluginManager = loadBrowserClass(
+        path.join(repoRoot, 'src', 'PluginManager.js'), 'PluginManager');
+    const manager = new PluginManager({ getCurrentProject: () => ({ path: '/nowhere' }) });
+
+    for (const empty of [{}, null, undefined, 'not an object']) {
+        assert.equal(Object.keys(manager.parameterMetadataFromSavedValues(empty)).length, 0);
+    }
+
+    // And the fallback is reached only when the file itself described none:
+    // a parsed schema always wins, so an annotated plugin keeps its labels,
+    // help text and pickers.
+    const source = fs.readFileSync(path.join(repoRoot, 'src', 'PluginManager.js'), 'utf8');
+    assert.match(source,
+        /if \(Object\.keys\(metadata\)\.length === 0 && pluginFileExists\) \{\s*\n\s*const fromValues = this\.parameterMetadataFromSavedValues\(plugin\.parameters\)/);
+    assert.match(source, /let metadata = paramMetadata;/);
+});

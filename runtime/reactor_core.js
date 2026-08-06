@@ -5047,8 +5047,11 @@ Window.prototype.updateTransform = function() {
     // never sets its filterArea/boundsArea and content never gets clipped.
     if (!PIXI.TextureSource) {
         PIXI.Container.prototype.updateTransform.call(this);
+        this._updateFilterArea();
+    } else {
+        this._updateFilterArea();
+        this._localizeFilterArea();
     }
-    this._updateFilterArea();
 };
 
 /**
@@ -5388,27 +5391,54 @@ Window.prototype._updatePauseSign = function() {
 };
 
 Window.prototype._updateFilterArea = function() {
+    // World-space, on every PIXI version: that is what v5/v6/v7 consumed
+    // directly, and it is what every plugin replacing this method writes.
+    // _localizeFilterArea() below converts it for v8 afterwards, so a plugin's
+    // version needs no cooperation to land in the right place.
+    const pos = this._clientArea.worldTransform.apply(new Point(0, 0));
     const filterArea = this._clientArea.filterArea;
-    if (PIXI.TextureSource) {
-        // v8 FilterSystem._calculateFilterArea does:
-        //   bounds.addRect(filterEffect.filterArea);
-        //   bounds.applyMatrix(container.worldTransform);
-        // so filterArea must be in container-LOCAL coords; v8 multiplies by
-        // worldTransform itself. _clientArea sits at (pad - origin.x,
-        // pad - origin.y) in Window-local, so the visible client rect in
-        // _clientArea's local frame is (origin.x, origin.y, innerW, innerH).
-        filterArea.x = this.origin.x;
-        filterArea.y = this.origin.y;
-        filterArea.width = this.innerWidth;
-        filterArea.height = this.innerHeight;
-    } else {
-        // v5/v6/v7: filterArea is world-space, used directly by FilterSystem.
-        const pos = this._clientArea.worldTransform.apply(new Point(0, 0));
-        filterArea.x = pos.x + this.origin.x;
-        filterArea.y = pos.y + this.origin.y;
-        filterArea.width = this.innerWidth;
-        filterArea.height = this.innerHeight;
+    filterArea.x = pos.x + this.origin.x;
+    filterArea.y = pos.y + this.origin.y;
+    filterArea.width = this.innerWidth;
+    filterArea.height = this.innerHeight;
+};
+
+/**
+ * Restates the client area's filter rectangle in the coordinates v8 expects.
+ *
+ * v8's FilterSystem._calculateFilterArea does
+ *
+ *     bounds.addRect(filterEffect.filterArea);
+ *     bounds.applyMatrix(container.worldTransform);
+ *
+ * so it reads filterArea as container-LOCAL and applies the world transform
+ * itself. Handed the world-space rect that v5/v6/v7 wanted, it transforms it a
+ * second time and the captured region lands roughly twice as far down the
+ * screen as the window — off the edge entirely for a window past the middle.
+ * The filter then resolves to nothing, and everything inside the client area
+ * silently disappears: the panel and its border still draw (they are not in
+ * the client area), so a window renders as an empty box.
+ *
+ * Correcting it here rather than in _updateFilterArea above is the point. A
+ * window's filter rect is computed by whichever _updateFilterArea is installed
+ * last, and plugins that reimplement scrolling or window drawing routinely
+ * install their own — VisuMZ's CoreEngine among them. Those all write the
+ * world-space rect the engine documented, cannot know about v8, and cannot be
+ * edited. Subtracting the client area's world origin afterwards fixes every
+ * one of them, including our own, with no version branch above.
+ */
+Window.prototype._localizeFilterArea = function() {
+    const clientArea = this._clientArea;
+    const filterArea = clientArea && clientArea.filterArea;
+    if (!filterArea) {
+        return;
     }
+    // worldTransform applied to (0, 0) is exactly (tx, ty) -- the same origin
+    // _updateFilterArea added, so a transform that is momentarily stale
+    // cancels out instead of shifting the rect.
+    const wt = clientArea.worldTransform;
+    filterArea.x -= wt.tx;
+    filterArea.y -= wt.ty;
 };
 
 //-----------------------------------------------------------------------------

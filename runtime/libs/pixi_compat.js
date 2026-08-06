@@ -59,6 +59,30 @@
     // skip _updateFilterArea on v8.
     // -------------------------------------------------------------------------
 
+    /**
+     * Whether this class is a window layer, whose MZ render must not run here.
+     *
+     * A WindowLayer's `render` masks each window with raw GL stencil calls,
+     * flushing a global batcher between them. v8 has no global batcher — each
+     * render pipe defers its own — so those calls never interleave with the
+     * draws they were meant to bracket, and the stencil state is left switched
+     * on across everything drawn afterwards. Reactor's own WindowLayer returns
+     * early on v8 for exactly this reason; a plugin that replaces the method
+     * does not know to. v8 draws the windows itself, which is what makes
+     * skipping it safe.
+     */
+    function isWindowLayerClass(klass) {
+        if (!klass) return false;
+        if (typeof WindowLayer !== "undefined" && klass === WindowLayer) return true;
+        let walk = klass;
+        while (walk) {
+            if (walk.name === "WindowLayer") return true;
+            walk = Object.getPrototypeOf(walk);
+            if (walk === Function.prototype || walk === null) break;
+        }
+        return false;
+    }
+
     if (PIXI.Container && PIXI.Container.prototype) {
         const nameDesc = Object.getOwnPropertyDescriptor(
             PIXI.Container.prototype, "name"
@@ -157,7 +181,13 @@
             },
             framebuffer: {
                 reset: noop,
-                bind: noop
+                bind: noop,
+                // MZ's own WindowLayer asks the framebuffer for a stencil
+                // buffer, and so does any plugin that reimplements it. v8 has
+                // no framebuffer system and needs none: it allocates a stencil
+                // buffer for its own masking.
+                forceStencil: noop,
+                blit: noop
             },
             projection: {
                 projectionMatrix: (PIXI.Matrix ? new PIXI.Matrix() : {
@@ -199,6 +229,23 @@
             !renderer.texture.onSourceUpdate.__compatDimensionGuard) {
             const originalOnSourceUpdate = renderer.texture.onSourceUpdate;
             renderer.texture.onSourceUpdate = function(source) {
+                /*
+                 * A source with nothing to upload is not uploaded.
+                 *
+                 * MZ frees a Bitmap's canvas once it has an image to draw from,
+                 * and a plugin calling `update()` afterwards asks v8 to send
+                 * pixels it no longer holds: texSubImage2D is handed no canvas,
+                 * WebGL raises INVALID_VALUE, and it repeats every frame. A
+                 * canvas MZ has finished with is detached and measures zero,
+                 * which WebGL rejects the same way. The guard below would
+                 * otherwise *cause* the upload by resizing, which emits.
+                 */
+                if (source && source.uploadMethodId === "image") {
+                    const res = source.resource;
+                    const bare = !res
+                        || (!res.width && !res.height && !res.videoWidth && !res.naturalWidth);
+                    if (bare) return;
+                }
                 if (source) {
                     const gl = renderer.gl || (renderer.context && renderer.context.gl);
                     const max = gl && gl.getParameter ? gl.getParameter(gl.MAX_TEXTURE_SIZE) : 16384;
@@ -2144,7 +2191,9 @@
                         // Don't call inherited PIXI.Container.prototype.render
                         // (the renderer's own walker) -- only MZ-own overrides.
                         orig.prototype.render !==
-                            (pixiBase.prototype && pixiBase.prototype.render);
+                            (pixiBase.prototype && pixiBase.prototype.render)
+                        // ...and never a WindowLayer's. See isWindowLayerClass.
+                        && !isWindowLayerClass(orig);
                     if (hasMzUnderRender || hasMzRender) {
                         // Log the first throw per-class so we can diagnose
                         // when MZ legacy renders (Effekseer, UltraMode7) hit

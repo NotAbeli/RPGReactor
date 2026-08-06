@@ -3347,7 +3347,36 @@ class PluginManager {
             paramsContainer.appendChild(missingFile);
         }
 
-        if (Object.keys(paramMetadata).length === 0) {
+        // A plugin file whose annotation block has been stripped parses to no
+        // metadata at all while its saved values sit in plugins.js untouched.
+        // Fall back to describing those.
+        let metadata = paramMetadata;
+        let describedFromValues = false;
+        if (Object.keys(metadata).length === 0 && pluginFileExists) {
+            const fromValues = this.parameterMetadataFromSavedValues(plugin.parameters);
+            if (Object.keys(fromValues).length > 0) {
+                metadata = fromValues;
+                describedFromValues = true;
+            }
+        }
+
+        if (describedFromValues) {
+            const notice = document.createElement('div');
+            notice.style.cssText = `
+                margin-bottom: 10px;
+                padding: 8px 10px;
+                background-color: var(--color-accent-tint-12, rgba(120, 170, 255, 0.10));
+                border-left: 3px solid var(--color-accent);
+                border-radius: 3px;
+                color: var(--color-text-muted);
+                font-size: 12px;
+                line-height: 1.4;
+            `;
+            notice.textContent = this._tt('This plugin file carries no parameter annotations, so its saved values are shown as plain fields. Labels, descriptions and pickers are unavailable; the values themselves are correct and editable.');
+            paramsContainer.appendChild(notice);
+        }
+
+        if (Object.keys(metadata).length === 0) {
             const noParams = document.createElement('div');
             noParams.style.cssText = 'color: var(--color-text-dim); font-size: 13px;';
             noParams.textContent = pluginFileExists ? this._tt('This plugin has no configurable parameters.') : this._tt('No parameters available because the plugin file is missing.');
@@ -3356,19 +3385,19 @@ class PluginManager {
             // Build merged params: all metadata keys, using saved values where available,
             // falling back to @default from metadata
             const mergedParams = {};
-            for (const key of Object.keys(paramMetadata)) {
+            for (const key of Object.keys(metadata)) {
                 if (plugin.parameters.hasOwnProperty(key)) {
                     mergedParams[key] = plugin.parameters[key];
                 } else {
-                    mergedParams[key] = paramMetadata[key].default || '';
+                    mergedParams[key] = metadata[key].default || '';
                 }
             }
 
             // Organize parameters hierarchically
-            const organizedParams = this.organizeParametersHierarchically(mergedParams, paramMetadata);
+            const organizedParams = this.organizeParametersHierarchically(mergedParams, metadata);
 
             // Render organized parameters
-            this.renderParameterTree(paramsContainer, plugin, organizedParams, paramMetadata);
+            this.renderParameterTree(paramsContainer, plugin, organizedParams, metadata);
         }
 
         this.detailsContainer.appendChild(paramsContainer);
@@ -3862,6 +3891,49 @@ class PluginManager {
      * Parse plugin parameter metadata (type, text, desc, etc.)
      * Only parses the main /*: block, not struct definitions
      */
+    /**
+     * Describe a plugin's saved parameters when the plugin file describes none.
+     *
+     * A plugin's parameter schema lives entirely in the `/*:` block at the top
+     * of its file, and obfuscated releases ship with that block removed --
+     * every VisuStella plugin in a protected distribution has one, and none of
+     * them still has an @param. There is nothing left to parse, here or in RPG
+     * Maker's own Plugin Manager, so a project's most heavily configured
+     * plugins are the ones that appear to have nothing to configure.
+     *
+     * The values themselves survive in plugins.js, keyed by their own names.
+     * Describing each as a plain field restores reading and editing them; the
+     * labels, help text and typed pickers are gone with the annotations and
+     * cannot be recovered from anywhere.
+     */
+    parameterMetadataFromSavedValues(parameters) {
+        const metadata = {};
+        if (!parameters || typeof parameters !== 'object') return metadata;
+        for (const key of Object.keys(parameters)) {
+            const value = parameters[key];
+            const text = value === null || value === undefined ? '' : String(value);
+            metadata[key] = {
+                text: '',
+                desc: '',
+                descLines: [],
+                // A textarea for anything structured. VisuStella keeps whole
+                // arrays of structs in a single value, and a one-line input
+                // makes editing those a matter of scrolling sideways through
+                // JSON.
+                type: text.includes('\n') || text.length > 80 ? 'note' : 'string',
+                default: null,
+                parent: null,
+                on: null,
+                off: null,
+                min: null,
+                max: null,
+                dir: null,
+                options: []
+            };
+        }
+        return metadata;
+    }
+
     parsePluginParameterMetadata(source) {
         const metadata = {};
 
