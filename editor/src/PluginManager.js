@@ -351,6 +351,14 @@ class PluginManager {
             const pluginPath = this.path.join(projectPath, 'js', 'plugins', `${plugin.name}.js`);
             const pluginSource = this.fs.readFileSync(pluginPath, 'utf8');
             structDefinitions = this.parseStructDefinitions(pluginSource);
+            if (Object.keys(structDefinitions).length === 0) {
+                // A file with its annotations stripped defines no structs, and
+                // the type on `metadata` was then inferred from the values. Do
+                // the same reading again rather than caching it: the names come
+                // out of the parameter names, so the second pass agrees with the
+                // first by construction and cannot go stale behind an edit.
+                this.parameterMetadataFromSavedValues(plugin.parameters, structDefinitions);
+            }
         } else if (!structDefinitions) {
             structDefinitions = {};
         }
@@ -3353,7 +3361,7 @@ class PluginManager {
         let metadata = paramMetadata;
         let describedFromValues = false;
         if (Object.keys(metadata).length === 0 && pluginFileExists) {
-            const fromValues = this.parameterMetadataFromSavedValues(plugin.parameters);
+            const fromValues = this.parameterMetadataFromSavedValues(plugin.parameters, {});
             if (Object.keys(fromValues).length > 0) {
                 metadata = fromValues;
                 describedFromValues = true;
@@ -3686,6 +3694,22 @@ class PluginManager {
             return container;
         }
 
+        // RPG Maker 1.5's multi-line text: stored as an ordinary string that
+        // happens to contain newlines, unlike `note` below, which is stored
+        // JSON-encoded. So this one is written back exactly as typed.
+        if (metadata.type === 'multiline_string') {
+            const textarea = document.createElement('textarea');
+            textarea.value = value === null || value === undefined ? '' : String(value);
+            textarea.rows = 4;
+            textarea.style.cssText = `${inputStyle}min-height:82px;line-height:1.4;font-family:monospace;resize:vertical;`;
+            textarea.addEventListener('change', event => {
+                plugin.parameters[key] = event.target.value;
+            });
+            inputWrapper.appendChild(textarea);
+            container.appendChild(inputWrapper);
+            return container;
+        }
+
         if (metadata.type === 'note') {
             const textarea = document.createElement('textarea');
             const decodedValue = this.parsePluginJsonLayer(value, value ?? '');
@@ -3906,32 +3930,199 @@ class PluginManager {
      * labels, help text and typed pickers are gone with the annotations and
      * cannot be recovered from anywhere.
      */
-    parameterMetadataFromSavedValues(parameters) {
+    parameterMetadataFromSavedValues(parameters, structDefinitions = {}) {
         const metadata = {};
         if (!parameters || typeof parameters !== 'object') return metadata;
         for (const key of Object.keys(parameters)) {
-            const value = parameters[key];
-            const text = value === null || value === undefined ? '' : String(value);
-            metadata[key] = {
-                text: '',
-                desc: '',
-                descLines: [],
-                // A textarea for anything structured. VisuStella keeps whole
-                // arrays of structs in a single value, and a one-line input
-                // makes editing those a matter of scrolling sideways through
-                // JSON.
-                type: text.includes('\n') || text.length > 80 ? 'note' : 'string',
-                default: null,
-                parent: null,
-                on: null,
-                off: null,
-                min: null,
-                max: null,
-                dir: null,
-                options: []
-            };
+            const schema = this.blankParameterSchema();
+            schema.text = this.parameterLabelFromKey(key);
+            const known = Object.keys(structDefinitions);
+            schema.type = this.inferParameterType(parameters[key], key, structDefinitions);
+            if (!this.inferredTypeSurvivesEditing(parameters[key], schema, structDefinitions)) {
+                for (const name of Object.keys(structDefinitions)) {
+                    if (!known.includes(name)) delete structDefinitions[name];
+                }
+                schema.type = this.plainTextType(parameters[key]);
+            }
+            metadata[key] = schema;
         }
         return metadata;
+    }
+
+    /**
+     * Would opening this parameter in the structured editor and saving it
+     * again give back exactly what is stored now?
+     *
+     * The type was read off the value's shape rather than stated by the
+     * plugin, so it is a reading and can be a misreading. Two are already
+     * known: an `:eval` parameter holding the source text `[255, 255, 0, 160]`
+     * looks like a list and is an expression, and RPG Maker writes its own
+     * `__collapsed` bookkeeping into a struct as a bare array where every real
+     * field is a string. Both survive being displayed and neither survives
+     * being written back byte for byte.
+     *
+     * Rather than name those cases and wait to be surprised by a third, each
+     * reading is checked by performing it: a parameter is only offered as
+     * structured if the round trip reproduces it. Anything else falls back to
+     * a text box, which is what it would have had anyway.
+     */
+    inferredTypeSurvivesEditing(rawValue, schema, structDefinitions) {
+        const type = String(schema.type || '');
+        if (!type.includes('struct<') && !type.includes('[]')) return true;
+        const stored = typeof rawValue === 'string' ? rawValue : JSON.stringify(rawValue);
+        try {
+            const parsed = this.deserializeComplexPluginParameter(rawValue, schema, structDefinitions);
+            return this.serializeComplexPluginParameter(parsed, schema, structDefinitions) === stored;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    /** The field a value gets when nothing better can be said about it. */
+    plainTextType(rawValue) {
+        if (rawValue === null || rawValue === undefined) return 'string';
+        if (typeof rawValue !== 'string') return 'string';
+        return rawValue.includes('\n') || rawValue.length > 80 ? 'multiline_string' : 'string';
+    }
+
+    /**
+     * The readable half of a parameter key that carries its own type.
+     *
+     * VisuStella writes each parameter's type into the key itself, because
+     * that is how its own loader reads them back: `QoL:struct`,
+     * `NewGameCommonEvent:num`, `ActorHPColor:func`. Over three thousand keys
+     * in one project are written that way. The suffix is addressed to the
+     * plugin, not to whoever is reading the list, and the annotations that
+     * would have supplied a real label are gone — so the name without its
+     * suffix is the best label left. Returns '' for a key that is not written
+     * that way, which leaves the key itself as the label.
+     */
+    parameterLabelFromKey(key) {
+        const match = String(key).match(
+            /^(.+):(num|str|eval|json|func|struct|array(?:num|str|eval|json|func|struct))$/i);
+        return match ? match[1] : '';
+    }
+
+    /** An empty parameter schema in the shape every renderer here expects. */
+    blankParameterSchema() {
+        return {
+            text: '',
+            desc: '',
+            descLines: [],
+            type: 'string',
+            default: null,
+            parent: null,
+            on: null,
+            off: null,
+            min: null,
+            max: null,
+            dir: null,
+            options: []
+        };
+    }
+
+    /**
+     * Work out what a saved value is from its own shape.
+     *
+     * The annotations said what each parameter was; without them the value is
+     * the only witness left, and RPG Maker's storage format is unambiguous
+     * enough to read. A struct is a JSON object; a list of structs is a JSON
+     * array of JSON objects, each encoded as a string; a checkbox is the word
+     * true or false. Recognising those is the difference between the settings
+     * appearing as one wall of JSON and appearing as the nested sections the
+     * plugin author laid out.
+     *
+     * What cannot be recovered is naming: which of a struct's fields is a
+     * colour, a switch, a file. Those stay plain text, which edits correctly
+     * and merely offers no picker.
+     */
+    inferParameterType(rawValue, path, structDefinitions, depth = 0) {
+        if (rawValue === null || rawValue === undefined) return 'string';
+        const parsed = typeof rawValue === 'string'
+            ? this.parsePluginJsonLayer(rawValue, rawValue)
+            : rawValue;
+        // Deep enough for anything a plugin actually ships, and a stop for
+        // anything that turns out to be deeper than that.
+        const canRecurse = depth < 8;
+
+        if (canRecurse && parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            return `struct<${this.defineInferredStruct([parsed], path, structDefinitions, depth)}>`;
+        }
+
+        if (Array.isArray(parsed)) {
+            // Entries arrive as strings holding JSON, which is how RPG Maker
+            // writes a list of structs.
+            const entries = parsed.map(entry =>
+                typeof entry === 'string' ? this.parsePluginJsonLayer(entry, entry) : entry);
+            const allStructs = entries.length > 0 && entries.every(entry =>
+                entry && typeof entry === 'object' && !Array.isArray(entry));
+            if (allStructs && canRecurse) {
+                return `struct<${this.defineInferredStruct(entries, path, structDefinitions, depth)}>[]`;
+            }
+            return 'string[]';
+        }
+
+        if (typeof parsed === 'boolean') return 'boolean';
+        if (typeof parsed === 'number' && Number.isFinite(parsed)) return 'number';
+
+        // A string that survived JSON.parse as a *different* string was stored
+        // encoded, which is what `note` means here: shown decoded, written back
+        // encoded. VisuStella's `:json` and `:func` values are all like this,
+        // and the code bodies among them are the reason to notice — edited as
+        // plain text they would be written back without their quoting and the
+        // plugin could no longer read them.
+        if (typeof parsed === 'string' && typeof rawValue === 'string' && parsed !== rawValue) {
+            return 'note';
+        }
+
+        // Deliberately never `note` from here: a note is stored JSON-encoded,
+        // so a value that merely happens to be long would be written back
+        // quoted and the plugin could no longer read it. Only the test above,
+        // which saw the encoding, may say `note`.
+        return this.plainTextType(rawValue);
+    }
+
+    /**
+     * Register a struct definition for the object(s) found at `path`.
+     *
+     * `samples` is every object the field was seen holding — one for a plain
+     * struct, all of a list's entries for a list of them. Their keys are
+     * unioned, because a list's entries need not agree: RPG Maker omits a
+     * field left at its default, and a field missing from the definition is
+     * one the editor would not offer on any entry.
+     */
+    defineInferredStruct(samples, path, structDefinitions, depth) {
+        const name = this.inferredStructName(path, structDefinitions);
+        const fields = {};
+        // Claim the name before recursing, so a nested field cannot take it.
+        structDefinitions[name] = fields;
+
+        const keys = [];
+        for (const sample of samples) {
+            for (const key of Object.keys(sample)) {
+                if (!keys.includes(key)) keys.push(key);
+            }
+        }
+        for (const key of keys) {
+            const witness = samples.find(sample => sample[key] !== undefined);
+            const schema = this.blankParameterSchema();
+            schema.text = this.parameterLabelFromKey(key);
+            schema.type = this.inferParameterType(
+                witness[key], `${path} ${key}`, structDefinitions, depth + 1);
+            fields[key] = schema;
+        }
+        return name;
+    }
+
+    /** A struct name derived from where the value sits, and used by nothing else. */
+    inferredStructName(path, structDefinitions) {
+        const base = String(path).replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'Value';
+        let name = base;
+        let suffix = 2;
+        while (Object.prototype.hasOwnProperty.call(structDefinitions, name)) {
+            name = `${base}_${suffix++}`;
+        }
+        return name;
     }
 
     parsePluginParameterMetadata(source) {

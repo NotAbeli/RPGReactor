@@ -305,22 +305,114 @@ test('a plugin with no annotations still shows its saved parameters', () => {
     assert.equal(Object.keys(manager.parsePluginParameterMetadata(stripped)).length, 0,
         'nothing to parse, and the parser does not pretend otherwise');
 
+    const structs = {};
     const metadata = manager.parameterMetadataFromSavedValues({
-        QoL: '{"AutoLoad":"false"}',
+        'QoL:struct': '{"AutoLoad:eval":"false","Rate:num":"120","Note:json":"\\"hi\\""}',
         ScreenShake: 'true',
-        MenuBg: JSON.stringify([1, 2, 3].map(n => `{"Name":"Layer ${n}","Opacity":"192"}`))
-    });
+        'MenuBg:arraystruct': JSON.stringify(
+            [1, 2, 3].map(n => `{"Name:str":"Layer ${n}","Opacity:num":"192"}`))
+    }, structs);
 
-    assert.deepEqual(Object.keys(metadata), ['QoL', 'ScreenShake', 'MenuBg']);
-    // Short values get a plain field; a whole struct array gets a textarea,
-    // because editing one through a single-line input means scrolling
-    // sideways through JSON.
-    assert.equal(metadata.ScreenShake.type, 'string');
-    assert.equal(metadata.MenuBg.type, 'note');
+    assert.deepEqual(Object.keys(metadata), ['QoL:struct', 'ScreenShake', 'MenuBg:arraystruct']);
+
+    // The shape of the value says what the missing annotation would have: an
+    // object is a struct, a list of objects is a list of them.
+    assert.equal(metadata['QoL:struct'].type, 'struct<QoL_struct>');
+    assert.equal(metadata['MenuBg:arraystruct'].type, 'struct<MenuBg_arraystruct>[]');
+    assert.equal(metadata.ScreenShake.type, 'boolean');
+
+    // And each struct's own fields are read the same way, one level down.
+    const qol = structs.QoL_struct;
+    assert.deepEqual(Object.keys(qol), ['AutoLoad:eval', 'Rate:num', 'Note:json']);
+    assert.equal(qol['AutoLoad:eval'].type, 'boolean');
+    assert.equal(qol['Rate:num'].type, 'number');
+    // Stored JSON-encoded, so it must be written back JSON-encoded.
+    assert.equal(qol['Note:json'].type, 'note');
+
+    // A list's entries are unioned rather than sampled: RPG Maker omits a
+    // field left at its default, and a field missing from the definition is
+    // one no entry could be given.
+    assert.deepEqual(Object.keys(structs.MenuBg_arraystruct), ['Name:str', 'Opacity:num']);
+
+    // VisuStella writes each parameter's type into its own key, for its own
+    // loader. That is not a label, so the name without it is used instead.
+    assert.equal(metadata['QoL:struct'].text, 'QoL');
+    assert.equal(qol['Rate:num'].text, 'Rate');
+    assert.equal(metadata.ScreenShake.text, '', 'a key not written that way keeps its own name');
+
     // No @default was seen, so nothing may be presented as one.
-    assert.equal(metadata.QoL.default, null);
-    assert.equal(metadata.QoL.parent, null);
-    assert.equal(metadata.QoL.options.length, 0);
+    assert.equal(metadata['QoL:struct'].default, null);
+    assert.equal(metadata['QoL:struct'].parent, null);
+    assert.equal(metadata['QoL:struct'].options.length, 0);
+});
+
+test('a value is only offered as structured if editing it would give it back', () => {
+    /*
+     * The type is read off the value's shape rather than stated by the plugin,
+     * so it is a reading and can be a misreading. An `:eval` parameter holding
+     * the source text `[255, 255, 0, 160]` looks exactly like a list and is an
+     * expression; RPG Maker's own `__collapsed` bookkeeping is a bare array
+     * inside a struct whose every real field is a string. Both display fine
+     * and neither comes back byte for byte.
+     *
+     * So every reading is checked by performing it, and one that does not
+     * reproduce the stored text falls back to a text box — which is what it
+     * would have had anyway. Nothing is quietly rewritten by being looked at.
+     */
+    const PluginManager = loadBrowserClass(
+        path.join(repoRoot, 'src', 'PluginManager.js'), 'PluginManager');
+    const manager = new PluginManager({ getCurrentProject: () => ({ path: '/nowhere' }) });
+
+    const structs = {};
+    const metadata = manager.parameterMetadataFromSavedValues({
+        'CriticalColor:eval': '[255, 255, 0, 160]',
+        'Layout:struct': '{"Style:str":"list","__collapsed":["XPStyle"]}',
+        'Clean:struct': '{"Style:str":"list"}'
+    }, structs);
+
+    assert.equal(metadata['CriticalColor:eval'].type, 'string',
+        'an expression that reads as a list is left as its own source text');
+    assert.equal(metadata['Layout:struct'].type, 'string',
+        'a struct carrying RPG Maker\'s own bare-array bookkeeping is left as text');
+    assert.equal(metadata['Clean:struct'].type, 'struct<Clean_struct>',
+        'and a struct that does round-trip is still offered as one');
+
+    // A rejected reading takes its struct definitions with it, so nothing is
+    // left behind referring to a type no parameter has.
+    assert.deepEqual(Object.keys(structs), ['Clean_struct']);
+});
+
+test('every parameter offered as structured survives being saved', () => {
+    // Against the real thing: a project whose plugins were shipped with their
+    // annotations stripped, which is the only reason any of this exists.
+    const pluginsFile = path.join(repoRoot, '..', 'template', 'Project3', 'js', 'reactor_plugins.js');
+    if (!fs.existsSync(pluginsFile)) return;
+
+    const PluginManager = loadBrowserClass(
+        path.join(repoRoot, 'src', 'PluginManager.js'), 'PluginManager');
+    const manager = new PluginManager({ getCurrentProject: () => ({ path: '/nowhere' }) });
+
+    const text = fs.readFileSync(pluginsFile, 'utf8');
+    const plugins = JSON.parse(text.slice(text.indexOf('['), text.lastIndexOf(']') + 1));
+
+    let structured = 0;
+    for (const plugin of plugins) {
+        if (!plugin.parameters || Object.keys(plugin.parameters).length === 0) continue;
+        const definitions = {};
+        const metadata = manager.parameterMetadataFromSavedValues(plugin.parameters, definitions);
+        for (const key of Object.keys(metadata)) {
+            const type = metadata[key].type;
+            if (!type.includes('struct<') && !type.includes('[]')) continue;
+            structured++;
+            const stored = plugin.parameters[key];
+            const parsed = manager.deserializeComplexPluginParameter(stored, metadata[key], definitions);
+            assert.equal(
+                manager.serializeComplexPluginParameter(parsed, metadata[key], definitions),
+                stored,
+                `${plugin.name} / ${key} came back changed`);
+        }
+    }
+    assert.ok(structured > 100, `expected the corpus to exercise this; saw ${structured}`);
 });
 
 test('nothing is invented for a plugin that genuinely has no parameters', () => {
@@ -337,6 +429,6 @@ test('nothing is invented for a plugin that genuinely has no parameters', () => 
     // help text and pickers.
     const source = fs.readFileSync(path.join(repoRoot, 'src', 'PluginManager.js'), 'utf8');
     assert.match(source,
-        /if \(Object\.keys\(metadata\)\.length === 0 && pluginFileExists\) \{\s*\n\s*const fromValues = this\.parameterMetadataFromSavedValues\(plugin\.parameters\)/);
+        /if \(Object\.keys\(metadata\)\.length === 0 && pluginFileExists\) \{\s*\n\s*const fromValues = this\.parameterMetadataFromSavedValues\(plugin\.parameters, \{\}\)/);
     assert.match(source, /let metadata = paramMetadata;/);
 });
