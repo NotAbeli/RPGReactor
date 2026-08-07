@@ -949,6 +949,67 @@
         PIXI.AbstractRenderer.prototype.render.__reactorFlushesTextures = true;
     }
 
+    // -------------------------------------------------------------------------
+    // v8 kept the name ParticleContainer and changed what it draws. It renders
+    // `particleChildren` -- Particle objects handed to addParticle() -- and
+    // ignores ordinary children completely. A plugin written against v5 does
+    //
+    //     const c = new PIXI.ParticleContainer(10000, { tint: true });
+    //     c.addChild(sprite);
+    //
+    // and gets a container that accepts every sprite and draws none of them:
+    // no error, no warning, nothing on screen. Weather, particle and damage
+    // popup plugins all reach for it, and the failure looks like the effect
+    // simply never fires.
+    //
+    // A plain Container draws those children correctly. The batching v8's
+    // version buys is unreachable from the old API in any case -- it needs
+    // Particle instances, which no MZ-era plugin constructs -- so nothing is
+    // given up that these call sites could ever have had. v8's own class stays
+    // reachable as PIXI.__v8ParticleContainer for code written against it.
+    // -------------------------------------------------------------------------
+    if (_isV8Pixi && PIXI.Container && PIXI.ParticleContainer &&
+        !PIXI.ParticleContainer.__reactorLegacyContainer) {
+        PIXI.__v8ParticleContainer = PIXI.ParticleContainer;
+        PIXI.ParticleContainer = class ParticleContainer extends PIXI.Container {
+            // v5 signature: (maxSize, properties, batchSize, autoResize). Held
+            // as plain data because plugins read them back off the instance.
+            constructor(maxSize, properties, batchSize, autoResize) {
+                super();
+                this.maxSize = maxSize === undefined ? 1500 : maxSize;
+                this.properties = properties || {};
+                this.batchSize = batchSize === undefined ? 16384 : batchSize;
+                this.autoResize = !!autoResize;
+                this.interactiveChildren = false;
+            }
+            setProperties(properties) {
+                this.properties = properties || {};
+            }
+            // v8's own names, so code written against them does not throw. A
+            // Particle is not a display object and still will not draw, but
+            // failing quietly beats throwing inside someone's update loop.
+            addParticle(child) {
+                return this.addChild(child);
+            }
+            removeParticle(child) {
+                return this.removeChild(child);
+            }
+            get particleChildren() {
+                return this.children;
+            }
+        };
+        PIXI.ParticleContainer.__reactorLegacyContainer = true;
+    }
+    // The MV location for the same class. reactor_mv_compat defines this too,
+    // but it is switched off for MZ projects ($reactorMvCompat = false) and an
+    // MZ project can still carry an MV-era plugin.
+    if (_isV8Pixi && PIXI.ParticleContainer) {
+        PIXI.particles = PIXI.particles || {};
+        if (!PIXI.particles.ParticleContainer) {
+            PIXI.particles.ParticleContainer = PIXI.ParticleContainer;
+        }
+    }
+
     if (!PIXI.BaseTexture) {
         // In v5/v6/v7, baseTexture.resource was a CanvasResource/ImageResource
         // wrapper whose .source pointed to the raw HTMLCanvasElement / Image.
