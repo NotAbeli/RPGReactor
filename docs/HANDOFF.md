@@ -1,16 +1,29 @@
 # Handoff — 0.98.0 in progress
 
-Last updated 2026-08-03. Delete or rewrite this when the items below are closed.
+Last updated 2026-08-06. Delete or rewrite this when the items below are closed.
 
 **0.97.0 shipped on 2026-08-03** — tagged, pushed, and published at
 <https://github.com/Psychronic-Games/RPGReactor/releases/tag/v0.97.0>, source
 only with no attached binaries. 0.98.0 is open: version surfaces bumped,
 `[Unreleased - 0.98.0]` sections at the top of both changelogs.
 
-One commit is **not pushed**: `d9bb943`, the audio player fix and the 0.98.0
-opening. Push with `git push origin main` — git will ask for a username and a
-personal access token, since the remote is HTTPS and there is no credential
-helper. `gh` is not installed.
+Eight commits are **not pushed**, deliberately — the plan is to push once at the
+end of the weekend with the rest of 0.98.0 rather than in pieces. Oldest first:
+
+```
+d9bb943  audio player list sizing, and 0.98.0 opened
+cba16de  this handoff, rewritten for a cold start
+bdf4b77  3D maps drawn from parallaxes
+6a24450  <3d ground> / <no 3d object>
+2a4cb5a  window contents clipped where the window is        (PIXI 8)
+6d551af  stripped plugins' settings read from their shape
+019ca35  every tile layer gets the tileset                  (PIXI 8)
+5cbceaa  ParticleContainer draws its sprites                (PIXI 8)
+```
+
+Push with `git push origin main` — git will ask for a username and a personal
+access token, since the remote is HTTPS and there is no credential helper. `gh`
+is not installed.
 
 Releasing is now one command and is documented in the README:
 
@@ -23,7 +36,84 @@ notes from that version's changelog section and creates it with the token GitHub
 gives the run. Nothing to remember, no token to hold. Give the Actions run a
 minute before concluding it failed; that cost an hour on 0.97.0.
 
-## Start here, 2026-08-03
+## Start here, 2026-08-06
+
+Three PIXI 8 compatibility bugs closed, and they turned out to be the same bug
+three times, which is the useful part to carry forward: **v8 removed shared,
+globally mutable renderer state, and plugins had been depending on it without
+ever naming it.**
+
+- One implicit filter coordinate space became per-container, so `filterArea` is
+  read as *local* and multiplied by the world transform. Every plugin that
+  reimplements `Window._updateFilterArea` writes the screen-space rect the
+  engine documented, so the clip region landed off screen and every window's
+  contents vanished while its frame kept drawing. Fixed by writing world space
+  on all versions and converting afterwards, so a plugin's version lands right
+  without cooperating.
+- One global batcher and one stencil state became per-pipe, so no `WindowLayer`
+  subclass's `render` may run on v8 at all — the rule is the class, not the
+  missing call.
+- One shared tile atlas became per-layer image lists, so a tile layer a plugin
+  adds to the tilemap draws nothing unless `_updateBitmaps` hands it the
+  tileset. TF_Billboard puts every ☆ tile that also has passage flags on its own
+  layer; on a wooded map that is the trees, and each lost exactly those tiles.
+
+`PIXI.ParticleContainer` was closed pre-emptively on the same reasoning: v8 kept
+the name and renders only `particleChildren`, so `addChild(sprite)` draws
+nothing. Found by inventorying every `PIXI.*` member the runtime and bundled
+projects reference against what v8 provides and what the shim restores. That
+scan **cannot see obfuscated plugins** — they address PIXI through string
+arrays — so it is a floor, not a clean bill of health.
+
+Two more v8 divergences are real but have no confirmed caller here, and were
+deliberately left alone rather than shimmed on spec: `extract` /
+`generateTexture` given a display object rather than a render texture (v8
+computes no bounds for containers that render through sub-layers, so the result
+comes back empty), and filters on containers Reactor rebuilds.
+
+### Two heuristics that would have saved hours
+
+- **The editor runs no plugins.** "Correct in the editor, wrong in the game" for
+  anything drawn on a map means a plugin first, not tile logic. A long detour
+  went into diffing tile formulas and sheet bounds before that landed.
+- **Ask the user to paste a console snippet from their own playtest.** The CDP
+  harness could not reach Project 3's maps at all: the pre-title plugin owns the
+  scene, autorun events transfer the player straight back out, `SceneManager.goto`
+  never completes behind those plugins, and a minimized NW.js window dies at
+  `Scene_Boot` with a 0×0 canvas so it cannot be hidden. It also kept putting
+  windows on the user's screen. One snippet that ran `_addSpot` per cell inside a
+  try/catch and dumped each layer's `_elements` answered in a single round trip
+  what six harness runs had not.
+
+### Project 3 (Haven), the MZ compatibility test bed
+
+Its plugins were run through an annotation stripper — every `/*:` and
+`/*~struct~` block removed, ordinary comments left intact — so the Plugin
+Manager had no schema to show for 41 VisuStella files and 9 others. Not
+VisuStella's doing: for six plugins where both copies are the same version,
+deleting only those blocks from a fresh download reproduces the shipped file
+byte for byte.
+
+27 of 41 are now restored from the user's own downloads, 8 of them upgraded,
+with their `[Version]` tokens in `reactor_plugins.js` synced to match — VisuStella
+halts the game on a mismatch, which reads as a freeze. Originals are in
+`template/Project3/plugins-stripped-backup/`. The remaining 14 fall back to a
+schema inferred from the saved values' shape, gated so a parameter is only
+offered as structured when saving it reproduces the stored text byte for byte.
+
+**Removing a still-stripped plugin in the Plugin Manager destroys its settings
+permanently** — no schema to rebuild the form and no defaults in the file.
+`reactor_plugins.js` is the only copy of that game's configuration.
+
+Also worth knowing: the project runs **32px tiles** (`tileSize: 32`), which is
+unusual enough to be worth suspecting whenever something there measures wrong.
+
+### Still open from this session
+
+- Regions and object designations are not drawn in the 3D map view. Acknowledged
+  gap, not started.
+
+## 3D map objects — the open edges, 2026-08-03
 
 The 3D map-object system landed and is the thing with unfinished edges. In
 rough order of value:
