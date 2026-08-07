@@ -3297,8 +3297,42 @@ Tilemap.prototype._createLayers = function() {
 
 Tilemap.prototype._updateBitmaps = function() {
     if (this._needsBitmapsUpdate && this.isReady()) {
-        this._lowerLayer.setBitmaps(this._bitmaps);
-        this._upperLayer.setBitmaps(this._bitmaps);
+        /*
+         * Every tile layer on this tilemap, not only the two it made itself.
+         *
+         * On v5/v6/v7 the tile textures belonged to the shared renderer
+         * plugin: one atlas, uploaded once, addressed by set number, and a
+         * layer drew from it whether or not it had ever been handed the
+         * tileset. v8 has no shared tile renderer, so each layer builds its
+         * tiles out of its own image list -- and a layer that was never given
+         * one silently drops every tile it is asked to draw, because there is
+         * nothing to make a texture from and nothing to report.
+         *
+         * Plugins add layers here. TF_Billboard gives every ☆ tile that also
+         * carries passage flags a layer of its own, so it can stand it up as a
+         * billboard; on a wooded map those are the trees. Its layers are not
+         * reachable from _lowerLayer or _upperLayer, so each tree lost exactly
+         * the tiles that plugin had taken, in the shape of the tiles
+         * themselves, with a clean console and an editor that looked correct
+         * -- the editor runs no plugins.
+         *
+         * This runs behind isReady(), which is the point: handing out bitmaps
+         * that have not decoded yet is worse than handing out none. See
+         * _addV8Tile.
+         */
+        for (const child of this.children) {
+            if (typeof child.setBitmaps === "function") {
+                child.setBitmaps(this._bitmaps);
+            }
+        }
+        // Named explicitly as well: a plugin is free to hold these outside the
+        // child list, and they must be set up in that case too.
+        if (this._lowerLayer && this._lowerLayer.parent !== this) {
+            this._lowerLayer.setBitmaps(this._bitmaps);
+        }
+        if (this._upperLayer && this._upperLayer.parent !== this) {
+            this._upperLayer.setBitmaps(this._bitmaps);
+        }
         this._needsBitmapsUpdate = false;
         this._needsRepaint = true;
     }
@@ -3869,6 +3903,20 @@ Tilemap.Layer.prototype.addRect = function(setNumber, sx, sy, dx, dy, w, h) {
 Tilemap.Layer.prototype._addV8Tile = function(setNumber, sx, sy, dx, dy, w, h) {
     const image = this._images[setNumber];
     if (!image) return;
+    /*
+     * An image that has not decoded yet must not become a texture source.
+     *
+     * The source is cached on the image element and lives for the session, so
+     * one built from an image measuring nothing is 1x1 forever -- and every
+     * tile drawn from that sheet afterwards samples a single pixel and comes
+     * out as one flat colour. A forest turns into plain green squares, and it
+     * never recovers, because the sheet finishing loading does not invalidate
+     * anything. Paints run every frame from updateTransform, including the
+     * frames before the tileset arrives, so this is reachable in normal play
+     * and not a theoretical case. Skipping the tile costs one repaint;
+     * _updateBitmaps sets _needsRepaint when the images are genuinely ready.
+     */
+    if (!image.width && !image.naturalWidth && !image.videoWidth) return;
     // Cache a TextureSource per source image to avoid recreating on every tile.
     // scaleMode MUST be 'nearest' for tile sources -- with linear (the v8
     // default) we get sub-texel interpolation across tile edges in the source
