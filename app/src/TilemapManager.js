@@ -78,6 +78,14 @@ class TilemapManager {
             shadow: null
         };
 
+        // Layers manifest (Phase 1 Layers Panel). Source of truth lives on
+        // currentMap.reactor.layers; this is a cached reference used by
+        // applyLayerState() to set per-z container visibility / zIndex / dim.
+        this.layerManifest = null;
+        // Extended (z4+) tile sublayer containers, keyed by manifest layer id.
+        // Created/destroyed by rebuildExtraLayers(); rendered by renderExtraLayers().
+        this.extraLayerContainers = {};
+
         // Callbacks
         this.onZoomChange = null;
         // Pixel-art layer caches: the cached texture gets scaled by the
@@ -218,6 +226,12 @@ class TilemapManager {
             this._a2DecorKinds = null;
             this._eventColliderShapes = undefined;
             if (this.gridSize === 0) this.gridSize = 48;
+
+            // Migrate/validate the Layers Panel manifest onto the map, then
+            // cache it so createTilemapContainer -> applyLayerState can apply
+            // per-z visibility / order / dimming right after the containers
+            // are built.
+            this.migrateLayerManifest();
 
             // Create tilemap container
             this.createTilemapContainer();
@@ -529,39 +543,332 @@ class TilemapManager {
         // dimming so switching maps keeps the editing context visible.
         this.setLayerDimming(this._layerDimMode ?? 'auto');
 
+        // Re-apply Layers Panel state (visibility / zIndex order / dimming)
+        // against the freshly built containers. No-op until a manifest exists.
+        this.applyLayerState();
+
+        // (Re)build extended (z4+) sublayer containers and render them. The
+        // containers are children of this.container, so they must be recreated
+        // whenever the container is rebuilt (every map load).
+        this.rebuildExtraLayers();
+
         // Add panning support
         this.setupPanning();
     }
 
     /**
-     * MZ-style layer editing feedback: while a specific layer (0-3) is
-     * selected in the toolbar, every OTHER tile layer renders semi-
-     * transparent so it's obvious which tiles live on the active layer.
-     * 'auto' restores full opacity. Works per z-slot because each data
-     * z-slot renders into its own container (ground/lowerN plus its ☆
-     * upper twin); shadows belong to the A layer (z0) for this purpose.
+     * Dimming was removed: selecting a layer no longer fades the others (it
+     * just marks the paint target). This is kept as a no-op so legacy callers
+     * (e.g. MapEditor.setLayerMode) don't break; visibility is owned by
+     * applyLayerState via the Layers Panel manifest.
      */
     setLayerDimming(layerMode) {
         this._layerDimMode = layerMode;
-        const DIM = 0.35;
-        const sel = layerMode === 'auto' ? null : layerMode;
-        const apply = (name, z) => {
+        const apply = (name) => {
             const layer = this.layers[name];
-            if (layer) layer.alpha = (sel === null || sel === z) ? 1 : DIM;
+            if (layer) layer.alpha = 1;
         };
-        apply('ground', 0);
-        apply('upper0', 0);
-        apply('a1ground', 0);
-        apply('shadow', 0);
-        apply('lower1', 1);
-        apply('upper1', 1);
-        apply('a1lower1', 1);
-        apply('lower2', 2);
-        apply('upper2', 2);
-        apply('a1lower2', 2);
-        apply('lower3', 3);
-        apply('upper3', 3);
-        apply('a1lower3', 3);
+        apply('ground'); apply('upper0'); apply('a1ground'); apply('shadow');
+        apply('lower1'); apply('upper1'); apply('a1lower1');
+        apply('lower2'); apply('upper2'); apply('a1lower2');
+        apply('lower3'); apply('upper3'); apply('a1lower3');
+    }
+
+    // =====================================================================
+    // Layers Panel manifest
+    // Object sublayers are decoupled from tilesets: any B-F tile paints onto
+    // the active object layer. The first three object layers are backed by
+    // native z1/z2/z3 (preserves autotiles + ☆); further ones are extended
+    // (extraTileData). Object layers are created on demand — default one.
+    // =====================================================================
+    migrateLayerManifest() {
+        const map = this.currentMap;
+        if (!map) return null;
+        if (!map.reactor || typeof map.reactor !== 'object') map.reactor = {};
+        const objName = (typeof window !== 'undefined' && window.I18n) ? window.I18n.tText('Object') : 'Object';
+        let m = map.reactor.layers;
+        if (!m || typeof m !== 'object' || !Array.isArray(m.tileLayers)) {
+            m = { version: 1, tileLayers: [
+                { id: 'rr-l-a', name: 'A', kind: 'A', z: 0, visible: true, locked: false },
+                { id: 'rr-l-o1', name: objName + ' 1', kind: 'O', z: 1, visible: true, locked: false }
+            ], activeTileLayer: 'rr-l-a' };
+        }
+
+        // 1. Normalize legacy kind B/C/D -> 'O' (keep z). Rename default-letter
+        //    names. Mark legacy so empty ones can be collapsed below.
+        //    Also unify old extended kind 'X' -> 'O' (z stays null).
+        m.tileLayers.forEach(l => {
+            if (l.kind === 'B' || l.kind === 'C' || l.kind === 'D') {
+                if (l.name === l.kind) l.name = objName + ' ' + l.z;
+                l.kind = 'O';
+                l._legacy = true;
+            } else if (l.kind === 'X') {
+                l.kind = 'O';
+            }
+            if (l.visible === undefined) l.visible = true;
+            if (l.locked === undefined) l.locked = false;
+            if (l.z === undefined) l.z = 0;
+            if (!l.kind) l.kind = (l.z === 0) ? 'A' : 'O';
+        });
+
+        // 2. Determine which of z1/z2/z3 actually contain tiles (one pass).
+        const nonEmptyZ = new Set();
+        if (Array.isArray(map.data) && map.width && map.height) {
+            const ls = map.width * map.height;
+            for (let z = 1; z <= 3; z++) {
+                for (let i = 0; i < ls; i++) { if (map.data[z * ls + i]) { nonEmptyZ.add(z); break; } }
+            }
+        }
+
+        // 3. Drop legacy (B/C/D-origin) native object layers that are empty —
+        //    collapses old three-layer defaults down to the layers actually used.
+        m.tileLayers = m.tileLayers.filter(l => {
+            if (l._legacy && l.kind === 'O' && l.z >= 1 && l.z <= 3 && !nonEmptyZ.has(l.z)) return false;
+            return true;
+        });
+        m.tileLayers.forEach(l => { delete l._legacy; });
+
+        // 4. Add object layers for non-empty z that have no layer yet (covers
+        //    imported MZ maps whose manifest was just freshly created).
+        const haveZ = new Set(m.tileLayers.filter(l => l.kind === 'O' && typeof l.z === 'number').map(l => l.z));
+        for (const z of nonEmptyZ) {
+            if (!haveZ.has(z)) {
+                m.tileLayers.push({ id: 'rr-l-o-auto-' + z + '-' + Date.now().toString(36), name: objName + ' ' + z, kind: 'O', z: z, visible: true, locked: false });
+            }
+        }
+
+        // 5. Ensure A (z0) exists.
+        if (!m.tileLayers.some(l => l.kind === 'A' || l.z === 0)) {
+            m.tileLayers.unshift({ id: 'rr-l-a', name: 'A', kind: 'A', z: 0, visible: true, locked: false });
+        }
+        // 6. Ensure at least one object layer.
+        if (!m.tileLayers.some(l => l.kind === 'O')) {
+            m.tileLayers.push({ id: 'rr-l-o1', name: objName + ' 1', kind: 'O', z: 1, visible: true, locked: false });
+        }
+        // 7. Validate active id.
+        if (!m.tileLayers.find(l => l.id === m.activeTileLayer)) {
+            m.activeTileLayer = m.tileLayers[0].id;
+        }
+
+        // 8. Ensure extraTileData for extended (z==null) object layers; drop orphans.
+        if (!map.reactor.extraTileData || typeof map.reactor.extraTileData !== 'object') {
+            map.reactor.extraTileData = {};
+        }
+        const size = (map.width || 1) * (map.height || 1);
+        for (const l of m.tileLayers) {
+            if (l.z == null) {
+                if (!Array.isArray(map.reactor.extraTileData[l.id]) || map.reactor.extraTileData[l.id].length !== size) {
+                    map.reactor.extraTileData[l.id] = new Array(size).fill(0);
+                }
+            }
+        }
+        const knownX = new Set(m.tileLayers.filter(l => l.z == null).map(l => l.id));
+        for (const id of Object.keys(map.reactor.extraTileData)) {
+            if (!knownX.has(id)) delete map.reactor.extraTileData[id];
+        }
+
+        // 9. Event sublayers: three fixed, per MZ priorityType.
+        if (!Array.isArray(m.eventPriorityLayers) || m.eventPriorityLayers.length < 3) {
+            m.eventPriorityLayers = [
+                { priority: 0, visible: true },
+                { priority: 1, visible: true },
+                { priority: 2, visible: true }
+            ];
+        }
+        m.eventPriorityLayers.forEach(l => { if (l.visible === undefined) l.visible = true; });
+        if (m.activeEventPriority !== 0 && m.activeEventPriority !== 2) m.activeEventPriority = 1;
+        if (m.editScope !== 'all' && m.editScope !== 'selected') m.editScope = 'selected';
+
+        m.version = 1;
+        map.reactor.layers = m;
+        this.layerManifest = m;
+        return m;
+    }
+
+    // Cache a manifest provided by LayersPanel (the panel owns the object).
+    // Does not apply; caller (or createTilemapContainer) invokes applyLayerState.
+    setLayerManifest(manifest) {
+        this.layerManifest = manifest || null;
+    }
+
+    // Apply per-z visibility and z-order from the cached manifest. Rendering
+    // itself is unchanged — updateTiles still fills the containers from data[]
+    // z0-z3; we only toggle .visible / .zIndex. (No dimming: selecting a layer
+    // just marks the paint target — the panel highlight shows which is active.)
+    applyLayerState(opts = {}) {
+        const m = this.layerManifest;
+        const L = this.layers;
+        if (!m || !L || !L.ground) return;
+
+        // One "group" of containers per z-slot (static + ☆ upper + A1 live +
+        // shadow, which belongs to the A layer).
+        const groups = [
+            { z: 0, members: [L.ground, L.a1ground, L.shadow, L.upper0] },
+            { z: 1, members: [L.lower1, L.a1lower1, L.upper1] },
+            { z: 2, members: [L.lower2, L.a1lower2, L.upper2] },
+            { z: 3, members: [L.lower3, L.a1lower3, L.upper3] }
+        ];
+
+        m.tileLayers.forEach((entry, orderIdx) => {
+            if (entry.z == null) {
+                // Extended (z4+) sublayer: its own container.
+                const c = this.extraLayerContainers[entry.id];
+                if (c) {
+                    c.visible = !!entry.visible;
+                    c.zIndex = orderIdx * 10;
+                }
+                return;
+            }
+            const grp = groups.find(g => g.z === entry.z);
+            if (!grp) return;
+            grp.members.forEach((c, subIdx) => {
+                if (!c) return;
+                c.visible = !!entry.visible;
+                c.zIndex = orderIdx * 10 + subIdx;
+            });
+        });
+
+        // Anchors: keep the non-tile layers in stable positions relative to
+        // the tile groups. sortableChildren is already enabled on the container
+        // (MapEditor.createPreviewLayer), so explicit zIndex is authoritative.
+        if (L.checkerboard) L.checkerboard.zIndex = -100;
+        if (L.parallax) L.parallax.zIndex = -90;
+        if (L.stamps) L.stamps.zIndex = 900;
+        if (L.layerHighlight) L.layerHighlight.zIndex = 960;
+        // Events container is created by EventManager; find by label.
+        if (this.container && this.container.children) {
+            for (const child of this.container.children) {
+                if (child && child.label === 'events') { child.zIndex = 950; break; }
+            }
+        }
+    }
+
+    // =====================================================================
+    // Extended (z4+) tile sublayers — editor rendering
+    // Each extended layer has its own PIXI.Container; tiles come from
+    // currentMap.reactor.extraTileData[id] (flat w*h array). Only normal
+    // B-F tiles are supported (no autotiles), per the Phase 3 design.
+    // =====================================================================
+
+    // (Re)create one container per extended manifest entry and render it.
+    // Call after the manifest changes (add/delete) or on map load.
+    rebuildExtraLayers() {
+        const m = this.layerManifest;
+        if (!m || !this.container || !this.currentMap) return;
+        const extra = this.currentMap.reactor.extraTileData || {};
+        const wanted = new Set(m.tileLayers.filter(l => l.z == null).map(l => l.id));
+
+        // Remove containers for entries that no longer exist.
+        for (const id of Object.keys(this.extraLayerContainers)) {
+            if (!wanted.has(id)) {
+                const c = this.extraLayerContainers[id];
+                if (c && c.parent) c.parent.removeChild(c);
+                c?.destroy?.({ children: true });
+                delete this.extraLayerContainers[id];
+            }
+        }
+        // Create containers for new entries.
+        for (const id of wanted) {
+            if (!this.extraLayerContainers[id]) {
+                const c = new PIXI.Container();
+                c.label = 'extra:' + id;
+                c.cullable = true;
+                c.eventMode = 'none';
+                this.container.addChild(c);
+                this.extraLayerContainers[id] = c;
+            }
+            // Ensure the data array matches map dimensions (rezero if stale).
+            const size = this.currentMap.width * this.currentMap.height;
+            if (!Array.isArray(extra[id]) || extra[id].length !== size) {
+                extra[id] = new Array(size).fill(0);
+            }
+        }
+        this.renderExtraLayers();
+    }
+
+    // Render every extended layer's tiles from its data array.
+    renderExtraLayers() {
+        const m = this.layerManifest;
+        if (!m || !this.currentMap) return;
+        const extra = this.currentMap.reactor.extraTileData || {};
+        for (const entry of m.tileLayers) {
+            if (entry.z != null) continue;
+            const c = this.extraLayerContainers[entry.id];
+            if (!c) continue;
+            c.removeChildren();
+            const arr = extra[entry.id];
+            if (!arr) continue;
+            const { width, height } = this.currentMap;
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const tileId = arr[y * width + x];
+                    if (tileId > 0) this._renderExtraTile(entry.id, tileId, x, y, c);
+                }
+            }
+        }
+    }
+
+    // Render one normal tile into an extended container. Extended layers only
+    // accept B-F (non-autotile) tiles; autotile ids are ignored.
+    _renderExtraTile(layerId, tileId, x, y, container) {
+        if (tileId <= 0) return;
+        if (this.isAutotile(tileId) || tileId >= 1536) return; // B-F only
+        const sprite = this._makeNormalTileSprite(tileId, x, y);
+        if (!sprite) return;
+        container.addChild(sprite);
+        // Track per-cell for fast single-tile updates.
+        if (!this._extraSprites) this._extraSprites = {};
+        this._extraSprites[`${layerId}_${x}_${y}`] = sprite;
+    }
+
+    // Re-render a single cell of an extended layer after a paint/erase.
+    updateExtraTile(x, y, layerId) {
+        const container = this.extraLayerContainers[layerId];
+        if (!container || !this.currentMap) return;
+        const extra = this.currentMap.reactor.extraTileData || {};
+        const arr = extra[layerId];
+        if (!arr) return;
+        if (!this._extraSprites) this._extraSprites = {};
+        const key = `${layerId}_${x}_${y}`;
+        const old = this._extraSprites[key];
+        if (old) {
+            if (old.parent) old.parent.removeChild(old);
+            old.destroy?.();
+            delete this._extraSprites[key];
+        }
+        const tileId = arr[y * this.currentMap.width + x];
+        if (tileId > 0) this._renderExtraTile(layerId, tileId, x, y, container);
+    }
+
+    // Shared factory: build a normal-tile PIXI.Sprite (B-F). Extracted from
+    // renderNormalTile so extended layers reuse the exact same texel logic.
+    _makeNormalTileSprite(tileId, x, y) {
+        if (tileId === 0) return null;
+        const setNumber = 5 + Math.floor(tileId / 256); // B=5..G=10
+        const texture = this.tilesetTextures[setNumber];
+        if (!texture) return null;
+        const w = this.TILE_WIDTH;
+        const h = this.TILE_HEIGHT;
+        const localTileId = tileId % 256;
+        const sx = ((Math.floor(localTileId / 128) % 2) * 8 + (localTileId % 8)) * w;
+        const sy = (Math.floor((localTileId % 256) / 8) % 16) * h;
+        const cacheKey = `${setNumber}_${sx}_${sy}`;
+        let tileTexture = this.textureCache[cacheKey];
+        if (!tileTexture) {
+            tileTexture = new PIXI.Texture({
+                source: texture.source,
+                frame: new PIXI.Rectangle(sx, sy, w, h)
+            });
+            this.textureCache[cacheKey] = tileTexture;
+        }
+        const sprite = new PIXI.Sprite(tileTexture);
+        sprite.x = x * this.TILE_WIDTH;
+        sprite.y = y * this.TILE_HEIGHT;
+        sprite.width = w;
+        sprite.height = h;
+        sprite.roundPixels = true;
+        sprite.eventMode = 'none';
+        return sprite;
     }
 
     setupPanning() {

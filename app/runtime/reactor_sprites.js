@@ -3895,7 +3895,8 @@ Spriteset_Map.prototype.createTilemap = function() {
     const tilemap = new Tilemap();
     tilemap.tileWidth = $gameMap.tileWidth();
     tilemap.tileHeight = $gameMap.tileHeight();
-    tilemap.setData($gameMap.width(), $gameMap.height(), $gameMap.data());
+    tilemap.setData($gameMap.width(), $gameMap.height(), $gameMap.data(),
+        (typeof $dataMap !== "undefined" && $dataMap) ? $dataMap.reactor : null);
     tilemap.horizontalWrap = $gameMap.isLoopHorizontal();
     tilemap.verticalWrap = $gameMap.isLoopVertical();
     this._baseSprite.addChild(tilemap);

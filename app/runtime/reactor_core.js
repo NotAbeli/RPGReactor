@@ -3113,10 +3113,22 @@ Tilemap.prototype.destroy = function() {
  * @param {number} height - The height of the map in number of tiles.
  * @param {array} data - The one dimensional array for the map data.
  */
-Tilemap.prototype.setData = function(width, height, data) {
+Tilemap.prototype.setData = function(width, height, data, reactor) {
     this._mapWidth = width;
     this._mapHeight = height;
     this._mapData = data;
+    // Reactor extended (z4+) tile sublayers. The manifest (layer order /
+    // visibility) and per-layer tile arrays live on $dataMap.reactor. Native
+    // data[] is unaffected, so base MZ rendering is unchanged.
+    this._reactor = reactor || null;
+    if (reactor && reactor.layers && Array.isArray(reactor.layers.tileLayers)) {
+        this._extendedLayers = reactor.layers.tileLayers.filter(
+            l => l.z == null && l.visible !== false
+        );
+    } else {
+        this._extendedLayers = [];
+    }
+    this._needsRepaint = true;
 };
 
 /**
@@ -3296,6 +3308,40 @@ Tilemap.prototype._addSpot = function(startX, startY, x, y) {
         this._addSpotTile(tileId2, dx, dy);
         this._addSpotTile(tileId3, dx, dy);
     }
+
+    // Reactor extended (z4+) sublayers: render their B-F tiles into the lower
+    // layer, on top of the native lower tiles, in manifest order. Native
+    // ☆ ("upper") tiles still render above these, matching the editor.
+    const extended = this._extendedLayers;
+    if (extended && extended.length) {
+        for (let i = 0; i < extended.length; i++) {
+            const tId = this._readExtraTileData(mx, my, extended[i].id);
+            if (tId > 0) {
+                this._addTile(this._lowerLayer, tId, dx, dy);
+            }
+        }
+    }
+};
+
+// Read one tile of an extended sublayer from $dataMap.reactor.extraTileData.
+// Respects horizontal/vertical wrap like _readMapData.
+Tilemap.prototype._readExtraTileData = function(x, y, layerId) {
+    const r = this._reactor;
+    if (!r || !r.extraTileData) return 0;
+    const arr = r.extraTileData[layerId];
+    if (!arr) return 0;
+    const width = this._mapWidth;
+    const height = this._mapHeight;
+    if (this.horizontalWrap) {
+        x = x.mod(width);
+    }
+    if (this.verticalWrap) {
+        y = y.mod(height);
+    }
+    if (x >= 0 && x < width && y >= 0 && y < height) {
+        return arr[y * width + x] || 0;
+    }
+    return 0;
 };
 
 Tilemap.prototype._addSpotTile = function(tileId, dx, dy) {

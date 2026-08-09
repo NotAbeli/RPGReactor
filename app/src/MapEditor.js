@@ -20,7 +20,11 @@ class MapEditor {
         this.shadowPaintMode = null; // 'add' or 'remove' - set on first click, maintained during drag
         this.lastPreviewTile = { x: -1, y: -1, quadrant: -1 }; // PERFORMANCE: Track last preview position to avoid recreating
         this.lastPaintedTile = { x: -1, y: -1, quadrant: -1 }; // PERFORMANCE: Track last painted tile to avoid redundant paints
-        this.layerMode = 'auto'; // auto, or layer number (0-3)
+        this.layerMode = 'auto'; // auto, or layer number (0-3). Driven by LayersPanel.
+        this.lockedLayerZs = new Set(); // z-slots locked via the Layers panel
+        this.activeExtendedLayerId = null; // id of active z4+ sublayer (null = native)
+        this.activeLayerKind = 'O';        // 'A' (walls/floor) | 'O' (objects) — set by LayersPanel
+        this.editScope = 'selected'; // 'selected' (active layer) | 'all' (all z-slots)
         this.enabled = true; // Whether map editor is enabled (disabled during event mode)
         this.pendingAutotileUpdates = []; // Accumulate autotile updates during drag, process on mouseup
         this.preserveAutotileShape = false; // Shift-paint without reconnecting autotile shapes
@@ -59,7 +63,12 @@ class MapEditor {
         const stampLayerSize = width * height;
         const data = new Array(stampLayerSize * 6).fill(0);
 
-        for (let layer = 0; layer < 6; layer++) {
+        // 'selected' scope captures only the active native z (the other 5 layers
+        // stay zero so applyMapStamp writes nothing into them). 'all' captures
+        // every layer (the original multi-layer slice behavior).
+        const layersToCapture = (this.editScope === 'all') ? [0, 1, 2, 3, 4, 5] : [this._activeNativeZ()];
+
+        for (const layer of layersToCapture) {
             for (let y = 0; y < height; y++) {
                 for (let x = 0; x < width; x++) {
                     const sourceIndex = layer * sourceLayerSize + (minY + y) * map.width + minX + x;
@@ -98,6 +107,9 @@ class MapEditor {
 
         const mapLayerSize = map.width * map.height;
         const stampLayerSize = stamp.width * stamp.height;
+        // 'selected' scope writes only the active native z; 'all' writes every
+        // layer the stamp captured.
+        const layersToApply = (this.editScope === 'all') ? [0, 1, 2, 3, 4, 5] : [this._activeNativeZ()];
         let changed = false;
         for (let y = 0; y < stamp.height; y++) {
             for (let x = 0; x < stamp.width; x++) {
@@ -105,7 +117,7 @@ class MapEditor {
                 const targetY = anchor.y + y;
                 if (targetX < 0 || targetY < 0 || targetX >= map.width || targetY >= map.height) continue;
 
-                for (let layer = 0; layer < 6; layer++) {
+                for (const layer of layersToApply) {
                     const sourceIndex = layer * stampLayerSize + y * stamp.width + x;
                     const targetIndex = layer * mapLayerSize + targetY * map.width + targetX;
                     const value = stamp.data[sourceIndex] || 0;
@@ -512,10 +524,144 @@ class MapEditor {
 
     setLayerMode(mode) {
         this.layerMode = mode;
-        // MZ-style feedback: dim every other layer while one is selected
+        // MZ-style feedback: dim every other layer while one is selected.
+        // (The Layers Panel's applyLayerState reconciles the final alpha, but
+        // this keeps legacy callers — and map open — consistent on their own.)
         if (this.tilemapManager && this.tilemapManager.setLayerDimming) {
             this.tilemapManager.setLayerDimming(mode);
         }
+    }
+
+    // Called by LayersPanel to communicate which z-slots are locked.
+    setLockedLayerZs(zs) {
+        this.lockedLayerZs = new Set((zs || []).filter(z => typeof z === 'number'));
+    }
+
+    // Edit scope from the Layers panel header toggle: 'selected' (active layer
+    // only) or 'all' (all z-slots for erase + the RMB map stamp).
+    setEditScope(scope) {
+        this.editScope = (scope === 'all') ? 'all' : 'selected';
+    }
+
+    // The active native z for scope-aware operations (stamp 'selected', erase
+    // 'selected'). Falls back to 1 when an extended sublayer is active.
+    _activeNativeZ() {
+        return (typeof this.layerMode === 'number') ? this.layerMode : 1;
+    }
+
+    isCurrentLayerLocked() {
+        // Extended (z4+) sublayer: look up the manifest entry directly.
+        if (this.activeExtendedLayerId) {
+            const m = this.tilemapManager && this.tilemapManager.layerManifest;
+            const e = m && m.tileLayers.find(l => l.id === this.activeExtendedLayerId);
+            return !!(e && e.locked);
+        }
+        const z = typeof this.layerMode === 'number' ? this.layerMode : -1;
+        return this.lockedLayerZs.has(z);
+    }
+
+    _isActiveExtended() {
+        return !!this.activeExtendedLayerId;
+    }
+
+    // Get the extraTileData array for the active extended layer (or null).
+    _activeExtraData() {
+        const id = this.activeExtendedLayerId;
+        if (!id || !this.tilemapManager || !this.tilemapManager.currentMap) return null;
+        const map = this.tilemapManager.currentMap;
+        const extra = map.reactor && map.reactor.extraTileData;
+        if (!extra) return null;
+        let arr = extra[id];
+        const size = map.width * map.height;
+        if (!Array.isArray(arr) || arr.length !== size) {
+            arr = new Array(size).fill(0);
+            extra[id] = arr;
+        }
+        return arr;
+    }
+
+    // Paint/erase a single tile on the active extended sublayer.
+    _paintExtendedTile(x, y) {
+        const map = this.tilemapManager && this.tilemapManager.currentMap;
+        if (!map) return;
+        if (x < 0 || x >= map.width || y < 0 || y >= map.height) return;
+        const arr = this._activeExtraData();
+        if (!arr) return;
+        const idx = y * map.width + x;
+
+        if (this.eraserMode) {
+            if (arr[idx] === 0) return;
+            arr[idx] = 0;
+            this.tilemapManager.updateExtraTile(x, y, this.activeExtendedLayerId);
+            return;
+        }
+
+        // Only normal B-F tiles are allowed on extended layers.
+        const selectedTiles = this.tilesetPaletteViewer && this.tilesetPaletteViewer.selectedTiles;
+        if (!selectedTiles || selectedTiles.length === 0) return;
+        const tile = selectedTiles[0];
+        const tileId = this.getTileIdFromPalettePosition(tile.x, tile.y, tile.layer || this.tilesetPaletteViewer.currentLayer, x, y);
+        if (tileId == null || tileId <= 0) return;
+        if (this.tilemapManager.isAutotile(tileId) || tileId >= 1536) return; // B-F only
+        if (arr[idx] === tileId) return;
+        arr[idx] = tileId;
+        this.tilemapManager.updateExtraTile(x, y, this.activeExtendedLayerId);
+    }
+
+    // Flood fill on the active extended sublayer (B-F tiles only).
+    _fillExtended(startX, startY) {
+        const map = this.tilemapManager && this.tilemapManager.currentMap;
+        if (!map) return;
+        const arr = this._activeExtraData();
+        if (!arr) return;
+        const w = map.width, h = map.height;
+        if (startX < 0 || startX >= w || startY < 0 || startY >= h) return;
+
+        if (this.eraserMode) {
+            const target = arr[startY * w + startX];
+            if (target === 0) return;
+            const stack = [[startX, startY]];
+            const visited = new Set();
+            const changed = [];
+            while (stack.length) {
+                const [cx, cy] = stack.pop();
+                const key = cy * w + cx;
+                if (visited.has(key)) continue;
+                visited.add(key);
+                if (cx < 0 || cx >= w || cy < 0 || cy >= h) continue;
+                if (arr[key] !== target) continue;
+                arr[key] = 0;
+                changed.push([cx, cy]);
+                stack.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
+            }
+            for (const [cx, cy] of changed) this.tilemapManager.updateExtraTile(cx, cy, this.activeExtendedLayerId);
+            return;
+        }
+
+        const selectedTiles = this.tilesetPaletteViewer && this.tilesetPaletteViewer.selectedTiles;
+        if (!selectedTiles || selectedTiles.length === 0) return;
+        const tile = selectedTiles[0];
+        const fillId = this.getTileIdFromPalettePosition(tile.x, tile.y, tile.layer || this.tilesetPaletteViewer.currentLayer, startX, startY);
+        if (fillId == null || fillId <= 0) return;
+        if (this.tilemapManager.isAutotile(fillId) || fillId >= 1536) return;
+
+        const target = arr[startY * w + startX];
+        if (target === fillId) return;
+        const stack = [[startX, startY]];
+        const visited = new Set();
+        const changed = [];
+        while (stack.length) {
+            const [cx, cy] = stack.pop();
+            const key = cy * w + cx;
+            if (visited.has(key)) continue;
+            visited.add(key);
+            if (cx < 0 || cx >= w || cy < 0 || cy >= h) continue;
+            if (arr[key] !== target) continue;
+            arr[key] = fillId;
+            changed.push([cx, cy]);
+            stack.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
+        }
+        for (const [cx, cy] of changed) this.tilemapManager.updateExtraTile(cx, cy, this.activeExtendedLayerId);
     }
 
     setEnabled(enabled) {
@@ -1173,6 +1319,16 @@ class MapEditor {
         this.lastPaintedTile.y = y;
         this.lastPaintedTile.quadrant = -1;
 
+        // Layers panel: a locked layer rejects all edits (paint / erase / shadow).
+        if (this.isCurrentLayerLocked()) return;
+
+        // Extended (z4+) sublayer fast-path: writes to extraTileData, not the
+        // MZ data[] array. Handles paint + erase; ignores shadow/region.
+        if (this._isActiveExtended()) {
+            this._paintExtendedTile(x, y);
+            return;
+        }
+
         // If eraser mode, erase layer-aware (no tile selection needed).
         // On the Regions tab the eraser clears the REGION at the cell —
         // it used to silently delete map tiles hidden under the overlay.
@@ -1210,6 +1366,16 @@ class MapEditor {
         const selectedTiles = this.tilesetPaletteViewer.selectedTiles;
         if (!selectedTiles || selectedTiles.length === 0) {
             return;
+        }
+
+        // Category guard: a B-F (object) tile cannot be painted on the walls
+        // layer (z0). The Layers panel's category auto-switch normally keeps
+        // these consistent; this rejects any mismatch (e.g. an object tile
+        // selected while the walls layer is active). A5/A1-A4 are walls tiles
+        // and pass through.
+        if (this.activeLayerKind === 'A') {
+            const selLayer = selectedTiles[0].layer || currentLayer;
+            if (['B', 'C', 'D', 'E', 'F', 'G'].includes(selLayer)) return;
         }
 
         const layerIndex = this.getLayerIndex(currentLayer);
@@ -1439,6 +1605,13 @@ class MapEditor {
 
         const { width, height, data } = this.tilemapManager.currentMap;
         if (mapX < 0 || mapX >= width || mapY < 0 || mapY >= height) return;
+
+        // Category guard (same as paintTile): no object tiles on the walls layer.
+        if (this.activeLayerKind === 'A') {
+            const currentLayer = this.tilesetPaletteViewer.currentLayer;
+            const selLayer = paletteTile.layer || currentLayer;
+            if (['B', 'C', 'D', 'E', 'F', 'G'].includes(selLayer)) return;
+        }
 
         // Get the current layer from palette
         const currentLayer = this.tilesetPaletteViewer.currentLayer;
@@ -1938,6 +2111,15 @@ class MapEditor {
     fillArea(startX, startY) {
         if (!this.tilemapManager.currentMap) return;
 
+        // Layers panel: respect locked layers for fill too.
+        if (this.isCurrentLayerLocked()) return;
+
+        // Extended (z4+) sublayer fast-path.
+        if (this._isActiveExtended()) {
+            this._fillExtended(startX, startY);
+            return;
+        }
+
         if (this.eraserMode) {
             this.eraseFillArea(startX, startY);
             return;
@@ -1945,6 +2127,13 @@ class MapEditor {
 
         const { width, height, data } = this.tilemapManager.currentMap;
         const currentLayer = this.tilesetPaletteViewer.currentLayer;
+
+        // Category guard: no object tiles on the walls layer.
+        if (this.activeLayerKind === 'A') {
+            const sel = this.tilesetPaletteViewer.selectedTiles && this.tilesetPaletteViewer.selectedTiles[0];
+            const selLayer = (sel && sel.layer) || currentLayer;
+            if (['B', 'C', 'D', 'E', 'F', 'G'].includes(selLayer)) return;
+        }
 
         // Region fill (z5): flood by region value; the tile path below would
         // default the 'R' tab to layer 0 and fill tiles instead.
@@ -3238,6 +3427,16 @@ class MapEditor {
     // Erase a tile at the specified position (layer-aware)
     eraseTile(x, y, data, width, height, layerSize) {
         const basePos = y * width + x;
+
+        // 'all' scope: clear every tile z-slot at this cell.
+        if (this.editScope === 'all') {
+            const erased = [];
+            for (let layer = 3; layer >= 0; layer--) {
+                const index = layer * layerSize + basePos;
+                if (data[index] !== 0) { data[index] = 0; erased.push(layer); }
+            }
+            return erased;
+        }
 
         if (this.layerMode === 'auto') {
             // Auto erase should target the topmost actual tile, not the current

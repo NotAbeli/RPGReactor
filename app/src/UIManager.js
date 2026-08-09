@@ -28,15 +28,13 @@ class UIManager {
             button.addEventListener('click', (e) => {
                 const action = e.currentTarget.getAttribute('data-action');
                 const tool = e.currentTarget.getAttribute('data-tool');
-                const layer = e.currentTarget.getAttribute('data-layer');
 
                 if (action) {
                     this.handleToolbarAction(action);
                 } else if (tool) {
                     this.setDrawTool(tool);
-                } else if (layer !== null) {
-                    this.setLayerMode(layer);
                 }
+                // Layer selection is handled by the Layers panel (sidebar).
             });
         });
 
@@ -1070,30 +1068,14 @@ class UIManager {
         }
     }
 
+    // Layer mode is now driven by the Layers panel; this stub kept for any
+    // external callers, forwarded to MapEditor so behavior is preserved.
     setLayerMode(layer) {
         if (!this.callbacks.getMapEditor) return;
-
-        // Disable event mode if active (switching to tileset mode)
-        if (this.callbacks.disableEventModeIfActive) {
-            this.callbacks.disableEventModeIfActive();
-        }
-
         const mapEditor = this.callbacks.getMapEditor();
         if (!mapEditor) return;
-
-        // Convert layer string to appropriate value
         const layerValue = layer === 'auto' ? 'auto' : parseInt(layer);
-        mapEditor.setLayerMode(layerValue);
-
-        // Update button visual states
-        document.querySelectorAll('.layer-mode').forEach(btn => {
-            btn.classList.remove('active');
-        });
-
-        const activeBtn = document.querySelector(`[data-layer="${layer}"]`);
-        if (activeBtn) {
-            activeBtn.classList.add('active');
-        }
+        if (mapEditor.setLayerMode) mapEditor.setLayerMode(layerValue);
     }
 
     updateUndoRedoButtons(canUndo, canRedo) {

@@ -183,12 +183,7 @@
             <button class="tool-button" data-action="shadow-pen" title="Shadow Pen (Toggle shadows on tiles)" data-i18n-title="toolbar.title.shadowPen" style="font-size: var(--toolbar-icon-size); line-height: 1;">🌓</button>
             <button class="tool-button" data-action="eraser" title="Erase Tiles (Layer-Aware)" data-i18n-title="toolbar.title.eraser"><img src="images/icon-erase.png" onerror="this.style.display='none';"></button>
             <div class="toolbar-separator"></div>
-            <!-- Layer Selection -->
-            <button class="tool-button layer-mode active" data-layer="auto" title="Auto-Select Layer (Smart Stacking)" data-i18n-title="toolbar.title.autoLayer"><img src="images/icon-LA.png" onerror="this.style.display='none'; this.parentElement.innerHTML='LA';"></button>
-            <button class="tool-button layer-mode" data-layer="0" title="Layer 1" data-i18n-title="toolbar.title.layer1"><img src="images/icon-L1.png" onerror="this.style.display='none'; this.parentElement.innerHTML='L1';"></button>
-            <button class="tool-button layer-mode" data-layer="1" title="Layer 2" data-i18n-title="toolbar.title.layer2"><img src="images/icon-L2.png" onerror="this.style.display='none'; this.parentElement.innerHTML='L2';"></button>
-            <button class="tool-button layer-mode" data-layer="2" title="Layer 3" data-i18n-title="toolbar.title.layer3"><img src="images/icon-L3.png" onerror="this.style.display='none'; this.parentElement.innerHTML='L3';"></button>
-            <button class="tool-button layer-mode" data-layer="3" title="Layer 4" data-i18n-title="toolbar.title.layer4"><img src="images/icon-L4.png" onerror="this.style.display='none'; this.parentElement.innerHTML='L4';"></button>
+            <!-- Layer selection now lives in the Layers panel (right sidebar) -->
 
             <!-- Tools Section -->
             <div class="toolbar-separator"></div>
@@ -264,7 +259,17 @@
                     </div>
                     <div class="resize-handle" data-target="tileset-palette-section" style="display: none;"></div>
 
-                    <!-- Events Section -->
+                    <!-- Layers Panel Section -->
+                    <div class="sidebar-section resizable-section" id="layers-section" style="display: none; flex: 1; min-height: 120px;">
+                        <div class="sidebar-header" id="layers-section-header"><!-- LayersPanel builds title + scope toggle here --></div>
+                        <div class="sidebar-content" id="layers-content" style="overflow-y: auto; padding: 0; min-height: 0;">
+                            <!-- LayersPanel mounts here -->
+                        </div>
+                    </div>
+                    <div class="resize-handle" data-target="layers-section" style="display: none;"></div>
+
+                    <!-- Events Section — hidden: events now live inside the Layers panel
+                         (grouped by priorityType: Below / Same / Above).
                     <div class="sidebar-section resizable-section" id="events-section" style="display: none; flex: 1; min-height: 100px;">
                         <div class="sidebar-header" data-i18n="sidebar.events">Events</div>
                         <div class="sidebar-content" id="events-list" style="overflow-y: auto; padding: 0; min-height: 0;">
@@ -272,6 +277,7 @@
                         </div>
                     </div>
                     <div class="resize-handle" data-target="events-section" style="display: none;"></div>
+                    -->
 
                     <div class="sidebar-section resizable-section" style="flex: 1; min-height: 100px; display: flex; flex-direction: column;">
                         <div class="sidebar-header" data-i18n="sidebar.maps">Maps</div>
@@ -972,9 +978,10 @@
     <script src="src/ProjectManager.js"></script>
     <script src="src/DatabaseManager.js"></script>
     <script src="src/ReactorClipboard.js"></script>
-    <!-- Map editing subsystems -->
-    <script src="src/TilemapManager.js"></script>
-    <script src="src/RegionManager.js"></script>
+                    <!-- Map editing subsystems -->
+                    <script src="src/TilemapManager.js"></script>
+                    <script src="src/LayersPanel.js"></script>
+                    <script src="src/RegionManager.js"></script>
     <script src="src/MapEditor.js"></script>
     <script src="src/MapEditor3D.js"></script>
     <script src="src/TilesetPaletteViewer.js"></script>

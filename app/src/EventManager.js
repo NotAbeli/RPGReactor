@@ -25,6 +25,7 @@ class EventManager {
         this.snapGrid = 48; // Grid snap for event placement (shared with MapEditor)
         this.eventViewMode = 'game'; // 'game' | 'minimal'
         this._sheetCache = {};
+        this._thumbCache = {}; // event-thumbnail dataURLs, keyed by graphic signature
         this._tilesetNamesCache = null;
         this._dragStartX = 0; // Axis-lock: drag start position
         this._dragStartY = 0;
@@ -235,6 +236,7 @@ class EventManager {
         this.currentMap = mapData;
         this.selectedEvent = null;
         this._sheetCache = {};
+        this._thumbCache = {};
         this._tilesetNamesCache = null;
 
         // Re-initialize event layer for the new map
@@ -1183,7 +1185,7 @@ class EventManager {
                 },
                 moveSpeed: 3,
                 moveType: 0,
-                priorityType: 1, // Same level as characters
+                priorityType: this.getActiveEventPriority(),
                 stepAnime: false,
                 through: false,
                 trigger: 0,
@@ -1253,7 +1255,7 @@ class EventManager {
                 },
                 moveSpeed: 3,
                 moveType: 0,
-                priorityType: 1,
+                priorityType: this.getActiveEventPriority(),
                 stepAnime: false,
                 through: false,
                 trigger: 0,
@@ -1706,6 +1708,89 @@ class EventManager {
         this.renderStartingPositions();
     }
 
+    // =====================================================================
+    // Event sublayers (Layers Panel)
+    // Events are grouped by their first page's MZ priorityType:
+    //   0 = Below (Под), 1 = Same (На уровне), 2 = Above (Над).
+    // Moving an event between sublayers sets priorityType on ALL its pages.
+    // Per-sublayer visibility lives on map.reactor.layers.eventPriorityLayers.
+    // =====================================================================
+
+    // Ensure currentMap.reactor.layers.eventPriorityLayers exists (3 entries,
+    // one per MZ priorityType: 0=Below, 1=Same, 2=Above). Idempotent.
+    getEventPriorityLayers() {
+        const map = this.currentMap;
+        if (!map) return [{priority:0,visible:true},{priority:1,visible:true},{priority:2,visible:true}];
+        if (!map.reactor || typeof map.reactor !== 'object') map.reactor = {};
+        if (!map.reactor.layers || typeof map.reactor.layers !== 'object') {
+            map.reactor.layers = { version: 1, tileLayers: [], activeTileLayer: null };
+        }
+        const m = map.reactor.layers;
+        if (!Array.isArray(m.eventPriorityLayers) || m.eventPriorityLayers.length < 3) {
+            m.eventPriorityLayers = [
+                { priority: 0, visible: true },
+                { priority: 1, visible: true },
+                { priority: 2, visible: true }
+            ];
+        }
+        m.eventPriorityLayers.forEach(l => { if (l.visible === undefined) l.visible = true; });
+        return m.eventPriorityLayers;
+    }
+
+    // An event's sublayer = its first (default) page's priorityType.
+    getEventPriority(event) {
+        if (!event || !Array.isArray(event.pages) || !event.pages[0]) return 1;
+        const p = event.pages[0].priorityType;
+        return (p === 0 || p === 1 || p === 2) ? p : 1;
+    }
+
+    // Which priority new events are created on (set by clicking a sublayer in
+    // the Layers panel). Stored on the manifest; default 1 = Same.
+    getActiveEventPriority() {
+        const m = this.currentMap && this.currentMap.reactor && this.currentMap.reactor.layers;
+        const p = m && m.activeEventPriority;
+        return (p === 0 || p === 1 || p === 2) ? p : 1;
+    }
+
+    setActiveEventPriority(priority) {
+        if (priority !== 0 && priority !== 1 && priority !== 2) return;
+        const m = this.getEventPriorityLayers && this.currentMap
+            ? (this.currentMap.reactor && this.currentMap.reactor.layers)
+            : null;
+        if (m) m.activeEventPriority = priority;
+    }
+
+    // Count events whose first-page priorityType equals `priority`.
+    countEventsOnPriority(priority) {
+        if (!this.currentMap || !Array.isArray(this.currentMap.events)) return 0;
+        return this.currentMap.events.filter(ev => ev && this.getEventPriority(ev) === priority).length;
+    }
+
+    // Move an event to a different priority sublayer: sets priorityType on ALL
+    // of its pages (the event lives consistently on one layer). Triggers a
+    // re-render so the panel + scene stay in sync.
+    moveEventToPriority(eventId, priority) {
+        if (priority !== 0 && priority !== 1 && priority !== 2) return;
+        const ev = this.currentMap && this.currentMap.events && this.currentMap.events[eventId];
+        if (!ev || !Array.isArray(ev.pages)) return;
+        if (this.getEventPriority(ev) === priority) return;
+        for (const page of ev.pages) page.priorityType = priority;
+        this.renderEvents();
+    }
+
+    // Apply per-priority visibility to existing event sprites without a rebuild.
+    applyEventLayerVisibility() {
+        if (!this.eventSprites || !this.currentMap) return;
+        const layers = this.getEventPriorityLayers();
+        const visByPrio = new Map(layers.map(l => [l.priority, l.visible !== false]));
+        for (const [eventId, sprite] of this.eventSprites) {
+            const event = this.currentMap.events ? this.currentMap.events[eventId] : null;
+            if (!event || !sprite) continue;
+            const p = this.getEventPriority(event);
+            sprite.visible = visByPrio.has(p) ? visByPrio.get(p) : true;
+        }
+    }
+
     // Render events on the map
     renderEvents() {
         if (!this.eventContainer || !this.currentMap) return;
@@ -1742,82 +1827,20 @@ class EventManager {
         // Update selection highlight in case event status changed
         this.updateSelectionHighlight();
 
+        // Apply per-priority visibility (Layers Panel event sublayers).
+        this.applyEventLayerVisibility();
+
+        // Notify the Layers Panel so its event grouping/counts stay in sync.
+        if (typeof this._notifyLayersPanel === 'function') {
+            try { this._notifyLayersPanel(); } catch (e) { /* ignore */ }
+        }
     }
 
-    // Update the events list in the sidebar
+    // The standalone Events sidebar section is hidden (Phase 2 redesign):
+    // events now live inside the Layers panel grouped by priorityType. This
+    // is kept as a no-op so legacy call sites (renderEvents) don't break.
     updateEventsList() {
-        const tt = (text) => (typeof window !== 'undefined' && window.I18n) ? window.I18n.tText(text) : text;
-        const eventsListEl = document.getElementById('events-list');
-        const eventsSectionEl = document.getElementById('events-section');
-
-        if (!eventsListEl || !eventsSectionEl) return;
-
-        // Show the events section when a map is loaded (use 'flex' explicitly for reliable layout)
-        eventsSectionEl.style.display = 'flex';
-
-        // Reset scroll position to prevent hidden headers (NW.js overflow:hidden scroll bug)
-        eventsSectionEl.scrollTop = 0;
-        const sidebar = document.getElementById('sidebar');
-        if (sidebar) sidebar.scrollTop = 0;
-
-        // Clear existing list, keeping the list's own scroll position so a
-        // re-render doesn't jump back to the top of a long event list.
-        const prevListScroll = eventsListEl.scrollTop;
-        eventsListEl.innerHTML = '';
-
-        const events = Array.isArray(this.currentMap?.events)
-            ? this.currentMap.events.filter(Boolean)
-            : [];
-        if (events.length === 0) {
-            eventsListEl.innerHTML = `<div class="tree-item" style="color: var(--color-text-muted); padding: 6px 8px;">${tt('No events on this map')}</div>`;
-            return;
-        }
-
-        // Add each event to the list
-        events.forEach(event => {
-            const item = document.createElement('div');
-            item.className = 'tree-item event-list-item';
-            item.dataset.eventId = event.id;
-            item.textContent = `${String(event.id).padStart(3, '0')}: ${event.name || tt('Unnamed Event')}`;
-            item.style.padding = '6px 8px';
-            item.style.cursor = 'pointer';
-            item.style.fontSize = '14px';
-            item.style.borderRadius = '3px';
-            item.style.margin = '2px 4px';
-
-            // Click handler - select event on map
-            item.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.selectEventById(event.id);
-            });
-
-            // Double-click handler - open event editor
-            item.addEventListener('dblclick', (e) => {
-                e.stopPropagation();
-                this.selectEventById(event.id);
-                this.editEvent(event);
-            });
-
-            // Right-click context menu
-            item.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.selectEventById(event.id);
-                this.showContextMenu(e.clientX, e.clientY, event.x, event.y, event);
-            });
-
-            eventsListEl.appendChild(item);
-        });
-
-        // Update selection highlight after populating list
-        this.updateEventListSelection();
-
-        eventsListEl.scrollTop = prevListScroll;
-
-        // Update resize handles visibility
-        if (this.sidebarResizer) {
-            this.sidebarResizer.refresh();
-        }
+        // intentionally empty
     }
 
     // Highlight the selected event in the sidebar list
@@ -2071,6 +2094,162 @@ class EventManager {
         htmlImg.onerror = () => {
             console.error('Failed to load tileset sheet:', url);
         };
+        htmlImg.src = url;
+        return null;
+    }
+
+    // =====================================================================
+    // Event thumbnails (Layers Panel)
+    // Returns a dataURL for the event's first-page graphic (tile or character),
+    // or null if the source image isn't loaded yet (loading is kicked off and
+    // the panel is refreshed via _notifyLayersPanel on load). Results cached.
+    // =====================================================================
+    getEventThumbnail(event, size = 24) {
+        if (!event || !Array.isArray(event.pages) || !event.pages[0]) return null;
+        const image = event.pages[0].image;
+        if (!image) return null;
+        const tileId = image.tileId;
+        const sig = tileId > 0
+            ? `t:${tileId}`
+            : (image.characterName
+                ? `c:${image.characterName}:${image.characterIndex || 0}:${image.direction || 2}:${image.pattern != null ? image.pattern : 1}`
+                : null);
+        if (!sig) return null;
+        if (this._thumbCache[sig]) return this._thumbCache[sig];
+
+        let url = null;
+        if (tileId > 0) url = this._tileThumbUrl(tileId, size);
+        else url = this._charThumbUrl(image, size);
+        if (url) this._thumbCache[sig] = url;
+        return url; // null → image still loading; refresh fires on load
+    }
+
+    _tileThumbUrl(tileId, size) {
+        const r = this._tileSrcRect(tileId);
+        if (!r) return null;
+        const img = this._loadSheetHtmlImage(r.layer);
+        if (!img) return null;
+        const c = document.createElement('canvas');
+        c.width = size; c.height = size;
+        const ctx = c.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, r.sx, r.sy, 48, 48, 0, 0, size, size);
+        return c.toDataURL();
+    }
+
+    // Mirror createTileSprite's source-rect math (tileId → {layer, sx, sy}).
+    _tileSrcRect(tileId) {
+        const T = 48;
+        let layer = null, tileX = 0, tileY = 0;
+        if (tileId >= 2048) {
+            const kind = Math.floor((tileId - 2048) / 48);
+            if (kind < 16) { layer = 'A1'; tileX = kind % 8; tileY = Math.floor(kind / 8); }
+            else if (kind < 48) { layer = 'A2'; tileX = (kind - 16) % 8; tileY = Math.floor((kind - 16) / 8); }
+            else if (kind < 80) { layer = 'A3'; tileX = (kind - 48) % 8; tileY = Math.floor((kind - 48) / 8); }
+            else if (kind < 128) { layer = 'A4'; tileX = (kind - 80) % 8; tileY = Math.floor((kind - 80) / 8); }
+        } else if (tileId >= 1536) {
+            layer = 'A5';
+            const local = tileId - 1536;
+            tileX = local % 8; tileY = Math.floor(local / 8);
+        } else {
+            let local = tileId;
+            if (tileId >= 768) { layer = 'E'; local = tileId - 768; }
+            else if (tileId >= 512) { layer = 'D'; local = tileId - 512; }
+            else if (tileId >= 256) { layer = 'C'; local = tileId - 256; }
+            else { layer = 'B'; }
+            tileX = local % 8; tileY = Math.floor(local / 8);
+            if (tileY >= 16) { tileX += 8; tileY -= 16; }
+        }
+        if (!layer) return null;
+        let sx = tileX * T, sy = tileY * T;
+        if (tileId >= 2048) {
+            sx = tileX * T * 2;
+            if (layer === 'A1' || layer === 'A2') sy = tileY * T * 3;
+            else if (layer === 'A3') sy = tileY * T * 2;
+            else if (layer === 'A4') {
+                sy = 0;
+                for (let r = 0; r < tileY; r++) sy += (r % 2 === 0) ? T * 3 : T * 2;
+            }
+        }
+        return { layer, sx, sy };
+    }
+
+    // Load (or return cached) tileset sheet as an HTMLImageElement for canvas
+    // drawing. Shares _sheetCache with _getSheetTexture. Triggers a panel
+    // refresh once loaded.
+    _loadSheetHtmlImage(layer) {
+        const LAYER_INDEX = { 'A1': 0, 'A2': 1, 'A3': 2, 'A4': 3, 'A5': 4, 'B': 5, 'C': 6, 'D': 7, 'E': 8 };
+        const idx = LAYER_INDEX[layer];
+        if (idx == null) return null;
+        const names = this._getTilesetNames();
+        if (!names || !names[idx]) return null;
+        const currentProject = this.projectController && this.projectController.getCurrentProject ? this.projectController.getCurrentProject() : null;
+        if (!currentProject) return null;
+        const path = require('path');
+        const imgPath = path.join(currentProject.path, 'img', 'tilesets', names[idx] + '.png');
+        const url = (typeof RRAssetFiles !== 'undefined' && RRAssetFiles.toUrl)
+            ? RRAssetFiles.toUrl(imgPath)
+            : 'file://' + imgPath.replace(/\\/g, '/');
+        if (this._sheetCache[url]) return this._sheetCache[url].loaded ? this._sheetCache[url].img : null;
+        const entry = { img: null, loaded: false };
+        this._sheetCache[url] = entry;
+        const htmlImg = new Image();
+        htmlImg.onload = () => {
+            entry.img = htmlImg; entry.loaded = true;
+            this._thumbCache = {}; // invalidate so thumbnails regenerate
+            if (typeof this._notifyLayersPanel === 'function') this._notifyLayersPanel();
+        };
+        htmlImg.onerror = () => { /* leave unloaded */ };
+        htmlImg.src = url;
+        return null;
+    }
+
+    _charThumbUrl(image, size) {
+        const img = this._loadCharacterHtmlImage(image);
+        if (!img) return null;
+        // Mirror createCharacterSprite cell math.
+        const isBig = (typeof RRAssetFiles !== 'undefined' && RRAssetFiles.isBigCharacter) ? RRAssetFiles.isBigCharacter(image.characterName) : false;
+        const dirRow = ({ 2: 0, 4: 1, 6: 2, 8: 3 })[image.direction || 2] || 0;
+        let cw, ch, baseX, baseY;
+        if (isBig) {
+            cw = img.width / 3; ch = img.height / 4; baseX = 0; baseY = dirRow * ch;
+        } else {
+            cw = img.width / 12; ch = img.height / 8;
+            const col = (image.characterIndex || 0) % 4;
+            const row = Math.floor((image.characterIndex || 0) / 4);
+            baseX = col * 3 * cw; baseY = (row * 4 + dirRow) * ch;
+        }
+        const pattern = image.pattern != null ? image.pattern : 1;
+        const sx = baseX + pattern * cw;
+        const sy = baseY;
+        const c = document.createElement('canvas');
+        c.width = size; c.height = size;
+        const ctx = c.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, sx, sy, cw, ch, 0, 0, size, size);
+        return c.toDataURL();
+    }
+
+    _loadCharacterHtmlImage(image) {
+        if (!image || !image.characterName) return null;
+        const currentProject = this.projectController && this.projectController.getCurrentProject ? this.projectController.getCurrentProject() : null;
+        if (!currentProject) return null;
+        const path = require('path');
+        const filename = image.characterName.endsWith('.png') ? image.characterName : image.characterName + '.png';
+        const filePath = path.join(currentProject.path, 'img', 'characters', filename);
+        const url = (typeof RRAssetFiles !== 'undefined' && RRAssetFiles.toUrl)
+            ? RRAssetFiles.toUrl(filePath)
+            : 'file://' + filePath.replace(/\\/g, '/');
+        if (this._sheetCache[url]) return this._sheetCache[url].loaded ? this._sheetCache[url].img : null;
+        const entry = { img: null, loaded: false };
+        this._sheetCache[url] = entry;
+        const htmlImg = new Image();
+        htmlImg.onload = () => {
+            entry.img = htmlImg; entry.loaded = true;
+            this._thumbCache = {};
+            if (typeof this._notifyLayersPanel === 'function') this._notifyLayersPanel();
+        };
+        htmlImg.onerror = () => { /* leave unloaded */ };
         htmlImg.src = url;
         return null;
     }

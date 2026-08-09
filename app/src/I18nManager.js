@@ -302,6 +302,7 @@ const RR_I18N_STRINGS = {
         'welcome.step.test': 'Test your game instantly with the built-in playtest feature',
         'welcome.step.export': 'Export your game for Windows, Mac, and Linux',
         'sidebar.tilesetPalette': 'Tileset Palette',
+        'sidebar.layers': 'Layers',
         'sidebar.events': 'Events',
         'sidebar.noEvents': 'No events on this map',
         'sidebar.maps': 'Maps',

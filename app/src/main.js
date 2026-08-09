@@ -28,6 +28,7 @@ class RPGReactor {
         this.tilesetEditor = null;
         this.tilesetPaletteViewer = null;
         this.eventManager = null;
+        this.layersPanel = null;
 
         // PERFORMANCE: Cache last displayed coordinates to avoid unnecessary DOM updates
         this.lastDisplayedCoords = { x: null, y: null };
@@ -226,6 +227,22 @@ class RPGReactor {
                 tilemapManager.onZoomChange = () => {
                     this.updateMapZoom();
                 };
+            }
+
+            // Layers Panel: create/mount once, then load the manifest from the
+            // current map. The manifest was already migrated by TilemapManager
+            // during loadMap, so loadFromMap only renders + applies state.
+            this.ensureLayersPanel();
+            if (this.layersPanel && tilemapManager && tilemapManager.currentMap) {
+                // Refresh references: TilemapManager is recreated on project switch.
+                this.layersPanel.tilemapManager = tilemapManager;
+                this.layersPanel.mapEditor = this.mapEditor;
+                this.layersPanel.tilesetPaletteViewer = this.tilesetPaletteViewer;
+                this.layersPanel.eventManager = this.eventManager;
+                if (this.eventManager) {
+                    this.eventManager._notifyLayersPanel = () => this.layersPanel && this.layersPanel.refresh();
+                }
+                this.layersPanel.loadFromMap(tilemapManager.currentMap);
             }
 
             // Restore event mode state if it was on
@@ -541,6 +558,10 @@ class RPGReactor {
         this.uiManager.updateStatus(window.I18n
             ? window.I18n.t(newMode ? 'status.eventModeEnabled' : 'status.eventModeDisabled')
             : (newMode ? 'Event mode enabled' : 'Event mode disabled'));
+
+        // Layers Panel: entering event mode dims tile layers to read-only;
+        // exiting restores the active tile layer as the paint target.
+        if (this.layersPanel) this.layersPanel.onEventModeChanged(newMode);
     }
 
     // Disable event mode if currently active (called when switching to tileset tools)
@@ -586,9 +607,51 @@ class RPGReactor {
             if (this.mapEditor) this.mapEditor.refreshBackgroundGrid();
             if (this.uiManager) this.uiManager.refreshGridButton();
 
+            // Layers Panel: leaving event mode restores tile-layer editing.
+            if (this.layersPanel) this.layersPanel.onEventModeChanged(false);
+
             // Update status
             this.uiManager.updateStatus('Tileset mode enabled');
         }
+    }
+
+    // Create and mount the Layers Panel once; reuses the existing instance
+    // across map loads. Idempotent.
+    ensureLayersPanel() {
+        if (this.layersPanel) return;
+        const content = document.getElementById('layers-content');
+        if (!content) return;
+        this.layersPanel = new LayersPanel({
+            tilemapManager: this.projectController.getTilemapManager(),
+            mapEditor: this.mapEditor,
+            tilesetPaletteViewer: this.tilesetPaletteViewer,
+            eventManager: this.eventManager,
+            callbacks: {
+                disableEventModeIfActive: () => this.disableEventModeIfActive(),
+                enterEventMode: () => this.ensureEventMode(),
+                updateStatus: (msg) => this.uiManager && this.uiManager.updateStatus(msg)
+            }
+        });
+        this.layersPanel.mount(content);
+
+        // EventManager notifies the panel after event changes (create/delete/move)
+        // so the priority-sublayer grouping + counts stay in sync.
+        if (this.eventManager) {
+            this.eventManager._notifyLayersPanel = () => this.layersPanel && this.layersPanel.refresh();
+        }
+
+        // Show the sidebar section and let the resizer pick up its handle.
+        const section = document.getElementById('layers-section');
+        if (section) section.style.display = 'flex';
+        if (this.sidebarResizer) this.sidebarResizer.refresh();
+    }
+
+    // Enter event mode if not already active (used by the Layers panel when an
+    // event layer is clicked). Does NOT toggle off.
+    ensureEventMode() {
+        if (!this.eventManager) return;
+        if (this.eventManager.eventMode) return;
+        this.toggleEventMode();
     }
 
     // Show tileset palette viewer
@@ -681,6 +744,12 @@ class RPGReactor {
                 if (this.mapEditor) this.mapEditor.refreshBackgroundGrid();
                 if (this.uiManager && this.uiManager.refreshGridButton) {
                     this.uiManager.refreshGridButton();
+                }
+                // Layers Panel: selecting a palette tab (A/B/C/D...) makes the
+                // matching tile layer active. Synced one-way here; the panel
+                // guards against feedback loops when IT drives the palette.
+                if (this.layersPanel) {
+                    this.layersPanel.setActiveByPaletteTab(layerName);
                 }
             };
         }
