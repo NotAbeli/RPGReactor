@@ -48,11 +48,22 @@ class LayersPanel {
         return { 0: LayersPanel.tt('Below'), 1: LayersPanel.tt('Same level'), 2: LayersPanel.tt('Above') };
     }
 
-    // ---------- Manifest migration (idempotent, structural) ----------
-    // TilemapManager.migrateLayerManifest does the data-aware object-layer
-    // reconciliation at load; this mirror normalizes kind/names and ensures
-    // structure for code paths that touch the manifest without a fresh load.
+    // ---------- Manifest migration (idempotent) ----------
+    // Delegates to TilemapManager.migrateLayerManifest when available — it is
+    // the single source of truth (data-aware: reconciles object layers with
+    // actual z1-z3 data, normalizes legacy kinds, ensures structure). The
+    // fallback below covers code paths that touch the manifest without a
+    // TilemapManager (e.g. a fresh map not yet loaded into one).
     migrateMapManifest(map) {
+        if (!map) return null;
+        if (this.tilemapManager && this.tilemapManager.currentMap === map
+            && typeof this.tilemapManager.migrateLayerManifest === 'function') {
+            return this.tilemapManager.migrateLayerManifest();
+        }
+        return LayersPanel._migrateManifestFallback(map);
+    }
+
+    static _migrateManifestFallback(map) {
         if (!map) return null;
         if (!map.reactor || typeof map.reactor !== 'object') map.reactor = {};
         let m = map.reactor.layers;
@@ -61,8 +72,6 @@ class LayersPanel {
             map.reactor.layers = m;
         }
         const objName = LayersPanel.tt('Object');
-        // Normalize legacy kind B/C/D -> 'O' (keep z). Rename default-letter names.
-        // Old extended kind 'X' -> 'O' (z stays null).
         m.tileLayers.forEach(l => {
             if (l.kind === 'B' || l.kind === 'C' || l.kind === 'D') {
                 if (l.name === l.kind) l.name = objName + ' ' + l.z;
@@ -75,18 +84,15 @@ class LayersPanel {
             if (l.z === undefined) l.z = 0;
             if (!l.kind) l.kind = (l.z === 0) ? 'A' : 'O';
         });
-        // Ensure A (z0) exists.
         if (!m.tileLayers.some(l => l.kind === 'A' || l.z === 0)) {
             m.tileLayers.unshift({ id: 'rr-l-a', name: 'A', kind: 'A', z: 0, visible: true, locked: false });
         }
-        // Ensure at least one object layer.
         if (!m.tileLayers.some(l => l.kind === 'O')) {
             m.tileLayers.push({ id: 'rr-l-o1', name: objName + ' 1', kind: 'O', z: 1, visible: true, locked: false });
         }
         if (!m.tileLayers.find(l => l.id === m.activeTileLayer)) {
             m.activeTileLayer = m.tileLayers[0].id;
         }
-        // Event sublayers: three fixed, one per MZ priorityType.
         if (!Array.isArray(m.eventPriorityLayers) || m.eventPriorityLayers.length < 3) {
             m.eventPriorityLayers = [
                 { priority: 0, visible: true },
@@ -332,7 +338,7 @@ class LayersPanel {
             const eye = this._eyeSvg(layer.visible !== false);
             const ap = (this.manifest.activeEventPriority === 0 || this.manifest.activeEventPriority === 2) ? this.manifest.activeEventPriority : 1;
             const isActivePrio = p === ap;
-            const activeMark = isActivePrio ? '<span class="rr-ev-sub-active" title="new events land here" style="color:var(--color-accent-bright);font-size:10px;flex:0 0 auto;">\u25CF</span>' : '';
+            const activeMark = isActivePrio ? `<span class="rr-ev-sub-active" title="${tt('new events land here')}" style="color:var(--color-accent-bright);font-size:10px;flex:0 0 auto;">\u25CF</span>` : '';
             const rows = evs.map(ev => this._eventRowHtml(ev, p)).join('');
             // Active sublayer mirrors the active tile-row style: gold left bar
             // (3px) + bg-hover + ●. Inactive headers render in a neutral grey.
@@ -835,16 +841,23 @@ class LayersPanel {
         if (this.manifest.activeTileLayer === id) this.manifest.activeTileLayer = tgt.id;
 
         this._markDirty();
-        // Full visual refresh — merge is a rare, structural operation.
+        // Incremental visual refresh — update only the affected z-slots/cells
+        // instead of a full renderMap(). Extended containers are rebuilt (their
+        // data changed) when either side is extended.
         if (src.z == null || tgt.z == null) {
             if (typeof tm.rebuildExtraLayers === 'function') tm.rebuildExtraLayers();
         }
-        if (typeof tm.renderMap === 'function') {
-            tm.renderMap();
-        } else if (typeof tm.updateTiles === 'function') {
+        if (typeof tm.updateTiles === 'function') {
             const ups = [];
-            for (let y = 0; y < map.height; y++) for (let x = 0; x < map.width; x++) ups.push({ x, y, layer: 0 });
-            tm.updateTiles(ups);
+            const zs = [];
+            if (typeof src.z === 'number') zs.push(src.z);
+            if (typeof tgt.z === 'number' && tgt.z !== src.z) zs.push(tgt.z);
+            for (const z of zs) {
+                for (let y = 0; y < map.height; y++) {
+                    for (let x = 0; x < map.width; x++) ups.push({ x, y, layer: z });
+                }
+            }
+            if (ups.length) tm.updateTiles(ups);
         }
         this._syncActiveToMapEditor();
         this._pushToTilemap();

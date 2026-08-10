@@ -28,6 +28,7 @@ class RPGReactor {
         this.tilesetEditor = null;
         this.tilesetPaletteViewer = null;
         this.eventManager = null;
+        this.lightManager = null;
         this.layersPanel = null;
 
         // PERFORMANCE: Cache last displayed coordinates to avoid unnecessary DOM updates
@@ -77,6 +78,7 @@ class RPGReactor {
             isGridLockedTileset: () => (this.mapEditor ? this.mapEditor.isGridLockedTileset() : true),
             toggleHitboxes: () => this.toggleHitboxes(),
             toggleEventView: () => this.toggleEventView(),
+            toggleLightPreview: () => this.toggleLightPreview(),
             openDatabase: (type) => this.openDatabase(type),
             showAudioPlayer: () => this.audioPlayer.showAudioPlayer(),
             showOptions: () => this.optionsManager.show(),
@@ -87,6 +89,7 @@ class RPGReactor {
             getMapEditor: () => this.mapEditor,
             getEventManager: () => this.eventManager,
             toggleEventMode: () => this.toggleEventMode(),
+            toggleLightMode: () => this.toggleLightMode(),
             disableEventModeIfActive: () => this.disableEventModeIfActive(),
             installRuntime: () => this.projectController.installReactorRuntime(),
             openBuildManager: () => this.buildManager.open(),
@@ -220,12 +223,25 @@ class RPGReactor {
                 this.eventManager.clearUndoHistory();
             }
 
+            // Light Manager: instantiate once, then re-init layer + map on every
+            // load (TilemapManager is recreated on project switch).
+            if (!this.lightManager) {
+                this.lightManager = new LightManager(this.projectController, this.databaseManager);
+                // Floating panel, mounted in the map workspace (top-right corner).
+                this.lightManager.buildPanel();
+            }
+            this.lightManager.initializeLightLayer(this.projectController.getTilemapManager());
+            const lmMap = this.projectController.getTilemapManager().currentMap;
+            this.lightManager.setCurrentMap(lmMap);
+            this.lightManager.onCoordinatesChange = (x, y) => this.updateMapCoordinates(x, y);
+
             // Set up zoom change callback
             const tilemapManager = this.projectController.getTilemapManager();
             if (tilemapManager) {
                 this.applyAutotileAnimationPreference(this.optionsManager.getAnimateAutotiles());
                 tilemapManager.onZoomChange = () => {
                     this.updateMapZoom();
+                    if (this.lightManager) this.lightManager.refresh();
                 };
             }
 
@@ -483,6 +499,12 @@ class RPGReactor {
 
         // Toggle event mode
         const newMode = !this.eventManager.eventMode;
+        // Mutual exclusion with light mode: exit light mode when entering event mode.
+        if (newMode && this.lightManager && this.lightManager.lightMode) {
+            this.lightManager.setLightMode(false);
+            const lb = document.getElementById('mode-light-btn');
+            if (lb) lb.classList.remove('active');
+        }
         this.eventManager.setEventMode(newMode);
 
         // Disable/enable map editor based on event mode
@@ -564,9 +586,45 @@ class RPGReactor {
         if (this.layersPanel) this.layersPanel.onEventModeChanged(newMode);
     }
 
+    // Toggle light mode (Освещение): show + edit SDLight sources on the map.
+    toggleLightMode() {
+        if (!this.lightManager || !this.lightManager.currentMap) {
+            this.uiManager.updateStatus(window.I18n ? window.I18n.t('status.loadMapFirst') : 'Load a map first');
+            return;
+        }
+        const newMode = !this.lightManager.lightMode;
+
+        // Mutual exclusion with event mode: exit event mode when entering light mode.
+        if (newMode && this.eventManager && this.eventManager.eventMode) {
+            this.toggleEventMode();
+        }
+        // Light mode also disables the tile editor (like event mode does).
+        if (this.mapEditor) {
+            this.mapEditor.setEnabled(!newMode);
+            if (!newMode) this.mapEditor.setupMapInteraction();
+        }
+
+        this.lightManager.setLightMode(newMode);
+
+        // Active state on the toolbar button
+        const btn = document.getElementById('mode-light-btn');
+        if (btn) btn.classList.toggle('active', newMode);
+
+        this.uiManager.updateStatus(window.I18n
+            ? window.I18n.t(newMode ? 'status.lightModeEnabled' : 'status.lightModeDisabled')
+            : (newMode ? 'Light mode enabled' : 'Light mode disabled'));
+    }
+
     // Disable event mode if currently active (called when switching to tileset tools)
     disableEventModeIfActive() {
         if (!this.eventManager) return;
+
+        // Also drop light mode when returning to tile tools.
+        if (this.lightManager && this.lightManager.lightMode) {
+            this.lightManager.setLightMode(false);
+            const lb = document.getElementById('mode-light-btn');
+            if (lb) lb.classList.remove('active');
+        }
 
         // If event mode is currently active, deactivate it
         if (this.eventManager.eventMode) {
@@ -929,6 +987,19 @@ class RPGReactor {
         this.eventManager.renderEvents();
         const btn = document.getElementById('overlay-ev-btn');
         if (btn) btn.classList.toggle('active', this.eventManager.eventViewMode === 'game');
+    }
+
+    // Toggle the playtest-style lighting preview overlay (the ☀ overlay button).
+    toggleLightPreview() {
+        if (!this.lightManager || !this.lightManager.currentMap) {
+            this.uiManager.updateStatus(window.I18n ? window.I18n.t('status.loadMapFirst') : 'Load a map first');
+            return;
+        }
+        const next = !this.lightManager.previewOn;
+        this.lightManager.setPreview(next);
+        this.uiManager.updateStatus(window.I18n
+            ? window.I18n.t(next ? 'status.lightPreviewEnabled' : 'status.lightPreviewDisabled')
+            : (next ? 'Lighting preview on' : 'Lighting preview off'));
     }
 
     async loadMap(mapId) {

@@ -57,6 +57,12 @@ class UIManager {
                 if (this.callbacks.toggleEventView) this.callbacks.toggleEventView();
             });
         }
+        const ovLight = document.getElementById('overlay-light-btn');
+        if (ovLight) {
+            ovLight.addEventListener('click', () => {
+                if (this.callbacks.toggleLightPreview) this.callbacks.toggleLightPreview();
+            });
+        }
 
         // Mode toggle is a toolbar button now (handled via data-action in handleToolbarAction)
 
@@ -197,6 +203,11 @@ class UIManager {
             case 'toggle-event-mode':
                 if (this.callbacks.toggleEventMode) {
                     this.callbacks.toggleEventMode();
+                }
+                break;
+            case 'toggle-light-mode':
+                if (this.callbacks.toggleLightMode) {
+                    this.callbacks.toggleLightMode();
                 }
                 break;
             case 'devtools':
@@ -1034,6 +1045,11 @@ class UIManager {
             case 'toggle-event-mode':
                 if (this.callbacks.toggleEventMode) {
                     this.callbacks.toggleEventMode();
+                }
+                break;
+            case 'toggle-light-mode':
+                if (this.callbacks.toggleLightMode) {
+                    this.callbacks.toggleLightMode();
                 }
                 break;
         }

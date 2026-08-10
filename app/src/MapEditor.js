@@ -13,6 +13,7 @@ class MapEditor {
         this.snapGrid = 48;
         this.isDrawing = false;
         this.drawStart = null;
+        this.drawEnd = null;
         this.previewLayer = null;
         this.previewGraphics = null;
         this.tilePreviewContainer = null; // Container for tile placement preview
@@ -63,10 +64,13 @@ class MapEditor {
         const stampLayerSize = width * height;
         const data = new Array(stampLayerSize * 6).fill(0);
 
-        // 'selected' scope captures only the active native z (the other 5 layers
-        // stay zero so applyMapStamp writes nothing into them). 'all' captures
-        // every layer (the original multi-layer slice behavior).
-        const layersToCapture = (this.editScope === 'all') ? [0, 1, 2, 3, 4, 5] : [this._activeNativeZ()];
+        // 'selected' scope captures only the active layer (native z, or the
+        // active extended sublayer); 'all' captures every native layer + every
+        // extended sublayer (the original multi-layer slice behavior).
+        const scope = this.editScope;
+        const activeExt = this.activeExtendedLayerId;
+        const layersToCapture = (scope === 'all') ? [0, 1, 2, 3, 4, 5]
+            : (activeExt ? [] : [this._activeNativeZ()]);
 
         for (const layer of layersToCapture) {
             for (let y = 0; y < height; y++) {
@@ -74,6 +78,33 @@ class MapEditor {
                     const sourceIndex = layer * sourceLayerSize + (minY + y) * map.width + minX + x;
                     data[layer * stampLayerSize + y * width + x] = Number(map.data[sourceIndex]) || 0;
                 }
+            }
+        }
+
+        // Capture extended (z4+) sublayers: all of them in 'all' scope, only
+        // the active one in 'selected' scope with an extended layer active.
+        let extraStamp = null;
+        const tm = this.tilemapManager;
+        const extra = map.reactor && map.reactor.extraTileData;
+        if (extra && tm && tm.layerManifest) {
+            const wantAll = (scope === 'all');
+            const wantId = (!wantAll && activeExt) ? activeExt : null;
+            if (wantAll || wantId) {
+                extraStamp = {};
+                for (const entry of tm.layerManifest.tileLayers) {
+                    if (entry.z != null) continue;
+                    if (!wantAll && entry.id !== wantId) continue;
+                    const arr = extra[entry.id];
+                    if (!arr) continue;
+                    const sub = new Array(stampLayerSize).fill(0);
+                    for (let y = 0; y < height; y++) {
+                        for (let x = 0; x < width; x++) {
+                            sub[y * width + x] = Number(arr[(minY + y) * map.width + minX + x]) || 0;
+                        }
+                    }
+                    extraStamp[entry.id] = sub;
+                }
+                if (Object.keys(extraStamp).length === 0) extraStamp = null;
             }
         }
 
@@ -95,7 +126,7 @@ class MapEditor {
             }
         }
 
-        return { width, height, data, tilesetId: map.tilesetId, capturedStamps };
+        return { width, height, data, tilesetId: map.tilesetId, capturedStamps, extra: extraStamp };
     }
 
     applyMapStamp(map, stamp, anchor) {
@@ -107,9 +138,11 @@ class MapEditor {
 
         const mapLayerSize = map.width * map.height;
         const stampLayerSize = stamp.width * stamp.height;
-        // 'selected' scope writes only the active native z; 'all' writes every
-        // layer the stamp captured.
-        const layersToApply = (this.editScope === 'all') ? [0, 1, 2, 3, 4, 5] : [this._activeNativeZ()];
+        // 'selected' scope writes only the active layer (native z, or active
+        // extended); 'all' writes every native layer + every extended sublayer
+        // the stamp captured.
+        const layersToApply = (this.editScope === 'all') ? [0, 1, 2, 3, 4, 5]
+            : (this.activeExtendedLayerId ? [] : [this._activeNativeZ()]);
         let changed = false;
         for (let y = 0; y < stamp.height; y++) {
             for (let x = 0; x < stamp.width; x++) {
@@ -126,6 +159,35 @@ class MapEditor {
                     changed = true;
                     if (layer <= 4) visualUpdates.push({ x: targetX, y: targetY, layer });
                     else regionUpdates.push({ x: targetX, y: targetY });
+                }
+            }
+        }
+
+        // Apply extended (z4+) sublayers carried by the stamp.
+        if (stamp.extra) {
+            const tm = this.tilemapManager;
+            const extraDst = map.reactor && map.reactor.extraTileData;
+            if (extraDst && tm) {
+                const wantAll = (this.editScope === 'all');
+                const wantId = (!wantAll && this.activeExtendedLayerId) ? this.activeExtendedLayerId : null;
+                for (const layerId of Object.keys(stamp.extra)) {
+                    if (!wantAll && layerId !== wantId) continue;
+                    const sub = stamp.extra[layerId];
+                    const dst = extraDst[layerId];
+                    if (!sub || !dst) continue;
+                    for (let y = 0; y < stamp.height; y++) {
+                        for (let x = 0; x < stamp.width; x++) {
+                            const tx = anchor.x + x, ty = anchor.y + y;
+                            if (tx < 0 || ty < 0 || tx >= map.width || ty >= map.height) continue;
+                            const v = sub[y * stamp.width + x] || 0;
+                            const di = ty * map.width + tx;
+                            if (dst[di] !== v) {
+                                dst[di] = v;
+                                changed = true;
+                                if (typeof tm.updateExtraTile === 'function') tm.updateExtraTile(tx, ty, layerId);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -151,13 +213,65 @@ class MapEditor {
         if (this.eraserMode) this.setEraserMode(false);
         this.mapStamp = stamp;
         this._mapStampPreviewTexture = this.createMapStampPreviewTexture(stamp);
-        this.setTool('pencil', { preserveMapStamp: true });
+    }
 
-        if (typeof document !== 'undefined') {
-            document.querySelectorAll('.tool-draw-mode').forEach(button => {
-                button.classList.toggle('active', button.dataset.tool === 'pencil');
-            });
+    paintStampArea(minX, maxX, minY, maxY, includeFn) {
+        const map = this.tilemapManager.currentMap;
+        const stamp = this.mapStamp;
+        if (!map || !stamp || !Array.isArray(stamp.data)) return false;
+        const mapLayerSize = map.width * map.height;
+        const stampLayerSize = stamp.width * stamp.height;
+        const layersToApply = (this.editScope === 'all') ? [0, 1, 2, 3, 4, 5]
+            : (this.activeExtendedLayerId ? [] : [this._activeNativeZ()]);
+        const sw = stamp.width, sh = stamp.height;
+        const visualUpdates = [];
+        const regionUpdates = [];
+        for (let y = minY; y <= maxY; y++) {
+            for (let x = minX; x <= maxX; x++) {
+                if (x < 0 || y < 0 || x >= map.width || y >= map.height) continue;
+                if (includeFn && !includeFn(x, y)) continue;
+                const sx = (x - minX) % sw;
+                const sy = (y - minY) % sh;
+                for (const layer of layersToApply) {
+                    const value = stamp.data[layer * stampLayerSize + sy * sw + sx] || 0;
+                    const targetIndex = layer * mapLayerSize + y * map.width + x;
+                    if (map.data[targetIndex] === value) continue;
+                    map.data[targetIndex] = value;
+                    if (layer <= 4) visualUpdates.push({ x, y, layer });
+                    else regionUpdates.push({ x, y });
+                }
+            }
         }
+        if (stamp.extra) {
+            const tm = this.tilemapManager;
+            const extraDst = map.reactor && map.reactor.extraTileData;
+            if (extraDst && tm) {
+                for (const layerId of Object.keys(stamp.extra)) {
+                    const sub = stamp.extra[layerId];
+                    const dst = extraDst[layerId];
+                    if (!sub || !dst) continue;
+                    for (let y = minY; y <= maxY; y++) {
+                        for (let x = minX; x <= maxX; x++) {
+                            if (x < 0 || y < 0 || x >= map.width || y >= map.height) continue;
+                            if (includeFn && !includeFn(x, y)) continue;
+                            const sx = (x - minX) % sw, sy = (y - minY) % sh;
+                            const v = sub[sy * sw + sx] || 0;
+                            const di = y * map.width + x;
+                            if (dst[di] !== v) {
+                                dst[di] = v;
+                                if (typeof tm.updateExtraTile === 'function') tm.updateExtraTile(x, y, layerId);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (visualUpdates.length) this.tilemapManager.updateTiles(visualUpdates);
+        if (regionUpdates.length && this.regionManager?.enabled) {
+            if (regionUpdates.length > 1000) this.regionManager.renderRegions();
+            else this.regionManager.updateRegionCells(regionUpdates);
+        }
+        return true;
     }
 
     createMapStampPreviewTexture(stamp) {
@@ -420,7 +534,6 @@ class MapEditor {
     }
 
     setTool(tool, options = {}) {
-        if (!options.preserveMapStamp && this.mapStamp) this.clearMapStamp();
         // Save current tool as previous before switching
         if (this.currentTool) {
             this.previousTool = this.currentTool;
@@ -782,6 +895,7 @@ class MapEditor {
         this.hideTilePreview();
         this.isDrawing = false;
         this.drawStart = null;
+        this.drawEnd = null;
         this.shadowPaintMode = null;
         this.preserveAutotileShape = false;
         this.lastPaintedTile = { x: -1, y: -1, quadrant: -1 };
@@ -794,6 +908,15 @@ class MapEditor {
 
         if (this.tilemapManager && this.tilemapManager.resumeLazyLoading) {
             this.tilemapManager.resumeLazyLoading();
+        }
+    }
+
+    _applyPendingShapeTool() {
+        if (!this.drawStart || !this.drawEnd) return;
+        if (this.currentTool === 'rectangle') {
+            this.paintRectangle(this.drawStart, this.drawEnd);
+        } else if (this.currentTool === 'circle') {
+            this.paintCircle(this.drawStart, this.drawEnd);
         }
     }
 
@@ -1034,6 +1157,7 @@ class MapEditor {
 
             this.isDrawing = true;
             this.drawStart = { x: tileX, y: tileY };
+            this.drawEnd = { x: tileX, y: tileY };
 
             // Hide preview when starting to draw
             this.hideTilePreview();
@@ -1100,6 +1224,7 @@ class MapEditor {
                 } else if (this.currentTool === 'rectangle' || this.currentTool === 'circle') {
                     // Hide tile preview for shape tools, show shape preview instead
                     this.hideTilePreview();
+                    this.drawEnd = { x: tileX, y: tileY };
                     this.showPreview(this.drawStart, { x: tileX, y: tileY });
                 }
             } else {
@@ -1142,15 +1267,12 @@ class MapEditor {
             const pos = event.data.getLocalPosition(container);
             const tileX = Math.floor(pos.x / this.tilemapManager.TILE_WIDTH);
             const tileY = Math.floor(pos.y / this.tilemapManager.TILE_HEIGHT);
+            this.drawEnd = { x: tileX, y: tileY };
 
             this.preserveAutotileShape = Boolean(event.data.originalEvent.shiftKey) &&
                 this.canPreserveAutotileShape();
 
-            if (this.currentTool === 'rectangle') {
-                this.paintRectangle(this.drawStart, { x: tileX, y: tileY });
-            } else if (this.currentTool === 'circle') {
-                this.paintCircle(this.drawStart, { x: tileX, y: tileY });
-            }
+            this._applyPendingShapeTool();
 
             this.resetDrawingState(true);
         });
@@ -1161,6 +1283,7 @@ class MapEditor {
                 return;
             }
             if (!this.isDrawing) return;
+            this._applyPendingShapeTool();
             this.resetDrawingState(true);
         });
 
@@ -1171,6 +1294,7 @@ class MapEditor {
                 return;
             }
             if (!this.isDrawing) return;
+            this._applyPendingShapeTool();
             this.resetDrawingState(true);
         });
 
@@ -1194,6 +1318,7 @@ class MapEditor {
                     this.mapSampleDrag = null;
                     this.clearPreview();
                 } else if (this.isDrawing) {
+                    this._applyPendingShapeTool();
                     this.resetDrawingState(true);
                 } else {
                     this.preserveAutotileShape = false;
@@ -1801,6 +1926,11 @@ class MapEditor {
             return;
         }
 
+        if (this.mapStamp) {
+            this.paintStampArea(minX, maxX, minY, maxY);
+            return;
+        }
+
         // Get selected tiles from palette
         const selectedTiles = this.tilesetPaletteViewer.selectedTiles;
         if (!selectedTiles || selectedTiles.length === 0) {
@@ -1973,6 +2103,12 @@ class MapEditor {
             return;
         }
 
+        if (this.mapStamp) {
+            this.paintStampArea(minX, maxX, minY, maxY, (x, y) =>
+                Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2)) <= radius);
+            return;
+        }
+
         // Get selected tiles from palette
         const selectedTiles = this.tilesetPaletteViewer.selectedTiles;
         if (!selectedTiles || selectedTiles.length === 0) {
@@ -2122,6 +2258,11 @@ class MapEditor {
 
         if (this.eraserMode) {
             this.eraseFillArea(startX, startY);
+            return;
+        }
+
+        if (this.mapStamp) {
+            this.paintMapStamp(startX, startY);
             return;
         }
 
@@ -3428,12 +3569,26 @@ class MapEditor {
     eraseTile(x, y, data, width, height, layerSize) {
         const basePos = y * width + x;
 
-        // 'all' scope: clear every tile z-slot at this cell.
+        // 'all' scope: clear every tile z-slot at this cell — native + extended.
         if (this.editScope === 'all') {
             const erased = [];
             for (let layer = 3; layer >= 0; layer--) {
                 const index = layer * layerSize + basePos;
                 if (data[index] !== 0) { data[index] = 0; erased.push(layer); }
+            }
+            // Also clear extended (z4+) sublayers so "all" truly means all.
+            const tm = this.tilemapManager;
+            const map = tm && tm.currentMap;
+            const extra = map && map.reactor && map.reactor.extraTileData;
+            if (extra && tm && tm.layerManifest) {
+                for (const entry of tm.layerManifest.tileLayers) {
+                    if (entry.z != null) continue;
+                    const arr = extra[entry.id];
+                    if (arr && arr[basePos]) {
+                        arr[basePos] = 0;
+                        if (typeof tm.updateExtraTile === 'function') tm.updateExtraTile(x, y, entry.id);
+                    }
+                }
             }
             return erased;
         }

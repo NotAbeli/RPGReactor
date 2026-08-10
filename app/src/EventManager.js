@@ -203,6 +203,11 @@ class EventManager {
         if (!this.eventContainer) {
             this.eventContainer = new PIXI.Container();
             this.eventContainer.label = 'events';
+            // Sort event sprites by priority band (Below/Same/Above) then by Y,
+            // so a "Above" event always renders over a "Below" event regardless
+            // of event-ID order, and within a band lower-on-screen sinks under
+            // higher-on-screen (standard MZ character depth).
+            this.eventContainer.sortableChildren = true;
             tilemapManager.container.addChild(this.eventContainer);
             console.log('Event container created');
         }
@@ -1773,9 +1778,14 @@ class EventManager {
         if (priority !== 0 && priority !== 1 && priority !== 2) return;
         const ev = this.currentMap && this.currentMap.events && this.currentMap.events[eventId];
         if (!ev || !Array.isArray(ev.pages)) return;
-        if (this.getEventPriority(ev) === priority) return;
-        for (const page of ev.pages) page.priorityType = priority;
-        this.renderEvents();
+        // Always set on ALL pages — checking only pages[0] (getEventPriority)
+        // would skip multi-page events whose first page already matches but
+        // whose other pages differ.
+        let changed = false;
+        for (const page of ev.pages) {
+            if (page.priorityType !== priority) { page.priorityType = priority; changed = true; }
+        }
+        if (changed) this.renderEvents();
     }
 
     // Apply per-priority visibility to existing event sprites without a rebuild.
@@ -1831,9 +1841,19 @@ class EventManager {
         this.applyEventLayerVisibility();
 
         // Notify the Layers Panel so its event grouping/counts stay in sync.
-        if (typeof this._notifyLayersPanel === 'function') {
+        // Debounced: renderEvents can fire several times during a drag/edit —
+        // coalesce into a single panel refresh per tick.
+        this._scheduleNotifyLayersPanel();
+    }
+
+    // Coalesce multiple notifications within the same tick into one panel refresh.
+    _scheduleNotifyLayersPanel() {
+        if (typeof this._notifyLayersPanel !== 'function') return;
+        if (this._notifyTimer) return; // already scheduled
+        this._notifyTimer = setTimeout(() => {
+            this._notifyTimer = null;
             try { this._notifyLayersPanel(); } catch (e) { /* ignore */ }
-        }
+        }, 0);
     }
 
     // The standalone Events sidebar section is hidden (Phase 2 redesign):
@@ -1986,6 +2006,9 @@ class EventManager {
                 sel.stroke({ width: 2, color: 0x00ff00 });
                 container.addChild(sel);
             }
+            // z-order within eventContainer: priority band (Below/Same/Above)
+            // dominates; Y breaks ties so lower-on-screen sinks under higher.
+            container.zIndex = this.getEventPriority(event) * 1000 + (event.y || 0);
             return container;
         }
 

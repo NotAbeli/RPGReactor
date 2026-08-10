@@ -791,11 +791,17 @@ class TilemapManager {
         const m = this.layerManifest;
         if (!m || !this.currentMap) return;
         const extra = this.currentMap.reactor.extraTileData || {};
+        // Full rebuild: reset the per-cell sprite tracker (it is repopulated
+        // below) so stale references from a previous render don't linger.
+        this._extraSprites = {};
         for (const entry of m.tileLayers) {
             if (entry.z != null) continue;
             const c = this.extraLayerContainers[entry.id];
             if (!c) continue;
-            c.removeChildren();
+            // Destroy detached sprites — removeChildren() alone leaks GPU
+            // resources on every rebuild (add/delete/merge of extended layers).
+            const removed = c.removeChildren();
+            for (const s of removed) { try { s.destroy({ children: true }); } catch (e) { /* ignore */ } }
             const arr = extra[entry.id];
             if (!arr) continue;
             const { width, height } = this.currentMap;
@@ -897,10 +903,24 @@ class TilemapManager {
 
         this.container.on('pointermove', (event) => {
             if (isDragging) {
-                this.container.x = event.data.global.x - dragStart.x;
-                this.container.y = event.data.global.y - dragStart.y;
-                // updateScrollbars clamps the position to the map bounds and
-                // repositions the thumbs; throttle to one update per frame.
+                let newX = event.data.global.x - dragStart.x;
+                let newY = event.data.global.y - dragStart.y;
+                if (this.currentMap && canvasContainer) {
+                    const rect = canvasContainer.getBoundingClientRect();
+                    const scale = this.container.scale.x;
+                    const mapWidth = this.currentMap.width * this.TILE_WIDTH * scale;
+                    const mapHeight = this.currentMap.height * this.TILE_HEIGHT * scale;
+                    const minX = Math.min(0, rect.width - mapWidth);
+                    const minY = Math.min(0, rect.height - mapHeight);
+                    const clampedX = Math.max(minX, Math.min(0, newX));
+                    const clampedY = Math.max(minY, Math.min(0, newY));
+                    dragStart.x += newX - clampedX;
+                    dragStart.y += newY - clampedY;
+                    newX = clampedX;
+                    newY = clampedY;
+                }
+                this.container.x = newX;
+                this.container.y = newY;
                 if (!this.scrollbarUpdateScheduled) {
                     this.scrollbarUpdateScheduled = true;
                     requestAnimationFrame(() => {
