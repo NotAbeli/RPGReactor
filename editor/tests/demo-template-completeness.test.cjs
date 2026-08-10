@@ -80,6 +80,14 @@ test('the Demo runtime matches the canonical runtime it was copied from', () => 
         `these have drifted from runtime/:\n${mismatched.join('\n')}`);
 });
 
+test('the Demo declares its engine mode without browser marker probes', () => {
+    const index = fs.readFileSync(path.join(demoRoot, 'index.html'), 'utf8');
+    assert.match(index, /window\.\$reactorMvCompat = false/,
+        'the bundled MZ project must not probe for missing MV marker files on Web');
+    assert.ok(index.indexOf('$reactorMvCompat') < index.indexOf('js/reactor_main.js'),
+        'the runtime reads the mode while its compatibility layer loads');
+});
+
 test('the editor distribution bundles the Demo, which is what makes this ship', () => {
     const worker = fs.readFileSync(
         path.join(repoRoot, 'editor', 'build-scripts', 'dist-editor-worker.js'), 'utf8');

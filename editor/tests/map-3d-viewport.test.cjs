@@ -69,6 +69,21 @@ test('rebuilds are debounced', () => {
     assert.match(source, /this\._rebuildTimer = setTimeout/);
 });
 
+test('3D A1 animation is time-based rather than monitor-frame-based', () => {
+    const view = viewport();
+    const frames = [];
+    view.mapScene = { setAnimationFrame(frame) { frames.push(frame); } };
+
+    view.animateAutotiles(1000);
+    view.animateAutotiles(1499);
+    view.animateAutotiles(1500);
+    view.animateAutotiles(2500);
+
+    assert.deepEqual(frames, [0, 0, 1, 3]);
+    assert.match(source, /timestamp - this\._animationStartedAt\) \/ 500/,
+        'the cadence is independent of 60Hz, 120Hz, or 144Hz requestAnimationFrame');
+});
+
 //-----------------------------------------------------------------------------
 // Libraries
 
@@ -159,6 +174,19 @@ test('the editor hands the runtime its classification', () => {
     assert.match(source, /Reactor3D\.setClassification/);
     assert.match(source, /CLASSIFICATION_FILE/);
     assert.match(source, /this\.loadClassification\(\)/);
+});
+
+test('the editor initializes the map scene with both authored passes visible', () => {
+    assert.match(source, /this\.mapScene\.setPass\('all'\)/);
+});
+
+test('the editor composites starred geometry after events with fresh depth', () => {
+    assert.match(source, /setPass\('below'\)/);
+    assert.match(source, /this\.renderer\.clearDepth\(\)/);
+    assert.match(source, /setPass\('above'\)/);
+    assert.match(source, /this\.eventGroup\.visible = false/);
+    assert.match(source, /this\.grid\.visible = false/);
+    assert.match(source, /this\.hoverCell\.visible = false/);
 });
 
 test('a click selects an event but a drag does not', () => {

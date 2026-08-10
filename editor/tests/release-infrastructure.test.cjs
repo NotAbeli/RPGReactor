@@ -135,6 +135,42 @@ test('publication verifier accepts only complete hash-matching publish candidate
     }
 });
 
+test('artifact publication updates the release made from the tag without replacing its notes', () => {
+    const calls = [];
+    const execute = (command, args, options) => calls.push({ command, args, options });
+    const files = ['/tmp/linux.zip', '/tmp/artifact-manifest-linux.json'];
+
+    publication.publishGitHubRelease('v0.98.0', 'RPG Reactor 0.98.0', files, execute);
+
+    assert.deepEqual(calls.map(call => call.args), [
+        ['release', 'view', 'v0.98.0'],
+        ['release', 'edit', 'v0.98.0', '--title', 'RPG Reactor 0.98.0'],
+        ['release', 'upload', 'v0.98.0', ...files, '--clobber'],
+    ]);
+    assert.ok(calls.every(call => call.command === 'gh'));
+    assert.doesNotMatch(calls.flatMap(call => call.args).join(' '), /--generate-notes/,
+        'the changelog notes published by the tag workflow are preserved');
+});
+
+test('artifact publication can recover when the tag has no release yet', () => {
+    const calls = [];
+    const execute = (command, args, options) => {
+        calls.push({ command, args, options });
+        if (args[1] === 'view') throw new Error('release not found');
+    };
+
+    publication.publishGitHubRelease(
+        'v0.98.0', 'RPG Reactor 0.98.0', ['/tmp/web.zip'], execute);
+
+    assert.deepEqual(calls.map(call => call.args), [
+        ['release', 'view', 'v0.98.0'],
+        [
+            'release', 'create', 'v0.98.0', '--verify-tag',
+            '--title', 'RPG Reactor 0.98.0', '--generate-notes', '/tmp/web.zip'
+        ],
+    ]);
+});
+
 test('the single third-party notices document includes complete pako/stb terms', () => {
     const notices = readRepo('THIRD_PARTY_NOTICES.md');
     assert.match(notices, /https:\/\/github\.com\/nodeca\/pako/);

@@ -2493,7 +2493,10 @@ class ProjectController {
             const dataToSave = { ...mapData };
             delete dataToSave.id;
             delete dataToSave.name;
-            this._writeFileAtomic(fs, mapPath, JSON.stringify(dataToSave, null, 2), 'utf8');
+            const json = typeof RRMapJson !== 'undefined'
+                ? RRMapJson.stringify(dataToSave)
+                : JSON.stringify(dataToSave, null, 2);
+            this._writeFileAtomic(fs, mapPath, json, 'utf8');
             this.bumpVersionId();
             return true;
         } catch (error) {
@@ -2522,6 +2525,18 @@ class ProjectController {
     }
 
     async saveMapProperties() {
+        const widthInput = document.getElementById('map-width-input');
+        const heightInput = document.getElementById('map-height-input');
+        const width = Number(widthInput.value);
+        const height = Number(heightInput.value);
+        const sizeError = this.mapDimensionError(width, height);
+        if (sizeError) {
+            alert(sizeError);
+            (width < 1 || width > (globalThis.RR_LIMITS?.MAP_WIDTH || 512) || !Number.isInteger(width)
+                ? widthInput : heightInput).focus();
+            return false;
+        }
+
         const readNumber = (id, fallback) => {
             const value = parseInt(document.getElementById(id).value, 10);
             return Number.isFinite(value) ? value : fallback;
@@ -2533,8 +2548,8 @@ class ProjectController {
             name: document.getElementById('map-name-input').value || 'Unnamed Map',
             displayName: document.getElementById('map-display-name-input').value || '',
             tilesetId: parseInt(document.getElementById('map-tileset-select').value) || 1,
-            width: parseInt(document.getElementById('map-width-input').value) || 17,
-            height: parseInt(document.getElementById('map-height-input').value) || 13,
+            width,
+            height,
             scrollType: parseInt(document.getElementById('map-scroll-type-select').value) || 0,
             encounterStep: parseInt(document.getElementById('map-encounter-steps-input').value) || 30,
             disableDashing: document.getElementById('map-disable-dashing-checkbox').checked,
@@ -2686,6 +2701,17 @@ class ProjectController {
             this.uiManager.updateStatus(`Updated map: ${mapData.name}`);
         }
         return true;
+    }
+
+    mapDimensionError(width, height) {
+        const maxWidth = globalThis.RR_LIMITS?.MAP_WIDTH || 512;
+        const maxHeight = globalThis.RR_LIMITS?.MAP_HEIGHT || 512;
+        const valid = typeof globalThis.rrIsMapSizeSupported === 'function'
+            ? globalThis.rrIsMapSizeSupported(width, height)
+            : Number.isInteger(width) && Number.isInteger(height) &&
+                width >= 1 && width <= maxWidth && height >= 1 && height <= maxHeight;
+        return valid ? '' : this._tt(
+            `Map dimensions must be whole numbers from 1 to ${maxWidth} by 1 to ${maxHeight}.`);
     }
 
     getEncounterListFromForm() {
@@ -2937,7 +2963,10 @@ class ProjectController {
         for (const source of report.sources || []) {
             if (source.kind !== 'map') continue;
             try {
-                this._writeFileAtomic(fs, source.path, JSON.stringify(source.data));
+                const json = typeof RRMapJson !== 'undefined'
+                    ? RRMapJson.stringify(source.data)
+                    : JSON.stringify(source.data, null, 2);
+                this._writeFileAtomic(fs, source.path, json);
             } catch (error) {
                 console.error('Could not update map references in', source.path, error);
                 ok = false;
@@ -3226,6 +3255,17 @@ class ProjectController {
                 alert(this._tt('No map in clipboard to paste.'));
                 return;
             }
+            const sizeError = this.mapDimensionError(payload.mapData.width, payload.mapData.height);
+            if (sizeError) {
+                alert(sizeError);
+                return;
+            }
+            const expectedDataLength = payload.mapData.width * payload.mapData.height * 6;
+            if (!Array.isArray(payload.mapData.data) || payload.mapData.data.length !== expectedDataLength) {
+                console.error('Cannot paste malformed map tile data');
+                alert(this._tt('Failed to paste map. Check console for details.'));
+                return;
+            }
 
             const fs = require('fs');
             const path = require('path');
@@ -3252,7 +3292,10 @@ class ProjectController {
             }
 
             const mapPath = path.join(this.currentProject.path, 'data', `Map${String(newMapId).padStart(3, '0')}.json`);
-            this._writeFileAtomic(fs, mapPath, JSON.stringify(newMapData));
+            const json = typeof RRMapJson !== 'undefined'
+                ? RRMapJson.stringify(newMapData)
+                : JSON.stringify(newMapData, null, 2);
+            this._writeFileAtomic(fs, mapPath, json);
             this.bumpVersionId();
 
             if (!this.currentProject.maps) {
@@ -3556,8 +3599,10 @@ class ProjectController {
             const tileSize = this.tilemapManager?.TILE_SIZE || 48;
             const pixelWidth = (mapData.width || 0) * tileSize;
             const pixelHeight = (mapData.height || 0) * tileSize;
-            const maxCanvasSize = 32767;
-            if (!pixelWidth || !pixelHeight || pixelWidth > maxCanvasSize || pixelHeight > maxCanvasSize) {
+            const maxCanvasSide = globalThis.RR_LIMITS?.MAP_CANVAS_SIDE || 8192;
+            const maxCanvasPixels = globalThis.RR_LIMITS?.MAP_CANVAS_PIXELS || 32 * 1024 * 1024;
+            if (!pixelWidth || !pixelHeight || pixelWidth > maxCanvasSide || pixelHeight > maxCanvasSide ||
+                pixelWidth * pixelHeight > maxCanvasPixels) {
                 alert(`${this._tt('Map image is too large to export')} (${pixelWidth}x${pixelHeight}).`);
                 return;
             }

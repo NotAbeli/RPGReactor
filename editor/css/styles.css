@@ -125,6 +125,42 @@
             color: var(--color-text-strong);
         }
 
+        /* A global control rather than another menu: keep it at the far edge
+           and show the active locale even when the menu labels are unfamiliar. */
+        #language-button {
+            margin: 3px 8px 3px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            min-width: 34px;
+            padding: 0 9px;
+            cursor: pointer;
+            background: transparent;
+            color: var(--color-text);
+            border: 1px solid transparent;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+        }
+
+        #language-button:hover {
+            background-color: var(--color-accent-tint-25);
+            color: var(--color-text-strong);
+        }
+
+        #language-button:focus-visible {
+            outline: 1px solid var(--color-accent-bright);
+            outline-offset: -2px;
+        }
+
+        #language-button svg {
+            display: block;
+            flex-shrink: 0;
+        }
+
         /* Toolbar Menu Options */
         .toolbar-menu-option:hover {
             background-color: var(--color-accent-tint-25);
@@ -2429,6 +2465,14 @@
         }
 
         @media (max-width: 900px) {
+            html.rr-web #language-button-code {
+                display: none;
+            }
+
+            html.rr-web #language-button {
+                padding: 0 7px;
+            }
+
             html.rr-web .html-menu-item {
                 padding: 7px 10px !important;
             }

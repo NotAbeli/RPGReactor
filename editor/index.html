@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RPG Reactor</title>
+    <link rel="icon" href="images/icon.png">
     <link rel="stylesheet" href="css/theme.css">
     <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -109,13 +110,14 @@
                     <div class="html-menu-option" data-action="about" data-i18n="menu.about" style="padding: 8px 16px; cursor: pointer;">About RPG Reactor</div>
                 </div>
             </div>
-            <button type="button" class="html-menu-option" data-action="options" title="Language" aria-label="Language" data-i18n-title="options.language" data-i18n-aria="options.language" style="display:flex;align-items:center;justify-content:center;width:34px;padding:0;margin:3px 8px 3px 0;cursor:pointer;background:transparent;color:var(--color-text);border:1px solid transparent;border-radius:4px;">
+            <button id="language-button" type="button" class="html-menu-option" data-action="options" title="Language" aria-label="Language" data-i18n-title="options.language" data-i18n-aria="options.language">
                 <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" style="display:block;pointer-events:none;">
                     <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/>
                     <path d="M3.8 12h16.4M12 3.5c2.1 2.4 3.2 5.2 3.2 8.5S14.1 18.1 12 20.5M12 3.5C9.9 5.9 8.8 8.7 8.8 12s1.1 6.1 3.2 8.5" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/>
                     <path d="M6.3 7.2h11.4M6.3 16.8h11.4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.75"/>
                     <path d="M17.4 5.1h4.1v3.5h-1.2l-1 1.3-1-1.3h-.9z" fill="var(--color-accent-bright)" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"/>
                 </svg>
+                <span id="language-button-code" aria-hidden="true"></span>
             </button>
         </div>
 
@@ -359,11 +361,11 @@
                                 <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
                                     <div>
                                         <label style="display: block; font-size: 11px; color: var(--color-text-muted); margin-bottom: 3px;" data-i18n="mapProps.width">Width:</label>
-                                        <input type="number" id="map-width-input" min="1" max="999" value="17" style="width: 100%; padding: 5px 6px; background-color: var(--color-bg-input); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 3px; font-size: 12px;">
+                                        <input type="number" id="map-width-input" min="1" max="512" step="1" value="17" title="1-512 tiles" style="width: 100%; padding: 5px 6px; background-color: var(--color-bg-input); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 3px; font-size: 12px;">
                                     </div>
                                     <div>
                                         <label style="display: block; font-size: 11px; color: var(--color-text-muted); margin-bottom: 3px;" data-i18n="mapProps.height">Height:</label>
-                                        <input type="number" id="map-height-input" min="1" max="999" value="13" style="width: 100%; padding: 5px 6px; background-color: var(--color-bg-input); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 3px; font-size: 12px;">
+                                        <input type="number" id="map-height-input" min="1" max="512" step="1" value="13" title="1-512 tiles" style="width: 100%; padding: 5px 6px; background-color: var(--color-bg-input); border: 1px solid var(--color-border-input); color: var(--color-text); border-radius: 3px; font-size: 12px;">
                                     </div>
                                     <div>
                                         <label style="display: block; font-size: 11px; color: var(--color-text-muted); margin-bottom: 3px;" data-i18n="mapProps.encounterSteps">Encounter Steps:</label>

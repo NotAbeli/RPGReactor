@@ -765,9 +765,8 @@ test('a cut-out is blended at the alpha it was painted at', () => {
     // by centroid while still writing depth, and a centroid says nothing about
     // a mesh spanning the whole map.
     //
-    // The prepass settles that at the root: the solid core of every cut-out
-    // writes depth first, unsorted, so the blended draw composites onto a scene
-    // whose depths are already correct and nothing can cull anything.
+    // The opaque-core pass settles that at the root: fully opaque texels write
+    // their colour and depth together before fractional alpha is blended.
     const source = fs.readFileSync(
         path.join(repoRoot, 'runtime', 'reactor_3d.js'), 'utf8');
     const material = source.slice(source.indexOf('Reactor3D.billboardMaterial = function'));
@@ -777,10 +776,37 @@ test('a cut-out is blended at the alpha it was painted at', () => {
     assert.match(body, /depthWrite: false/, 'and a blended fragment does not add to depth');
     assert.match(body, /alphaTest: 0,/,
         'nothing is cut here — the halo is drawn at the fraction it was painted at');
+    assert.match(material, /footwardScale = \{ value: edgeHinged \? 0 : 1 \}/,
+        'a declared flat-row hinge is not shifted into its own footing');
 
-    // The prepass, which owns depth and keeps the halo out of it.
-    assert.match(source, /depthOnly\.colorWrite = false;/, 'depth only, no colour');
-    assert.match(source, /depthOnly\.alphaTest = 0\.5;/,
-        'and only the solid core of a cut-out counts as depth');
-    assert.match(source, /depthMesh\.renderOrder = -1;/, 'drawn before anything blends');
+    assert.match(source, /opaqueCore\.colorWrite = true;/,
+        'the core cannot hide the destination without supplying its own colour');
+    assert.match(source, /opaqueCore\.alphaTest = 1\.0;/,
+        'only genuinely opaque texels own depth');
+    assert.match(source, /coreMesh\.renderOrder = -20 \+ \(group\.layer \|\| 0\);/,
+        'opaque cores retain source-layer order');
+});
+
+test('flat shadows blend over a colour-bearing opaque core', () => {
+    const source = fs.readFileSync(
+        path.join(repoRoot, 'runtime', 'reactor_3d.js'), 'utf8');
+    const material = source.slice(source.indexOf(': new THREE.MeshBasicMaterial({'),
+        source.indexOf('const target =', source.indexOf(': new THREE.MeshBasicMaterial({')));
+
+    assert.match(material, /transparent: true/);
+    assert.match(material, /depthWrite: false/);
+    assert.match(material, /alphaTest: 0,/,
+        'the colour pass does not cut partially transparent footing shadows');
+    assert.match(source, /const opaqueCore = group\.billboard[\s\S]*new THREE\.MeshBasicMaterial/,
+        'flat geometry receives the same opaque colour core as billboards');
+    assert.doesNotMatch(source, /colorWrite = false/,
+        'no colorless prepass may punch the destination out from under a shadow');
+});
+
+test('multi-cell foliage gap fill stays faint and owns no opaque depth', () => {
+    const source = fs.readFileSync(
+        path.join(repoRoot, 'runtime', 'reactor_3d.js'), 'utf8');
+    assert.match(source, /material\.opacity = group\.underlay \? 0\.6 : 1/);
+    assert.match(source, /opaqueCore\.opacity = group\.underlay \? 0\.6 : 1/,
+        'the exact-opaque core rejects every underlay texel');
 });

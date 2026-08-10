@@ -1010,6 +1010,106 @@
         }
     }
 
+    // -------------------------------------------------------------------------
+    // v8's `filters` setter stores `Object.freeze(value.slice(0))` on the
+    // container's FilterEffect, and the getter hands that frozen array straight
+    // back. The idiom every filter-using MZ plugin was written with
+    //
+    //     this.filters = this.filters || [];
+    //     this.filters.push(filter);
+    //
+    // therefore throws "Cannot add property 0, object is not extensible"
+    // (VisuMZ_4_EncounterEffects' battle transition filter dies exactly here,
+    // taking the whole encounter with it).
+    //
+    // Freezing also hides a second problem: the setter decides whether to add
+    // or remove the FilterEffect from the container by comparing filter counts
+    // at assignment time. Assigning `[]` and filling it afterwards leaves the
+    // effect detached however the array was mutated, so even an unfrozen array
+    // would give a filter that is attached to nothing and never draws.
+    //
+    // The getter returns a Proxy over a private mutable copy instead. Any write
+    // through it -- push, splice, index assignment, `length = 0` -- lands in the
+    // copy and is then committed through the real setter, which re-runs v8's
+    // attach/detach decision with the new contents. The view is cached per
+    // container and rebuilt only when the committed list no longer matches it,
+    // so repeated reads don't allocate.
+    // -------------------------------------------------------------------------
+    if (_isV8Pixi && PIXI.Container && PIXI.Container.prototype &&
+        typeof Proxy === "function") {
+        const filtersDesc = Object.getOwnPropertyDescriptor(
+            PIXI.Container.prototype, "filters"
+        );
+        if (filtersDesc && filtersDesc.get && filtersDesc.set &&
+            !filtersDesc.get.__reactorMutableFilters) {
+            const nativeGetFilters = filtersDesc.get;
+            const nativeSetFilters = filtersDesc.set;
+            const filterViews = new WeakMap();
+
+            const sameFilters = function(view, committed) {
+                if (!committed || view.length !== committed.length) return false;
+                for (let i = 0; i < view.length; i++) {
+                    if (view[i] !== committed[i]) return false;
+                }
+                return true;
+            };
+
+            // A single push writes the element and then `length`, so the trap
+            // fires more than once per call. Committing each time is harmless --
+            // the setter is idempotent for an unchanged count -- and the last
+            // write always commits the finished list.
+            const makeFilterView = function(owner, committed) {
+                const backing = committed.slice(0);
+                let committing = false;
+                const commit = function() {
+                    if (committing) return;
+                    committing = true;
+                    try {
+                        nativeSetFilters.call(owner, backing);
+                    } finally {
+                        committing = false;
+                    }
+                };
+                return new Proxy(backing, {
+                    set(target, prop, value) {
+                        target[prop] = value;
+                        commit();
+                        return true;
+                    },
+                    deleteProperty(target, prop) {
+                        delete target[prop];
+                        commit();
+                        return true;
+                    }
+                });
+            };
+
+            const getFilters = function() {
+                const committed = nativeGetFilters.call(this);
+                if (!committed) return committed;
+                let view = filterViews.get(this);
+                if (!view || !sameFilters(view, committed)) {
+                    view = makeFilterView(this, committed);
+                    filterViews.set(this, view);
+                }
+                return view;
+            };
+            getFilters.__reactorMutableFilters = true;
+
+            Object.defineProperty(PIXI.Container.prototype, "filters", {
+                configurable: true,
+                get: getFilters,
+                set: function(value) {
+                    // Drop the stale view; the next read rebuilds it from what
+                    // v8 actually stored. Passing another container's view here
+                    // is safe -- the setter copies before it freezes.
+                    filterViews.delete(this);
+                    nativeSetFilters.call(this, value);
+                }
+            });
+        }
+    }
+
     if (!PIXI.BaseTexture) {
         // In v5/v6/v7, baseTexture.resource was a CanvasResource/ImageResource
         // wrapper whose .source pointed to the raw HTMLCanvasElement / Image.
@@ -1870,6 +1970,40 @@
             console.warn("pixi_compat: failed to install TilingSprite.allowChildren shim", e);
         }
     }
+
+    // -------------------------------------------------------------------------
+    // v4's geometry classes carried a `copy` method. v5 renamed it and kept
+    // deprecation aliases; v6 dropped even those. The rename was not uniform:
+    // Point/ObservablePoint/Rectangle got `copyFrom` (read the argument into
+    // this), while Matrix got `copyTo` (write this into the argument) -- the
+    // old `copy` on Matrix always ran in that opposite direction. Aliasing all
+    // four to copyFrom would silently reverse every legacy Matrix copy, so the
+    // directions below are taken from v5's own deprecation shims.
+    //
+    // MV-era plugins still call it: MVNovaLighting's Sprite_Light.refresh does
+    // `this.pivot.copy(data.offset)`. That throw lands inside a Spriteset_Map
+    // constructor, which the MZGlobalUpgrade wrapper catches and logs -- so
+    // boot continues with a half-built spriteset and the next update() dies on
+    // a missing overall filter, several frames away from the real cause.
+    //
+    // Installed only where absent, so a genuine v5 build keeps its own
+    // (deprecation-warning) versions.
+    // -------------------------------------------------------------------------
+    [
+        [PIXI.Point, "copyFrom"],
+        [PIXI.ObservablePoint, "copyFrom"],
+        [PIXI.Rectangle, "copyFrom"],
+        [PIXI.Matrix, "copyTo"]
+    ].forEach(function(entry) {
+        const klass = entry[0];
+        const target = entry[1];
+        if (!klass || !klass.prototype) return;
+        if (typeof klass.prototype.copy === "function") return;
+        if (typeof klass.prototype[target] !== "function") return;
+        klass.prototype.copy = function(other) {
+            return this[target](other);
+        };
+    });
 
     // -------------------------------------------------------------------------
     // v8 only: rescue `_position` from plugin clobbering. v8 stores the

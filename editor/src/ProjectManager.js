@@ -435,7 +435,12 @@ class ProjectManager {
 
         const dataFiles = this.getStarterData(projectName);
         for (const [fileName, data] of Object.entries(dataFiles)) {
-            this.writeJson(this.path.join(dataPath, fileName), data);
+            const filePath = this.path.join(dataPath, fileName);
+            if (/^Map\d+\.json$/.test(fileName) && typeof RRMapJson !== 'undefined') {
+                this.writeText(filePath, RRMapJson.stringify(data));
+            } else {
+                this.writeJson(filePath, data);
+            }
         }
 
         this.writeSolidPng(this.path.join(targetPath, 'img', 'system', 'Window.png'), 192, 192, [32, 32, 40, 255]);

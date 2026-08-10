@@ -199,7 +199,7 @@ class EventManager {
             console.log('Event container created');
         }
 
-        // Create hover highlight graphics (not used in event mode)
+        // Create hover highlight graphics for the cell under the event cursor.
         if (!this.hoverHighlight) {
             this.hoverHighlight = new PIXI.Graphics();
             this.hoverHighlight.visible = false;
@@ -227,6 +227,13 @@ class EventManager {
     setCurrentMap(mapData) {
         this.currentMap = mapData;
         this.selectedEvent = null;
+        this.selectedTileX = null;
+        this.selectedTileY = null;
+        this._lastMapClickTime = 0;
+        this._lastMapClickX = null;
+        this._lastMapClickY = null;
+        if (this.selectionHighlight) this.selectionHighlight.visible = false;
+        this.hideHoverHighlight();
 
         // Re-initialize event layer for the new map
         if (this.tilemapManager) {
@@ -309,12 +316,10 @@ class EventManager {
             canvasElement.addEventListener('contextmenu', this._eventContextMenuHandler);
         }
 
-        // Mouse move handler - not needed in event mode, selection stays on clicked tile
-        // (hover highlighting is only for tileset mode)
-
         // Mouse leave handler
         on('pointerleave', () => {
-            // Selection highlight stays visible even when mouse leaves
+            this.hideHoverHighlight();
+            // Selection highlight stays visible even when mouse leaves.
         });
 
         // Right-click handler
@@ -360,6 +365,7 @@ class EventManager {
 
         // Mouse move handler for dragging
         on('pointermove', (event) => {
+            this.updateHoverHighlight(event, container);
             if (this.isDragging && this.draggedEvent) {
                 this.updateDrag(event);
             }
@@ -401,6 +407,7 @@ class EventManager {
         if (this.selectionHighlight) {
             this.selectionHighlight.visible = false;
         }
+        this.hideHoverHighlight();
 
         // Clear selected tile
         this.selectedTileX = null;
@@ -449,7 +456,7 @@ class EventManager {
         this._lastMapClickY = tileY;
         this.selectTile(tileX, tileY);
 
-        const eventAtPos = this.getEventAt(tileX, tileY);
+        const eventAtPos = this.getEventAt(tileX, tileY) || null;
         if (!eventAtPos && this.tilesetPaletteViewer) {
             const selectedTiles = this.tilesetPaletteViewer.getSelectedTiles();
             if (selectedTiles && selectedTiles.length > 0) {
@@ -464,7 +471,66 @@ class EventManager {
         }
 
         this.selectEvent(eventAtPos);
-        if (eventAtPos) this.startDragging(eventAtPos, event);
+        if (eventAtPos) {
+            this.startDragging(eventAtPos, event);
+        } else {
+            // Deselect the previous event without discarding the empty cell the
+            // first click chose. That cell is the target of the second click
+            // which opens a new event.
+            this.selectTile(tileX, tileY);
+        }
+    }
+
+    updateHoverHighlight(pointerEvent, container = this.tilemapManager?.container) {
+        if (!this.eventMode || !this.currentMap || !this.hoverHighlight || !container) {
+            this.hideHoverHighlight();
+            return;
+        }
+
+        const pos = pointerEvent.data.getLocalPosition(container);
+        const tileX = Math.floor(pos.x / this.tilemapManager.TILE_WIDTH);
+        const tileY = Math.floor(pos.y / this.tilemapManager.TILE_HEIGHT);
+        if (tileX < 0 || tileX >= this.currentMap.width ||
+            tileY < 0 || tileY >= this.currentMap.height ||
+            (tileX === this.selectedTileX && tileY === this.selectedTileY)) {
+            this.hideHoverHighlight();
+            return;
+        }
+
+        const tileWidth = this.tilemapManager.TILE_WIDTH;
+        const tileHeight = this.tilemapManager.TILE_HEIGHT;
+        const color = 0xFFD700;
+        this.hoverHighlight.clear();
+        this.hoverHighlight.rect(tileX * tileWidth, tileY * tileHeight, tileWidth, tileHeight);
+        this.hoverHighlight.stroke({ color, width: 2, alpha: 0.9 });
+        this.hoverHighlight.visible = true;
+    }
+
+    hideHoverHighlight() {
+        if (this.hoverHighlight) this.hoverHighlight.visible = false;
+    }
+
+    moveEventSelection(deltaX, deltaY) {
+        if (!this.eventMode || !this.currentMap) return false;
+        const startX = Number.isInteger(this.selectedTileX)
+            ? this.selectedTileX
+            : this.selectedEvent?.x;
+        const startY = Number.isInteger(this.selectedTileY)
+            ? this.selectedTileY
+            : this.selectedEvent?.y;
+        if (!Number.isInteger(startX) || !Number.isInteger(startY)) return false;
+
+        this._lastMapClickTime = 0;
+        this._lastMapClickX = null;
+        this._lastMapClickY = null;
+
+        const tileX = Math.max(0, Math.min(this.currentMap.width - 1, startX + deltaX));
+        const tileY = Math.max(0, Math.min(this.currentMap.height - 1, startY + deltaY));
+        const eventAtPos = this.getEventAt(tileX, tileY) || null;
+        this.selectEvent(eventAtPos);
+        if (!eventAtPos) this.selectTile(tileX, tileY);
+        this.hideHoverHighlight();
+        return true;
     }
 
     // Select a tile (shows persistent highlight)
@@ -507,8 +573,8 @@ class EventManager {
         // Check if there's an event at this position
         const eventAtPos = this.getEventAt(this.selectedTileX, this.selectedTileY);
 
-        // Draw gold highlight for tiles with events, cyan for empty tiles
-        const color = eventAtPos ? 0xFFD700 : 0x00ffff;
+        // Event-mode targets use the editor's gold selection color.
+        const color = 0xFFD700;
         const alpha = eventAtPos ? 0.35 : 0.3;
 
         // PIXI v8 API - draw filled rectangle
@@ -1255,9 +1321,11 @@ class EventManager {
     }
 
     // Paste event
-    async pasteEvent(x, y) {
+    async pasteEvent(x = this.selectedTileX, y = this.selectedTileY) {
         const tt = (text) => (typeof window !== 'undefined' && window.I18n) ? window.I18n.tText(text) : text;
         if (!this.currentMap) return;
+        if (!Number.isInteger(x) || !Number.isInteger(y) ||
+            x < 0 || x >= this.currentMap.width || y < 0 || y >= this.currentMap.height) return;
         const targetMap = this.currentMap;
 
         let eventData = null;
@@ -1302,6 +1370,7 @@ class EventManager {
         }
 
         this.renderEvents();
+        this.selectEvent(newEvent);
         console.log(`Event pasted at (${x}, ${y})`);
     }
 

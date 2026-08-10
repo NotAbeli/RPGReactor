@@ -183,6 +183,7 @@ test('Escape lets go of whatever is held', () => {
         'the stamp goes first — carrying one is the easiest to do by accident');
     assert.ok(body.indexOf('selectedEvent') < body.indexOf('selectedTiles'),
         'then the event, then the tile');
+    assert.match(body, /selectedTileX/, 'Escape also drops an outlined empty-cell target');
 
     // A dialog or a text field owns Escape while it is up.
     assert.match(main, /target\.tagName === 'INPUT'/);

@@ -118,6 +118,12 @@ class TilemapManager {
         this.lazyLoadTimeBudgetMs = 8; // Max time to spend per lazy-load batch (8ms leaves plenty of frame budget)
         this.isLazyLoadingPaused = false; // Pause lazy-loading during user interaction
         this.lazyLoadTimerBatch = null; // Timer for lazy loading remaining tiles
+        this.virtualMapCellThreshold = 128 * 128;
+        this.virtualChunkSize = 32;
+        this.virtualChunkHalo = 1;
+        this._renderedTileBounds = null;
+        this._renderedViewportKey = null;
+        this._virtualChunkLayers = new Map();
 
         // PERFORMANCE: Debounce canvas resize during zoom to prevent lag
         this.resizeDebounceTimer = null;
@@ -220,7 +226,22 @@ class TilemapManager {
                 return false;
             }
 
+            const maxMapBytes = globalThis.RR_LIMITS?.MAP_FILE_BYTES || 64 * 1024 * 1024;
+            if (typeof this.fs.statSync === 'function' && this.fs.statSync(mapPath).size > maxMapBytes) {
+                throw new RangeError(`Map ${mapId} exceeds the ${maxMapBytes}-byte editor safety limit`);
+            }
             const mapData = JSON.parse(this.fs.readFileSync(mapPath, 'utf8'));
+            const validMapSize = typeof globalThis.rrIsMapSizeSupported === 'function'
+                ? globalThis.rrIsMapSizeSupported(mapData.width, mapData.height)
+                : Number.isInteger(mapData.width) && Number.isInteger(mapData.height) &&
+                    mapData.width >= 1 && mapData.width <= 512 && mapData.height >= 1 && mapData.height <= 512;
+            if (!validMapSize) {
+                throw new RangeError(`Map ${mapId} dimensions must be between 1x1 and 512x512`);
+            }
+            const expectedDataLength = mapData.width * mapData.height * 6;
+            if (!Array.isArray(mapData.data) || mapData.data.length !== expectedDataLength) {
+                throw new RangeError(`Map ${mapId} data must contain exactly ${expectedDataLength} entries`);
+            }
             // Set the map ID (it's not stored in the JSON file)
             mapData.id = mapId;
             // Its 3D sidecar comes with it, and has to: grouping is painted on
@@ -444,6 +465,7 @@ class TilemapManager {
     createTilemapContainer() {
         // Remove old container if exists
         if (this.container) {
+            this.destroyAllVirtualChunkLayers();
             this.app.stage.removeChild(this.container);
             this.container.destroy({ children: true });
         }
@@ -535,15 +557,15 @@ class TilemapManager {
 
         // Add layers in correct rendering order (bottom to top). Each A1
         // overlay draws directly above its z-slot's static container, so
-        // stacking between z-slots is unchanged (an A-decoration at z1
-        // still covers water at z0; shadows still cover ground water).
+        // stacking between z-slots is unchanged. RPG Maker draws shadows
+        // after both base planes (z0 and z1), then draws decorations (z2/z3).
         this.container.addChild(this.layers.checkerboard);
         this.container.addChild(this.layers.parallax);
         this.container.addChild(this.layers.ground);
         this.container.addChild(this.layers.a1ground);
-        this.container.addChild(this.layers.shadow);
         this.container.addChild(this.layers.lower1);
         this.container.addChild(this.layers.a1lower1);
+        this.container.addChild(this.layers.shadow);
         this.container.addChild(this.layers.lower2);
         this.container.addChild(this.layers.a1lower2);
         this.container.addChild(this.layers.lower3);
@@ -667,9 +689,10 @@ class TilemapManager {
                 // so a drag past the edge was drawn out of bounds and yanked
                 // back a frame later, over and over: the map jittered against
                 // its own edge for as long as you kept pulling.
-                this.container.x = event.data.global.x - dragStart.x;
-                this.container.y = event.data.global.y - dragStart.y;
-                this.clampContainerToMap();
+                this.setViewportTransform(
+                    event.data.global.x - dragStart.x,
+                    event.data.global.y - dragStart.y,
+                    this.container.scale.x);
 
                 // Re-anchor to where the view actually is. Without this the
                 // drag keeps accumulating past the edge and the map does not
@@ -692,10 +715,12 @@ class TilemapManager {
 
         this.container.on('pointerup', () => {
             isDragging = false;
+            this.scheduleVirtualViewportRefresh();
         });
 
         this.container.on('pointerupoutside', () => {
             isDragging = false;
+            this.scheduleVirtualViewportRefresh();
         });
 
         // Remove any existing custom scrollbar elements
@@ -735,12 +760,7 @@ class TilemapManager {
                 // Beyond this, the map would shrink inside the canvas — but since
                 // applyViewportCrop() shrinks the canvas itself to match map dimensions,
                 // there's no parallax bleed at any zoom level >= floor.
-                let minScale = 0.1;
-                if (viewportWidth > 0 && viewportHeight > 0 && mapWidthPx > 0 && mapHeightPx > 0) {
-                    const minScaleX = viewportWidth / mapWidthPx;
-                    const minScaleY = viewportHeight / mapHeightPx;
-                    minScale = Math.max(Math.min(minScaleX, minScaleY), 0.1);
-                }
+                const minScale = this.minimumZoomScale(viewportWidth, viewportHeight);
                 const maxScale = 5;
 
                 // Quantize so a tile is a WHOLE number of device pixels:
@@ -753,7 +773,7 @@ class TilemapManager {
                     // (at low zoom the 10% step can round back onto itself).
                     newScale = this._quantizeScale(oldScale, scaleFactor > 1 ? 1 : -1);
                 }
-                if (newScale < minScale) newScale = this._quantizeScale(minScale, 1);
+                if (newScale < minScale) newScale = minScale;
                 newScale = Math.min(maxScale, newScale);
 
                 if (newScale !== oldScale) {
@@ -768,17 +788,12 @@ class TilemapManager {
                     const worldX = (mouseX - this.container.x) / oldScale;
                     const worldY = (mouseY - this.container.y) / oldScale;
 
-                    // Apply new scale
-                    this.container.scale.set(newScale, newScale);
-
-                    // Adjust container position to keep world point under mouse
-                    this.container.x = mouseX - worldX * newScale;
-                    this.container.y = mouseY - worldY * newScale;
-
-                    // Keep the view inside the map at the new scale: zooming
-                    // out enlarges the viewport in world terms, so a position
-                    // that was against the edge is past it a moment later.
-                    this.clampContainerToMap(newScale);
+                    // Build the newly exposed tile window before committing
+                    // the transform, so zoom never reveals an unrendered gap.
+                    this.setViewportTransform(
+                        mouseX - worldX * newScale,
+                        mouseY - worldY * newScale,
+                        newScale);
 
                     // Update scrollbars
                     this.updateScrollbars();
@@ -809,6 +824,7 @@ class TilemapManager {
                 this.container.y = 0;
             }
             this.updateCanvasSize();
+            this.ensureVirtualViewportCoverage();
             // Run AFTER ProjectController's resize handler resets renderer to full
             // canvas-container size — defer with a microtask so our crop wins.
             Promise.resolve().then(() => this.applyViewportCrop());
@@ -847,23 +863,27 @@ class TilemapManager {
         const mapHeightPx = this.currentMap.height * this.TILE_SIZE;
         if (viewportWidth <= 0 || viewportHeight <= 0 || mapWidthPx <= 0 || mapHeightPx <= 0) return false;
 
-        const minScaleX = viewportWidth / mapWidthPx;
-        const minScaleY = viewportHeight / mapHeightPx;
-        // Contain-fit floor so the user can zoom out enough to see the whole map.
-        // Parallax bleed beyond the map edges is suppressed separately by
-        // applyViewportCrop() which shrinks the PIXI canvas to the map's scaled size.
-        const minScale = Math.max(Math.min(minScaleX, minScaleY), 0.1);
+        const minScale = this.minimumZoomScale(viewportWidth, viewportHeight);
 
         const currentScale = this.container.scale.x;
         if (currentScale < minScale) {
-            // Quantize UP so the clamped zoom still maps one tile to a
-            // whole number of device pixels (stays >= the contain-fit floor).
-            const snapped = this._quantizeScale(minScale, 1);
-            this.container.scale.set(snapped, snapped);
-            if (this.onZoomChange) this.onZoomChange(snapped);
+            this.container.scale.set(minScale, minScale);
+            if (this.onZoomChange) this.onZoomChange(minScale);
             return true;
         }
         return false;
+    }
+
+    minimumZoomScale(viewportWidth, viewportHeight) {
+        if (!this.currentMap || viewportWidth <= 0 || viewportHeight <= 0) return 0.1;
+        const mapWidthPx = this.currentMap.width * this.TILE_SIZE;
+        const mapHeightPx = this.currentMap.height * this.TILE_SIZE;
+        const containScale = Math.min(viewportWidth / mapWidthPx, viewportHeight / mapHeightPx);
+        const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+        const unit = this.TILE_SIZE * dpr;
+        // Keep one tile on an integer number of device pixels without making
+        // the quantized result larger than the scale that fits the whole map.
+        return Math.max(1 / unit, Math.floor(containScale * unit) / unit);
     }
 
     /**
@@ -965,12 +985,10 @@ class TilemapManager {
             const ratio = scrollableSize / thumbTrackSize;
             const containerDelta = -delta * ratio;
 
-            if (direction === 'horizontal') {
-                this.container.x = startContainerPos + containerDelta;
-            } else {
-                this.container.y = startContainerPos + containerDelta;
-            }
-            this.clampContainerToMap();
+            this.setViewportTransform(
+                direction === 'horizontal' ? startContainerPos + containerDelta : this.container.x,
+                direction === 'vertical' ? startContainerPos + containerDelta : this.container.y,
+                this.container.scale.x);
 
             // PERFORMANCE: Throttle scrollbar updates during drag
             if (!this.scrollbarUpdateScheduled) {
@@ -983,6 +1001,7 @@ class TilemapManager {
         };
         const onUp = () => {
             isDragging = false;
+            this.scheduleVirtualViewportRefresh();
         };
         document[handlerKey] = { move: onMove, up: onUp };
         document.addEventListener('mousemove', onMove);
@@ -1088,7 +1107,7 @@ class TilemapManager {
     }
 
     // PERFORMANCE: Calculate visible tile bounds for viewport culling
-    getVisibleTileBounds() {
+    getVisibleTileBounds(transform = {}) {
         if (!this.currentMap || !this.container) {
             return null;
         }
@@ -1098,15 +1117,18 @@ class TilemapManager {
         const viewportHeight = this.app.screen.height;
 
         // Get the container's current position and scale
-        const scale = this.container.scale.x; // Assuming uniform scale
-        const offsetX = -this.container.x / scale;
-        const offsetY = -this.container.y / scale;
+        const scale = transform.scale ?? this.container.scale.x;
+        const containerX = transform.x ?? this.container.x;
+        const containerY = transform.y ?? this.container.y;
+        const margin = transform.margin ?? this.viewportMargin;
+        const offsetX = -containerX / scale;
+        const offsetY = -containerY / scale;
 
         // Calculate visible tile range
-        const startTileX = Math.floor(offsetX / this.TILE_WIDTH) - this.viewportMargin;
-        const startTileY = Math.floor(offsetY / this.TILE_HEIGHT) - this.viewportMargin;
-        const endTileX = Math.ceil((offsetX + viewportWidth / scale) / this.TILE_WIDTH) + this.viewportMargin;
-        const endTileY = Math.ceil((offsetY + viewportHeight / scale) / this.TILE_HEIGHT) + this.viewportMargin;
+        const startTileX = Math.floor(offsetX / this.TILE_WIDTH) - margin;
+        const startTileY = Math.floor(offsetY / this.TILE_HEIGHT) - margin;
+        const endTileX = Math.ceil((offsetX + viewportWidth / scale) / this.TILE_WIDTH) + margin;
+        const endTileY = Math.ceil((offsetY + viewportHeight / scale) / this.TILE_HEIGHT) + margin;
 
         // Clamp to map bounds
         const { width, height } = this.currentMap;
@@ -1116,6 +1138,218 @@ class TilemapManager {
             endX: Math.min(width, endTileX),
             endY: Math.min(height, endTileY)
         };
+    }
+
+    usesVirtualViewport() {
+        return !!this.currentMap &&
+            this.currentMap.width * this.currentMap.height > this.virtualMapCellThreshold;
+    }
+
+    visibleViewportKey(bounds = this.getVisibleTileBounds()) {
+        return bounds
+            ? `${bounds.startX},${bounds.startY},${bounds.endX},${bounds.endY}`
+            : '';
+    }
+
+    getBufferedTileBounds(visibleBounds) {
+        if (!visibleBounds || !this.currentMap) return null;
+        const size = this.virtualChunkSize;
+        const halo = this.virtualChunkHalo * size;
+        return {
+            startX: Math.max(0, Math.floor(visibleBounds.startX / size) * size - halo),
+            startY: Math.max(0, Math.floor(visibleBounds.startY / size) * size - halo),
+            endX: Math.min(this.currentMap.width, Math.ceil(visibleBounds.endX / size) * size + halo),
+            endY: Math.min(this.currentMap.height, Math.ceil(visibleBounds.endY / size) * size + halo)
+        };
+    }
+
+    tileBoundsContain(bounds, x, y) {
+        return !!bounds && x >= bounds.startX && x < bounds.endX &&
+            y >= bounds.startY && y < bounds.endY;
+    }
+
+    tileBoundsEqual(a, b) {
+        return !!a && !!b && a.startX === b.startX && a.startY === b.startY &&
+            a.endX === b.endX && a.endY === b.endY;
+    }
+
+    tileBoundsContainBounds(outer, inner) {
+        return !!outer && !!inner && inner.startX >= outer.startX && inner.startY >= outer.startY &&
+            inner.endX <= outer.endX && inner.endY <= outer.endY;
+    }
+
+    virtualTileLayer(layer, x, y) {
+        if (!this.usesVirtualViewport() || !layer) return layer;
+        if (!this._virtualChunkLayers) this._virtualChunkLayers = new Map();
+        let chunks = this._virtualChunkLayers.get(layer);
+        if (!chunks) {
+            chunks = new Map();
+            this._virtualChunkLayers.set(layer, chunks);
+        }
+        const key = `${Math.floor(x / this.virtualChunkSize)},${Math.floor(y / this.virtualChunkSize)}`;
+        let holder = chunks.get(key);
+        if (!holder) {
+            holder = new PIXI.Container();
+            holder.cullable = true;
+            holder._rrVirtualChunk = true;
+            holder._rrChunkX = Math.floor(x / this.virtualChunkSize);
+            holder._rrChunkY = Math.floor(y / this.virtualChunkSize);
+            holder._rrMeshGroups = new Map();
+            chunks.set(key, holder);
+            layer.addChild(holder);
+            this._layerNameMap.set(holder, this._layerNameMap.get(layer) || 'unknown');
+        }
+        return holder;
+    }
+
+    destroyVirtualChunkHolder(layer, chunks, key, holder) {
+        if (holder.parent) holder.parent.removeChild(holder);
+        for (const child of holder.children) {
+            if (child._rrOwnedGeometry && child.geometry?.destroy) child.geometry.destroy(true);
+        }
+        const layerName = this._layerNameMap.get(holder);
+        if (layerName && this.tileSprites) {
+            const startX = holder._rrChunkX * this.virtualChunkSize;
+            const startY = holder._rrChunkY * this.virtualChunkSize;
+            const endX = Math.min(this.currentMap?.width || startX, startX + this.virtualChunkSize);
+            const endY = Math.min(this.currentMap?.height || startY, startY + this.virtualChunkSize);
+            for (let y = startY; y < endY; y++) {
+                for (let x = startX; x < endX; x++) delete this.tileSprites[`${layerName}_${x}_${y}`];
+            }
+        }
+        this._layerNameMap.delete(holder);
+        holder.destroy({ children: true });
+        chunks.delete(key);
+        if (chunks.size === 0) this._virtualChunkLayers.delete(layer);
+    }
+
+    destroyAllVirtualChunkLayers() {
+        if (!this._virtualChunkLayers) return;
+        for (const [layer, chunks] of [...this._virtualChunkLayers]) {
+            for (const [key, holder] of [...chunks]) {
+                this.destroyVirtualChunkHolder(layer, chunks, key, holder);
+            }
+        }
+        this._virtualChunkLayers.clear();
+    }
+
+    pruneVirtualChunkLayers(bounds = null) {
+        if (!this._virtualChunkLayers) return;
+        const size = this.virtualChunkSize;
+        for (const [layer, chunks] of [...this._virtualChunkLayers]) {
+            for (const [key, holder] of [...chunks]) {
+                const startX = holder._rrChunkX * size;
+                const startY = holder._rrChunkY * size;
+                const outside = bounds && (startX >= bounds.endX || startY >= bounds.endY ||
+                    startX + size <= bounds.startX || startY + size <= bounds.startY);
+                if (!outside && holder.children.length > 0) continue;
+                this.destroyVirtualChunkHolder(layer, chunks, key, holder);
+            }
+        }
+    }
+
+    setViewportTransform(x, y, scale = this.container.scale.x) {
+        const pan = this.panBounds(scale);
+        const nextX = pan ? Math.max(pan.minX, Math.min(0, x)) : x;
+        const nextY = pan ? Math.max(pan.minY, Math.min(0, y)) : y;
+        if (this.usesVirtualViewport()) {
+            this.ensureVirtualViewportCoverage(nextX, nextY, scale);
+        }
+        if (scale !== this.container.scale.x) this.container.scale.set(scale, scale);
+        this.container.x = nextX;
+        this.container.y = nextY;
+        return { x: nextX, y: nextY, scale };
+    }
+
+    scheduleVirtualViewportRefresh() {
+        this.ensureVirtualViewportCoverage();
+    }
+
+    renderTileCell(x, y) {
+        const { width, height, data } = this.currentMap;
+        if (x < 0 || y < 0 || x >= width || y >= height) return;
+        const layerSize = width * height;
+        for (let layerIdx = 0; layerIdx < 4; layerIdx++) {
+            const tileId = data[layerIdx * layerSize + y * width + x];
+            if (tileId <= 0) continue;
+            const target = this.virtualTileLayer(this.tileTargetLayer(layerIdx, tileId), x, y);
+            this.renderTile(tileId, x, y, target);
+            if (this.isTileA1(tileId)) {
+                const layerName = this._layerNameMap.get(target) || 'unknown';
+                if (this.tileSprites[`${layerName}_${x}_${y}`]) {
+                    this.a1TilePositions.push({ x, y, layerIndex: layerIdx, tileId, pixiLayer: target });
+                }
+            }
+        }
+
+        const shadowBits = data[4 * layerSize + y * width + x];
+        if (shadowBits > 0) {
+            this.renderShadowTile(shadowBits, x, y, this.virtualTileLayer(this.layers.shadow, x, y));
+        }
+    }
+
+    destroyTileCell(x, y) {
+        for (const layer of [
+            this.layers.ground,
+            this.layers.lower1,
+            this.layers.lower2,
+            this.layers.lower3,
+            this.layers.shadow
+        ]) {
+            this.clearTileSpritesAt(x, y, layer);
+        }
+    }
+
+    reconcileVirtualTileBounds(nextBounds) {
+        if (!this.usesVirtualViewport() || !nextBounds) return;
+        const previous = this._renderedTileBounds;
+        if (this.tileBoundsEqual(previous, nextBounds)) return;
+
+        // Materialize the destination first. The browser cannot draw between
+        // this work and the transform commit, so even a disjoint scrollbar
+        // jump keeps the old view until every required destination cell exists.
+        for (let y = nextBounds.startY; y < nextBounds.endY; y++) {
+            for (let x = nextBounds.startX; x < nextBounds.endX; x++) {
+                if (!this.tileBoundsContain(previous, x, y)) this.renderTileCell(x, y);
+            }
+        }
+        this.flushVirtualChunkMeshes();
+
+        if (previous) {
+            this.a1TilePositions = this.a1TilePositions.filter(entry =>
+                this.tileBoundsContain(nextBounds, entry.x, entry.y));
+            this.pruneVirtualChunkLayers(nextBounds);
+        }
+
+        this._renderedTileBounds = nextBounds;
+        for (const layer of [
+            this.layers.ground, this.layers.lower1, this.layers.lower2, this.layers.lower3,
+            this.layers.upper0, this.layers.upper1, this.layers.upper2, this.layers.upper3
+        ]) {
+            if (layer?.isCachedAsTexture) this.refreshLayerCache(layer);
+            else this.cacheLayerIfStatic(layer);
+        }
+    }
+
+    ensureVirtualViewportCoverage(
+        x = this.container?.x,
+        y = this.container?.y,
+        scale = this.container?.scale?.x
+    ) {
+        if (!this.usesVirtualViewport() || !this.container) return;
+        const visible = this.getVisibleTileBounds({ x, y, scale, margin: 0 });
+        if (!visible) return;
+        if (this.tileBoundsContainBounds(this._renderedTileBounds, visible)) {
+            this._renderedViewportKey = this.visibleViewportKey(visible);
+            return;
+        }
+        const buffered = this.getBufferedTileBounds(visible);
+        this.reconcileVirtualTileBounds(buffered);
+        this._renderedViewportKey = this.visibleViewportKey(visible);
+    }
+
+    isTileCellRendered(x, y) {
+        return !this.usesVirtualViewport() || this.tileBoundsContain(this._renderedTileBounds, x, y);
     }
 
     // options.preserveScroll: keep the current scroll position instead of
@@ -1138,6 +1372,7 @@ class TilemapManager {
                 layer.cacheAsTexture(false);
             }
         }
+        this.destroyAllVirtualChunkLayers();
 
         const { width, height, data } = this.currentMap;
 
@@ -1150,8 +1385,10 @@ class TilemapManager {
         const layerSize = width * height;
 
         // Clear existing sprites before rendering
-        this.layers.checkerboard.removeChildren();
-        this.layers.parallax.removeChildren();
+        if (!options.virtualRefresh) {
+            this.layers.checkerboard.removeChildren();
+            this.layers.parallax.removeChildren();
+        }
         this.layers.ground.removeChildren();
         this.layers.lower1.removeChildren();
         this.layers.lower2.removeChildren();
@@ -1171,10 +1408,10 @@ class TilemapManager {
         this.tileSprites = {};
 
         // Render checkerboard background (for transparency visualization)
-        this.renderCheckerboard(width, height);
+        if (!options.virtualRefresh) this.renderCheckerboard(width, height);
 
         // Render parallax background (non-blocking - loads in background while tiles render)
-        this.renderParallax();
+        if (!options.virtualRefresh) this.renderParallax();
 
         // Render tile layers
         // Layer 0: Ground tiles
@@ -1190,15 +1427,14 @@ class TilemapManager {
         // Without this, a ☆ roof piece at z2 rendered UNDER a tree at z3
         // ("trees above buildings" bug).
 
-        let tilesRendered = 0;
-
         // PERFORMANCE: Clear A1 tile tracking list before re-rendering
         this.a1TilePositions = [];
 
         // PERFORMANCE: Get visible tile bounds for viewport culling
         let startX = 0, startY = 0, endX = width, endY = height;
         if (this.useViewportCulling) {
-            const bounds = this.getVisibleTileBounds();
+            const visible = this.getVisibleTileBounds({ margin: this.usesVirtualViewport() ? 0 : this.viewportMargin });
+            const bounds = this.usesVirtualViewport() ? this.getBufferedTileBounds(visible) : visible;
             if (bounds) {
                 startX = bounds.startX;
                 startY = bounds.startY;
@@ -1206,35 +1442,21 @@ class TilemapManager {
                 endY = bounds.endY;
             }
         }
+        this._renderedTileBounds = this.usesVirtualViewport()
+            ? { startX, startY, endX, endY }
+            : null;
+        this._renderedViewportKey = this.usesVirtualViewport()
+            ? this.visibleViewportKey(this.getVisibleTileBounds({ margin: 0 }))
+            : null;
 
         // PERFORMANCE: Single pass over visible tiles for all 5 layers (0-4)
         // instead of 5 separate loops. This cuts iteration overhead by ~5x.
         for (let y = startY; y < endY; y++) {
             for (let x = startX; x < endX; x++) {
-                // Layers 0-3: Tile data
-                for (let layerIdx = 0; layerIdx < 4; layerIdx++) {
-                    const index = layerIdx * layerSize + y * width + x;
-                    const tileId = data[index];
-                    if (tileId > 0) {
-                        const target = this.tileTargetLayer(layerIdx, tileId);
-                        this.renderTile(tileId, x, y, target);
-                        tilesRendered++;
-                        // Track A1 tiles for animation
-                        if (tileId >= 2048 && tileId < 2816) {
-                            this.a1TilePositions.push({x, y, layerIndex: layerIdx, tileId, pixiLayer: target});
-                        }
-                    }
-                }
-
-                // Layer 4: Shadow bits
-                const shadowIndex = 4 * layerSize + y * width + x;
-                const shadowBits = data[shadowIndex];
-                if (shadowBits > 0) {
-                    this.renderShadowTile(shadowBits, x, y);
-                    tilesRendered++;
-                }
+                this.renderTileCell(x, y);
             }
         }
+        this.flushVirtualChunkMeshes();
 
         // Layer 5 - NOT RENDERED
         // In RPG Maker MZ, layer 5 contains region/collision metadata, NOT visual tiles
@@ -1259,8 +1481,11 @@ class TilemapManager {
         }
 
         // PERFORMANCE: If viewport culling was used, lazy-load the rest of the map
-        if (this.useViewportCulling && (startX > 0 || startY > 0 || endX < width || endY < height)) {
+        if (!this.usesVirtualViewport() && this.useViewportCulling &&
+            (startX > 0 || startY > 0 || endX < width || endY < height)) {
             this.lazyLoadRemainingTiles(width, height, startX, startY, endX, endY, data, layerSize);
+        } else if (this.usesVirtualViewport()) {
+            this.cacheStaticLayers();
         }
     }
 
@@ -1270,12 +1495,22 @@ class TilemapManager {
     updateTiles(positions) {
         if (!this.currentMap || !this.currentTileset) return;
 
+        if (this.usesVirtualViewport()) {
+            const chunkKeys = new Set();
+            for (const { x, y, layer } of positions) {
+                if (layer < 0 || layer > 4 || !this.isTileCellRendered(x, y)) continue;
+                chunkKeys.add(`${Math.floor(x / this.virtualChunkSize)},${Math.floor(y / this.virtualChunkSize)}`);
+            }
+            this.rebuildVirtualChunks(chunkKeys);
+            return;
+        }
+
         // Huge batches (whole-map bucket fills, giant rectangle drags) are
         // far faster through the streaming full re-render than through
         // 100k+ incremental sprite updates — measured 39.6s of updateTiles
         // for a 256×256 fill vs an instant viewport render plus a ~2.5s
         // background stream. The scroll position is preserved.
-        if (positions.length > 3000) {
+        if (positions.length > 3000 && !this.usesVirtualViewport()) {
             this.renderMap({ preserveScroll: true });
             return;
         }
@@ -1295,6 +1530,7 @@ class TilemapManager {
             // Validate bounds
             if (x < 0 || x >= width || y < 0 || y >= height) continue;
             if (layerIdx < 0 || layerIdx > 4) continue;
+            if (!this.isTileCellRendered(x, y)) continue;
 
             // Get the layer container (canonical lower container for the
             // z-slot — sprite-tracking keys are per-slot, so clearing via
@@ -1339,7 +1575,7 @@ class TilemapManager {
             } else {
                 // Tile layers 0-3
                 if (tileValue > 0) {
-                    const target = this.tileTargetLayer(layerIdx, tileValue);
+                    const target = this.virtualTileLayer(this.tileTargetLayer(layerIdx, tileValue), x, y);
                     this.renderTile(tileValue, x, y, target);
 
                     // Track A1 tiles for animation (old tracking for the
@@ -1379,9 +1615,7 @@ class TilemapManager {
         // re-renders with the new sprites on the next frame, and the
         // layer never round-trips through live rendering.
         for (const layer of affectedLayers) {
-            if (layer.isCachedAsTexture) {
-                layer.updateCacheTexture();
-            }
+            this.refreshLayerCache(layer);
         }
     }
 
@@ -1391,7 +1625,7 @@ class TilemapManager {
     // per target layer) and only attached to the stage when their layer's
     // stream completes. Streaming into the live layers made every editor
     // frame re-render the ever-growing uncached sprite tree (a full 256×256
-    // map is ~500k sprites — over 1s per frame near the end), which starved
+    // map can be ~500k sprites — over 1s per frame near the end), which starved
     // the idle-callback batches and stretched a ~1s fill into ~10s wall time.
     // With holders the per-frame render stays viewport-sized throughout, and
     // each layer pays its one-time cache render as it lands.
@@ -1567,7 +1801,56 @@ class TilemapManager {
     cacheLayerIfStatic(layer) {
         if (!layer || layer.isCachedAsTexture) return;
         if (this._liveLayers && this._liveLayers.has(layer)) return;
+        if (this.usesVirtualViewport()) return;
+        if (!this.isLayerCacheSafe(layer)) return;
         layer.cacheAsTexture(this.layerCacheOptions);
+    }
+
+    refreshLayerCache(layer) {
+        if (!layer?.isCachedAsTexture) return;
+        if (this.isLayerCacheSafe(layer)) {
+            layer.updateCacheTexture();
+        } else {
+            layer.cacheAsTexture(false);
+        }
+    }
+
+    isLayerCacheSafe(layer) {
+        const gl = this.app?.renderer?.gl;
+        if (!gl || typeof gl.getParameter !== 'function') return false;
+
+        let bounds;
+        try {
+            bounds = layer.getLocalBounds();
+        } catch (_error) {
+            return false;
+        }
+        const resolution = this.layerCacheOptions?.resolution || 1;
+        const width = Math.ceil(Number(bounds?.width) * resolution);
+        const height = Math.ceil(Number(bounds?.height) * resolution);
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return false;
+
+        const nextPowerOfTwo = value => 2 ** Math.ceil(Math.log2(Math.max(1, value)));
+        const textureWidth = nextPowerOfTwo(width);
+        const textureHeight = nextPowerOfTwo(height);
+        try {
+            const limits = [
+                Number(gl.getParameter(gl.MAX_TEXTURE_SIZE)),
+                Number(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE))
+            ];
+            const viewport = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
+            if (viewport?.length >= 2) limits.push(Number(viewport[0]), Number(viewport[1]));
+            const maxSide = Math.min(...limits.filter(limit => Number.isFinite(limit) && limit > 0));
+            if (!Number.isFinite(maxSide) || textureWidth > maxSide || textureHeight > maxSide) return false;
+        } catch (_error) {
+            return false;
+        }
+
+        // Pixi pools RGBA8 cache textures at power-of-two dimensions. Keeping
+        // each cache below this budget bounds all eight static layers to a
+        // practical amount instead of allowing a single 1-4 GiB framebuffer.
+        const maxCacheBytes = 32 * 1024 * 1024;
+        return textureWidth * textureHeight * 4 <= maxCacheBytes;
     }
 
     // PERFORMANCE: Cache static layers as textures for faster rendering
@@ -1718,6 +2001,30 @@ class TilemapManager {
     updateA1Tiles() {
         if (!this.currentMap || !this.currentTileset) return;
 
+        if (this.usesVirtualViewport()) {
+            for (const chunks of this._virtualChunkLayers.values()) {
+                for (const holder of chunks.values()) {
+                    for (const mesh of holder.children) {
+                        if (!mesh._rrA1Tiles?.length) continue;
+                        const uvBuffer = mesh.geometry.getBuffer('aUV');
+                        const uvs = uvBuffer.data;
+                        const sourceWidth = Number(mesh.texture?.source?.width || mesh.texture?.width);
+                        const sourceHeight = Number(mesh.texture?.source?.height || mesh.texture?.height);
+                        for (const entry of mesh._rrA1Tiles) {
+                            const rects = this.meshTileRects(entry.tileId, entry.x, entry.y);
+                            let offset = entry.uvOffset;
+                            for (const rect of rects) {
+                                const values = this.rectUvs(rect, sourceWidth, sourceHeight);
+                                uvs.set(values, offset);
+                                offset += values.length;
+                            }
+                        }
+                        uvBuffer.update();
+                    }
+                }
+            }
+        }
+
         // Only iterate through known A1 tile positions instead of entire map
         for (const tileInfo of this.a1TilePositions) {
             const {x, y, tileId, pixiLayer} = tileInfo;
@@ -1837,7 +2144,7 @@ class TilemapManager {
                 if (sprite.parent) {
                     sprite.parent.removeChild(sprite);
                 }
-                sprite.destroy();
+                sprite.destroy(sprite.children ? { children: true } : undefined);
             }
             // Clear the tracking array
             delete this.tileSprites[key];
@@ -2120,8 +2427,210 @@ class TilemapManager {
         ].filter(Boolean);
     }
 
+    meshTileRects(tileId, x, y) {
+        const w = this.TILE_WIDTH;
+        const h = this.TILE_HEIGHT;
+        if (!this.isAutotile(tileId)) {
+            const setNumber = this.setNumberForTileId(tileId);
+            if (setNumber < 0) return [];
+            let sx;
+            let sy;
+            if (this.isTileA5(tileId)) {
+                const localTileId = tileId - this.TILE_ID_A5;
+                sx = (localTileId % 8) * w;
+                sy = Math.floor(localTileId / 8) * h;
+            } else if (tileId < this.TILE_ID_A5) {
+                const localTileId = tileId % 256;
+                sx = ((Math.floor(localTileId / 128) % 2) * 8 + (localTileId % 8)) * w;
+                sy = (Math.floor(localTileId / 8) % 16) * h;
+            } else {
+                return [];
+            }
+            return [{ setNumber, sx, sy, dx: x * w, dy: y * h, w, h }];
+        }
+
+        const kind = this.getAutotileKind(tileId);
+        const shape = this.getAutotileShape(tileId);
+        const tx = kind % 8;
+        const ty = Math.floor(kind / 8);
+        let setNumber;
+        let bx;
+        let by;
+        let table;
+        if (this.isTileA1(tileId)) {
+            setNumber = 0;
+            const waterSurfaceIndex = [0, 1, 2, 1][this.waterAnimationFrame];
+            if (kind === 0) {
+                bx = waterSurfaceIndex * 2;
+                by = 0;
+            } else if (kind === 1) {
+                bx = waterSurfaceIndex * 2;
+                by = 3;
+            } else if (kind === 2) {
+                bx = 6;
+                by = 0;
+            } else if (kind === 3) {
+                bx = 6;
+                by = 3;
+            } else {
+                bx = Math.floor(tx / 4) * 8;
+                by = ty * 6 + (Math.floor(tx / 2) % 2) * 3;
+                if (kind % 2 === 0) {
+                    bx += waterSurfaceIndex * 2;
+                } else {
+                    bx += 6;
+                    by += this.waterfallAnimationFrame;
+                    table = this.WATERFALL_AUTOTILE_TABLE;
+                }
+            }
+            table ||= this.FLOOR_AUTOTILE_TABLE;
+        } else if (this.isTileA2(tileId)) {
+            setNumber = 1;
+            bx = tx * 2;
+            by = (ty - 2) * 3;
+            table = this.FLOOR_AUTOTILE_TABLE;
+        } else if (this.isTileA3(tileId)) {
+            setNumber = 2;
+            bx = tx * 2;
+            by = (ty - 6) * 2;
+            table = this.WALL_AUTOTILE_TABLE;
+        } else if (this.isTileA4(tileId)) {
+            setNumber = 3;
+            bx = tx * 2;
+            const rowInA4 = ty - 10;
+            const pairIndex = Math.floor(rowInA4 / 2);
+            const isWall = rowInA4 % 2 === 1;
+            by = pairIndex * 5 + (isWall ? 3 : 0);
+            table = isWall ? this.WALL_AUTOTILE_TABLE : this.FLOOR_AUTOTILE_TABLE;
+        } else {
+            return [];
+        }
+        const pattern = table[shape];
+        if (!pattern) return [];
+        const w1 = w / 2;
+        const h1 = h / 2;
+        return pattern.map((source, index) => ({
+            setNumber,
+            sx: (bx * 2 + source[0]) * w1,
+            sy: (by * 2 + source[1]) * h1,
+            dx: x * w + (index % 2) * w1,
+            dy: y * h + Math.floor(index / 2) * h1,
+            w: w1,
+            h: h1
+        }));
+    }
+
+    rectUvs(rect, sourceWidth, sourceHeight) {
+        return [
+            rect.sx / sourceWidth, rect.sy / sourceHeight,
+            (rect.sx + rect.w) / sourceWidth, rect.sy / sourceHeight,
+            (rect.sx + rect.w) / sourceWidth, (rect.sy + rect.h) / sourceHeight,
+            rect.sx / sourceWidth, (rect.sy + rect.h) / sourceHeight
+        ];
+    }
+
+    appendVirtualMeshTile(tileId, x, y, holder) {
+        const rects = this.meshTileRects(tileId, x, y);
+        let a1Entry = null;
+        for (const rect of rects) {
+            const texture = this.tilesetTextures[rect.setNumber];
+            const sourceWidth = Number(texture?.source?.width || texture?.width);
+            const sourceHeight = Number(texture?.source?.height || texture?.height);
+            if (!texture || !(sourceWidth > 0) || !(sourceHeight > 0)) continue;
+            let group = holder._rrMeshGroups.get(rect.setNumber);
+            if (!group) {
+                group = { texture, positions: [], uvs: [], indices: [], a1Tiles: [] };
+                holder._rrMeshGroups.set(rect.setNumber, group);
+            }
+            if (this.isTileA1(tileId) && !a1Entry) {
+                a1Entry = { tileId, x, y, uvOffset: group.uvs.length };
+                group.a1Tiles.push(a1Entry);
+            }
+            const base = group.positions.length / 2;
+            group.positions.push(
+                rect.dx, rect.dy,
+                rect.dx + rect.w, rect.dy,
+                rect.dx + rect.w, rect.dy + rect.h,
+                rect.dx, rect.dy + rect.h
+            );
+            group.uvs.push(...this.rectUvs(rect, sourceWidth, sourceHeight));
+            group.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+            holder._rrMeshDirty = true;
+        }
+    }
+
+    flushVirtualChunkMeshes() {
+        if (!this._virtualChunkLayers || typeof PIXI.MeshGeometry !== 'function') return;
+        for (const chunks of this._virtualChunkLayers.values()) {
+            for (const holder of chunks.values()) {
+                if (!holder._rrMeshDirty) continue;
+                for (let i = holder.children.length - 1; i >= 0; i--) {
+                    const child = holder.children[i];
+                    if (!child._rrOwnedGeometry) continue;
+                    holder.removeChild(child);
+                    child.geometry?.destroy(true);
+                    child.destroy();
+                }
+                for (const group of holder._rrMeshGroups.values()) {
+                    if (group.indices.length === 0) continue;
+                    const geometry = new PIXI.MeshGeometry({
+                        positions: new Float32Array(group.positions),
+                        uvs: new Float32Array(group.uvs),
+                        indices: new Uint32Array(group.indices),
+                        shrinkBuffersToFit: false
+                    });
+                    geometry.batchMode = 'no-batch';
+                    const mesh = new PIXI.Mesh({
+                        geometry,
+                        texture: group.texture,
+                        roundPixels: true
+                    });
+                    mesh.eventMode = 'none';
+                    mesh._rrOwnedGeometry = true;
+                    mesh._rrA1Tiles = group.a1Tiles;
+                    holder.addChild(mesh);
+                }
+                holder._rrMeshGroups = new Map();
+                holder._rrMeshDirty = false;
+            }
+        }
+    }
+
+    rebuildVirtualChunks(chunkKeys) {
+        if (!this.usesVirtualViewport() || !chunkKeys?.size) return;
+        for (const key of chunkKeys) {
+            for (const [layer, chunks] of [...this._virtualChunkLayers]) {
+                const holder = chunks.get(key);
+                if (holder) this.destroyVirtualChunkHolder(layer, chunks, key, holder);
+            }
+        }
+        this.a1TilePositions = this.a1TilePositions.filter(entry => {
+            const key = `${Math.floor(entry.x / this.virtualChunkSize)},${Math.floor(entry.y / this.virtualChunkSize)}`;
+            return !chunkKeys.has(key);
+        });
+        const bounds = this._renderedTileBounds;
+        for (const key of chunkKeys) {
+            const [chunkX, chunkY] = key.split(',').map(Number);
+            const startX = Math.max(bounds?.startX || 0, chunkX * this.virtualChunkSize);
+            const startY = Math.max(bounds?.startY || 0, chunkY * this.virtualChunkSize);
+            const endX = Math.min(bounds?.endX ?? this.currentMap.width,
+                this.currentMap.width, (chunkX + 1) * this.virtualChunkSize);
+            const endY = Math.min(bounds?.endY ?? this.currentMap.height,
+                this.currentMap.height, (chunkY + 1) * this.virtualChunkSize);
+            for (let y = startY; y < endY; y++) {
+                for (let x = startX; x < endX; x++) this.renderTileCell(x, y);
+            }
+        }
+        this.flushVirtualChunkMeshes();
+    }
+
     renderTile(tileId, x, y, layer) {
         if (tileId <= 0) return;
+
+        if (layer?._rrVirtualChunk) {
+            this.appendVirtualMeshTile(tileId, x, y, layer);
+            return;
+        }
 
         // NOTE: there used to be a "skip A2+ wherever an A1 exists" rule
         // here. MZ has no such rule — it renders every z-slot in order —
@@ -2446,6 +2955,16 @@ class TilemapManager {
     updateShadowTile(x, y, shadowBits) {
         if (!this.layers || !this.layers.shadow) return;
 
+        if (this.usesVirtualViewport()) {
+            this.clearTileSpritesAt(x, y, this.layers.shadow);
+            if (shadowBits > 0) {
+                const holder = this.virtualTileLayer(this.layers.shadow, x, y);
+                this.renderShadowTile(shadowBits, x, y, holder);
+            }
+            this.pruneVirtualChunkLayers();
+            return;
+        }
+
         // Remove existing shadow containers for this tile position
         const tileX = x * this.TILE_WIDTH;
         const tileY = y * this.TILE_HEIGHT;
@@ -2481,6 +3000,7 @@ class TilemapManager {
             this.mapMask = null;
         }
         if (this.container) {
+            this.destroyAllVirtualChunkLayers();
             this.container.destroy({ children: true });
             this.container = null;
         }
@@ -2531,6 +3051,7 @@ class TilemapManager {
             this.mapMask = null;
         }
         if (this.container) {
+            this.destroyAllVirtualChunkLayers();
             this.app.stage.removeChild(this.container);
             this.container.destroy({ children: true });
             this.container = null;
@@ -2568,12 +3089,19 @@ class TilemapManager {
         const index = layerHeight * layerIndex + y * width + x;
 
         data[index] = tileId;
+        if (!this.isTileCellRendered(x, y)) return;
+
+        if (this.usesVirtualViewport()) {
+            const key = `${Math.floor(x / this.virtualChunkSize)},${Math.floor(y / this.virtualChunkSize)}`;
+            this.rebuildVirtualChunks(new Set([key]));
+            return;
+        }
 
         // Re-render the affected tile
         this.clearTileAt(x, y, layerIndex);
 
         if (tileId > 0) {
-            const layer = this.tileTargetLayer(layerIndex, tileId);
+            const layer = this.virtualTileLayer(this.tileTargetLayer(layerIndex, tileId), x, y);
             if (layer) {
                 this.renderTile(tileId, x, y, layer);
             }
@@ -2581,6 +3109,11 @@ class TilemapManager {
     }
 
     clearTileAt(x, y, layerIndex = 0) {
+        if (this.usesVirtualViewport()) {
+            const key = `${Math.floor(x / this.virtualChunkSize)},${Math.floor(y / this.virtualChunkSize)}`;
+            this.rebuildVirtualChunks(new Set([key]));
+            return;
+        }
         // The old sprite can live in either stack of the z-slot (☆ tiles
         // render in the upper container).
         for (const layer of this.containersForZ(layerIndex)) {
@@ -2735,7 +3268,10 @@ class TilemapManager {
             const mapDataToSave = this.getPersistedMapData();
 
             // Write map data to file with formatting
-            this._writeFileAtomic(this.fs, mapPath, JSON.stringify(mapDataToSave, null, 2), 'utf8');
+            const json = typeof RRMapJson !== 'undefined'
+                ? RRMapJson.stringify(mapDataToSave)
+                : JSON.stringify(mapDataToSave, null, 2);
+            this._writeFileAtomic(this.fs, mapPath, json, 'utf8');
             this.saveMapSidecar();
             this.captureSavedMapState();
             this.bumpVersionId();

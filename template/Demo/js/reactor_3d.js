@@ -1121,7 +1121,7 @@ Reactor3D.Geometry.nearestGround = function(mapData, run, isUpright) {
     return 0;
 };
 
-Reactor3D.Geometry.groundStackAt = function(mapData, x, y, isUpright) {
+Reactor3D.Geometry.groundLayersAt = function(mapData, x, y, isUpright) {
     if (!mapData || !Array.isArray(mapData.data)) return [];
     const { width, height } = mapData;
     if (x < 0 || y < 0 || x >= width || y >= height) return [];
@@ -1131,9 +1131,13 @@ Reactor3D.Geometry.groundStackAt = function(mapData, x, y, isUpright) {
         const tileId = mapData.data[z * plane + y * width + x] || 0;
         if (tileId <= 0) continue;
         if (isUpright && isUpright(tileId)) continue;
-        stack.push(tileId);
+        stack.push({ tileId, layer: z });
     }
     return stack;
+};
+
+Reactor3D.Geometry.groundStackAt = function(mapData, x, y, isUpright) {
+    return this.groundLayersAt(mapData, x, y, isUpright).map(entry => entry.tileId);
 };
 
 /** The upright tile in a cell, if any — the topmost one wins. */
@@ -1223,6 +1227,16 @@ Reactor3D.Geometry.sheetCellOf = function(tileId) {
         col: (Math.floor(local / 128) % 2) * 8 + (local % 8),
         row: Math.floor((local % 256) / 8) % 16
     };
+};
+
+/** Inverse of `sheetCellOf` for plain A5/B-G declared-object cells. */
+Reactor3D.Geometry.tileIdAtSheetCell = function(setNumber, col, row) {
+    if (setNumber === 4) return 1536 + row * 8 + col;
+    if (setNumber < 5 || setNumber > 10 || col < 0 || col >= 16 || row < 0 || row >= 16) {
+        return 0;
+    }
+    const local = col < 8 ? row * 8 + col : 128 + row * 8 + col - 8;
+    return (setNumber - 5) * 256 + local;
 };
 
 /**
@@ -1369,9 +1383,13 @@ Reactor3D.Geometry.uprightObjects = function(mapData, isUpright, maxHeight, isAu
             for (const tileId of tiles) {
                 const found = declaredAt(tileId);
                 if (!found) continue;
-                const key = `${found.object.tile}:${x - found.dc}:${y - found.dr}`;
-                if (!instances.has(key)) instances.set(key, []);
-                instances.get(key).push({ x, y, tileId, tileIds: [tileId] });
+                const originX = x - found.dc;
+                const originY = y - found.dr;
+                const key = `${found.object.tile}:${originX}:${originY}`;
+                if (!instances.has(key)) {
+                    instances.set(key, { cells: [], object: found.object, originX, originY });
+                }
+                instances.get(key).cells.push({ x, y, tileId, tileIds: [tileId] });
                 claimed = true;
             }
             // Anything left over in a claimed cell would be drawn twice if the
@@ -1379,22 +1397,58 @@ Reactor3D.Geometry.uprightObjects = function(mapData, isUpright, maxHeight, isAu
             // done with here.
             if (claimed) seen.add(index);
         }
-        for (const [key, cells] of instances) {
-            const declared = declaredAt(cells[0].tileId);
+        for (const instance of instances.values()) {
+            const { cells, object, originX, originY } = instance;
+            const roles = object.roles || "";
+            const standing = [];
+            for (let dr = 0; dr < object.h; dr++) {
+                for (let dc = 0; dc < object.w; dc++) {
+                    if (roles[dr * object.w + dc] !== "F") standing.push({ dc, dr });
+                }
+            }
+            const footprint = standing.length ? standing : cells.map(cell => ({
+                dc: cell.x - originX,
+                dr: cell.y - originY
+            }));
+            const lastStandingRow = Math.max(...footprint.map(cell => cell.dr));
+            const firstFlatFooting = [];
+            for (let dr = lastStandingRow + 1; dr < object.h; dr++) {
+                for (let dc = 0; dc < object.w; dc++) {
+                    if (roles[dr * object.w + dc] === "F") firstFlatFooting.push(dr);
+                }
+            }
             objects.push({
                 cells,
-                minX: Math.min(...cells.map(cell => cell.x)),
-                maxX: Math.max(...cells.map(cell => cell.x)),
-                minY: Math.min(...cells.map(cell => cell.y)),
-                maxY: Math.max(...cells.map(cell => cell.y)),
+                minX: Math.max(0, originX + Math.min(...footprint.map(cell => cell.dc))),
+                maxX: Math.min(width - 1,
+                    originX + Math.max(...footprint.map(cell => cell.dc))),
+                minY: Math.max(0, originY + Math.min(...footprint.map(cell => cell.dr))),
+                maxY: Math.min(height - 1,
+                    originY + Math.max(...footprint.map(cell => cell.dr))),
+                declaredMinX: Math.max(0, originX),
+                declaredMaxX: Math.min(width - 1, originX + object.w - 1),
+                declaredMinY: Math.max(0, originY),
+                declaredMaxY: Math.min(height - 1, originY + object.h - 1),
+                declaredOriginX: originX,
+                declaredOriginY: originY,
+                declaredW: object.w,
+                declaredH: object.h,
+                declaredRoles: roles,
                 // How tall this object's picture is on the sheet. A structure
                 // built from it cannot stand taller than its own art, which is
                 // what stops pieces joining up the length of a street.
-                sheetH: declared ? declared.object.h : 0,
+                sheetH: object.h,
                 // Which tileset object this is a placement of. Two placements
                 // of the *same* object side by side are one surface painted in
                 // columns; two different objects that merely touch are not.
-                sheetTile: declared ? declared.object.tile : 0
+                sheetTile: object.tile,
+                // A flat row directly south of standing art is its floor. The
+                // vertical plane hinges on that row's north edge; anchoring it
+                // in the preceding cell's centre leaves a half-tile gap that
+                // becomes a horizontal seam at oblique camera angles.
+                planeZ: firstFlatFooting.length
+                    ? Math.max(0, Math.min(height,
+                        originY + Math.min(...firstFlatFooting))) : null
             });
         }
     }
@@ -1687,11 +1741,15 @@ Reactor3D.Geometry.build = function(mapData, options) {
     const groups = new Map();
     // Billboards need their own material, so they cannot share a group with
     // static geometry even when they draw from the same sheet.
-    const groupFor = (setNumber, billboard, above) => {
-        const key = `${setNumber}:${billboard ? 1 : 0}:${above ? 1 : 0}`;
+    const groupFor = (setNumber, billboard, above, underlay, layer, edgeHinged) => {
+        const mapLayer = Number.isFinite(layer) ? layer : 0;
+        const key = `${setNumber}:${billboard ? 1 : 0}:${above ? 1 : 0}:${underlay ? 1 : 0}:${mapLayer}:${edgeHinged ? 1 : 0}`;
         if (!groups.has(key)) {
             groups.set(key, {
                 setNumber, billboard: !!billboard, above: !!above,
+                underlay: !!underlay,
+                edgeHinged: !!edgeHinged,
+                layer: mapLayer,
                 positions: [], uvs: [], indices: [], vertexCount: 0,
                 // The rectangle of the sheet each vertex's quad is allowed to
                 // sample, as [u0, v0, u1, v1]. Four vertices of a quad all
@@ -2227,6 +2285,119 @@ Reactor3D.Geometry.build = function(mapData, options) {
         return index === undefined ? object.maxY : footings[index];
     };
 
+    /*
+     * Declared pictures painted over one another are one 2D composition.
+     *
+     * A lower-layer inset may have no flat footing of its own, which normally
+     * plants it in the centre of its southern cell. If a higher-layer picture
+     * occupies the same map cells and hinges on a flat row, that half-cell
+     * difference puts the underlay physically in front and lets depth reverse
+     * the author's layer order. Co-planar artwork instead shares the higher
+     * layer's hinge; source layer can then settle the intended painter order.
+     */
+    const plane = width * height;
+    const sourceLayerOf = object => {
+        let highest = -1;
+        for (const cell of object.cells) {
+            const tileIds = cell.tileIds && cell.tileIds.length
+                ? cell.tileIds : [cell.tileId];
+            const at = cell.y * width + cell.x;
+            for (const tileId of tileIds) {
+                for (let layer = 0; layer < 4; layer++) {
+                    if ((mapData.data[layer * plane + at] || 0) === tileId) {
+                        highest = Math.max(highest, layer);
+                    }
+                }
+            }
+        }
+        return highest;
+    };
+    const contains = (outer, inner) => outer.declaredMinX <= inner.declaredMinX
+        && outer.declaredMaxX >= inner.declaredMaxX
+        && outer.declaredMinY <= inner.declaredMinY
+        && outer.declaredMaxY >= inner.declaredMaxY;
+    for (const object of objects) object.sourceLayer = sourceLayerOf(object);
+    const declared = objects.filter(object => object.sheetTile);
+    declared.sort((a, b) => b.sourceLayer - a.sourceLayer);
+    for (const object of declared) {
+        if (Number.isFinite(object.planeZ)) continue;
+        const ownPlane = footingFor(object) + 0.5;
+        const candidates = declared.filter(other => other !== object
+            && other.sourceLayer > object.sourceLayer
+            && Number.isFinite(other.planeZ)
+            && contains(other, object)
+            && Math.abs(ownPlane - other.planeZ) <= 0.501);
+        candidates.sort((a, b) => (b.sourceLayer - a.sourceLayer)
+            || ((a.declaredMaxX - a.declaredMinX) * (a.declaredMaxY - a.declaredMinY)
+                - (b.declaredMaxX - b.declaredMinX) * (b.declaredMaxY - b.declaredMinY)));
+        const covering = candidates[0];
+        if (!covering) continue;
+        object.compositePlaneZ = covering.planeZ;
+        object.compositeFrame = covering;
+    }
+
+    const compositeFlat = new Map();
+    const syntheticFlat = new Map();
+    for (const object of declared) {
+        const frame = object.compositeFrame;
+        if (!frame) continue;
+        const source = this.sheetCellOf(object.sheetTile);
+        const cells = new Set(object.cells.map(cell => `${cell.x}:${cell.y}`));
+        for (let dr = 0; dr < object.declaredH; dr++) {
+            for (let dc = 0; dc < object.declaredW; dc++) {
+                const x = object.declaredOriginX + dc;
+                const y = object.declaredOriginY + dr;
+                if (x < 0 || y < 0 || x >= width || y >= height || cells.has(`${x}:${y}`)) continue;
+                const tileId = this.tileIdAtSheetCell(
+                    source.setNumber, source.col + dc, source.row + dr);
+                if (!tileId) continue;
+                object.cells.push({
+                    x, y, tileId, tileIds: [tileId], synthetic: true,
+                    // Just above an anomalous occupant on the same nominal map
+                    // plane, but still below the higher-layer covering frame.
+                    // Otherwise that occupant's core clips the reconstructed
+                    // soft tail before its colour pass can blend.
+                    syntheticLayer: object.sourceLayer + 0.01
+                });
+            }
+        }
+        for (const cell of object.cells) {
+            const dc = cell.x - frame.declaredOriginX;
+            const dr = cell.y - frame.declaredOriginY;
+            const role = frame.declaredRoles[dr * frame.declaredW + dc];
+            if (role !== "F") continue;
+            const key = cell.y * width + cell.x;
+            if (!compositeFlat.has(key)) compositeFlat.set(key, new Set());
+            const tileIds = cell.tileIds && cell.tileIds.length
+                ? cell.tileIds : [cell.tileId];
+            for (const tileId of tileIds) {
+                compositeFlat.get(key).add(tileId);
+                if (cell.synthetic) {
+                    if (!syntheticFlat.has(key)) syntheticFlat.set(key, []);
+                    syntheticFlat.get(key).push({ tileId, layer: cell.syntheticLayer });
+                }
+            }
+        }
+    }
+    const isCompositeFlat = (x, y, tileId) => {
+        const tiles = compositeFlat.get(y * width + x);
+        return !!(tiles && tiles.has(tileId));
+    };
+
+    const layerCursor = new Map();
+    const mapLayerFor = (cell, tileId) => {
+        if (Number.isFinite(cell.syntheticLayer)) return cell.syntheticLayer;
+        const key = `${cell.x}:${cell.y}:${tileId}`;
+        const after = layerCursor.get(key) ?? -1;
+        const at = cell.y * width + cell.x;
+        for (let layer = after + 1; layer < 4; layer++) {
+            if ((mapData.data[layer * width * height + at] || 0) !== tileId) continue;
+            layerCursor.set(key, layer);
+            return layer;
+        }
+        return Math.max(0, after);
+    };
+
     for (const object of objects) {
         // A cut-out's rows are its *height*, not its depth.
         //
@@ -2255,13 +2426,21 @@ Reactor3D.Geometry.build = function(mapData, options) {
         //
         // The middle of the cell is the object's own axis, so it turns about
         // itself from every angle.
-        const centreX = (object.minX + object.maxX + 1) / 2;
+        const frame = object.compositeFrame || object;
+        const centreX = (frame.minX + frame.maxX + 1) / 2;
         // The region's footing rather than this object's own southern row, so
         // every piece of one mural stands on one plane at one depth.
-        const footing = footingFor(object);
-        const centreZ = footing + 0.5;
-        const base = surfaceAt(Math.floor(centreX), footing);
+        const footing = footingFor(frame);
+        const centreZ = Number.isFinite(object.compositePlaneZ)
+            ? object.compositePlaneZ
+            : Number.isFinite(object.planeZ) ? object.planeZ : footing + 0.5;
+        const baseRow = Number.isFinite(object.compositePlaneZ)
+            ? Math.floor(object.compositePlaneZ)
+            : Number.isFinite(object.planeZ) ? Math.floor(object.planeZ) : footing;
+        const base = surfaceAt(Math.floor(centreX), baseRow);
         const anchor = [centreX, base, centreZ];
+        const edgeHinged = Number.isFinite(object.planeZ)
+            || Number.isFinite(object.compositePlaneZ);
 
         for (const cell of object.cells) {
             // South is the bottom of the picture, so a cell's distance north of
@@ -2275,18 +2454,22 @@ Reactor3D.Geometry.build = function(mapData, options) {
             // camera than the art it belongs to — and slid against it as the
             // camera panned, because two surfaces at different depths do not
             // move together.
-            standAt(cell.x, cell.y, centreZ, base, level * uprightHeight);
-
             // Every standing tile in the cell, lowest layer first — a cell can
             // hold more than one, and in 2D they are simply drawn one over the
             // other. Taking only the topmost made a column with a plate resting
             // on it vanish and leave the plate behind.
-            const standing = (cell.tileIds && cell.tileIds.length)
-                ? cell.tileIds : (cell.tileId ? [cell.tileId] : []);
+            const standing = ((cell.tileIds && cell.tileIds.length)
+                ? cell.tileIds : (cell.tileId ? [cell.tileId] : []))
+                .filter(tileId => !isCompositeFlat(cell.x, cell.y, tileId));
+            if (!standing.length) continue;
+            standAt(cell.x, cell.y, centreZ, base, level * uprightHeight);
             for (const tileId of standing) {
             const rect = this.sheetRectFor(tileId, tileSize);
             if (!rect) continue;
-            const group = groupFor(rect.setNumber, true, drawsAbove(tileId));
+            const mapLayer = mapLayerFor(cell, tileId);
+            const above = drawsAbove(tileId);
+            const group = groupFor(
+                rect.setNumber, true, above, false, mapLayer, edgeHinged);
             const size = sheetSize(rect.setNumber);
             const y0 = level * uprightHeight;
             const y1 = y0 + uprightHeight;
@@ -2512,6 +2695,63 @@ Reactor3D.Geometry.build = function(mapData, options) {
         }
     }
 
+    const emittedFoliagePlacements = new Set();
+    const multiFoliagePlacements = new Map();
+    const multiFoliagePlacement = (tileId, x, y, standId, spanX, spanY) => {
+        if (spanX <= 1 && spanY <= 1) return null;
+        const sourceCell = this.sheetCellOf(tileId);
+        const standCell = this.sheetCellOf(standId);
+        // The fill block and its lone variant are normally on the same sheet;
+        // only then do their cell offsets describe one repeating footprint.
+        if (sourceCell.setNumber !== standCell.setNumber) return null;
+        const mod = (value, divisor) => ((value % divisor) + divisor) % divisor;
+        const originX = x - mod(sourceCell.col - standCell.col, spanX);
+        const originY = y - mod(sourceCell.row - standCell.row, spanY);
+        return {
+            originX,
+            originY,
+            dc: x - originX,
+            dr: y - originY,
+            key: `${standCell.setNumber}:${standId}:${originX}:${originY}`
+        };
+    };
+    // Collect every painted constituent before emitting a multi-cell stand-in.
+    // A stamp may be incomplete or cross source planes; retaining each present
+    // quadrant is what lets the 3D result preserve the same layer groups as 2D
+    // without drawing the complete mountain once per source tile.
+    if (isFoliage) {
+        const plane = width * height;
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                for (let layer = 0; layer < 4; layer++) {
+                    const tileId = mapData.data[layer * plane + y * width + x] || 0;
+                    if (!isFoliage(tileId)) continue;
+                    const standIn = standInFor(tileId);
+                    if (!standIn || typeof standIn !== "object") continue;
+                    const spanX = standIn.w || 1;
+                    const spanY = standIn.h || 1;
+                    const placement = multiFoliagePlacement(
+                        tileId, x, y, standIn.tileId, spanX, spanY);
+                    if (placement) {
+                        if (!multiFoliagePlacements.has(placement.key)) {
+                            multiFoliagePlacements.set(placement.key, {
+                                originX: placement.originX,
+                                originY: placement.originY,
+                                standId: standIn.tileId,
+                                spanX,
+                                spanY,
+                                parts: []
+                            });
+                        }
+                        multiFoliagePlacements.get(placement.key).parts.push({
+                            x, y, dc: placement.dc, dr: placement.dr,
+                            tileId, layer, above: drawsAbove(tileId)
+                        });
+                    }
+                }
+            }
+        }
+    }
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
             const top = surfaceAt(x, y);
@@ -2521,14 +2761,26 @@ Reactor3D.Geometry.build = function(mapData, options) {
             // entirely left a hole you could see straight through from above,
             // because a facade is one plane at the run's southern end and the
             // cells behind it had nothing at all.
-            let stack = this.groundStackAt(mapData, x, y, isUpright);
+            let groundLayers = this.groundLayersAt(mapData, x, y,
+                tileId => !!(isUpright && isUpright(tileId))
+                    && !isCompositeFlat(x, y, tileId));
+            const synthetic = syntheticFlat.get(y * width + x);
+            if (synthetic) groundLayers.push(...synthetic);
+            groundLayers.sort((a, b) => a.layer - b.layer);
+            let stack = groundLayers.map(entry => entry.tileId);
             if (!stack.length && underFacade) {
                 const surface = apron.get(y * width + x);
-                if (surface) stack = [surface];
+                if (surface) {
+                    stack = [surface];
+                    groundLayers = [{ tileId: surface, layer: 0 }];
+                }
             }
             // Nothing but upright tiles here and no facade claimed them — a run
             // the cap rejected. Better to lay the art flat than draw a hole.
-            if (!stack.length && !underFacade) stack = this.groundStackAt(mapData, x, y);
+            if (!stack.length && !underFacade) {
+                groundLayers = this.groundLayersAt(mapData, x, y);
+                stack = groundLayers.map(entry => entry.tileId);
+            }
             if (!stack.length) continue;
 
             // A wood's tiling art stays on the floor under its cut-outs.
@@ -2547,6 +2799,7 @@ Reactor3D.Geometry.build = function(mapData, options) {
             // tile's width, so nothing separates visibly even edge-on.
             for (let layer = 0; layer < stack.length; layer++) {
                 const tileId = stack[layer];
+                const mapLayer = groundLayers[layer] ? groundLayers[layer].layer : layer;
                 // A raised wall is capped with its roof rather than with its
                 // own face art. The roof picks its corners from the mass it
                 // covers, the same way it would if it had been painted flat.
@@ -2554,9 +2807,10 @@ Reactor3D.Geometry.build = function(mapData, options) {
                 const rect = this.sheetRectFor(drawId, tileSize);
                 if (!rect) continue;
 
-                const group = groupFor(rect.setNumber, false, drawsAbove(tileId));
+                let group = groupFor(
+                    rect.setNumber, false, drawsAbove(tileId), false, mapLayer);
                 const size = sheetSize(rect.setNumber);
-                const surface = top + layer * this.LAYER_LIFT;
+                const surface = top + mapLayer * this.LAYER_LIFT;
 
                 // Foliage becomes cut-outs standing on the cell, using the
                 // terrain's lone-cell variant — what the tileset draws for a
@@ -2576,79 +2830,105 @@ Reactor3D.Geometry.build = function(mapData, options) {
                     const spanY = (typeof standIn === "object" && standIn.h) || 1;
                     const found = this.sheetRectFor(standId, tileSize);
                     if (found) {
-                        const standRect = spanX > 1 || spanY > 1
-                            ? Object.assign({}, found, {
-                                width: found.width * spanX,
-                                height: found.height * spanY
-                            })
-                            : found;
-                        const standGroup = groupFor(standRect.setNumber, true, drawsAbove(tileId));
-                        const standSize = sheetSize(standRect.setNumber);
-                        const standParts = standRect.autotile
-                            ? this.autotileQuads(standId, tileSize, tables)
-                            : null;
-                        /*
-                         * As wide as the art is, and taller in proportion.
-                         *
-                         * The span was read as an aspect ratio and its size
-                         * thrown away, so a stand-in naming a 2x2 rectangle of
-                         * the sheet — a mountain drawn across four cells — was
-                         * built at the same world width as a single tile. The
-                         * picture came out squeezed to half its width, and the
-                         * quad no longer covered the cell it stood on, so bare
-                         * ground showed between one cut-out and the next: the
-                         * rectangular bites out of a range's silhouette, with
-                         * the straight vertical sides a billboard quad has.
-                         *
-                         * A 1x1 stand-in is unchanged — `spanX` is 1 and this
-                         * is the expression it always was — so ordinary
-                         * foliage keeps the size and the look it had.
-                         */
-                        const broad = spanX;
-                        const tall = spanY * foliageHeight;
-
-                        // Several of them, each nudged off centre and sized a
-                        // little differently. One per cell sitting dead centre
-                        // reads as an orchard however good the art is, because
-                        // the eye finds the grid immediately.
-                        for (let n = 0; n < foliageDensity; n++) {
-                            // From one cell wide upward, never less. Below a
-                            // full cell a cut-out cannot cover the ground it
-                            // stands on however it is placed, and the bare
-                            // strip beside it reads as a bite out of the mass.
-                            const scale = 1 + scatter(x, y, n * 3) * 0.5;
-                            const wide = (broad * scale) / 2;
-                            const high = tall * scale;
-                            // Wander as far as the art can afford and no
-                            // further: an offset wider than the overhang walks
-                            // the cut-out off its own cell and opens the same
-                            // gap the size floor just closed. A big cut-out
-                            // still moves the full spread, so the grid is
-                            // broken up where there is room to break it.
-                            const room = Math.max(0, wide - 0.5);
-                            const dx = (scatter(x, y, n * 3 + 1) - 0.5)
-                                * Math.min(foliageSpread, room * 2);
-                            // Depth is along the view, so it opens no gap.
-                            const dz = (scatter(x, y, n * 3 + 2) - 0.5) * foliageSpread;
-                            const anchor = [x + 0.5 + dx, top, y + 0.5 + dz];
-                            const half = high / 2;
-                            const cutouts = standParts
-                                ? standParts.map(part => ({
-                                    rect: part,
-                                    x0: part.qx * wide - wide,
-                                    x1: part.qx * wide,
-                                    yTop: high - part.qy * half,
-                                    yBot: high - (part.qy + 1) * half
-                                }))
-                                : [{ rect: standRect, x0: -wide, x1: wide, yTop: high, yBot: 0 }];
-                            for (const cutout of cutouts) {
-                                billboardQuad(standGroup, anchor, [
-                                    [cutout.x0, cutout.yTop],
-                                    [cutout.x1, cutout.yTop],
-                                    [cutout.x1, cutout.yBot],
-                                    [cutout.x0, cutout.yBot]
-                                ], cutout.rect, standSize);
-                                quadCount++;
+                        const placement = multiFoliagePlacement(
+                            tileId, x, y, standId, spanX, spanY);
+                        if (placement) {
+                            if (!emittedFoliagePlacements.has(placement.key)) {
+                                emittedFoliagePlacements.add(placement.key);
+                                const placed = multiFoliagePlacements.get(placement.key);
+                                const standSize = sheetSize(found.setNumber);
+                                const base = placed && placed.parts.length
+                                    ? Math.max(...placed.parts.map(part => surfaceAt(part.x, part.y)))
+                                    : top;
+                                const anchor = [
+                                    placement.originX + spanX / 2,
+                                    base,
+                                    placement.originY + spanY / 2
+                                ];
+                                const painted = placed ? placed.parts : [];
+                                const sourceParts = [];
+                                for (let dr = 0; dr < spanY; dr++) {
+                                    for (let dc = 0; dc < spanX; dc++) {
+                                        const exact = painted.filter(part =>
+                                            part.dc === dc && part.dr === dr);
+                                        if (exact.length) {
+                                            sourceParts.push(...exact);
+                                            continue;
+                                        }
+                                        // A lone variant is a complete object
+                                        // even where the repeating fill ends at
+                                        // a ragged map edge. Complete its missing
+                                        // texture quadrant in the nearest real
+                                        // source group instead of drawing a
+                                        // visibly sliced half-mountain.
+                                        const nearest = painted.slice().sort((a, b) =>
+                                            (Math.abs(a.dc - dc) + Math.abs(a.dr - dr))
+                                            - (Math.abs(b.dc - dc) + Math.abs(b.dr - dr))
+                                            || b.layer - a.layer)[0];
+                                        if (nearest) sourceParts.push(Object.assign({}, nearest, { dc, dr }));
+                                    }
+                                }
+                                // Every authored quadrant retains its own map
+                                // layer and star pass. Together these subquads
+                                // remain one shared billboard and one mountain.
+                                for (const part of sourceParts) {
+                                    const partRect = Object.assign({}, found, {
+                                        sx: found.sx + part.dc * found.width,
+                                        sy: found.sy + part.dr * found.height
+                                    });
+                                    const standGroup = groupFor(found.setNumber, true,
+                                        part.above, false, part.layer);
+                                    const x0 = part.dc - spanX / 2;
+                                    const yTop = spanY - part.dr;
+                                    billboardQuad(standGroup, anchor, [
+                                        [x0, yTop],
+                                        [x0 + 1, yTop],
+                                        [x0 + 1, yTop - 1],
+                                        [x0, yTop - 1]
+                                    ], partRect, standSize);
+                                    quadCount++;
+                                }
+                            }
+                        } else {
+                            const standGroup = groupFor(
+                                found.setNumber, true, drawsAbove(tileId), false, mapLayer);
+                            const standSize = sheetSize(found.setNumber);
+                            const standParts = found.autotile
+                                ? this.autotileQuads(standId, tileSize, tables)
+                                : null;
+                            const broad = 1;
+                            const tall = foliageHeight;
+                            // Several of them, each nudged off centre and sized
+                            // differently so a wood does not expose the grid.
+                            for (let n = 0; n < foliageDensity; n++) {
+                                const scale = 1 + scatter(x, y, n * 3) * 0.5;
+                                const wide = (broad * scale) / 2;
+                                const high = tall * scale;
+                                const room = Math.max(0, wide - 0.5);
+                                const dx = (scatter(x, y, n * 3 + 1) - 0.5)
+                                    * Math.min(foliageSpread, room * 2);
+                                const dz = (scatter(x, y, n * 3 + 2) - 0.5)
+                                    * foliageSpread;
+                                const anchor = [x + 0.5 + dx, top, y + 0.5 + dz];
+                                const half = high / 2;
+                                const cutouts = standParts
+                                    ? standParts.map(part => ({
+                                        rect: part,
+                                        x0: part.qx * wide - wide,
+                                        x1: part.qx * wide,
+                                        yTop: high - part.qy * half,
+                                        yBot: high - (part.qy + 1) * half
+                                    }))
+                                    : [{ rect: found, x0: -wide, x1: wide, yTop: high, yBot: 0 }];
+                                for (const cutout of cutouts) {
+                                    billboardQuad(standGroup, anchor, [
+                                        [cutout.x0, cutout.yTop],
+                                        [cutout.x1, cutout.yTop],
+                                        [cutout.x1, cutout.yBot],
+                                        [cutout.x0, cutout.yBot]
+                                    ], cutout.rect, standSize);
+                                    quadCount++;
+                                }
                             }
                         }
                     }
@@ -2656,7 +2936,15 @@ Reactor3D.Geometry.build = function(mapData, options) {
                     // ground under it. Laying it flat as well shows as a mat of
                     // canopy at the foot of the trees standing on it, which is
                     // the join the whole model is trying to hide.
-                    if (!foliageFloor) continue;
+                    if (!foliageFloor) {
+                        if (spanX === 1 && spanY === 1) continue;
+                        // Large lone variants need their tiling art to close
+                        // transparent gaps, but not as a second opaque mountain.
+                        // A separate blended underlay contributes the authored
+                        // colour without owning depth or overpowering shadows.
+                        group = groupFor(
+                            rect.setNumber, false, drawsAbove(tileId), true, mapLayer);
+                    }
                 }
 
                 // Ground face(s), lying flat at this cell's elevation. An
@@ -2711,7 +2999,8 @@ Reactor3D.Geometry.build = function(mapData, options) {
             const surfaceId = foliageId || stack[0];
             const surfaceRect = this.sheetRectFor(surfaceId, tileSize);
             if (!surfaceRect) continue;
-            const surfaceGroup = groupFor(surfaceRect.setNumber, false);
+            const surfaceLayer = groundLayers.find(entry => entry.tileId === surfaceId)?.layer || 0;
+            const surfaceGroup = groupFor(surfaceRect.setNumber, false, false, false, surfaceLayer);
             const surfaceSize = sheetSize(surfaceRect.setNumber);
             const surfaceParts = surfaceRect.autotile
                 ? this.autotileQuads(surfaceId, tileSize, tables)
@@ -2761,6 +3050,18 @@ Reactor3D.Geometry.build = function(mapData, options) {
         // Which pass this belongs to: the ground, or the part drawn over the
         // characters so they can walk behind it.
         above: group.above,
+        // A faint flat fill beneath a multi-cell foliage stand-in. It closes
+        // the lone variant's transparent gaps without becoming a second opaque
+        // copy of the mountain or taking depth from its soft shadows.
+        underlay: group.underlay,
+        // Declared standing art planted on the north edge of a flat footing is
+        // already at its visible base; the billboard shader must not move it a
+        // second half-cell towards the camera.
+        edgeHinged: group.edgeHinged,
+        // Original map plane. Transparent coplanar cut-outs use this as their
+        // final tie-breaker, matching the 2D layer stack after depth has done
+        // the real 3D occlusion work.
+        layer: group.layer,
         // Billboards keep their anchor in `positions` and their corner in
         // `offsets`; the shader combines the two per frame.
         offsets: group.billboard ? Float32Array.from(group.offsets) : null,
@@ -3616,13 +3917,24 @@ Reactor3D.MapScene.prototype.setAnimationFrame = function(frame) {
     const waterfall = ((next % 3) + 3) % 3;
     for (const entry of this._animated) {
         const uv = entry.geometry.getAttribute("uv");
+        const bounds = entry.geometry.getAttribute("uvBounds");
         for (let i = 0; i < entry.base.length; i += 2) {
             const du = entry.stride[i];
             const dv = entry.stride[i + 1];
-            uv.array[i] = entry.base[i] + du * surface;
-            uv.array[i + 1] = entry.base[i + 1] + dv * waterfall;
+            const offsetU = du * surface;
+            const offsetV = dv * waterfall;
+            uv.array[i] = entry.base[i] + offsetU;
+            uv.array[i + 1] = entry.base[i + 1] + offsetV;
+            if (bounds && entry.baseBounds) {
+                const at = (i / 2) * 4;
+                bounds.array[at] = entry.baseBounds[at] + offsetU;
+                bounds.array[at + 1] = entry.baseBounds[at + 1] + offsetV;
+                bounds.array[at + 2] = entry.baseBounds[at + 2] + offsetU;
+                bounds.array[at + 3] = entry.baseBounds[at + 3] + offsetV;
+            }
         }
         uv.needsUpdate = true;
+        if (bounds) bounds.needsUpdate = true;
     }
 };
 
@@ -3942,16 +4254,16 @@ Reactor3D.MapScene.prototype.scene = function() {
 /**
  * Wrap a loaded Bitmap as a texture.
  *
- * Nearest filtering both ways: HD-2D depends on crisp texels, and linear
- * filtering also bleeds neighbouring tiles across a quad's edges because every
- * tile is a sub-rectangle of a shared sheet.
+ * Enlarged texels stay crisp. Minified texels are linearly sampled so narrow
+ * fractional-alpha shadows do not disappear into nearest-neighbour speckle;
+ * per-tile UV clamps keep that filter inside each atlas rectangle.
  */
 Reactor3D.MapScene.prototype.textureFor = function(bitmap) {
     const source = bitmap && (bitmap.image || bitmap.canvas);
     if (!source) return null;
     const texture = new THREE.CanvasTexture(source);
     texture.magFilter = THREE.NearestFilter;
-    texture.minFilter = THREE.NearestFilter;
+    texture.minFilter = THREE.LinearFilter;
     texture.generateMipmaps = false;
     if (THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
     texture.needsUpdate = true;
@@ -4060,7 +4372,7 @@ Reactor3D.billboardTiltFor = function(mapData) {
     return Math.max(0, Math.min(1, asked));
 };
 
-Reactor3D.billboardMaterial = function(texture) {
+Reactor3D.billboardMaterial = function(texture, edgeHinged) {
     // The ordinary tile material, with only the vertex position replaced.
     //
     // Writing a shader of its own instead looked plausible and came out dark
@@ -4102,17 +4414,15 @@ Reactor3D.billboardMaterial = function(texture) {
          * Blending on its own is what emptied the map before, because a
          * transparent mesh goes into three.js's sorted pass, which orders per
          * mesh by centroid while still writing depth, and a centroid says
-         * nothing about a mesh spanning the whole map. The prepass below fixes
-         * that at the root: the solid core of every cut-out writes depth
-         * first, in the unsorted pass, so by the time anything blends the
-         * depth buffer is already correct and nothing can cull anything.
-         * `depthWrite` is off here for the same reason — the prepass owns
-         * depth, and a blended fragment must not add to it.
+         * nothing about a mesh spanning the whole map. The opaque-colour pass
+         * below fixes that at the root: fully opaque texels write colour and
+         * depth first, so fractional alpha later has a real scene to blend
+         * over. `depthWrite` is off here because a blended fragment must not
+         * hide whatever should contribute behind it.
          *
-         * `alphaTest` stays at a half in the *prepass* and is off here: the
-         * dark matte halo these sheets carry must not become solid depth, but
-         * it should still be drawn at the fraction of a percent it was painted
-         * at, which is invisible rather than a black fringe.
+         * `alphaTest` is off here: the dark matte halo these sheets carry must
+         * be drawn at the fraction of a percent it was painted at, which is
+         * invisible rather than promoted into a black fringe.
          */
         transparent: true,
         depthWrite: false,
@@ -4134,7 +4444,8 @@ Reactor3D.billboardMaterial = function(texture) {
     });
     material.onBeforeCompile = shader => {
         shader.uniforms.tilt = { value: Reactor3D.BILLBOARD_TILT };
-        shader.vertexShader = "attribute vec2 offset;\nuniform float tilt;\n"
+        shader.uniforms.footwardScale = { value: edgeHinged ? 0 : 1 };
+        shader.vertexShader = "attribute vec2 offset;\nuniform float tilt;\nuniform float footwardScale;\n"
             + shader.vertexShader.replace(
             "#include <begin_vertex>",
             `
@@ -4165,7 +4476,7 @@ Reactor3D.billboardMaterial = function(texture) {
             vec3 nearward = vec3(toCamera.x, 0.0, toCamera.z);
             float reach = length(nearward);
             vec3 footward = reach > 0.0001
-                ? nearward * (0.5 / reach)
+                ? nearward * (0.5 * footwardScale / reach)
                 : vec3(0.0);
 
             vec3 transformed = position
@@ -4181,7 +4492,8 @@ Reactor3D.billboardMaterial = function(texture) {
     // Without this every billboard material compiles its own program, since
     // three.js keys the cache on the material's own properties and cannot see
     // the injected code.
-    material.customProgramCacheKey = () => "reactor3d-billboard";
+    material.customProgramCacheKey = () => edgeHinged
+        ? "reactor3d-billboard-edge-hinged" : "reactor3d-billboard";
     return material;
 };
 
@@ -4320,16 +4632,20 @@ Reactor3D.MapScene.prototype.build = function(mapData, bitmaps, options) {
             this._animated.push({
                 geometry,
                 base: Float32Array.from(group.uvs),
+                // The fragment shader clamps each tile to these bounds. They
+                // must move with animated UVs or later A1 frames collapse onto
+                // frame 0's edge pixels and look like block-colour chunks.
+                baseBounds: group.bounds ? Float32Array.from(group.bounds) : null,
                 stride: group.anim
             });
         }
 
         // Unlit to begin with, so colours match the 2D view exactly and any
         // difference on screen is geometry rather than shading. Lighting is a
-        // later pass. alphaTest rather than blending keeps cut-out tiles from
-        // needing back-to-front sorting.
+        // later pass. Every surface keeps its painted alpha in colour; a
+        // separate opaque-core pass below supplies both colour and depth.
         const material = group.billboard
-            ? Reactor3D.billboardMaterial(texture)
+            ? Reactor3D.billboardMaterial(texture, group.edgeHinged)
             // Unlit, with the ambient level applied as a plain multiplier on
             // the material's colour.
             //
@@ -4343,13 +4659,15 @@ Reactor3D.MapScene.prototype.build = function(mapData, bitmaps, options) {
             : new THREE.MeshBasicMaterial({
                 map: texture,
                 transparent: true,
-                alphaTest: 0.5,
+                depthWrite: false,
+                alphaTest: 0,
                 // Upright panels are seen from either side as the camera turns,
                 // and double-siding also means ground winding cannot silently
                 // hide a whole sheet.
                 side: THREE.DoubleSide
             });
         // Every material now takes the ambient level, not just the cut-outs.
+        material.opacity = group.underlay ? 0.6 : 1;
         material.__reactorShaded = true;
         // Two keys, because the billboard material injects a vertex shader the
         // flat one does not and they must not share a compiled program.
@@ -4359,39 +4677,44 @@ Reactor3D.MapScene.prototype.build = function(mapData, bitmaps, options) {
         const target = group.above ? this.aboveGroup() : this.belowGroup();
 
         /*
-         * A depth prepass in front of every blended cut-out.
+         * Opaque texels supply colour and depth before fractional alpha blends.
          *
-         * Blending needs the depth buffer to be right before it starts, or a
-         * mesh drawn early hides one drawn later that stands in front of it.
-         * This draws the same geometry with no colour and no blending, keeping
-         * only the texels solid enough to count as the object — `alphaTest` at
-         * a half, the same cut that has always separated a cut-out from the
-         * dark matte halo round its edge. It writes depth and nothing else, in
-         * the unsorted pass, so the blended draw that follows composites onto
-         * a scene whose depths are already settled.
+         * The old colorless alpha>=0.5 prepass wrote a foreground depth without
+         * its colour. It then rejected the background that a 50% shadow needed
+         * to blend over, leaving a hard cut or a blend against clear. Only
+         * genuinely opaque source pixels belong in this pass, and they must
+         * write their colour at the same time as their depth.
          */
-        if (group.billboard) {
-            const depthOnly = Reactor3D.billboardMaterial(texture);
-            depthOnly.transparent = false;
-            depthOnly.depthWrite = true;
-            depthOnly.alphaTest = 0.5;
-            depthOnly.colorWrite = false;
-            // Clamped like the pass it stands in for. It writes no colour, but
-            // it decides which fragments are solid enough to own a depth — and
-            // a neighbouring tile bled into that decision would carve the wrong
-            // silhouette out of everything drawn behind it.
-            Reactor3D.clampToTile(depthOnly, "reactor3d-billboard-clamped");
-            const depthMesh = new THREE.Mesh(geometry, depthOnly);
-            depthMesh.renderOrder = -1;
-            target.add(depthMesh);
-            this._meshes.push(depthMesh);
-            this._materials.push(depthOnly);
-        }
+        const opaqueCore = group.billboard
+            ? Reactor3D.billboardMaterial(texture, group.edgeHinged)
+            : new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+        opaqueCore.transparent = false;
+        opaqueCore.opacity = group.underlay ? 0.6 : 1;
+        opaqueCore.depthWrite = true;
+        // Three discards only values below the threshold, so 1.0 admits exact
+        // alpha-255 texels and keeps alpha 254 plus filtered edge samples out of
+        // depth. Those fractional pixels belong exclusively to the blend pass.
+        opaqueCore.alphaTest = 1.0;
+        opaqueCore.colorWrite = true;
+        opaqueCore.__reactorShaded = true;
+        Reactor3D.clampToTile(opaqueCore,
+            group.billboard ? "reactor3d-billboard-clamped" : "reactor3d-tile-clamped");
+        const coreMesh = new THREE.Mesh(geometry, opaqueCore);
+        coreMesh.renderOrder = -20 + (group.layer || 0);
+        target.add(coreMesh);
+        this._meshes.push(coreMesh);
+        this._materials.push(opaqueCore);
 
         const mesh = new THREE.Mesh(geometry, material);
         // Two passes: the ground, and the part the 2D tilemap would have drawn
         // over the characters. They are separate groups so the renderer can
         // draw one, let PIXI put the characters down, and then draw the other.
+        // The editor shows both groups in one render. Their billboard materials
+        // are transparent, so without an explicit order three.js sorts whole
+        // sheet meshes by centroid and can put an ordinary crater over the
+        // starred structure that surrounds it. Match the 2D tilemap there too:
+        // every upper-pass colour mesh draws after every lower-pass one.
+        mesh.renderOrder = (group.above ? 10 : 0) + (group.layer || 0);
         target.add(mesh);
         this._meshes.push(mesh);
         this._materials.push(material);

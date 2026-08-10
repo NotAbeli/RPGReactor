@@ -1,26 +1,16 @@
 /**
  * Which A-layer slot a painted autotile lands in.
  *
- * Two reports, one cause. A section of road erased and painted back came out
- * with hard ends instead of rejoining the road either side; and a table
- * painted onto a floor erased the floor under it.
+ * Auto must distinguish ground replacement from decoration stacking while
+ * still reconnecting a terrain to the layer occupied by its neighbors.
  *
- * The slot was chosen by whether the art carries transparency — "decorations"
- * stacked onto z1, opaque ground replaced z0. The authored maps say the test
- * is something else entirely. Of 376,283 A2 tiles sitting at z1 over an A-tile
- * at z0 across the bundled projects, 80.2% are fully opaque, and the same kind
- * is stacked on both slots exactly zero times. What decides is whether the cell
- * already holds a *different* terrain.
- *
- * Looking at the cell under the cursor is still not enough on its own. A shape
+ * Looking at the cell under the cursor is not enough on its own. A shape
  * is decided by neighbours on the *same* slot, so a stretch of road put down at
  * z0 beside road living at z1 cannot see it and both ends cap off against each
  * other — which is what a repaired stretch of road actually looked like. So a
  * tile first joins the slot its own terrain already occupies beside it.
  *
- * Replayed over every authored A autotile in the bundled projects — 1,958,090
- * of them — the transparency rule puts 83.94% on the slot MZ used, the cursor
- * cell alone 99.67%, and joining a neighbour 100.00% (two cells disagree).
+ * Without a matching neighbor, ground replaces z0 and decorations stack at z1.
  */
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -45,6 +35,7 @@ function makeEditor(width, height, layers = {}, { decorations = [] } = {}) {
         currentMap: map,
         TILE_WIDTH: 48, TILE_HEIGHT: 48,
         isA2DecorationKind: kind => decorations.includes(kind),
+        tileTargetLayer: () => null,
         updateTiles() {}, renderMap() {}
     };
     const editor = new MapEditor(tilemapManager,
@@ -53,15 +44,11 @@ function makeEditor(width, height, layers = {}, { decorations = [] } = {}) {
     return { editor, map, data, plane };
 }
 
-test('a different terrain stacks, whatever its art is made of', () => {
-    // The heart of it. Both of these are fully opaque ground autotiles, which
-    // the old rule sent to z0 — overwriting what was already there.
+test('a different ground terrain replaces the first A slot', () => {
     const { editor } = makeEditor(1, 1, { 0: [A2(10)] });
-    assert.equal(editor.getAutotilePlacementLayer(A2(9), 0, 0), 1,
-        'a road over ground goes above it');
-    assert.equal(editor.getAutotilePlacementLayer(A2(11), 0, 0), 1);
-    // And across bands: water over ground is still a different terrain.
-    assert.equal(editor.getAutotilePlacementLayer(A1(0), 0, 0), 1);
+    assert.equal(editor.getAutotilePlacementLayer(A2(9), 0, 0), 0);
+    assert.equal(editor.getAutotilePlacementLayer(A2(11), 0, 0), 0);
+    assert.equal(editor.getAutotilePlacementLayer(A1(0), 0, 0), 0);
 });
 
 test('the same terrain repainted replaces itself rather than stacking', () => {
@@ -75,6 +62,29 @@ test('the same terrain repainted replaces itself rather than stacking', () => {
 test('painting onto bare ground uses the ground slot', () => {
     const { editor } = makeEditor(1, 1, {});
     assert.equal(editor.getAutotilePlacementLayer(A2(9), 0, 0), 0);
+});
+
+test('Auto paints a ground autotile over water on layer 1 and connects the stroke', () => {
+    const water = A1(0), sand = A2(0);
+    const waterPlane = new Array(15).fill(water);
+    const { editor, data, plane } = makeEditor(5, 3, {
+        0: waterPlane
+    });
+    editor.getBaseTileIdFromPalettePosition = () => sand;
+    const paletteTile = { x: 0, y: 0, layer: 'A2' };
+
+    for (let x = 1; x <= 3; x++) {
+        editor.paintSingleTileFromPalette(x, 1, paletteTile);
+    }
+
+    for (let x = 1; x <= 3; x++) {
+        const at = 5 + x;
+        assert.equal(editor.sameAutotileKind(data[at], sand), true,
+            'sand replaces water on the first map layer');
+        assert.equal(data[plane + at], 0, 'Auto does not stack ground on the second map layer');
+    }
+    assert.deepEqual(data.slice(6, 9).map(tileId => tileId - sand), [43, 33, 45],
+        'the stroke gets connected left, middle, and right autotile shapes');
 });
 
 test('a chosen layer still wins over all of it', () => {
@@ -129,21 +139,42 @@ test('a road erased and painted back rejoins the road either side', () => {
 });
 
 test('a table painted on a floor leaves the floor underneath', () => {
-    // The other report. The floor is an ordinary opaque A2 ground, so the old
-    // rule replaced it and the floor was gone.
     const floor = A2(0), table = A2(13);
-    const { editor, data } = makeEditor(1, 1, { 0: [floor] });
+    const { editor, data } = makeEditor(1, 1, { 0: [floor] }, { decorations: [13] });
     const slot = editor.getAutotilePlacementLayer(table, 0, 0);
     assert.equal(slot, 1, 'the table sits above the floor');
     assert.equal(data[0], floor, 'which is still there');
 });
 
-test('a tile whose art is transparent behaves the same way', () => {
-    // Transparency is no longer consulted, so a genuine decoration must still
-    // stack — it does, because it is a different kind, which is the only test
-    // now. This is the case the old rule got right and must not regress.
+test('a decoration stacks over the first A slot', () => {
     const { editor } = makeEditor(1, 1, { 0: [A2(10)] }, { decorations: [13] });
     assert.equal(editor.getAutotilePlacementLayer(A2(13), 0, 0), 1);
+});
+
+test('a lower-layer decoration neighbor cannot make an extension erase the floor', () => {
+    const floor = A2(0), decoration = A2(13);
+    const { editor, data, plane } = makeEditor(2, 1, {
+        0: [decoration, floor]
+    }, { decorations: [13] });
+    editor.getBaseTileIdFromPalettePosition = () => decoration;
+
+    editor.paintSingleTileFromPalette(1, 0, { x: 0, y: 0, layer: 'A2' });
+
+    assert.equal(data[1], floor, 'the existing floor remains on layer 1');
+    assert.equal(editor.sameAutotileKind(data[plane + 1], decoration), true,
+        'the decoration extends on layer 2');
+});
+
+test('different A1 water kinds stack while the same water replaces itself', () => {
+    const shallow = A1(0), deep = A1(1);
+    const { editor, data, plane } = makeEditor(1, 1, { 0: [shallow] });
+    assert.equal(editor.getAutotilePlacementLayer(shallow, 0, 0), 0);
+    assert.equal(editor.getAutotilePlacementLayer(deep, 0, 0), 1);
+
+    editor.getBaseTileIdFromPalettePosition = () => deep;
+    editor.paintSingleTileFromPalette(0, 0, { x: 0, y: 0, layer: 'A1' });
+    assert.equal(editor.sameAutotileKind(data[0], shallow), true);
+    assert.equal(editor.sameAutotileKind(data[plane], deep), true);
 });
 
 test('a tile joins the slot its own terrain already occupies beside it', () => {
@@ -179,11 +210,11 @@ test('the upper slot wins when the terrain is on both sides at different levels'
     assert.equal(editor.adjacentAutotileLayer(road, 1, 0), 1);
 });
 
-test('nothing of the kind nearby leaves the decision to the cell itself', () => {
+test('nothing of the kind nearby leaves ground on the first A slot', () => {
     const road = A2(9), ground = A2(10);
     const { editor } = makeEditor(3, 1, { 0: [ground, ground, ground] });
     assert.equal(editor.adjacentAutotileLayer(road, 1, 0), null);
-    assert.equal(editor.getAutotilePlacementLayer(road, 1, 0), 1, 'different terrain, so above');
+    assert.equal(editor.getAutotilePlacementLayer(road, 1, 0), 0, 'ground replaces the ground slot');
 });
 
 test('only the four sides are asked, as an autotile shape is', () => {
@@ -204,9 +235,9 @@ test('a repainted stretch rejoins the road when it is dragged across', () => {
         0: [ground, ground, road, road, road, road, ground, ground],
         1: [road, road, 0, 0, 0, 0, road, road]
     });
+    editor.getBaseTileIdFromPalettePosition = () => road;
     for (const x of [2, 3, 4, 5]) {
-        const slot = editor.getAutotilePlacementLayer(road, x, 0);
-        data[slot * plane + x] = road;
+        editor.paintSingleTileFromPalette(x, 0, { x: 0, y: 0, layer: 'A2' });
     }
     const slots = [];
     for (let x = 0; x < width; x++) {
@@ -214,6 +245,8 @@ test('a repainted stretch rejoins the road when it is dragged across', () => {
     }
     assert.deepEqual(slots, [1, 1, 1, 1, 1, 1, 1, 1],
         'the whole road ends up on one slot');
+    assert.equal(data.slice(2, 6).some(tile => editor.sameAutotileKind(tile, road)), false,
+        'the repaired cells do not keep hidden lower-layer duplicates');
 
     // And with them all on one slot, the middle is no longer an end piece.
     const { shape } = editor.calculateAutotileShape(road, 3, 0, null, 1);

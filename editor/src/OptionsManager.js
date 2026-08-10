@@ -30,8 +30,17 @@ class OptionsManager {
         this.SETTINGS_KEY = 'rr-settings';
         this.settings = this._loadSettings();
         window.addEventListener('rr-language-changed', () => {
+            this._updateLanguageButton();
             if (this.modal && this.modal.style.display !== 'none') this._renderContent();
         });
+        this._updateLanguageButton();
+    }
+
+    _updateLanguageButton() {
+        const code = document.getElementById?.('language-button-code');
+        if (!code) return;
+        const language = window.I18n?.currentLanguage?.() || this.settings.language || 'en';
+        code.textContent = language.split('-')[0].toUpperCase();
     }
 
     /** Convert a saved theme key into its {palette, mode} pair. */

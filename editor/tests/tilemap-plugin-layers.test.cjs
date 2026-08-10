@@ -108,6 +108,23 @@ test('nothing is set up before the tileset has loaded', () => {
     assert.equal(tilemap._needsBitmapsUpdate, true, 'and it is tried again later');
 });
 
+test('v8 backend sync reaches plugin layers and detached canonical layers once', () => {
+    const syncV8Layers = method('Tilemap.prototype._syncV8TileLayers = function', { Set });
+    const calls = [];
+    const lower = { _syncV8Backend: () => calls.push('lower') };
+    const plugin = { _syncV8Backend: () => calls.push('plugin') };
+    const upper = { _syncV8Backend: () => calls.push('upper') };
+    const tilemap = {
+        children: [lower, plugin],
+        _lowerLayer: lower,
+        _upperLayer: upper
+    };
+
+    syncV8Layers.call(tilemap);
+
+    assert.deepEqual(calls, ['lower', 'plugin', 'upper']);
+});
+
 test('an undecoded image never becomes a texture source', () => {
     /*
      * The source is cached on the image element and lives for the session, so
@@ -122,7 +139,9 @@ test('an undecoded image never becomes a texture source', () => {
     const addV8Tile = core.slice(core.indexOf('Tilemap.Layer.prototype._addV8Tile = function'));
     const body = addV8Tile.slice(0, addV8Tile.indexOf('\n};'));
 
-    assert.match(body, /if \(!image\.width && !image\.naturalWidth && !image\.videoWidth\) return;/);
+    assert.match(body,
+        /if \(!isShadow && !image\.width && !image\.naturalWidth && !image\.videoWidth\) return;/,
+        'undecoded image tiles are declined while synthetic shadow rectangles remain valid');
     assert.ok(body.indexOf('!image.naturalWidth') < body.indexOf('__pixiTilemapSource'),
         'declined before anything is cached on the image');
 

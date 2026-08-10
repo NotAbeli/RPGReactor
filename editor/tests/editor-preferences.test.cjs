@@ -6,18 +6,21 @@ const vm = require('node:vm');
 
 const editorRoot = path.resolve(__dirname, '..');
 
-function loadOptionsManager(savedSettings = null) {
+function loadOptionsManager(savedSettings = null, language = null) {
     const store = new Map();
     const events = [];
+    const listeners = new Map();
+    const languageCode = { textContent: '' };
     if (savedSettings) store.set('rr-settings', JSON.stringify(savedSettings));
 
     const sandbox = {
         window: {
-            I18n: null,
-            addEventListener() {},
+            I18n: language ? { currentLanguage: () => language } : null,
+            addEventListener(type, listener) { listeners.set(type, listener); },
             dispatchEvent(event) { events.push(event); }
         },
         document: {
+            getElementById(id) { return id === 'language-button-code' ? languageCode : null; },
             documentElement: {
                 setAttribute() {},
                 removeAttribute() {}
@@ -36,7 +39,7 @@ function loadOptionsManager(savedSettings = null) {
     };
     const source = fs.readFileSync(path.join(editorRoot, 'src', 'OptionsManager.js'), 'utf8');
     const OptionsManager = vm.runInNewContext(`${source}\nOptionsManager;`, sandbox);
-    return { OptionsManager, events, store };
+    return { OptionsManager, events, languageCode, listeners, sandbox, store };
 }
 
 function loadTilemapManager(app) {
@@ -71,6 +74,22 @@ test('autotile animation preference defaults on, persists, and uses the map-info
         'compact A1 checkbox sits beside the map zoom and coordinates');
     assert.doesNotMatch(indexSource, /id="autotile-animation-btn"/,
         'A1 animation does not consume a full toolbar button');
+});
+
+test('the menu bar language control stays at the far edge and follows the active locale', () => {
+    const loaded = loadOptionsManager({ language: 'zh-Hant' }, 'zh-Hant');
+    new loaded.OptionsManager();
+    assert.equal(loaded.languageCode.textContent, 'ZH');
+
+    loaded.sandbox.window.I18n.currentLanguage = () => 'ja';
+    loaded.listeners.get('rr-language-changed')();
+    assert.equal(loaded.languageCode.textContent, 'JA');
+
+    const index = fs.readFileSync(path.join(editorRoot, 'index.html'), 'utf8');
+    const css = fs.readFileSync(path.join(editorRoot, 'css', 'styles.css'), 'utf8');
+    assert.match(index, /id="language-button"[\s\S]*id="language-button-code"/);
+    assert.match(css, /#language-button\s*\{[\s\S]*?margin:\s*3px 8px 3px auto;/);
+    assert.match(css, /@media \(max-width: 900px\)[\s\S]*?#language-button-code\s*\{\s*display:\s*none;/);
 });
 
 test('disabling A1 animation removes the ticker and restores frame zero', () => {

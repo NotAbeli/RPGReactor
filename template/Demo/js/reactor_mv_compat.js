@@ -803,6 +803,24 @@
         Window_Base.prototype.standardPadding = function() {
             return $gameSystem && $gameSystem.windowPadding ? $gameSystem.windowPadding() : 18;
         };
+        // MV's updatePadding read standardPadding(); MZ's reads
+        // $gameSystem.windowPadding() and never consults the method at all.
+        // Restoring standardPadding() alone therefore gives plugins a padding
+        // hook that changes nothing: `Window_Foo.standardPadding = () => 0`
+        // still leaves this.padding at MZ's 12, so innerWidth/innerHeight --
+        // and with them the client area's clip rect -- come out 24px short in
+        // each direction while the window sizes itself from the override.
+        //
+        // Small windows lose most of their contents to that gap. YEP_X_Autosave
+        // is 36px tall (fittingHeight(1) with its padding of 0), so its client
+        // area clipped to 36 - 24 = 12px and two thirds of the banner vanished.
+        // Ten plugins in one project return 0 from standardPadding.
+        //
+        // Windows that don't override it are unaffected: the default above
+        // returns $gameSystem.windowPadding(), which is what MZ used anyway.
+        Window_Base.prototype.updatePadding = function() {
+            this.padding = this.standardPadding();
+        };
         Window_Base.prototype.textPadding = function() { return 6; };
         Window_Base.prototype.standardBackOpacity = function() {
             return $gameSystem && $gameSystem.windowOpacity ? $gameSystem.windowOpacity() : 192;
@@ -3397,18 +3415,78 @@
     }
 
     function installAudioFontCompatibility() {
+        const projectRoot = function() {
+            if (typeof require !== "function" || typeof process === "undefined") return null;
+            try {
+                const path = require("path");
+                const mainFile = process.mainModule && process.mainModule.filename;
+                return mainFile ? path.dirname(mainFile) : process.cwd();
+            } catch (e) {
+                return null;
+            }
+        };
         const hasProjectFont = function(filename) {
-            if (typeof require !== "function" || typeof process === "undefined") return false;
+            const root = filename ? projectRoot() : null;
+            if (!root) return false;
             try {
                 const fs = require("fs");
                 const path = require("path");
-                const mainFile = process.mainModule && process.mainModule.filename;
-                const root = mainFile ? path.dirname(mainFile) : process.cwd();
                 return fs.existsSync(path.join(root, "fonts", filename));
             } catch (e) {
                 return false;
             }
         };
+
+        // MV declared its fonts in fonts/gamefont.css and index.html pulled
+        // that file in with a <link>, so the family it names -- "GameFont" by
+        // default -- was simply available to canvas. MZ dropped the stylesheet
+        // for FontManager, which registers the project font under the fixed
+        // family "rmmz-mainfont", and Reactor's index.html links no CSS at all.
+        //
+        // MV plugins ask for the family by name, not through the engine:
+        // YEP_CoreEngine replaces Window_Base.standardFontFace outright with
+        // its Default Font parameter ("GameFont, Arial, sans-serif, ..."), and
+        // YEP_MessageCore, FELSKI_TECHTREE and a dozen others hard-code
+        // "GameFont" too. Nothing registers that name, so every one of them
+        // silently falls through to the next family in the list -- the game
+        // renders in Arial with no error anywhere.
+        //
+        // Parse the stylesheet MV already ships and register what it declares
+        // through FontManager, which uses the FontFace API and so is loaded in
+        // time for canvas draws (a lazy CSS @font-face is not).
+        const readGameFontFaces = function() {
+            const root = projectRoot();
+            if (!root) return [];
+            let css;
+            try {
+                const fs = require("fs");
+                const path = require("path");
+                const cssPath = path.join(root, "fonts", "gamefont.css");
+                if (!fs.existsSync(cssPath)) return [];
+                css = fs.readFileSync(cssPath, "utf8");
+            } catch (e) {
+                return [];
+            }
+            const faces = [];
+            const blocks = css.match(/@font-face\s*{[^}]*}/g) || [];
+            for (const block of blocks) {
+                const family = /font-family\s*:\s*([^;}]+)/.exec(block);
+                const src = /url\(\s*(['"]?)([^'")]+)\1\s*\)/.exec(block);
+                if (!family || !src) continue;
+                const name = family[1].trim().replace(/^['"]|['"]$/g, "");
+                const url = src[2].trim().replace(/\\/g, "/");
+                const filename = url.slice(url.lastIndexOf("/") + 1);
+                if (name && filename && hasProjectFont(filename)) {
+                    faces.push({ family: name, filename: filename });
+                }
+            }
+            return faces;
+        };
+        const gameFontFaces = readGameFontFaces();
+        // What gamefont.css calls the game's font, for projects whose
+        // System.json carries MZ's defaults instead (see the load wrapper).
+        const declaredGameFont = gameFontFaces.length ? gameFontFaces[0].filename : null;
+
         if (global.AudioManager && AudioManager.createBuffer && !AudioManager.createBuffer.__mvCompatWrapped) {
             const originalCreateBuffer = AudioManager.createBuffer;
             AudioManager.createBuffer = function(folder, name) {
@@ -3425,9 +3503,13 @@
                     const fontsIndex = filename.lastIndexOf("/fonts/");
                     if (fontsIndex >= 0) filename = filename.slice(fontsIndex + 7);
                     if (filename.indexOf("fonts/") === 0) filename = filename.slice(6);
+                    // An MV project's System.json has no `advanced` block, so
+                    // opening one in the editor writes MZ's defaults into it --
+                    // naming font files an MV project never shipped. Fall back
+                    // to whatever gamefont.css actually declares.
                     if ((filename === "mplus-1m-regular.woff" || filename === "mplus-2p-bold-sub.woff") &&
-                        !hasProjectFont(filename) && hasProjectFont("_decterm.ttf")) {
-                        filename = "_decterm.ttf";
+                        !hasProjectFont(filename) && declaredGameFont) {
+                        filename = declaredGameFont;
                     }
                 }
                 return originalFontLoad.call(this, family, filename);
@@ -3448,6 +3530,28 @@
             Graphics.hasWebGL = function() {
                 return Utils.canUseWebGL ? Utils.canUseWebGL() : !!(this._app && this._app.renderer);
             };
+        }
+
+        // Register the families gamefont.css declares. Only files confirmed on
+        // disk get here, so this cannot put FontManager into the error state
+        // that fails boot with a LoadError.
+        if (global.FontManager && FontManager.load) {
+            for (const face of gameFontFaces) {
+                FontManager.load(face.family, face.filename);
+            }
+        }
+        // Without Node there is no reading the stylesheet, so hand it to the
+        // browser the way MV's index.html did. Lazier than the FontFace path --
+        // the first few draws can still miss it -- but it is what MV itself did.
+        if (mvGameSemantics && !gameFontFaces.length && !projectRoot() &&
+            typeof document !== "undefined") {
+            const href = "fonts/gamefont.css";
+            if (!document.querySelector('link[href="' + href + '"]')) {
+                const link = document.createElement("link");
+                link.rel = "stylesheet";
+                link.href = href;
+                document.head.appendChild(link);
+            }
         }
     }
 

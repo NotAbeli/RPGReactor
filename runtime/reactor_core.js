@@ -3210,7 +3210,20 @@ Tilemap.prototype.update = function() {
         try {
             this.updateTransform();
         } catch (e) { /* legacy PIXI tail; repaint work already done */ }
+        this._syncV8TileLayers();
     }
+};
+
+Tilemap.prototype._syncV8TileLayers = function() {
+    const synced = new Set();
+    const sync = layer => {
+        if (!layer || synced.has(layer)) return;
+        synced.add(layer);
+        if (typeof layer._syncV8Backend === "function") layer._syncV8Backend();
+    };
+    for (const child of this.children) sync(child);
+    sync(this._lowerLayer);
+    sync(this._upperLayer);
 };
 
 /**
@@ -3567,7 +3580,12 @@ Tilemap.prototype._isOverpassPosition = function(/*mx, my*/) {
 };
 
 Tilemap.prototype._sortChildren = function() {
+    const before = PIXI.TextureSource ? this.children.slice() : null;
     this.children.sort(this._compareChildOrder.bind(this));
+    if (before && before.some((child, index) => child !== this.children[index])) {
+        const renderGroup = this.renderGroup || this.parentRenderGroup;
+        if (renderGroup) renderGroup.structureDidChange = true;
+    }
 };
 
 Tilemap.prototype._compareChildOrder = function(a, b) {
@@ -3818,16 +3836,127 @@ Tilemap.Layer.prototype.initialize = function() {
     this._images = [];
     this._state = PIXI.State.for2d();
     this._createVao();
+    if (PIXI.TextureSource) {
+        this._v8Backend = null;
+        this._v8Atlas = null;
+        this._v8Geometry = null;
+        this._v8Mesh = null;
+        this._v8MeshDirty = false;
+        this._v8TileRoot = new PIXI.Container();
+        this._v8TileRoot.eventMode = "none";
+        this.addChild(this._v8TileRoot);
+        Tilemap.Layer._v8Stats().layers++;
+    }
 };
 
 Tilemap.Layer.MAX_GL_TEXTURES = 3;
 Tilemap.Layer.VERTEX_STRIDE = 9 * 4;
 Tilemap.Layer.MAX_SIZE = 16000;
+Tilemap.Layer.V8_ATLAS_COLUMNS = 4;
+Tilemap.Layer.V8_ATLAS_ROWS = 3;
+Tilemap.Layer.V8_ATLAS_SLOT_SIZE = 1024;
+Tilemap.Layer._v8AtlasCache = new WeakMap();
+
+Tilemap.Layer._v8Stats = function() {
+    const root = typeof globalThis !== "undefined" ? globalThis : window;
+    if (!root.$reactorTilemapStats) {
+        root.$reactorTilemapStats = {
+            requested: String(root.$reactorTilemapBackend || "auto"),
+            backend: "pending",
+            layers: 0,
+            activeMeshes: 0,
+            meshBuilds: 0,
+            meshBuildMs: 0,
+            lastRectCount: 0,
+            lastVertexCount: 0,
+            spriteAllocations: 0,
+            spritePoolHits: 0,
+            fallbacks: 0,
+            fallbackReason: ""
+        };
+    }
+    return root.$reactorTilemapStats;
+};
+
+Tilemap.Layer._requestedV8Backend = function() {
+    const root = typeof globalThis !== "undefined" ? globalThis : window;
+    const requested = String(root.$reactorTilemapBackend || "auto").toLowerCase();
+    return requested === "sprites" || requested === "sprite" ? "sprites" :
+        requested === "mesh" ? "mesh" : "auto";
+};
+
+Tilemap.Layer._acquireV8Atlas = function(bitmaps) {
+    let entry = this._v8AtlasCache.get(bitmaps);
+    if (entry) {
+        entry.refs++;
+        return entry;
+    }
+    if (typeof document === "undefined" || !PIXI.CanvasSource || !PIXI.Texture) {
+        throw new Error("PIXI 8 canvas textures are unavailable");
+    }
+    const slot = this.V8_ATLAS_SLOT_SIZE;
+    const width = this.V8_ATLAS_COLUMNS * slot;
+    const height = this.V8_ATLAS_ROWS * slot;
+    const renderer = typeof Graphics !== "undefined" && Graphics.app && Graphics.app.renderer;
+    const gl = renderer && renderer.gl;
+    if (gl && gl.getParameter(gl.MAX_TEXTURE_SIZE) < Math.max(width, height)) {
+        throw new Error(`GPU texture limit is below ${Math.max(width, height)}`);
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Could not create the tile atlas canvas");
+    context.imageSmoothingEnabled = false;
+    context.clearRect(0, 0, width, height);
+    const images = bitmaps.map(bitmap => bitmap && (bitmap.image || bitmap.canvas));
+    for (let i = 0; i < images.length && i < 11; i++) {
+        const image = images[i];
+        if (!image) continue;
+        const imageWidth = image.naturalWidth || image.videoWidth || image.width || 0;
+        const imageHeight = image.naturalHeight || image.videoHeight || image.height || 0;
+        if (!imageWidth || !imageHeight) continue;
+        if (imageWidth > slot || imageHeight > slot) {
+            throw new Error(`tileset sheet ${i} exceeds the ${slot}px atlas slot`);
+        }
+        const x = (i % this.V8_ATLAS_COLUMNS) * slot;
+        const y = Math.floor(i / this.V8_ATLAS_COLUMNS) * slot;
+        context.drawImage(image, x, y);
+    }
+    const shadowSlot = 11;
+    const shadowX = (shadowSlot % this.V8_ATLAS_COLUMNS) * slot;
+    const shadowY = Math.floor(shadowSlot / this.V8_ATLAS_COLUMNS) * slot;
+    context.fillStyle = "rgba(0,0,0,0.5)";
+    context.fillRect(shadowX, shadowY, 1, 1);
+    const source = new PIXI.CanvasSource({
+        resource: canvas,
+        scaleMode: "nearest",
+        addressMode: "clamp-to-edge",
+        autoGenerateMipmaps: false
+    });
+    const texture = new PIXI.Texture({ source });
+    entry = { bitmaps, canvas, source, texture, width, height, shadowX, shadowY, refs: 1 };
+    this._v8AtlasCache.set(bitmaps, entry);
+    return entry;
+};
+
+Tilemap.Layer._releaseV8Atlas = function(entry) {
+    if (!entry || --entry.refs > 0) return;
+    this._v8AtlasCache.delete(entry.bitmaps);
+    if (entry.texture && !entry.texture.destroyed) entry.texture.destroy(true);
+};
 
 // v8 tile textures register on their (session-cached) source's resize
 // listener list, so dropping the cache without destroying them retains
 // every texture for the whole session — one leaked batch per map transfer.
 Tilemap.Layer.prototype._destroyV8TexCache = function() {
+    if (this._v8TileRoot) {
+        for (const child of [...this._v8TileRoot.children]) {
+            if (!child._reactorTileSprite) continue;
+            this._v8TileRoot.removeChild(child);
+            if (!child.destroyed) child.destroy();
+        }
+    }
     if (this._v8TexCache) {
         for (const texture of this._v8TexCache.values()) {
             if (texture && !texture.destroyed) {
@@ -3846,7 +3975,81 @@ Tilemap.Layer.prototype._destroyV8TexCache = function() {
     }
 };
 
-Tilemap.Layer.prototype.destroy = function() {
+Tilemap.Layer.prototype._destroyV8Mesh = function() {
+    if (this._v8Mesh) {
+        if (this._v8Mesh.parent) this._v8Mesh.parent.removeChild(this._v8Mesh);
+        this._v8Mesh.destroy({ texture: false, textureSource: false });
+        this._v8Mesh = null;
+        Tilemap.Layer._v8Stats().activeMeshes--;
+    }
+    if (this._v8Geometry) {
+        this._v8Geometry.destroy(true);
+        this._v8Geometry = null;
+    }
+    if (this._v8Atlas) {
+        Tilemap.Layer._releaseV8Atlas(this._v8Atlas);
+        this._v8Atlas = null;
+    }
+};
+
+Tilemap.Layer.prototype._setupV8Backend = function(bitmaps) {
+    this._destroyV8Mesh();
+    this._destroyV8TexCache();
+    const stats = Tilemap.Layer._v8Stats();
+    const requested = Tilemap.Layer._requestedV8Backend();
+    stats.requested = requested;
+    if (requested === "sprites") {
+        this._v8Backend = "sprites";
+        stats.backend = "sprites";
+        return;
+    }
+    try {
+        if (typeof PIXI.Mesh !== "function" || typeof PIXI.MeshGeometry !== "function") {
+            throw new Error("PIXI 8 mesh classes are unavailable");
+        }
+        this._v8Atlas = Tilemap.Layer._acquireV8Atlas(bitmaps);
+        this._v8Geometry = new PIXI.MeshGeometry({
+            positions: new Float32Array(8),
+            uvs: new Float32Array(8),
+            indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
+            shrinkBuffersToFit: false
+        });
+        this._v8Geometry.batchMode = "no-batch";
+        this._v8Mesh = new PIXI.Mesh({
+            geometry: this._v8Geometry,
+            texture: this._v8Atlas.texture,
+            roundPixels: true
+        });
+        this._v8Mesh.eventMode = "none";
+        this._v8Mesh.visible = false;
+        this._v8TileRoot.addChild(this._v8Mesh);
+        this._v8Backend = "mesh";
+        this._v8MeshDirty = true;
+        stats.backend = "mesh";
+        stats.activeMeshes++;
+    } catch (error) {
+        this._destroyV8Mesh();
+        this._v8Backend = "sprites";
+        stats.backend = "sprites";
+        stats.fallbacks++;
+        stats.fallbackReason = error && error.message ? error.message : String(error);
+    }
+};
+
+Tilemap.Layer.prototype._switchV8ToSprites = function(reason) {
+    const elements = this._elements.slice();
+    this._destroyV8Mesh();
+    this._destroyV8TexCache();
+    this._v8Backend = "sprites";
+    const stats = Tilemap.Layer._v8Stats();
+    stats.backend = "sprites";
+    stats.fallbacks++;
+    stats.fallbackReason = reason && reason.message ? reason.message : String(reason || "mesh failed");
+    for (const item of elements) this._addV8Tile(...item);
+};
+
+Tilemap.Layer.prototype.destroy = function(options) {
+    if (this.destroyed) return;
     if (this._vao) {
         this._vao.destroy();
         this._indexBuffer.destroy();
@@ -3855,7 +4058,14 @@ Tilemap.Layer.prototype.destroy = function() {
     this._indexBuffer = null;
     this._vertexBuffer = null;
     this._vao = null;
+    this._destroyV8Mesh();
     this._destroyV8TexCache();
+    if (this._v8TileRoot) {
+        if (this._v8TileRoot.parent) this._v8TileRoot.parent.removeChild(this._v8TileRoot);
+        this._v8TileRoot.destroy({ children: true, texture: false, textureSource: false });
+        this._v8TileRoot = null;
+    }
+    PIXI.Container.prototype.destroy.call(this, options);
 };
 
 Tilemap.Layer.prototype.setBitmaps = function(bitmaps) {
@@ -3864,6 +4074,7 @@ Tilemap.Layer.prototype.setBitmaps = function(bitmaps) {
     // v8: tile textures are cached per (set, frame); a tileset change
     // invalidates them.
     this._destroyV8TexCache();
+    if (PIXI.TextureSource) this._setupV8Backend(bitmaps);
 };
 
 Tilemap.Layer.prototype.clear = function() {
@@ -3876,13 +4087,17 @@ Tilemap.Layer.prototype.clear = function() {
     // (instead of in-place cursor reuse) guarantees no stale tiles can
     // ever remain visible: only sprites the current paint explicitly
     // placed are in the tree.
-    if (PIXI.TextureSource) {
+    if (PIXI.TextureSource && this._v8Backend === "mesh") {
+        this._v8MeshDirty = true;
+        if (this._v8Mesh) this._v8Mesh.visible = false;
+    } else if (PIXI.TextureSource) {
         if (!this._v8SpritePool) this._v8SpritePool = [];
-        if (this.children.length > 0) {
-            for (const child of this.children) {
+        if (this._v8TileRoot && this._v8TileRoot.children.length > 0) {
+            for (const child of [...this._v8TileRoot.children]) {
+                if (!child._reactorTileSprite) continue;
                 this._v8SpritePool.push(child);
+                this._v8TileRoot.removeChild(child);
             }
-            this.removeChildren();
         }
     }
 };
@@ -3893,16 +4108,87 @@ Tilemap.Layer.prototype.size = function() {
 
 Tilemap.Layer.prototype.addRect = function(setNumber, sx, sy, dx, dy, w, h) {
     this._elements.push([setNumber, sx, sy, dx, dy, w, h]);
-    // v8: render each tile as a child Sprite (the WebGL renderer-plugin path
-    // is gone in v8). Slower than v7's batched renderer but functional.
-    if (PIXI.TextureSource) {
+    this._v8MeshDirty = true;
+    if (PIXI.TextureSource && this._v8Backend !== "mesh") {
         this._addV8Tile(setNumber, sx, sy, dx, dy, w, h);
     }
 };
 
+Tilemap.Layer.prototype._syncV8Backend = function() {
+    if (!PIXI.TextureSource || !this._v8TileRoot) return;
+    const ultraMode7 = typeof UltraMode7 !== "undefined" &&
+        typeof UltraMode7.isActive === "function" && UltraMode7.isActive();
+    this._v8TileRoot.visible = !ultraMode7;
+    if (ultraMode7 || this._v8Backend !== "mesh" || !this._v8MeshDirty) return;
+    try {
+        const count = this._elements.length;
+        const positions = new Float32Array(count * 8);
+        const uvs = new Float32Array(count * 8);
+        const indices = new Uint32Array(count * 6);
+        const atlas = this._v8Atlas;
+        const slot = Tilemap.Layer.V8_ATLAS_SLOT_SIZE;
+        const columns = Tilemap.Layer.V8_ATLAS_COLUMNS;
+        let vertexAt = 0;
+        let indexAt = 0;
+        const started = typeof performance !== "undefined" ? performance.now() : 0;
+        for (let n = 0; n < count; n++) {
+            const item = this._elements[n];
+            const setNumber = item[0];
+            const sx = item[1];
+            const sy = item[2];
+            const dx = item[3];
+            const dy = item[4];
+            const w = item[5];
+            const h = item[6];
+            positions.set([
+                dx, dy,
+                dx + w, dy,
+                dx + w, dy + h,
+                dx, dy + h
+            ], vertexAt * 2);
+            let left;
+            let top;
+            let right;
+            let bottom;
+            if (setNumber < 0) {
+                left = right = (atlas.shadowX + 0.5) / atlas.width;
+                top = bottom = (atlas.shadowY + 0.5) / atlas.height;
+            } else {
+                if (setNumber >= 11) throw new Error(`tileset sheet ${setNumber} is outside the mesh atlas`);
+                const offsetX = (setNumber % columns) * slot;
+                const offsetY = Math.floor(setNumber / columns) * slot;
+                left = (offsetX + sx + 0.5) / atlas.width;
+                top = (offsetY + sy + 0.5) / atlas.height;
+                right = (offsetX + sx + w - 0.5) / atlas.width;
+                bottom = (offsetY + sy + h - 0.5) / atlas.height;
+            }
+            uvs.set([left, top, right, top, right, bottom, left, bottom], vertexAt * 2);
+            indices.set([
+                vertexAt, vertexAt + 1, vertexAt + 2,
+                vertexAt, vertexAt + 2, vertexAt + 3
+            ], indexAt);
+            vertexAt += 4;
+            indexAt += 6;
+        }
+        this._v8Geometry.positions = positions;
+        this._v8Geometry.uvs = uvs;
+        this._v8Geometry.indices = indices;
+        this._v8Mesh.visible = count > 0;
+        this._v8MeshDirty = false;
+        const stats = Tilemap.Layer._v8Stats();
+        stats.meshBuilds++;
+        stats.lastRectCount = count;
+        stats.lastVertexCount = count * 4;
+        if (started) stats.meshBuildMs += performance.now() - started;
+    } catch (error) {
+        this._switchV8ToSprites(error);
+    }
+};
+
 Tilemap.Layer.prototype._addV8Tile = function(setNumber, sx, sy, dx, dy, w, h) {
-    const image = this._images[setNumber];
-    if (!image) return;
+    const isShadow = setNumber < 0;
+    const image = isShadow ? null : this._images[setNumber];
+    if (!isShadow && !image) return;
     /*
      * An image that has not decoded yet must not become a texture source.
      *
@@ -3916,14 +4202,14 @@ Tilemap.Layer.prototype._addV8Tile = function(setNumber, sx, sy, dx, dy, w, h) {
      * and not a theoretical case. Skipping the tile costs one repaint;
      * _updateBitmaps sets _needsRepaint when the images are genuinely ready.
      */
-    if (!image.width && !image.naturalWidth && !image.videoWidth) return;
+    if (!isShadow && !image.width && !image.naturalWidth && !image.videoWidth) return;
     // Cache a TextureSource per source image to avoid recreating on every tile.
     // scaleMode MUST be 'nearest' for tile sources -- with linear (the v8
     // default) we get sub-texel interpolation across tile edges in the source
     // image, which manifests as vertical/horizontal "garbage seams" between
     // adjacent tiles on screen. Original MZ Tilemap.Renderer._createInternalTextures
     // hardcoded SCALE_MODES.NEAREST for the same reason.
-    if (!image.__pixiTilemapSource) {
+    if (!isShadow && !image.__pixiTilemapSource) {
         try {
             let SourceClass = PIXI.TextureSource;
             if (typeof HTMLImageElement !== "undefined" &&
@@ -3944,26 +4230,42 @@ Tilemap.Layer.prototype._addV8Tile = function(setNumber, sx, sy, dx, dy, w, h) {
     try {
         // Texture cache: tiles repeat heavily, so after warmup repaints
         // create no textures at all.
-        if (!this._v8TexCache) this._v8TexCache = new Map();
-        const key = setNumber + ":" + sx + ":" + sy + ":" + w + ":" + h;
-        let texture = this._v8TexCache.get(key);
-        if (!texture) {
-            texture = new PIXI.Texture({
-                source: image.__pixiTilemapSource,
-                frame: new PIXI.Rectangle(sx, sy, w, h)
-            });
-            this._v8TexCache.set(key, texture);
+        let texture = PIXI.Texture.WHITE;
+        if (!isShadow) {
+            if (!this._v8TexCache) this._v8TexCache = new Map();
+            const key = setNumber + ":" + sx + ":" + sy + ":" + w + ":" + h;
+            texture = this._v8TexCache.get(key);
+            if (!texture) {
+                texture = new PIXI.Texture({
+                    source: image.__pixiTilemapSource,
+                    frame: new PIXI.Rectangle(sx, sy, w, h)
+                });
+                this._v8TexCache.set(key, texture);
+            }
         }
         // Sprite reuse from the detached pool; only allocate when the
         // viewport genuinely needs more tiles than any previous paint.
         let sprite = this._v8SpritePool && this._v8SpritePool.pop();
         if (sprite) {
             if (sprite.texture !== texture) sprite.texture = texture;
+            Tilemap.Layer._v8Stats().spritePoolHits++;
         } else {
             sprite = new PIXI.Sprite(texture);
+            Tilemap.Layer._v8Stats().spriteAllocations++;
         }
+        sprite._reactorTileSprite = true;
+        sprite.scale.set(1, 1);
+        sprite.tint = 0xffffff;
+        sprite.alpha = 1;
+        sprite.blendMode = "inherit";
         sprite.position.set(dx, dy);
-        this.addChild(sprite);
+        if (isShadow) {
+            sprite.tint = 0x000000;
+            sprite.alpha = 0.5;
+            sprite.width = w;
+            sprite.height = h;
+        }
+        this._v8TileRoot.addChild(sprite);
     } catch (e) { /* skip this tile */ }
 };
 
@@ -3977,6 +4279,7 @@ Tilemap.Layer.prototype.render = function(renderer) {
     if (!tilemapRenderer ||
         typeof tilemapRenderer.getShader !== "function" ||
         !this._vao) {
+        this._syncV8Backend();
         return;
     }
     const gl = renderer.gl;
@@ -4011,6 +4314,10 @@ Tilemap.Layer.prototype.render = function(renderer) {
 Tilemap.Layer.prototype.isReady = function() {
     if (this._images.length === 0) {
         return false;
+    }
+    if (PIXI.TextureSource) {
+        return this._images.every(image => !image || Boolean(
+            image.width || image.naturalWidth || image.videoWidth));
     }
     for (const texture of this._images) {
         if (!texture || !texture.valid) {
@@ -4138,18 +4445,21 @@ Tilemap.CombinedLayer.prototype.destroy = function() {
 
 Tilemap.CombinedLayer.prototype.setBitmaps = function(bitmaps) {
     for (const child of this.children) {
-        child.setBitmaps(bitmaps);
+        if (typeof child.size === "function" && typeof child.addRect === "function" &&
+            typeof child.setBitmaps === "function") child.setBitmaps(bitmaps);
     }
 };
 
 Tilemap.CombinedLayer.prototype.clear = function() {
     for (const child of this.children) {
-        child.clear();
+        if (typeof child.size === "function" && typeof child.addRect === "function" &&
+            typeof child.clear === "function") child.clear();
     }
 };
 
 Tilemap.CombinedLayer.prototype.size = function() {
-    return this.children.reduce((r, child) => r + child.size(), 0);
+    return this.children.reduce((r, child) =>
+        r + (typeof child.size === "function" ? Number(child.size()) || 0 : 0), 0);
 };
 
 // prettier-ignore
@@ -4157,15 +4467,25 @@ Tilemap.CombinedLayer.prototype.addRect = function(
     setNumber, sx, sy, dx, dy, w, h
 ) {
     for (const child of this.children) {
-        if (child.size() < Tilemap.Layer.MAX_SIZE) {
-            child.addRect(setNumber, sx, sy, dx, dy, w, h);
+        if (typeof child.size === "function" && typeof child.addRect === "function" &&
+            child.size() < Tilemap.Layer.MAX_SIZE) {
+            child.addRect(...arguments);
             break;
         }
     }
 };
 
 Tilemap.CombinedLayer.prototype.isReady = function() {
-    return this.children.every(child => child.isReady());
+    return this.children.every(child => {
+        const isTileLayer = typeof child.size === "function" && typeof child.addRect === "function";
+        return !isTileLayer || typeof child.isReady !== "function" || child.isReady();
+    });
+};
+
+Tilemap.CombinedLayer.prototype._syncV8Backend = function() {
+    for (const child of this.children) {
+        if (typeof child._syncV8Backend === "function") child._syncV8Backend();
+    }
 };
 
 Tilemap.Renderer = function() {
@@ -4305,8 +4625,8 @@ if (
     // v5: classic registerPlugin (or our v8 compat no-op).
     PIXI.Renderer.registerPlugin("rpgtilemap", Tilemap.Renderer);
 }
-// v8: render-plugin system removed. Tilemap.Renderer registration is a no-op
-// until Phase 5 (v8-native tilemap pipeline).
+// v8: render-plugin registration is a compatibility no-op; Tilemap.Layer uses
+// native PIXI.Mesh children there and keeps this renderer for v5-v7 plugins.
 
 //-----------------------------------------------------------------------------
 /**

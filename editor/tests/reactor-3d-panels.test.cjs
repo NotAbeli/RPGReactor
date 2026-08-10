@@ -341,7 +341,11 @@ test('everything standing shares one idea of where the ground is', () => {
     // The footing of the whole connected region, not this object's own
     // southern row: pieces of one mural whose bottoms are ragged used to stand
     // at different depths, and nothing could line up with anything.
-    assert.match(three, /const centreZ = footing \+ 0\.5;/, 'props');
+    assert.match(three, /Number\.isFinite\(object\.compositePlaneZ\)/,
+        'overlapping declared pictures can share the source composition plane');
+    assert.match(three,
+        /Number\.isFinite\(object\.planeZ\) \? object\.planeZ : footing \+ 0\.5;/,
+        'props otherwise use the common footing or their declared flat-row hinge');
     assert.match(three, /z: character\._realY \+ 0\.5/, 'characters');
     const objectsSource = fs.readFileSync(
         path.join(repoRoot, 'runtime', 'reactor_objects.js'), 'utf8');
@@ -376,6 +380,27 @@ test('a tile belonging to no object still answers for itself', () => {
     const passes = built.groups.filter(g => g.positions.length).map(g => !!g.above);
     assert.ok(passes.includes(true), 'the starred one draws above');
     assert.ok(passes.includes(false), 'and the plain one below');
+});
+
+test('a mixed-pass declared picture draws every tile exactly once', () => {
+    const PLAIN = 28, STARRED = 29;
+    const object = { tile: PLAIN, w: 2, h: 1, roles: 'SS' };
+    const map = mapWith(2, 1, { 2: [PLAIN, STARRED] });
+    const built = Geometry.build(map, {
+        elevationAt: () => 0,
+        isUpright: () => true,
+        isAuthored: () => true,
+        isAbove: id => id === STARRED,
+        declaredAt: id => id === PLAIN
+            ? { object, dc: 0, dr: 0, role: 'S' }
+            : { object, dc: 1, dr: 0, role: 'S' }
+    });
+    const billboards = built.groups.filter(group => group.billboard);
+    assert.equal(billboards.some(group => group.above), true,
+        'the starred piece still draws over characters');
+    assert.equal(billboards.some(group => !group.above), true,
+        'the ordinary piece remains below characters');
+    assert.equal(billboards.reduce((total, group) => total + group.positions.length / 12, 0), 2);
 });
 
 test('a cell holding two standing tiles draws both', () => {
@@ -419,6 +444,14 @@ test('the lowest layer is listed first, so they layer as 2D does', () => {
         'while the single-tile question still answers with the topmost');
     assert.deepEqual(Geometry.uprightTilesAt(map, 5, 5, () => true), [],
         'and a cell off the map holds nothing');
+
+    const built = Geometry.build(map, {
+        elevationAt: () => 0,
+        isUpright: id => id === 10 || id === 20,
+        isAuthored: () => true
+    });
+    assert.deepEqual(built.groups.filter(group => group.billboard).map(group => group.layer), [1, 3],
+        'the 3D meshes retain those original map planes');
 });
 
 
@@ -459,6 +492,132 @@ test('a cell can belong to more than one declared object', () => {
     const plates = objects.filter(object =>
         object.cells.every(cell => cell.tileId === PLATE));
     assert.equal(plates.length, 2, 'and each plate stays on the floor as its own');
+});
+
+test('declared objects keep one authored footprint across layers and missing pieces', () => {
+    const NW = 28, NE = 29, SW = 36, SE = 37;
+    const mountain = { tile: NW, w: 2, h: 2, roles: 'SSSS' };
+    const declaredAt = id => {
+        if (id === NW) return { object: mountain, dc: 0, dr: 0, role: 'S' };
+        if (id === NE) return { object: mountain, dc: 1, dr: 0, role: 'S' };
+        if (id === SW) return { object: mountain, dc: 0, dr: 1, role: 'S' };
+        if (id === SE) return { object: mountain, dc: 1, dr: 1, role: 'S' };
+        return null;
+    };
+    const complete = mapWith(4, 4, {
+        2: [0, 0, 0, 0, 0, NW, NE, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        3: [0, 0, 0, 0, 0, 0, 0, 0, 0, SW, SE, 0, 0, 0, 0, 0]
+    });
+    const grouped = Geometry.uprightObjects(
+        complete, id => [NW, NE, SW, SE].includes(id), Infinity, () => true, declaredAt);
+    assert.equal(grouped.length, 1);
+    assert.equal(grouped[0].cells.length, 4, 'pieces on layers 3 and 4 stay one object');
+
+    const partial = mapWith(4, 4, {
+        2: [0, 0, 0, 0, 0, NW, NE, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    });
+    const [fragment] = Geometry.uprightObjects(
+        partial, id => id === NW || id === NE, Infinity, () => true, declaredAt);
+    assert.deepEqual([fragment.minX, fragment.maxX, fragment.minY, fragment.maxY], [1, 2, 1, 2],
+        'a partial stamp keeps the complete declaration as its pivot and footing');
+});
+
+test('a declared flat footing shares an edge with the standing art above it', () => {
+    const TOP_LEFT = 28, TOP_RIGHT = 29;
+    const structure = { tile: TOP_LEFT, w: 2, h: 2, roles: 'SSFF' };
+    const declaredAt = id => {
+        if (id === TOP_LEFT) return { object: structure, dc: 0, dr: 0, role: 'S' };
+        if (id === TOP_RIGHT) return { object: structure, dc: 1, dr: 0, role: 'S' };
+        return null;
+    };
+    const map = mapWith(4, 4, {
+        2: [0, 0, 0, 0, 0, TOP_LEFT, TOP_RIGHT, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    });
+    const [object] = Geometry.uprightObjects(
+        map, id => id === TOP_LEFT || id === TOP_RIGHT,
+        Infinity, () => true, declaredAt);
+    assert.equal(object.maxY, 1, 'the standing row still defines the picture height');
+    assert.equal(object.planeZ, 2, 'its plane meets the north edge of the flat row');
+
+    const built = Geometry.build(map, {
+        elevationAt: () => 0,
+        isUpright: id => id === TOP_LEFT || id === TOP_RIGHT,
+        isAuthored: () => true,
+        declaredAt
+    });
+    const anchors = built.groups.find(group => group.billboard).positions;
+    assert.equal(new Set([anchors[2], anchors[14]]).size, 1);
+    assert.equal(anchors[2], 2, 'both standing pieces use the shared hinge depth');
+});
+
+test('an overlapping lower-layer picture shares the upper picture plane', () => {
+    const UNDER = [28, 29, 36, 37];
+    const OVER = [200, 201];
+    const inset = { tile: UNDER[0], w: 2, h: 2, roles: 'SSSS' };
+    const structure = { tile: OVER[0], w: 2, h: 2, roles: 'SSFF' };
+    const declaredAt = id => {
+        const under = UNDER.indexOf(id);
+        if (under >= 0) {
+            return { object: inset, dc: under % 2, dr: Math.floor(under / 2), role: 'S' };
+        }
+        const over = OVER.indexOf(id);
+        if (over >= 0) return { object: structure, dc: over, dr: 0, role: 'S' };
+        return null;
+    };
+    const map = mapWith(4, 4, {
+        2: [0, 0, 0, 0, 0, 28, 29, 0, 0, 36, 37, 0, 0, 0, 0, 0],
+        3: [0, 0, 0, 0, 0, 200, 201, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    });
+    const built = Geometry.build(map, {
+        elevationAt: () => 0,
+        isUpright: id => UNDER.includes(id) || OVER.includes(id),
+        isAuthored: () => true,
+        declaredAt
+    });
+    const under = built.groups.find(group => group.billboard && group.layer === 2);
+    const over = built.groups.find(group => group.billboard && group.layer === 3);
+
+    assert.equal(under.positions[2], 2,
+        'the layer-2 inset does not stand half a tile in front of its layer-3 frame');
+    assert.equal(over.positions[2], 2, 'both pictures use the upper composition hinge');
+    const underYs = Array.from(under.offsets).filter((_, index) => index % 2 === 1);
+    assert.deepEqual([Math.min(...underYs), Math.max(...underYs)], [0, 1],
+        'the inset standing row uses the covering picture course instead of sitting one row high');
+    const flatUnder = built.groups.filter(group => !group.billboard && group.layer === 2)
+        .reduce((total, group) => total + group.positions.length / 12, 0);
+    assert.equal(flatUnder, 2,
+        'the inset row aligned with the covering footing lies flat instead of being clipped vertically');
+});
+
+test('a matched lower picture completes a cell hidden by its covering frame', () => {
+    const LOWER = [28, 29, 36, 37];
+    const UPPER = [200, 201];
+    const inset = { tile: 28, w: 2, h: 2, roles: 'SSSS' };
+    const frame = { tile: 200, w: 2, h: 2, roles: 'SSFF' };
+    const declaredAt = id => {
+        const lower = LOWER.indexOf(id);
+        if (lower >= 0) {
+            return { object: inset, dc: lower % 2, dr: Math.floor(lower / 2), role: 'S' };
+        }
+        const upper = UPPER.indexOf(id);
+        if (upper >= 0) return { object: frame, dc: upper, dr: 0, role: 'S' };
+        return null;
+    };
+    const map = mapWith(4, 4, {
+        2: [0, 0, 0, 0, 0, 28, 29, 0, 0, 0, 37, 0, 0, 0, 0, 0],
+        3: [0, 0, 0, 0, 0, 200, 201, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    });
+    const built = Geometry.build(map, {
+        elevationAt: () => 0,
+        isUpright: id => LOWER.includes(id) || UPPER.includes(id),
+        isAuthored: () => true,
+        declaredAt
+    });
+    const synthetic = built.groups.find(group => !group.billboard
+        && Math.abs(group.layer - 2.01) < 1e-6);
+    assert.ok(synthetic,
+        'the absent south-west inset cell clears its same-layer occupant but stays below layer 3');
+    assert.equal(synthetic.positions.length / 12, 1);
 });
 
 test('a column and what rests on it are built at their own anchors', () => {

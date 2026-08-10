@@ -448,8 +448,11 @@ test('stacked layers keep the author\'s order and stay a hair apart', () => {
     // Elevation 0 so the map rim builds no walls; only the ground quads remain.
     const map = mapWith(1, 1, { 0: [1], 1: [2] });
     const built = Geometry.build(map, { elevationAt: flat });
-    const heights = built.groups[0].positions.filter((_, i) => i % 3 === 1);
+    const heights = built.groups.flatMap(group =>
+        Array.from(group.positions).filter((_, i) => i % 3 === 1));
     const levels = [...new Set(heights)].sort((a, b) => a - b);
+    assert.deepEqual(built.groups.map(group => group.layer).sort(), [0, 1],
+        'the draw groups retain the physical map planes');
     assert.equal(levels.length, 2, 'the two layers sit at different heights');
     assert.equal(levels[0], 0, 'the lower one at the cell elevation');
     // Far below a tile's width: coplanar quads would z-fight, a visible gap
@@ -459,7 +462,10 @@ test('stacked layers keep the author\'s order and stay a hair apart', () => {
 
 test('an empty layer between two painted ones is skipped', () => {
     const map = mapWith(1, 1, { 0: [1], 2: [2] });
-    assert.equal(Geometry.build(map, { elevationAt: flat }).quads, 2);
+    const built = Geometry.build(map, { elevationAt: flat });
+    assert.equal(built.quads, 2);
+    assert.deepEqual(built.groups.map(group => group.layer).sort(), [0, 2],
+        'compacting empty entries does not renumber their authored planes');
 });
 
 test('the built-in autotile tables match the corescript exactly', () => {
@@ -582,6 +588,36 @@ test('a waterfall slides down the sheet, not across it', () => {
     for (let i = 0; i < anim.length; i += 2) { us.push(anim[i]); vs.push(anim[i + 1]); }
     assert.ok(us.every(value => value === 0), 'no horizontal drift');
     assert.ok(vs.every(value => value < 0), 'downward through the sheet');
+});
+
+test('animated A1 UV clamps follow all three water frames', () => {
+    const uv = { array: new Float32Array([0.1, 0.2, 0.2, 0.2]), needsUpdate: false };
+    const bounds = {
+        array: new Float32Array([0.09, 0.19, 0.21, 0.31, 0.09, 0.19, 0.21, 0.31]),
+        needsUpdate: false
+    };
+    const geometry = {
+        getAttribute(name) { return name === 'uv' ? uv : name === 'uvBounds' ? bounds : null; }
+    };
+    const scene = Object.create(Reactor3D.MapScene.prototype);
+    scene._frame = -1;
+    scene._animated = [{
+        geometry,
+        base: Float32Array.from(uv.array),
+        baseBounds: Float32Array.from(bounds.array),
+        stride: new Float32Array([0.1, 0, 0.1, 0])
+    }];
+    const rounded = values => Array.from(values, value => Math.round(value * 100) / 100);
+
+    scene.setAnimationFrame(1);
+    assert.deepEqual(rounded(uv.array), [0.2, 0.2, 0.3, 0.2]);
+    assert.deepEqual(rounded(bounds.array.slice(0, 4)), [0.19, 0.19, 0.31, 0.31]);
+    scene.setAnimationFrame(2);
+    assert.deepEqual(rounded(uv.array), [0.3, 0.2, 0.4, 0.2]);
+    scene.setAnimationFrame(3);
+    assert.deepEqual(rounded(uv.array), [0.2, 0.2, 0.3, 0.2], 'the ping-pong frame returns to 1');
+    assert.equal(uv.needsUpdate, true);
+    assert.equal(bounds.needsUpdate, true, 'the shader never clamps moving UVs to frame 0');
 });
 
 test('scenery raises its cell instead of standing a picture on it', () => {
@@ -774,11 +810,76 @@ test('a wood is drawn once, as cut-outs, not also as a mat under them', () => {
     assert.ok(built.groups.some(group => group.billboard), 'and the cut-out standing on it');
 });
 
+test('a multi-tile foliage stand-in uses a separate blended gap underlay', () => {
+    const map = mapWith(1, 1, { 0: [1], 1: [500] });
+    const built = Geometry.build(map, {
+        elevationAt: flat,
+        isFoliage: id => id === 500,
+        standInFor: () => ({ tileId: 900, w: 2, h: 2 }),
+        foliageDensity: 1
+    });
+    const flatQuads = built.groups.filter(group => !group.billboard)
+        .flatMap(quadsOf).filter(isFlat);
+    assert.equal(flatQuads.length, 2, 'the base and a separate gap fill remain');
+    assert.equal(built.groups.some(group => group.underlay), true,
+        'the fill cannot be mistaken for ordinary opaque terrain');
+});
+
+test('a multi-tile foliage stamp stands once at its authored footprint', () => {
+    // IDs 44/45/52/53 are one repeating 2x2 fill block on the sheet. Each
+    // points at the same 2x2 lone variant beginning at 28; emitting that whole
+    // picture for every constituent cell draws four overlapping mountains.
+    const map = mapWith(2, 2, {
+        0: [1, 1, 1, 1],
+        2: [44, 45, 0, 0],
+        3: [0, 0, 52, 53]
+    });
+    const built = Geometry.build(map, {
+        elevationAt: flat,
+        isFoliage: id => [44, 45, 52, 53].includes(id),
+        standInFor: () => ({ tileId: 28, w: 2, h: 2 }),
+        foliageDensity: 1
+    });
+    const cutouts = built.groups.filter(group => group.billboard);
+    assert.equal(cutouts.reduce((total, group) => total + group.positions.length / 12, 0), 4,
+        'one subquad per painted source cell, not one whole mountain per cell');
+    assert.deepEqual(cutouts.map(group => group.layer).sort(), [2, 3],
+        'each half remains in its authored physical map plane');
+    const anchors = cutouts.flatMap(group => Array.from(group.positions));
+    for (let i = 0; i < anchors.length; i += 3) {
+        assert.equal(anchors[i], 1, 'centred across the two authored columns');
+        assert.equal(anchors[i + 2], 1, 'centred across the two authored rows');
+    }
+    const ys = cutouts.flatMap(group => Array.from(group.offsets)
+        .filter((_, index) => index % 2 === 1));
+    assert.equal(Math.max(...ys) - Math.min(...ys), 2,
+        'keeps the authored 2x2 proportions without geometric overlap');
+});
+
+test('an incomplete multi-tile foliage stamp completes its silhouette', () => {
+    const map = mapWith(2, 2, {
+        0: [1, 1, 1, 1],
+        2: [44, 45, 0, 0]
+    });
+    const built = Geometry.build(map, {
+        elevationAt: flat,
+        isFoliage: id => id === 44 || id === 45,
+        standInFor: () => ({ tileId: 28, w: 2, h: 2 }),
+        foliageDensity: 1
+    });
+    const cutouts = built.groups.filter(group => group.billboard);
+    assert.equal(cutouts.reduce((total, group) => total + group.positions.length / 12, 0), 4,
+        'a ragged fill edge does not turn the lone variant into half a mountain');
+    const ys = cutouts.flatMap(group => Array.from(group.offsets)
+        .filter((_, index) => index % 2 === 1));
+    assert.deepEqual([...new Set(ys)].sort(), [0, 1, 2], 'the complete two-row silhouette remains');
+});
+
 /** The world size of the one cut-out a single-cell map built. */
 function cutoutSize(built) {
     const cutout = built.groups.find(group => group.billboard);
-    const xs = [0, 1, 2, 3].map(i => cutout.offsets[i * 2]);
-    const ys = [0, 1, 2, 3].map(i => cutout.offsets[i * 2 + 1]);
+    const xs = Array.from(cutout.offsets).filter((_, index) => index % 2 === 0);
+    const ys = Array.from(cutout.offsets).filter((_, index) => index % 2 === 1);
     return {
         wide: Math.max(...xs) - Math.min(...xs),
         high: Math.max(...ys) - Math.min(...ys),
@@ -793,9 +894,10 @@ test('a cut-out is as wide as its art and as tall as its art in proportion', () 
     // Sampling only its first tile drew the top-left quarter of every tree;
     // sizing it as though the block were a single tile then squeezed the whole
     // picture into one cell of world space.
-    const built = Geometry.build(mapWith(1, 1, { 0: [500] }), {
+    const art = [900, 901, 908, 909, 916, 917, 924, 925];
+    const built = Geometry.build(mapWith(2, 4, { 0: art }), {
         elevationAt: flat,
-        isFoliage: id => id === 500,
+        isFoliage: id => art.includes(id),
         standInFor: () => ({ tileId: 900, w: 2, h: 4 }),
         foliageHeight: 1,
         foliageDensity: 1,
@@ -853,17 +955,21 @@ test('a cut-out samples the whole span of its stand-in', () => {
     const one = Geometry.build(map, {
         elevationAt: flat, isFoliage: id => id === 500, standInFor: () => 900
     });
-    const block = Geometry.build(map, {
-        elevationAt: flat, isFoliage: id => id === 500,
+    const blockArt = [900, 901, 908, 909];
+    const block = Geometry.build(mapWith(2, 2, { 0: blockArt }), {
+        elevationAt: flat, isFoliage: id => blockArt.includes(id),
         standInFor: () => ({ tileId: 900, w: 2, h: 2 })
     });
     const spanOf = built => {
-        const uvs = built.groups.find(group => group.billboard).uvs;
-        const us = [0, 1, 2, 3].map(i => uvs[i * 2]);
+        const uvs = built.groups.filter(group => group.billboard)
+            .flatMap(group => Array.from(group.uvs));
+        const us = uvs.filter((_, index) => index % 2 === 0);
         return Math.max(...us) - Math.min(...us);
     };
-    assert.ok(spanOf(block) > spanOf(one) * 1.9,
-        'a two-tile-wide stand-in reads two tiles of the sheet');
+    const oneSpan = spanOf(one);
+    const blockSpan = spanOf(block);
+    assert.ok(blockSpan > oneSpan * 1.9,
+        `a two-tile-wide stand-in reads two tiles of the sheet (${oneSpan} -> ${blockSpan})`);
 });
 
 test('an object stands in the middle of its southern row', () => {

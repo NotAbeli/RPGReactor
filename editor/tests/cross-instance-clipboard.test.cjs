@@ -389,11 +389,14 @@ test('event commands, pages, and movement routes prefer the shared clipboard', a
     });
     const eventManager = Object.create(EventManager.prototype);
     eventManager.clipboard = { name: 'Stale Event', cut: false };
-    eventManager.currentMap = { events: [] };
+    eventManager.currentMap = { width: 30, height: 30, events: [] };
+    eventManager.eventSprites = new Map();
     eventManager.getEventAt = () => null;
     eventManager.saveState = () => {};
     eventManager.getNextEventId = () => 8;
     eventManager.renderEvents = () => {};
+    eventManager.notifyEventSelected = () => {};
+    eventManager.updateEventListSelection = () => {};
     await eventManager.pasteEvent(12, 9);
     assert.equal(eventManager.currentMap.events[8].name, 'EV008');
     assert.equal(eventManager.currentMap.events[8].x, 12);

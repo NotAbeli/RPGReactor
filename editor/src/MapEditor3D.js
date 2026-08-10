@@ -383,6 +383,7 @@ class MapEditor3D {
             // layers, which on a parallax map is very close to nothing.
             loadParallax: name => parallaxes[name] || null
         });
+        this.mapScene.setPass('all');
         this.applyAtmosphere(mapData);
         this.buildGrid(mapData);
         this.buildHoverCell();
@@ -1777,7 +1778,7 @@ class MapEditor3D {
             if (!this.enabled) { this.frame = null; return; }
             this.frame = requestAnimationFrame(tick);
             this.stepFly(now);
-            this.render();
+            this.render(now);
         };
         this.frame = requestAnimationFrame(tick);
     }
@@ -1787,10 +1788,41 @@ class MapEditor3D {
         this.frame = null;
     }
 
-    render() {
+    render(now) {
         if (!this.renderer || !this.camera || !this.mapScene) return;
-        this.animateAutotiles();
-        this.renderer.render(this.mapScene.scene(), this.camera);
+        this.animateAutotiles(now);
+        const scene = this.mapScene.scene();
+        const background = scene.background;
+        const autoClear = this.renderer.autoClear;
+        const eventVisible = this.eventGroup ? this.eventGroup.visible : null;
+        const gridVisible = this.grid ? this.grid.visible : null;
+        const hoverVisible = this.hoverCell ? this.hoverCell.visible : null;
+        try {
+            // Match the tilemap's two canvases. Lower geometry and events share
+            // real 3D depth; starred geometry starts with a fresh depth buffer
+            // and therefore overlays them, as the 2D upper tile layer does.
+            this.mapScene.setPass('below');
+            this.renderer.autoClear = true;
+            this.renderer.render(scene, this.camera);
+
+            if (this.mapScene.hasAbove()) {
+                if (this.eventGroup) this.eventGroup.visible = false;
+                if (this.grid) this.grid.visible = false;
+                if (this.hoverCell) this.hoverCell.visible = false;
+                scene.background = null;
+                this.renderer.autoClear = false;
+                this.renderer.clearDepth();
+                this.mapScene.setPass('above');
+                this.renderer.render(scene, this.camera);
+            }
+        } finally {
+            scene.background = background;
+            this.renderer.autoClear = autoClear;
+            if (this.eventGroup && eventVisible !== null) this.eventGroup.visible = eventVisible;
+            if (this.grid && gridVisible !== null) this.grid.visible = gridVisible;
+            if (this.hoverCell && hoverVisible !== null) this.hoverCell.visible = hoverVisible;
+            this.mapScene.setPass('all');
+        }
     }
 
     /**
@@ -1801,15 +1833,20 @@ class MapEditor3D {
      * agree about whether water is moving. Sliding UVs, so an animated frame
      * costs nothing like a rebuild.
      */
-    animateAutotiles() {
+    animateAutotiles(now) {
         if (typeof this.mapScene.setAnimationFrame !== 'function') return;
         const enabled = window.reactor?.optionsManager?.getAnimateAutotiles?.() !== false;
         if (!enabled) {
+            this._animationStartedAt = null;
             this.mapScene.setAnimationFrame(0);
             return;
         }
-        this._animationCount = (this._animationCount || 0) + 1;
-        this.mapScene.setAnimationFrame(Math.floor(this._animationCount / 30));
+        const timestamp = Number.isFinite(now) ? now : performance.now();
+        if (!Number.isFinite(this._animationStartedAt)) this._animationStartedAt = timestamp;
+        // requestAnimationFrame follows the monitor refresh rate, not a fixed
+        // 60Hz clock. Time-based steps keep A1 at RPG Maker's two frames per
+        // second on 60/120/144Hz displays and after performance changes.
+        this.mapScene.setAnimationFrame(Math.floor((timestamp - this._animationStartedAt) / 500));
     }
 }
 
@@ -1821,4 +1858,3 @@ if (typeof module !== 'undefined' && module.exports) {
 // which the viewport tests do, to avoid three.js and the DOM — still measures
 // in whole tiles rather than in undefined.
 MapEditor3D.prototype.tileSize = 48;
-

@@ -64,7 +64,7 @@ jobs:
           chmod +x "$RUNNER_TEMP/butler/butler"
           test "$("$RUNNER_TEMP/butler/butler" -V | cut -d, -f1)" = "v$BUTLER_VERSION"
           printf '%s\n' "$RUNNER_TEMP/butler" >> "$GITHUB_PATH"
-      - name: Verify manifests, create GitHub Release, and optionally publish same bytes to itch.io
+      - name: Verify manifests, attach release files, and optionally publish same bytes to itch.io
         shell: bash
         run: |
           ITCH_ARG=()

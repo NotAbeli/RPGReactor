@@ -278,6 +278,24 @@ test('the camera is aimed before the sprites that project through it', () => {
     assert.ok(aim < update.indexOf('this.updateTilemap();'), 'and before the 2D updates');
 });
 
+test('runtime 3D advances A1 UVs from the tilemap animation clock', () => {
+    const at = spritesSource.indexOf('Spriteset_Map.prototype.updateReactor3D = function');
+    const body = spritesSource.slice(at, spritesSource.indexOf('\n};', at));
+    const animate = body.indexOf('state.scene.setAnimationFrame(frame);');
+    const render = body.indexOf('state.viewport.renderPass');
+    assert.match(body, /this\._tilemap\.animationFrame/);
+    assert.ok(animate >= 0 && animate < render,
+        'animated UVs move before either runtime render pass is captured');
+});
+
+test('the combined 3D preview draws starred colour after ordinary colour', () => {
+    assert.match(moduleSource,
+        /mesh\.renderOrder = \(group\.above \? 10 : 0\) \+ \(group\.layer \|\| 0\);/,
+        'transparent sheet centroids cannot invert tilemap passes or authored map layers');
+    assert.doesNotMatch(moduleSource, /_supportMeshes/,
+        'starred alpha is not duplicated into a runtime-only lower colour pass');
+});
+
 test('character sprites fall back to the stock position in 2D', () => {
     const at = spritesSource.indexOf('Sprite_Character.prototype.updateReactor3DPosition');
     assert.ok(at >= 0);
@@ -313,14 +331,11 @@ test('a 3D map releases its GPU allocations on the way out', () => {
     assert.match(clear, /texture\.dispose\(\)/);
 });
 
-test('tile textures are filtered nearest, both ways', () => {
-    // Linear filtering bleeds neighbouring tiles across a quad's edges, because
-    // every tile is a sub-rectangle of a shared sheet — and HD-2D wants crisp
-    // texels regardless.
+test('tile textures stay crisp when enlarged and preserve alpha when reduced', () => {
     const at = moduleSource.indexOf('Reactor3D.MapScene.prototype.textureFor');
     const body = moduleSource.slice(at, moduleSource.indexOf('\n};', at));
     assert.match(body, /magFilter = THREE\.NearestFilter/);
-    assert.match(body, /minFilter = THREE\.NearestFilter/);
+    assert.match(body, /minFilter = THREE\.LinearFilter/);
     assert.match(body, /generateMipmaps = false/);
 });
 

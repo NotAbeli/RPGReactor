@@ -4456,6 +4456,11 @@ Spriteset_Map.prototype.updateReactor3D = function() {
     // stepping a whole tile at a time.
     this.updateReactor3DCamera();
     this.updateReactor3DLights(state);
+    if (state.scene.setAnimationFrame) {
+        const frame = this._tilemap && Number.isFinite(this._tilemap.animationFrame)
+            ? this._tilemap.animationFrame : 0;
+        state.scene.setAnimationFrame(frame);
+    }
     // The flat copy of whatever the ground was built from, every frame: a
     // parallax plugin rebuilds its layers on its own schedule.
     this.suppressReactor3DGroundParallaxes(true);

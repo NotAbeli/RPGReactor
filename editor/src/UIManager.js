@@ -466,6 +466,33 @@ class UIManager {
                 return;
             }
 
+            const activeElement = document.activeElement;
+            const isTextInput = activeElement && (
+                activeElement.tagName === 'INPUT' ||
+                activeElement.tagName === 'TEXTAREA' ||
+                activeElement.tagName === 'SELECT' ||
+                activeElement.isContentEditable
+            );
+            const arrowDelta = !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey
+                ? {
+                    ArrowLeft: [-1, 0],
+                    ArrowRight: [1, 0],
+                    ArrowUp: [0, -1],
+                    ArrowDown: [0, 1]
+                }[e.key]
+                : null;
+            const eventEditorModal = document.getElementById('event-editor-modal');
+            const eventEditorOpen = eventEditorModal && eventEditorModal.style.display !== 'none';
+            if (arrowDelta && !isTextInput && !eventEditorOpen && this.callbacks.getEventManager) {
+                const eventManager = this.callbacks.getEventManager();
+                if (eventManager?.eventMode) {
+                    eventManager.moveEventSelection(...arrowDelta);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+            }
+
             // Ctrl+Z - Undo (only when not in a text input)
             if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
                 const activeElement = document.activeElement;
@@ -605,12 +632,17 @@ class UIManager {
                     const eventManager = this.callbacks.getEventManager();
                     if (eventManager && eventManager.eventMode) {
                         e.preventDefault();
-                        // Paste at selected tile position or selected event position
-                        const x = eventManager.selectedTileX !== null ? eventManager.selectedTileX :
-                                  (eventManager.selectedEvent ? eventManager.selectedEvent.x : 0);
-                        const y = eventManager.selectedTileY !== null ? eventManager.selectedTileY :
-                                  (eventManager.selectedEvent ? eventManager.selectedEvent.y : 0);
-                        eventManager.pasteEvent(x, y);
+                        // Paste only at an explicit map target. Falling back to
+                        // (0, 0) made a lost selection look like a valid paste.
+                        const x = Number.isInteger(eventManager.selectedTileX)
+                            ? eventManager.selectedTileX
+                            : eventManager.selectedEvent?.x;
+                        const y = Number.isInteger(eventManager.selectedTileY)
+                            ? eventManager.selectedTileY
+                            : eventManager.selectedEvent?.y;
+                        if (Number.isInteger(x) && Number.isInteger(y)) {
+                            eventManager.pasteEvent(x, y);
+                        }
                         return;
                     }
                 }

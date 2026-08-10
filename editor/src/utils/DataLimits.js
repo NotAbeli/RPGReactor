@@ -4,6 +4,11 @@ globalThis.RR_LIMITS = Object.freeze({
     ACTION_REPEATS: 100,
     MAP_COUNT: 2000,
     MAP_ID: 9999,
+    MAP_WIDTH: 512,
+    MAP_HEIGHT: 512,
+    MAP_FILE_BYTES: 64 * 1024 * 1024,
+    MAP_CANVAS_SIDE: 8192,
+    MAP_CANVAS_PIXELS: 32 * 1024 * 1024,
     DATABASE_ENTRIES: Object.freeze({
         actors: 9999,
         classes: 9999,
@@ -23,6 +28,22 @@ globalThis.RR_LIMITS = Object.freeze({
         armorTypes: 256,
         equipTypes: 128
     })
+});
+
+globalThis.rrIsMapSizeSupported = function(width, height) {
+    return Number.isInteger(width) && Number.isInteger(height) &&
+        width >= 1 && width <= RR_LIMITS.MAP_WIDTH &&
+        height >= 1 && height <= RR_LIMITS.MAP_HEIGHT;
+};
+
+globalThis.RRMapJson = Object.freeze({
+    stringify(map) {
+        if (!map || !Array.isArray(map.data)) return JSON.stringify(map, null, 2);
+
+        const compactData = JSON.stringify(map.data);
+        const pretty = JSON.stringify({ ...map, data: null }, null, 2);
+        return pretty.replace(/^  "data": null(,?)$/m, `  "data": ${compactData}$1`);
+    }
 });
 
 globalThis.rrClassParamAtLevel = function(values, level) {

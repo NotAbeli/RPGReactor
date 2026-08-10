@@ -105,4 +105,6 @@ test('the press records where it landed, so the first click has a quadrant', () 
     // Before the tile bounds check rejects an out-of-map press, and well
     // before paintTile is reached.
     assert.ok(storeAt < body.indexOf('this.paintTile('), 'ahead of the paint');
+    assert.match(body, /else if \(this\.shadowPenMode\) \{\s*this\.paintTile\(tileX, tileY\);/,
+        'pointerdown paints immediately instead of waiting for pointer movement');
 });

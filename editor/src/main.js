@@ -482,7 +482,9 @@ class RPGReactor {
             this.mapEditor.clearMapStamp();
             return true;
         }
-        if (this.eventManager?.selectedEvent) {
+        if (this.eventManager?.selectedEvent ||
+            Number.isInteger(this.eventManager?.selectedTileX) ||
+            Number.isInteger(this.eventManager?.selectedTileY)) {
             this.eventManager.selectEvent(null);
             return true;
         }

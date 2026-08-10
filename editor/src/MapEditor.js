@@ -634,6 +634,15 @@ class MapEditor {
 
 
     // Undo/Redo system methods
+    trimMapHistory(stack) {
+        const dataLength = this.tilemapManager?.currentMap?.data?.length || 0;
+        const memoryBound = dataLength > 0
+            ? Math.max(1, Math.floor((64 * 1024 * 1024) / (dataLength * 12)))
+            : this.maxUndoSteps;
+        const limit = Math.min(this.maxUndoSteps, memoryBound);
+        while (stack.length > limit) stack.shift();
+    }
+
     saveState() {
         if (!this.tilemapManager.currentMap) return;
 
@@ -646,9 +655,7 @@ class MapEditor {
         this.redoStack = [];
 
         // Limit undo stack size
-        if (this.undoStack.length > this.maxUndoSteps) {
-            this.undoStack.shift();
-        }
+        this.trimMapHistory(this.undoStack);
 
         // Notify about undo state change
         this.notifyUndoStateChange();
@@ -697,9 +704,7 @@ class MapEditor {
             this.undoStack.push(this.activeEditState.beforeData);
             this.redoStack = [];
 
-            if (this.undoStack.length > this.maxUndoSteps) {
-                this.undoStack.shift();
-            }
+            this.trimMapHistory(this.undoStack);
 
             this.notifyUndoStateChange();
             this.notifyMapEdited();
@@ -829,7 +834,7 @@ class MapEditor {
 
         this.undoStack.push({ kind: 'object3d', data: state.before });
         this.redoStack = [];
-        if (this.undoStack.length > this.maxUndoSteps) this.undoStack.shift();
+        this.trimMapHistory(this.undoStack);
         this.notifyUndoStateChange();
         this.notifyMapEdited();
     }
@@ -859,7 +864,7 @@ class MapEditor {
 
         this.undoStack.push({ kind: 'elevation', data: state.before });
         this.redoStack = [];
-        if (this.undoStack.length > this.maxUndoSteps) this.undoStack.shift();
+        this.trimMapHistory(this.undoStack);
         this.notifyUndoStateChange();
         this.notifyMapEdited();
     }
@@ -880,6 +885,7 @@ class MapEditor {
         if (this.undoStack[this.undoStack.length - 1]?.kind === 'object3d') {
             const entry = this.undoStack.pop();
             this.redoStack.push({ kind: 'object3d', data: this.restoreObject3DState(entry.data) });
+            this.trimMapHistory(this.redoStack);
             this.notifyUndoStateChange();
             this.notifyMapEdited();
             return;
@@ -890,6 +896,7 @@ class MapEditor {
             const elevation = this.mapElevation();
             const map = this.tilemapManager.currentMap;
             this.redoStack.push({ kind: 'elevation', data: elevation.snapshot(map) });
+            this.trimMapHistory(this.redoStack);
             elevation.restore(map, entry.data);
             this.notifyElevationChanged();
             this.notifyUndoStateChange();
@@ -899,6 +906,7 @@ class MapEditor {
 
         // Save current state to redo stack
         this.redoStack.push(this.tilemapManager.currentMap.data.slice());
+        this.trimMapHistory(this.redoStack);
 
         // Restore previous state
         const previousData = this.undoStack.pop();
@@ -924,6 +932,7 @@ class MapEditor {
         if (this.redoStack[this.redoStack.length - 1]?.kind === 'object3d') {
             const entry = this.redoStack.pop();
             this.undoStack.push({ kind: 'object3d', data: this.restoreObject3DState(entry.data) });
+            this.trimMapHistory(this.undoStack);
             this.notifyUndoStateChange();
             this.notifyMapEdited();
             return;
@@ -934,6 +943,7 @@ class MapEditor {
             const elevation = this.mapElevation();
             const map = this.tilemapManager.currentMap;
             this.undoStack.push({ kind: 'elevation', data: elevation.snapshot(map) });
+            this.trimMapHistory(this.undoStack);
             elevation.restore(map, entry.data);
             this.notifyElevationChanged();
             this.notifyUndoStateChange();
@@ -943,6 +953,7 @@ class MapEditor {
 
         // Save current state to undo stack
         this.undoStack.push(this.tilemapManager.currentMap.data.slice());
+        this.trimMapHistory(this.undoStack);
 
         // Restore next state
         const nextData = this.redoStack.pop();
@@ -1113,6 +1124,8 @@ class MapEditor {
             // unreachable.
             if (this.eraserMode && this.currentTool !== 'rectangle' &&
                 this.currentTool !== 'circle' && this.currentTool !== 'fill') {
+                this.paintTile(tileX, tileY);
+            } else if (this.shadowPenMode) {
                 this.paintTile(tileX, tileY);
             } else if (this.currentTool === 'pencil') {
                 this.paintTile(tileX, tileY);
@@ -1523,6 +1536,14 @@ class MapEditor {
                         // Determine which layer this tile will be placed on
                         const actualPlacementLayer = this.getAutotilePlacementLayer(baseTileId, targetX, targetY);
 
+                        // Moving a broken same-kind run back onto its upper
+                        // neighbor slot must not leave the stale lower copy.
+                        if (this.layerMode === 'auto' && actualPlacementLayer === 1 &&
+                            this.sameAutotileKind(data[basePos], baseTileId)) {
+                            data[basePos] = 0;
+                            affectedTiles.add(`${targetX},${targetY},0`);
+                        }
+
                         // Place the tile with base shape
                         const targetLayerIndex = actualPlacementLayer * layerSize + basePos;
                         data[targetLayerIndex] = baseTileId;
@@ -1749,6 +1770,11 @@ class MapEditor {
                     // Determine which layer this tile will be placed on
                     // (shared rules — see getAutotilePlacementLayer)
                     const actualPlacementLayer = this.getAutotilePlacementLayer(baseTileId, mapX, mapY);
+
+                    if (this.layerMode === 'auto' && actualPlacementLayer === 1 &&
+                        this.sameAutotileKind(data[basePos], baseTileId)) {
+                        data[basePos] = 0;
+                    }
 
                     // First, place the tile in map data with base shape so it's included in neighbor checks
                     const targetLayerIndex = actualPlacementLayer * layerSize + basePos;
@@ -3878,47 +3904,40 @@ class MapEditor {
         }
         const { width, data } = this.tilemapManager.currentMap;
         const layer0Tile = data[y * width + x];
+        const layer0HasATile = layer0Tile >= 1536 && layer0Tile < 8192;
+        const cls = this.classifyAutotile(baseTileId);
 
-        /*
-         * A different terrain over an existing one stacks; the same terrain
-         * replaces itself.
-         *
-         * This used to turn on whether the art carries transparency —
-         * "decorations" stacked, opaque ground replaced. The authored maps say
-         * otherwise. Of 376,283 A2 tiles sitting at z1 over an A-tile at z0
-         * across the bundled projects, 80.2% are fully opaque, and the same
-         * kind is stacked on both slots exactly **zero** times. Transparency
-         * has nothing to do with it: what decides is whether the cell already
-         * holds a different terrain.
-         *
-         * Reading it the other way sent four fifths of those tiles to z0,
-         * which is two bugs at once. It overwrote whatever was underneath — a
-         * table painted on a floor ate the floor — and it moved the tile off
-         * the slot its own neighbours occupy, so the shape calculation, which
-         * only ever looks at the slot being painted, found no neighbours and
-         * capped the tile off. Erase a stretch of road and paint it back and
-         * the new piece landed at z0 with hard ends while the road either side
-         * stayed at z1.
-         *
-         * A1 water already worked this way — "a different water kind over
-         * water stacks, the same kind replaces" — and this is that rule for
-         * every A tile rather than for one band.
-         */
         // Join the slot this terrain already occupies beside the cell.
         //
         // Looking only at what is under the cursor is not enough, because a
         // shape is decided by neighbours on the *same* slot: a stretch of road
         // put down at z0 beside road living at z1 cannot see it, and both ends
         // cap off against each other. Landing where the run already is settles
-        // the join before the shape is ever calculated. Over the bundled
-        // projects' 1,958,090 authored A autotiles this rule and the one below
-        // together reproduce the slot RPG Maker used for all but two of them.
+        // the join before the shape is ever calculated.
         const joined = this.adjacentAutotileLayer(baseTileId, x, y);
-        if (joined !== null) return joined;
+        if (joined !== null) {
+            // A decoration beside a lower-slot copy still has to sit above a
+            // different floor at the destination rather than erase it.
+            if (joined === 0 && cls.isDecoration && layer0HasATile &&
+                !this.sameAutotileKind(layer0Tile, baseTileId)) return 1;
+            return joined;
+        }
 
-        const layer0HasATile = layer0Tile >= 1536 && layer0Tile < 8192;
         if (!layer0HasATile) return 0;
-        return this.sameAutotileKind(layer0Tile, baseTileId) ? 0 : 1;
+        if (this.sameAutotileKind(layer0Tile, baseTileId)) return 0;
+
+        if (cls.isDecoration) return 1;
+        if (cls.isA1Water && layer0Tile >= 2048 && layer0Tile < 2816) {
+            const layer0Kind = Math.floor((layer0Tile - 2048) / 48);
+            const layer0IsDecoration =
+                layer0Kind >= 2 && (layer0Kind < 4 || layer0Kind % 2 === 1);
+            if (!layer0IsDecoration) return 1;
+        }
+
+        // Ground autotiles replace the ground already in the cell. Stacking
+        // them made an ordinary sand stroke over water land on layer 2, where
+        // it could neither replace nor connect to the layer-1 terrain.
+        return 0;
     }
 
     /**
@@ -3949,13 +3968,9 @@ class MapEditor {
     /**
      * The z-slot a *bucket fill* writes into.
      *
-     * Deliberately not the brush rule. A stroke asks "where does this tile go
-     * on top of what is already here" and stacks a different terrain over it;
-     * a fill selected a whole region of one terrain and is replacing it, so
-     * filling grass with dirt has to give dirt rather than dirt laid over
-     * grass in every cell of the region. What a fill does still depend on is
-     * the kind of tile: a decoration is an overlay wherever it is put, so it
-     * fills into the second A-slot and leaves the ground it covers alone.
+     * A fill resolves one destination for the whole matched region rather than
+     * following a neighboring run cell by cell. Ground replaces that region;
+     * a decoration fills into the second A-slot and leaves its ground alone.
      */
     getFillPlacementLayer(baseTileId, x, y) {
         if (this.layerMode !== 'auto') return this.layerMode;
@@ -4550,6 +4565,7 @@ class MapEditor {
         const { width, height, data } = this.tilemapManager.currentMap;
         const layerSize = width * height;
         let updateCount = 0;
+        const changed = [];
 
         // Check all 8 surrounding tiles (NOT the center - it's already been placed with correct shape)
         const neighbors = [
@@ -4585,18 +4601,12 @@ class MapEditor {
                     if (newTileId !== tileId) {
                         data[index] = newTileId;
                         updateCount++;
-
-                        // Re-render this tile (☆-flag routing picks the stack)
-                        const pixiLayer = this.tilemapManager.tileTargetLayer(layer, newTileId);
-
-                        if (pixiLayer) {
-                            this.tilemapManager.clearTileSpritesAt(neighbor.x, neighbor.y, pixiLayer);
-                            this.tilemapManager.renderAutotile(newTileId, neighbor.x, neighbor.y, pixiLayer);
-                        }
+                        changed.push({ x: neighbor.x, y: neighbor.y, layer });
                     }
                 }
             }
         }
+        if (changed.length > 0) this.tilemapManager.updateTiles(changed);
     }
 
     // Recalculate all autotile shapes with layer-aware logic (fixes RMMZ maps on load)

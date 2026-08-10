@@ -111,6 +111,79 @@ test('application shortcuts dispatch New, Open, Save, and Playtest', () => {
     assert.deepEqual(calls, ['new', 'open', 'save', 'playtest']);
 });
 
+test('arrow keys move the outlined event cell and never scroll the page', () => {
+    const { UIManager, getKeydownHandler } = loadUIManager();
+    const moves = [];
+    const eventManager = {
+        eventMode: true,
+        moveEventSelection(x, y) { moves.push([x, y]); return true; }
+    };
+    const manager = new UIManager({ getEventManager: () => eventManager });
+    manager.setupKeyboardShortcuts();
+    const handler = getKeydownHandler();
+
+    for (const [key, expected] of [
+        ['ArrowLeft', [-1, 0]],
+        ['ArrowRight', [1, 0]],
+        ['ArrowUp', [0, -1]],
+        ['ArrowDown', [0, 1]]
+    ]) {
+        const event = {
+            key,
+            ctrlKey: false, metaKey: false, altKey: false, shiftKey: false,
+            preventDefault() { this.prevented = true; },
+            stopPropagation() { this.stopped = true; }
+        };
+        handler(event);
+        assert.deepEqual(moves.at(-1), expected);
+        assert.equal(event.prevented, true);
+        assert.equal(event.stopped, true);
+    }
+
+    eventManager.moveEventSelection = () => false;
+    const noTargetEvent = {
+        key: 'ArrowRight',
+        ctrlKey: false, metaKey: false, altKey: false, shiftKey: false,
+        preventDefault() { this.prevented = true; },
+        stopPropagation() { this.stopped = true; }
+    };
+    handler(noTargetEvent);
+    assert.equal(noTargetEvent.prevented, true, 'event mode owns arrows before a cell is selected');
+    assert.equal(noTargetEvent.stopped, true);
+});
+
+test('event paste uses only the explicit outlined target', () => {
+    const { UIManager, getKeydownHandler } = loadUIManager();
+    const pastes = [];
+    const eventManager = {
+        eventMode: true,
+        selectedTileX: 8,
+        selectedTileY: 7,
+        selectedEvent: { x: 2, y: 3 },
+        pasteEvent(x, y) { pastes.push([x, y]); }
+    };
+    const manager = new UIManager({ getEventManager: () => eventManager });
+    manager.setupKeyboardShortcuts();
+    const handler = getKeydownHandler();
+    const paste = () => handler({
+        key: 'v',
+        ctrlKey: true, metaKey: false, altKey: false, shiftKey: false,
+        preventDefault() {}
+    });
+
+    paste();
+    assert.deepEqual(pastes, [[8, 7]], 'the outlined empty cell wins over the selected event');
+
+    eventManager.selectedTileX = null;
+    eventManager.selectedTileY = null;
+    paste();
+    assert.deepEqual(pastes.at(-1), [2, 3], 'an explicitly selected event remains a valid target');
+
+    eventManager.selectedEvent = null;
+    paste();
+    assert.equal(pastes.length, 2, 'a missing target never falls back to the upper-left cell');
+});
+
 test('application shell exposes menu commands and the responsive welcome screen', () => {
     const html = fs.readFileSync(path.join(editorRoot, 'index.html'), 'utf8');
     const fileMenu = html.match(/<div class="html-submenu" id="submenu-file"[\s\S]*?<\/div>\s*<\/div>\s*<div class="html-menu-item" data-menu="database"/);

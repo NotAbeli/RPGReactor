@@ -51,6 +51,8 @@ test('Event mode double-click creates only on an empty in-bounds map tile', () =
 
     manager.handleMapPointerDown(pointerAt(3, 4));
     assert.equal(manager.getEventAt(3, 4), undefined, 'the first click only selects the tile');
+    assert.deepEqual([manager.selectedTileX, manager.selectedTileY], [3, 4],
+        'empty ground stays outlined as the target of the second click');
     now += 120;
     manager.handleMapPointerDown(pointerAt(3, 4));
 
@@ -77,6 +79,97 @@ test('Event mode double-click creates only on an empty in-bounds map tile', () =
     assert.equal(manager.currentMap.events.filter(Boolean).length, 1);
     assert.equal(edited[1].event, created);
     assert.equal(edited[1].session.isNew, undefined);
+});
+
+test('Event mode outlines the hovered map cell without covering the selected one', () => {
+    const EventManager = loadEventManager();
+    const manager = Object.create(EventManager.prototype);
+    const draws = [];
+    manager.eventMode = true;
+    manager.currentMap = {
+        width: 6,
+        height: 5,
+        events: [null, { id: 1, x: 4, y: 2 }]
+    };
+    manager.tilemapManager = { TILE_WIDTH: 48, TILE_HEIGHT: 48, container: {} };
+    manager.selectedTileX = 1;
+    manager.selectedTileY = 1;
+    manager.hoverHighlight = {
+        visible: false,
+        clear() { draws.length = 0; },
+        rect(...args) { draws.push({ rect: args }); },
+        stroke(style) { draws.push({ stroke: style }); }
+    };
+    const pointerAt = (x, y) => ({
+        data: { getLocalPosition: () => ({ x: x * 48 + 12, y: y * 48 + 12 }) }
+    });
+
+    manager.updateHoverHighlight(pointerAt(3, 2));
+    assert.equal(manager.hoverHighlight.visible, true);
+    assert.deepEqual(draws[0].rect, [144, 96, 48, 48]);
+    assert.equal(draws[1].stroke.color, 0xFFD700, 'empty ground gets the event selector color');
+
+    manager.updateHoverHighlight(pointerAt(4, 2));
+    assert.equal(draws[1].stroke.color, 0xFFD700, 'existing events use the same event selector color');
+
+    manager.updateHoverHighlight(pointerAt(1, 1));
+    assert.equal(manager.hoverHighlight.visible, false,
+        'the persistent selected-cell outline is not doubled by the hover outline');
+
+    manager.updateHoverHighlight(pointerAt(7, 2));
+    assert.equal(manager.hoverHighlight.visible, false, 'nothing is drawn beyond the map');
+});
+
+test('copied events follow the outlined cell moved by arrow keys', async () => {
+    const EventManager = loadEventManager();
+    const manager = Object.create(EventManager.prototype);
+    const source = { id: 1, name: 'Source', x: 2, y: 2, pages: [] };
+    manager.eventMode = true;
+    manager.currentMap = { width: 5, height: 4, events: [null, source] };
+    manager.selectedEvent = source;
+    manager.selectedTileX = source.x;
+    manager.selectedTileY = source.y;
+    manager.clipboard = null;
+    manager.hoverHighlight = { visible: true };
+    manager.eventSprites = new Map();
+    manager.undoStack = [];
+    manager.redoStack = [];
+    manager.maxUndoSteps = 50;
+    manager.notifyEventSelected = () => {};
+    manager.notifyUndoStateChange = () => {};
+    manager.updateSelectionHighlight = () => {};
+    manager.updateEventSpriteBorder = () => {};
+    manager.updateEventListSelection = () => {};
+    manager.renderEvents = () => {};
+
+    manager.copyEvent(source);
+    assert.equal(manager.moveEventSelection(1, 0), true);
+    assert.deepEqual([manager.selectedTileX, manager.selectedTileY], [3, 2]);
+    assert.equal(manager.selectedEvent, null, 'empty ground is a paste target, not an event selection');
+    assert.equal(manager.hoverHighlight.visible, false, 'the persistent outline replaces the hover');
+
+    await manager.pasteEvent();
+    const pasted = manager.currentMap.events.filter(Boolean).find(event => event.id !== source.id);
+    assert.ok(pasted);
+    assert.deepEqual([pasted.x, pasted.y], [3, 2]);
+    assert.equal(manager.selectedEvent, pasted, 'the next arrow starts from the pasted event');
+
+    manager.moveEventSelection(9, 9);
+    assert.deepEqual([manager.selectedTileX, manager.selectedTileY], [4, 3],
+        'keyboard movement remains inside the map');
+
+    manager._lastMapClickTime = 100;
+    manager._lastMapClickX = 4;
+    manager._lastMapClickY = 3;
+    manager.moveEventSelection(-1, 0);
+    assert.equal(manager._lastMapClickTime, 0, 'keyboard movement cancels a pending double-click');
+
+    manager.selectionHighlight = { visible: true };
+    manager.setCurrentMap({ width: 2, height: 2, events: [] });
+    assert.deepEqual([manager.selectedTileX, manager.selectedTileY], [null, null],
+        'a new map cannot inherit the previous map paste target');
+    assert.equal(manager.selectionHighlight.visible, false);
+    assert.equal(manager.hoverHighlight.visible, false);
 });
 
 test('event sidebar includes compacted and sparse high-ID map events', () => {

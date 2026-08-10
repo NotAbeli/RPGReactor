@@ -63,6 +63,27 @@ function verifyCandidateSet(root, version, commit) {
     return manifests;
 }
 
+function publishGitHubRelease(tag, title, files, execute = execFileSync) {
+    let exists = false;
+    try {
+        execute('gh', ['release', 'view', tag], { stdio: 'ignore' });
+        exists = true;
+    } catch (error) {
+        // A tag normally creates the source release first. Keep publication
+        // recoverable when that workflow has not run or was interrupted.
+    }
+
+    if (exists) {
+        execute('gh', ['release', 'edit', tag, '--title', title], { stdio: 'inherit' });
+        execute('gh', ['release', 'upload', tag, ...files, '--clobber'], { stdio: 'inherit' });
+    } else {
+        execute('gh', [
+            'release', 'create', tag, '--verify-tag', '--title', title,
+            '--generate-notes', ...files,
+        ], { stdio: 'inherit' });
+    }
+}
+
 function main(argv = process.argv.slice(2), env = process.env) {
     const options = parseArguments(argv);
     const version = release.normalizeVersion(options.version);
@@ -76,10 +97,7 @@ function main(argv = process.argv.slice(2), env = process.env) {
     ]);
 
     const tag = `v${version}`;
-    execFileSync('gh', [
-        'release', 'create', tag, '--verify-tag', '--title', `RPG Reactor ${version}`,
-        '--generate-notes', ...files,
-    ], { stdio: 'inherit' });
+    publishGitHubRelease(tag, `RPG Reactor ${version}`, files);
 
     if (options.itch) {
         if (!env.BUTLER_API_KEY) throw new Error('BUTLER_API_KEY is required for itch.io publication.');
@@ -105,4 +123,10 @@ if (require.main === module) {
     }
 }
 
-module.exports = { collectManifestPaths, main, parseArguments, verifyCandidateSet };
+module.exports = {
+    collectManifestPaths,
+    main,
+    parseArguments,
+    publishGitHubRelease,
+    verifyCandidateSet,
+};

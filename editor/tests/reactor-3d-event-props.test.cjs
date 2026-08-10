@@ -181,8 +181,8 @@ test('star-flagged standing art still draws over characters', () => {
     const three = fs.readFileSync(path.join(repoRoot, 'runtime', 'reactor_3d.js'), 'utf8');
     const calls = three.match(/groupFor\([^)]*\)/g) || [];
     const unrouted = calls.filter(call => call.split(',').length < 3);
-    assert.deepEqual(unrouted.map(c => c.trim()), ['groupFor(surfaceRect.setNumber, false)'],
-        'every standing primitive asks whether its tile draws above characters');
+    assert.deepEqual(unrouted.map(c => c.trim()), [],
+        'every primitive names its tilemap pass explicitly');
 });
 
 test('a character stands on the ground, not on what was built there', () => {
