@@ -2488,13 +2488,14 @@
                 console.warn("MZGlobalUpgrade: failed to wrap", name, e);
             }
         }
-        // v8 removed updateTransform as a per-frame hook. Classes that override
-        // it (Window, Tilemap, TilingSprite) for per-frame logic (cursor pulse,
-        // tile scroll, filter area, etc.) need to use the new onRender callback
-        // instead. Patch their prototype.initialize so each instance registers
-        // an onRender that dispatches to the existing updateTransform body.
+        // v8 removed updateTransform as a per-frame hook. Window and
+        // TilingSprite still need the new onRender callback for cursor pulse,
+        // filter area, and texture scrolling. Tilemap drives its complete
+        // plugin-wrapped transform once from Tilemap.update instead; running it
+        // again while PIXI prepares render groups can split row-layer geometry
+        // and transforms across two phases of the same frame.
         const classesWithUpdateTransform = [
-            "Tilemap", "TilingSprite", "Window"
+            "TilingSprite", "Window"
         ];
         for (const className of classesWithUpdateTransform) {
             const cls = window[className];

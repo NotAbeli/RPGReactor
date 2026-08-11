@@ -76,6 +76,31 @@ test('autotile animation preference defaults on, persists, and uses the map-info
         'A1 animation does not consume a full toolbar button');
 });
 
+test('a persisted 3D view is cleared before a new process can open a project', () => {
+    const loaded = loadOptionsManager({
+        theme: 'ocean-dark',
+        language: 'ja',
+        map3DView: true
+    });
+    const manager = new loaded.OptionsManager();
+
+    assert.equal(manager.getMap3DView(), false);
+    assert.deepEqual(JSON.parse(loaded.store.get('rr-settings')), {
+        theme: 'ocean-dark',
+        language: 'ja',
+        animateAutotiles: true,
+        map3DView: false
+    }, 'recovery preserves unrelated preferences while durably failing closed');
+
+    manager.setMap3DView(true);
+    assert.equal(manager.getMap3DView(), true, '3D remains active across maps in this session');
+    assert.equal(JSON.parse(loaded.store.get('rr-settings')).map3DView, true);
+
+    const nextLaunch = loadOptionsManager(JSON.parse(loaded.store.get('rr-settings')));
+    assert.equal(new nextLaunch.OptionsManager().getMap3DView(), false,
+        'the next process requires an explicit 3D opt-in');
+});
+
 test('the menu bar language control stays at the far edge and follows the active locale', () => {
     const loaded = loadOptionsManager({ language: 'zh-Hant' }, 'zh-Hant');
     new loaded.OptionsManager();

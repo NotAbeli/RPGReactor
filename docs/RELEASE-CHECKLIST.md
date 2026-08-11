@@ -79,7 +79,7 @@ curl --fail --location https://dl.nwjs.io/v0.107.0/SHASUMS256.txt
 ## 3. Clean-Checkout Validation
 
 Validate the commit intended for `vX.Y.Z` from a clean checkout. Replace
-`0.98.0` below with the exact `editor/package.json` version. This validation
+`0.98.1` below with the exact `editor/package.json` version. This validation
 does not create the tag; the source-release command in section 5 owns the
 release commit and tag.
 
@@ -99,13 +99,35 @@ cd ..
 git diff --check
 git diff --exit-code
 test -z "$(git status --porcelain=v1 --untracked-files=all)"
-node -e "const p=require('./editor/package.json'); if(p.version!=='0.98.0') process.exit(1)"
+node -e "const p=require('./editor/package.json'); if(p.version!=='0.98.1') process.exit(1)"
 ```
 
 The test suite statically rejects hard dependencies on ignored local projects.
 The distribution worker copies the tracked Reactor One project from
 `template/Demo`, preserves its authored content and plugin configuration, and
 refreshes its Reactor runtime files from the staged runtime.
+
+When the optional authored-project compatibility corpus is present locally,
+also verify that every project carries the candidate runtime:
+
+```bash
+node editor/build-scripts/sync-runtime.cjs --check
+```
+
+For Haven (`template/Project3`), clear the playtest console, enter a battle that
+uses its encounter Pixelate filter, and confirm battle-background capture
+completes without a shader error. In particular, there must be no undeclared
+`filterArea`, `Could not initialize shader`, or repeated
+`useProgram: program not valid` messages. This manual corpus check supplements
+the tracked filter-translation and snapshot regressions; release CI must not
+depend on ignored project files being available.
+
+On a large Haven map, walk diagonally in both directions while watching the map
+edges and layered structures. Confirm there is no blank or partial tilemap frame
+or transient fold along the horizontal seams of tall objects, and that
+`$reactorTilemapStats.backend` remains `mesh` with no fallback reason. This
+supplements the tracked camera-order, atomic repaint, and single-preparation
+tests.
 
 ## 4. Optional Unsigned Candidate
 
@@ -114,7 +136,7 @@ verification:
 
 ```bash
 gh workflow run release-candidate.yml \
-  -f version=0.98.0 \
+  -f version=0.98.1 \
   -f publishable=false
 gh run list --workflow release-candidate.yml --limit 5
 ```
@@ -123,13 +145,13 @@ The equivalent local command may only build the host platform:
 
 ```bash
 node editor/build-scripts/release-editor.cjs \
-  --target linux --mode candidate --version 0.98.0 \
+  --target linux --mode candidate --version 0.98.1 \
   --output-root "$PWD/dist-editor/releases"
 ```
 
 Use targets `linux`, `windows`, `macos`, and `web`. Desktop targets are rejected
 on non-matching hosts. Each target gets a fresh
-`dist-editor/releases/v0.98.0/<target>/` directory and an
+`dist-editor/releases/v0.98.1/<target>/` directory and an
 `artifact-manifest-<target>.json` containing byte sizes and SHA-256 hashes.
 
 ## 5. Source Release And Publishable Candidate
@@ -142,12 +164,12 @@ after finalizing both changelogs and the other version surfaces.
 git switch main
 git pull --ff-only origin main
 git status --short
-node editor/build-scripts/cut-release.cjs 0.98.0 --dry-run
-node editor/build-scripts/cut-release.cjs 0.98.0
+node editor/build-scripts/cut-release.cjs 0.98.1 --dry-run
+node editor/build-scripts/cut-release.cjs 0.98.1
 ```
 
 The second command runs the full test suite again, finalizes the release date
-and test count, creates a release commit when needed, creates `v0.98.0`, and
+and test count, creates a release commit when needed, creates `v0.98.1`, and
 pushes the branch and tag. The tag starts **Publish Release**, which publishes
 the source release from the matching root changelog section. Wait for that run
 and verify the tag before starting signed builds:
@@ -155,16 +177,16 @@ and verify the tag before starting signed builds:
 ```bash
 gh run list --workflow publish-release.yml --limit 5
 gh run watch SOURCE_RELEASE_RUN_ID
-gh release view v0.98.0
-test "$(git rev-parse v0.98.0^{commit})" = "$(git rev-parse origin/main)"
+gh release view v0.98.1
+test "$(git rev-parse v0.98.1^{commit})" = "$(git rev-parse origin/main)"
 ```
 
 Run the signed candidate from that immutable tag:
 
 ```bash
 gh workflow run release-candidate.yml \
-  --ref v0.98.0 \
-  -f version=0.98.0 \
+  --ref v0.98.1 \
+  -f version=0.98.1 \
   -f publishable=true
 gh run list --workflow release-candidate.yml --limit 5
 gh run watch RUN_ID
@@ -191,7 +213,7 @@ sha256sum /tmp/rpg-reactor-candidate/*/*
 
 Inspect every `artifact-manifest-*.json` and confirm:
 
-- `version` is `0.98.0`, `nwjsVersion` is `0.107.0`, and `sourceCommit` is the tag commit.
+- `version` is `0.98.1`, `nwjsVersion` is `0.107.0`, and `sourceCommit` is the tag commit.
 - `mode` is `publish`; Windows/macOS have `signed: true`.
 - `releaseBuild` is true and `starter` is `bundled-demo`.
 - Every listed size and SHA-256 matches the adjacent file.
@@ -216,13 +238,14 @@ xcrun stapler validate "RPG Reactor.app"
 On each actual target OS, extract into a new directory and perform these tests:
 
 1. Launch the editor without a console error or signing warning.
-2. Confirm About/package version is `0.98.0`.
+2. Confirm About/package version is `0.98.1`.
 3. Open the bundled Reactor One Demo and verify its maps, database, plugins, music, images, and effects are present.
-4. Create and save a new project outside the extracted application directory.
-5. Playtest that project using the package's internal NW.js runtime.
-6. Close and reopen the project, then make one desktop deployment.
-7. Launch the packaged editor twice and confirm two independent editor processes open with different `nw.App.dataPath` values; closing either process must leave the other running.
-8. Open the Web ZIP over HTTPS or localhost, edit Reactor One, reload, and confirm browser persistence and Playtest.
+4. On Reactor One, check 3D, orbit the rendered map, uncheck 3D, confirm the 2D map is intact, then check 3D again. Repeat this on physical Windows and the other desktop targets; the process must remain alive throughout.
+5. Create and save a new project outside the extracted application directory.
+6. Playtest that project using the package's internal NW.js runtime.
+7. Close and reopen the project, then make one desktop deployment.
+8. Launch the packaged editor twice and confirm two independent editor processes open with different `nw.App.dataPath` values; closing either process must leave the other running.
+9. Open the Web ZIP over HTTPS or localhost, edit Reactor One, toggle 3D off/on, reload, and confirm browser persistence and Playtest.
 
 Do not continue if Windows signature status, macOS notarization, starter
 contents, save/reopen, or playtest fails.
@@ -238,12 +261,12 @@ is absent, it recovers with `gh release create --verify-tag`. It does not run
 the build worker.
 
 If recovery creates the release because **Publish Release** did not run, rerun
-**Publish Release** with version `0.98.0` before announcing the release. That
+**Publish Release** with version `0.98.1` before announcing the release. That
 replaces generated fallback notes with the authoritative changelog section.
 
 ```bash
 gh workflow run release.yml \
-  -f version=0.98.0 \
+  -f version=0.98.1 \
   -f candidate_run_id=RUN_ID \
   -f publish_itch=false
 gh run watch RELEASE_RUN_ID
@@ -274,15 +297,15 @@ Release as a draft or delete it and use the itch dashboard to select the prior
 build on each channel. Do not reuse the version or silently replace assets.
 
 ```bash
-gh release delete v0.98.0 --yes
+gh release delete v0.98.1 --yes
 ```
 
 If the tag points to the wrong commit, delete the remote tag only after the
 Release is removed and before announcing the version:
 
 ```bash
-git push origin :refs/tags/v0.98.0
-git tag -d v0.98.0
+git push origin :refs/tags/v0.98.1
+git tag -d v0.98.1
 ```
 
 Correct the source, increment the version, rerun the complete checklist, and

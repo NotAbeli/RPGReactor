@@ -3983,11 +3983,15 @@ Spriteset_Map.prototype.update = function() {
     // moves a distant point further per unit of camera travel than a near one.
     // A sign over a shopfront drifted against its own building.
     if (this._reactor3d) this.updateReactor3DCamera();
+    // Tilemap.update() drives its PIXI 8 transform and mesh synchronization.
+    // Give it this frame's camera before the child cascade; assigning the
+    // origin afterwards made the update path process the previous frame and
+    // left correctness to a render callback that culling can detach.
+    this.updateTilemap();
     Spriteset_Base.prototype.update.call(this);
     this.updateReactor3D();
     this.updateTileset();
     this.updateParallax();
-    this.updateTilemap();
     this.updateShadow();
     this.updateWeather();
     this.updateAnimations();

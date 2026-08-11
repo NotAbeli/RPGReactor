@@ -3194,14 +3194,11 @@ Tilemap.prototype.update = function() {
             child.update();
         }
     }
-    // v8: repaint/sort/layer positioning live in updateTransform, normally
-    // bridged through v8's onRender callback — but v8's per-render-group
-    // onRender bookkeeping loses entries when subtrees are detached and
-    // reattached (offscreen culling does this constantly), silently
-    // freezing repaints (stale tiles at the scroll edges) and the z-sort
-    // (characters drawn above upper-layer tiles). Drive it from the MZ
-    // update path instead, which always runs. The repaint guards make a
-    // second onRender-driven invocation in the same frame nearly free.
+    // v8: repaint, sort and plugin layer positioning live in updateTransform.
+    // Drive the complete plugin-wrapped chain once from the MZ update path.
+    // A second invocation from PIXI's render preparation can reposition and
+    // rebuild independently sorted row layers after some render groups have
+    // already been prepared, showing moving seams through tall objects.
     // The try/catch matches the onRender bridge's semantics: plugin
     // updateTransform chains that end in the legacy no-args
     // PIXI.Container.updateTransform (UltraMode7 does) throw on v8 after
@@ -3276,6 +3273,9 @@ Tilemap.prototype.updateTransform = function() {
         this._lastStartY = startY;
         this._addAllSpots(startX, startY);
         this._needsRepaint = false;
+        // Keep direct plugin calls safe too: clear() hides the old mesh, so a
+        // repaint must publish every replacement layer before returning.
+        if (PIXI.TextureSource) this._syncV8TileLayers();
     }
     this._sortChildren();
     // v8: PIXI.Container.updateTransform is repurposed as a property-setter

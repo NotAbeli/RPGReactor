@@ -72,6 +72,24 @@ test('a display object is not given a render method it never had', () => {
     assert.doesNotMatch(compat, /PIXI\.Container\.prototype\.render = function/);
 });
 
+test('tilemap preparation runs once during update, never during PIXI render setup', () => {
+    const hooks = compat.slice(
+        compat.indexOf('const classesWithUpdateTransform = ['),
+        compat.indexOf('];', compat.indexOf('const classesWithUpdateTransform = [')) + 2);
+    assert.doesNotMatch(hooks, /"Tilemap"/,
+        'render-group preparation cannot rerun plugin tile-layer positioning');
+    assert.match(hooks, /"TilingSprite"/);
+    assert.match(hooks, /"Window"/);
+
+    const core = fs.readFileSync(
+        path.join(repoRoot, 'runtime', 'reactor_core.js'), 'utf8');
+    const start = core.indexOf('Tilemap.prototype.update = function()');
+    const body = core.slice(start, core.indexOf('\n};', start));
+    assert.ok(body.indexOf('this.updateTransform();') >= 0);
+    assert.ok(body.indexOf('this.updateTransform();') < body.indexOf('this._syncV8TileLayers();'),
+        'all plugin wrappers finish before every tile mesh is published');
+});
+
 test('a texture source with no picture is not uploaded', () => {
     /*
      * MZ frees a Bitmap's canvas once it has an image to draw from, and a

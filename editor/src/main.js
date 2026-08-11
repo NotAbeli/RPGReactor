@@ -294,6 +294,8 @@ class RPGReactor {
         // 3D map viewport
         this.mapEditor3D = new MapEditor3D(this.projectController);
         this.projectController.mapEditor3D = this.mapEditor3D;
+        this.projectController.disableMap3DView = () => this.mapEditor3D.setEnabled(false);
+        this.mapEditor3D.onFailure = message => this.handleMap3DViewFailure(message);
         // Double-clicking a cube opens the same editor the 2D map opens, so
         // events are editable from the 3D view rather than only visible in it.
         this.mapEditor3D.onEventActivated = (event) => {
@@ -326,11 +328,8 @@ class RPGReactor {
         // The height brush's controls only mean anything while it is on, so
         // they are bound once here and shown with it.
 
-        window.addEventListener('rr-map-3d-view-changed', (event) => {
-            this.applyMap3DViewPreference(event.detail.enabled);
-        });
         document.getElementById('map-3d-view')?.addEventListener('change', (event) => {
-            this.optionsManager.setMap3DView(event.currentTarget.checked);
+            this.applyMap3DViewPreference(event.currentTarget.checked);
         });
         // Reflect the stored preference in the checkbox, but do not build the
         // scene here: there is no map open yet, and three.js should not be
@@ -516,16 +515,35 @@ class RPGReactor {
     }
 
     async applyMap3DViewPreference(enabled) {
-        if (!this.mapEditor3D) return;
-        const active = await this.mapEditor3D.setEnabled(enabled === true);
+        if (!this.mapEditor3D) return false;
+        const requested = enabled === true;
+
+        // Persist the safe state before loading libraries, allocating geometry,
+        // or handing PIXI's WebGL context to Three. If Chromium exits in native
+        // code, the next launch still starts in 2D.
+        this.optionsManager.setMap3DView(false);
+        let active = false;
+        try {
+            active = await this.mapEditor3D.setEnabled(requested);
+        } catch (error) {
+            this.mapEditor3D.lastError = error?.message || String(error);
+            try { await this.mapEditor3D.setEnabled(false); } catch (_) {}
+        }
+
+        if (active) this.optionsManager.setMap3DView(true);
 
         const checkbox = document.getElementById('map-3d-view');
         if (checkbox) checkbox.checked = active;
-        if (enabled && !active) {
-            this.uiManager.updateStatus(
-                this.mapEditor3D.lastError || (window.I18n ? window.I18n.tText('3D view unavailable') : '3D view unavailable'));
-            this.optionsManager.settings.map3DView = false;
-        }
+        if (requested && !active) this.handleMap3DViewFailure(this.mapEditor3D.lastError);
+        return active;
+    }
+
+    handleMap3DViewFailure(message) {
+        this.optionsManager.setMap3DView(false);
+        const checkbox = document.getElementById('map-3d-view');
+        if (checkbox) checkbox.checked = false;
+        this.uiManager.updateStatus(message ||
+            (window.I18n ? window.I18n.tText('3D view unavailable') : '3D view unavailable'));
     }
 
     // Playtest orchestration

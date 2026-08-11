@@ -272,10 +272,13 @@ test('the camera is aimed before the sprites that project through it', () => {
     const update = spritesSource.slice(
         spritesSource.indexOf('Spriteset_Map.prototype.update = function'),
         spritesSource.indexOf('Spriteset_Map.prototype.updateTileset'));
-    const aim = update.indexOf('this.updateReactor3D();');
+    const aim = update.indexOf('this.updateReactor3DCamera();');
+    const tilemap = update.indexOf('this.updateTilemap();');
     const base = update.indexOf('Spriteset_Base.prototype.update.call(this);');
-    assert.ok(aim > base, 'aimed after the base update');
-    assert.ok(aim < update.indexOf('this.updateTilemap();'), 'and before the 2D updates');
+    const render = update.indexOf('this.updateReactor3D();');
+    assert.ok(aim >= 0 && aim < tilemap, 'aimed before the tilemap receives the camera');
+    assert.ok(aim < base, 'and before character sprites project through it');
+    assert.ok(render > base, 'the 3D world renders after child updates');
 });
 
 test('runtime 3D advances A1 UVs from the tilemap animation clock', () => {

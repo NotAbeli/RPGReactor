@@ -18,7 +18,7 @@ const quietConsole = Object.create(console);
 quietConsole.error = () => {};
 quietConsole.warn = () => {};
 
-function viewport(controller = {}) {
+function viewport(controller = {}, overrides = {}) {
     const MapEditor3D = vm.runInNewContext(`${source}\nMapEditor3D;`, {
         console: quietConsole,
         window: {},
@@ -26,9 +26,70 @@ function viewport(controller = {}) {
         Reactor3D,
         require,
         setTimeout,
-        clearTimeout
+        clearTimeout,
+        ...overrides
     });
     return new MapEditor3D(controller);
+}
+
+function webViewport({ fail = '' } = {}) {
+    const browserWindow = {};
+    const requested = [];
+    let failedUrlPart = fail;
+    const host = {
+        mode: 'web',
+        projectRoot: '/project',
+        fs: {},
+        path: { join: (...parts) => parts.join('/').replace(/\/+/g, '/') },
+        assetUrl(filePath) {
+            requested.push(filePath);
+            return `https://example.test${filePath}`;
+        }
+    };
+    browserWindow.RPGReactorHost = host;
+    const document = {
+        addEventListener() {},
+        removeEventListener() {},
+        querySelectorAll: () => [],
+        createElement() { return { dataset: {}, remove() {} }; },
+        head: {
+            appendChild(element) {
+                Promise.resolve().then(() => {
+                    if (failedUrlPart && element.src.includes(failedUrlPart)) {
+                        element.onerror();
+                    } else {
+                        if (element.src.endsWith('/three.js')) browserWindow.THREE = {};
+                        if (element.src.endsWith('/reactor_3d.js')) browserWindow.Reactor3D = {};
+                        element.onload();
+                    }
+                });
+            }
+        }
+    };
+    const MapEditor3D = vm.runInNewContext(`${source}\nMapEditor3D;`, {
+        console: quietConsole,
+        window: browserWindow,
+        document,
+        Reactor3D,
+        require,
+        setTimeout,
+        clearTimeout
+    });
+    let desktopLookup = false;
+    const view = new MapEditor3D({
+        projectManager: {
+            getRuntimePath() {
+                desktopLookup = true;
+                return null;
+            }
+        }
+    });
+    return {
+        view,
+        requested,
+        desktopLookup: () => desktopLookup,
+        setFailure(value) { failedUrlPart = value; }
+    };
 }
 
 //-----------------------------------------------------------------------------
@@ -52,8 +113,26 @@ test('the viewport module ships and is loaded by the editor', () => {
 test('the toggle reports what actually happened, not what was asked', () => {
     // three.js or the runtime directory can be missing in a partial install; a
     // ticked box over a 2D canvas would be a lie.
-    assert.match(mainSource, /const active = await this\.mapEditor3D\.setEnabled/);
+    assert.match(mainSource, /active = await this\.mapEditor3D\.setEnabled/);
     assert.match(mainSource, /if \(checkbox\) checkbox\.checked = active;/);
+});
+
+test('3D preference activation is durable-false until setup succeeds', () => {
+    const start = mainSource.indexOf('async applyMap3DViewPreference(enabled)');
+    const body = mainSource.slice(start, mainSource.indexOf('\n    }', start) + 6);
+    const failClosed = body.indexOf('this.optionsManager.setMap3DView(false);');
+    const activate = body.indexOf('await this.mapEditor3D.setEnabled(requested);');
+    const commit = body.indexOf('if (active) this.optionsManager.setMap3DView(true);');
+    assert.ok(failClosed >= 0 && failClosed < activate);
+    assert.ok(commit > activate);
+    assert.match(body, /catch \(error\)/, 'activation exceptions are contained');
+    assert.doesNotMatch(mainSource, /settings\.map3DView = false/,
+        'failure recovery always reaches durable storage');
+});
+
+test('project close tears down the 3D renderer before destroying the map', () => {
+    assert.match(controllerSource,
+        /closeProject\(\)[\s\S]*await this\.disableMap3DView\(\)[\s\S]*this\.tilemapManager\.destroy\(\)/);
 });
 
 test('the view follows the map instead of freezing on one', () => {
@@ -104,6 +183,308 @@ test('a missing runtime directory reports rather than throws', async () => {
     assert.equal(await view.setEnabled(true), false, 'and the view stays off');
 });
 
+test('WebHost loads 3D viewport dependencies lazily from the bundled project', async () => {
+    const web = webViewport();
+    assert.deepEqual(web.requested, [], 'construction does not load three.js');
+
+    assert.equal(await web.view.ensureLibraries(), true);
+    assert.deepEqual(web.requested, [
+        '/project/js/libs/three.js',
+        '/project/js/reactor_3d.js'
+    ]);
+    assert.equal(web.desktopLookup(), false, 'the browser does not ask for a desktop runtime path');
+
+    assert.equal(await web.view.ensureLibraries(), true);
+    assert.equal(web.requested.length, 2, 'a second request reuses the loaded globals');
+});
+
+test('a missing Web 3D dependency reports its project path and can be retried', async () => {
+    const web = webViewport({ fail: 'reactor_3d.js' });
+    assert.equal(await web.view.ensureLibraries(), false);
+    assert.match(web.view.lastError, /Could not load \/project\/js\/reactor_3d\.js/);
+    assert.equal(web.view._librariesPromise, null, 'a transient load failure does not stay cached');
+    web.setFailure('');
+    assert.equal(await web.view.ensureLibraries(), true, 'the next activation can retry');
+});
+
+test('concurrent 3D enables share one renderer activation', async () => {
+    const view = viewport();
+    let releaseLibraries;
+    view.ensureLibraries = () => new Promise(resolve => { releaseLibraries = resolve; });
+    let canvases = 0;
+    let rebuilds = 0;
+    let loops = 0;
+    view.createCanvas = () => { canvases++; return true; };
+    view.rebuild = async () => { rebuilds++; return true; };
+    view.render = () => {};
+    view.startLoop = () => { loops++; };
+    view.listenForEdits = () => {};
+    view.showPixi = () => {};
+
+    const first = view.setEnabled(true);
+    const second = view.setEnabled(true);
+    releaseLibraries(true);
+
+    assert.deepEqual(await Promise.all([first, second]), [true, true]);
+    assert.equal(canvases, 1);
+    assert.equal(rebuilds, 1);
+    assert.equal(loops, 1);
+});
+
+test('disabling while 3D libraries load cancels activation', async () => {
+    const view = viewport();
+    let releaseLibraries;
+    view.ensureLibraries = () => new Promise(resolve => { releaseLibraries = resolve; });
+    let canvases = 0;
+    view.createCanvas = () => { canvases++; return true; };
+    view.showPixi = () => {};
+
+    const enabling = view.setEnabled(true);
+    assert.equal(await view.setEnabled(false), false);
+    releaseLibraries(true);
+
+    assert.equal(await enabling, false);
+    assert.equal(canvases, 0);
+    assert.equal(view.enabled, false);
+});
+
+test('a renderer setup exception fails closed instead of rejecting activation', async () => {
+    const view = viewport();
+    view.ensureLibraries = async () => true;
+    view.createCanvas = () => { throw new Error('WebGL context refused'); };
+    view.showPixi = () => {};
+    let reported = '';
+    view.onFailure = message => { reported = message; };
+
+    assert.equal(await view.setEnabled(true), false);
+    assert.equal(view.enabled, false);
+    assert.match(view.lastError, /WebGL context refused/);
+    assert.match(reported, /WebGL context refused/);
+});
+
+test('an initial render failure rolls activation back before it can succeed', async () => {
+    const view = viewport();
+    view.ensureLibraries = async () => true;
+    view.createCanvas = () => true;
+    view.rebuild = async () => true;
+    view.render = () => { throw new Error('shader link failed'); };
+    view.showPixi = () => {};
+    let loops = 0;
+    view.startLoop = () => { loops++; };
+
+    assert.equal(await view.setEnabled(true), false);
+    assert.equal(view.enabled, false);
+    assert.equal(loops, 0);
+    assert.match(view.lastError, /shader link failed/);
+});
+
+test('3D shares PIXI WebGL2 instead of creating a second GPU context', () => {
+    const appended = [];
+    const inputSurface = {
+        style: {},
+        addEventListener() {},
+        removeEventListener() {}
+    };
+    const canvas = {
+        style: { cssText: 'width: 320px; height: 240px;' },
+        addEventListener() {},
+        removeEventListener() {}
+    };
+    const context = { isContextLost: () => false };
+    let stopped = 0;
+    let resets = 0;
+    let rendererOptions = null;
+    const controller = {
+        app: {
+            canvas,
+            renderer: {
+                gl: context,
+                context: { webGLVersion: 2 },
+                screen: { width: 320, height: 240 },
+                resetState() { resets++; }
+            },
+            ticker: { started: true },
+            stop() { stopped++; }
+        }
+    };
+    const view = viewport(controller, {
+        document: {
+            addEventListener() {},
+            removeEventListener() {},
+            querySelectorAll: () => [],
+            createElement() { return inputSurface; },
+            getElementById() { return null; }
+        },
+        THREE: {
+            WebGLRenderer: class {
+                constructor(options) { rendererOptions = options; }
+                setPixelRatio() {}
+                setSize() {}
+            },
+            SRGBColorSpace: null
+        },
+        Reactor3D: { createCamera: () => ({ updateProjectionMatrix() {} }) }
+    });
+    view.container = () => ({
+        appendChild(element) { appended.push(element); },
+        getBoundingClientRect: () => ({ width: 800, height: 600 })
+    });
+    view.createHint = () => {};
+    view.attachInput = () => {};
+
+    assert.equal(view.createCanvas(), true);
+    assert.equal(view.canvas, canvas);
+    assert.equal(view.inputSurface, inputSurface);
+    assert.equal(rendererOptions.canvas, canvas);
+    assert.equal(rendererOptions.context, context);
+    assert.equal(rendererOptions.antialias, false, 'the existing PIXI context attributes cannot be changed');
+    assert.equal(canvas.style.width, '100%');
+    assert.equal(canvas.style.height, '100%');
+    assert.equal(view._pixiSize.width, 320);
+    assert.equal(view._pixiSize.height, 240);
+    assert.equal(stopped, 1);
+    assert.equal(resets, 1);
+    assert.deepEqual(appended, [inputSurface]);
+});
+
+test('3D refuses PIXI WebGL1 without requesting another context', () => {
+    let threeRenderers = 0;
+    const canvas = {
+        style: {},
+        getContext() { assert.fail('3D must not request another WebGL context'); }
+    };
+    const view = viewport({
+        app: {
+            canvas,
+            renderer: { gl: {}, context: { webGLVersion: 1 } }
+        }
+    }, {
+        document: {
+            addEventListener() {},
+            removeEventListener() {},
+            querySelectorAll: () => []
+        },
+        THREE: { WebGLRenderer: class { constructor() { threeRenderers++; } } }
+    });
+    view.container = () => ({});
+
+    assert.throws(() => view.createCanvas(), /WebGL 2 is unavailable/);
+    assert.equal(threeRenderers, 0);
+});
+
+test('teardown disposes Three without forcing loss of the editor context', () => {
+    const view = viewport();
+    let disposed = 0;
+    let lost = 0;
+    view.renderer = {
+        dispose() { disposed++; },
+        forceContextLoss() { lost++; }
+    };
+    view.showPixi = () => {};
+
+    view.teardown();
+    assert.equal(disposed, 1);
+    assert.equal(lost, 0);
+    assert.equal(view.renderer, null);
+});
+
+test('teardown returns a shared context to PIXI without losing it', () => {
+    const view = viewport();
+    let disposed = 0;
+    let lost = 0;
+    let resets = 0;
+    let resized = 0;
+    let restoredSize = null;
+    let started = 0;
+    let rendered = 0;
+    const canvas = {
+        style: { cssText: 'position: absolute; width: 100%; height: 100%;' },
+        addEventListener() {},
+        removeEventListener() {}
+    };
+    view.projectController.app = {
+        canvas,
+        start() { started++; },
+        render() { rendered++; }
+    };
+    view.canvas = canvas;
+    view.renderer = {
+        dispose() { disposed++; },
+        forceContextLoss() { lost++; }
+    };
+    view._sharedPixiRenderer = {
+        resetState() { resets++; },
+        resize(width, height) { resized++; restoredSize = { width, height }; }
+    };
+    view._pixiWasRunning = true;
+    view._pixiCanvasStyle = 'width: 320px; height: 240px; image-rendering: pixelated;';
+    view._pixiSize = { width: 320, height: 240 };
+    view.showPixi = () => {};
+
+    view.teardown();
+    assert.equal(disposed, 1);
+    assert.equal(lost, 0);
+    assert.equal(resets, 1);
+    assert.equal(resized, 1);
+    assert.deepEqual(restoredSize, { width: 320, height: 240 });
+    assert.equal(canvas.style.cssText, 'width: 320px; height: 240px; image-rendering: pixelated;');
+    assert.equal(started, 1);
+    assert.equal(rendered, 1);
+    assert.equal(view.renderer, null);
+    assert.equal(view._sharedPixiRenderer, null);
+});
+
+test('repeated 3D toggles dispose every Three renderer without losing WebGL', async () => {
+    const view = viewport();
+    view.ensureLibraries = async () => true;
+    view.rebuild = async () => true;
+    view.render = () => {};
+    view.startLoop = () => {};
+    view.listenForEdits = () => {};
+    view.showPixi = () => {};
+    let disposed = 0;
+    let lost = 0;
+    view.createCanvas = () => {
+        view._sharedPixiRenderer = { resetState() {} };
+        view.renderer = {
+            dispose() { disposed++; },
+            forceContextLoss() { lost++; }
+        };
+        return true;
+    };
+
+    for (let index = 0; index < 20; index++) {
+        assert.equal(await view.setEnabled(true), true);
+        assert.equal(await view.setEnabled(false), false);
+    }
+
+    assert.equal(disposed, 20);
+    assert.equal(lost, 0);
+});
+
+test('a render exception stops the frame loop and fails back to 2D', () => {
+    const frames = [];
+    const view = viewport({}, {
+        requestAnimationFrame(callback) { frames.push(callback); return frames.length; },
+        cancelAnimationFrame() {}
+    });
+    view.enabled = true;
+    view._desiredEnabled = true;
+    view.stepFly = () => {};
+    view.render = () => { throw new Error('shader failed'); };
+    view.showPixi = () => {};
+    let reported = '';
+    view.onFailure = message => { reported = message; };
+
+    view.startLoop();
+    assert.equal(frames.length, 1);
+    frames[0](1000);
+
+    assert.equal(frames.length, 1, 'the failing frame does not schedule another');
+    assert.equal(view.enabled, false);
+    assert.match(reported, /shader failed/);
+});
+
 //-----------------------------------------------------------------------------
 // Camera
 
@@ -121,6 +502,21 @@ test('a small map is not framed from inside itself', () => {
     const view = viewport();
     view.frameMap({ width: 3, height: 3, data: [], events: [] });
     assert.ok(view.view.distance >= 12);
+});
+
+test('3D preview refuses unsafe allocations before building geometry', () => {
+    const view = viewport();
+    assert.equal(view.previewBudgetError({
+        width: 200,
+        height: 200,
+        data: new Array(200 * 200 * 6).fill(0)
+    }), '', 'the validated 200x200 production-map size remains available');
+    assert.match(view.previewBudgetError({ width: 201, height: 200, data: [] }), /40,000-cell limit/);
+    assert.match(view.previewBudgetError({
+        width: 200,
+        height: 200,
+        data: new Array(200 * 200 * 4).fill(2048)
+    }), /too much tile geometry/);
 });
 
 test('the camera cannot be orbited under the ground or straight down', () => {
@@ -159,10 +555,11 @@ test('every event trigger gets its own colour', () => {
 //-----------------------------------------------------------------------------
 // Handing the canvas back
 
-test('turning 3D off leaves the 2D canvas exactly as it was', () => {
-    // TilemapManager owns that canvas and has sized and cropped it for this
-    // map; the 3D view may only hide it.
-    assert.match(source, /canvas\.style\.display = visible \? 'block' : 'none'/);
+test('turning 3D off returns the shared canvas to PIXI', () => {
+    // TilemapManager owns the only GPU canvas. Three may borrow its context,
+    // but must reset PIXI and must never destroy or hide the shared surface.
+    assert.match(source, /sharedPixiRenderer\.resetState/);
+    assert.match(source, /visible \|\| this\._sharedPixiRenderer \? 'block' : 'none'/);
     assert.equal(/app\.canvas\.(remove|destroy)/.test(source), false);
     assert.match(source, /\.custom-scrollbar/, 'and the scrollbars go with it');
 });

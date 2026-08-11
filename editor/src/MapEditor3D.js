@@ -7,8 +7,8 @@
  * checkbox off puts the 2D canvas back untouched.
  *
  * The geometry comes from `runtime/reactor_3d.js` — the same file the game
- * loads, read off disk at first use rather than copied into the editor. A
- * viewport that built its own geometry would drift from the runtime the first
+ * loads, read from disk on desktop or loaded from the bundled project on Web.
+ * A viewport that built its own geometry would drift from the runtime the first
  * time either changed, and the whole point of looking at it here is to see what
  * the game will draw.
  */
@@ -19,12 +19,22 @@ class MapEditor3D {
         // choose; tilePixels() reads it and the prototype holds the default.
         this.enabled = false;
         this.canvas = null;
+        this.inputSurface = null;
         this.renderer = null;
+        this._sharedPixiRenderer = null;
+        this._pixiWasRunning = false;
+        this._pixiCanvasStyle = null;
+        this._pixiSize = null;
         this.camera = null;
         this.mapScene = null;
         this.eventGroup = null;
         this.frame = null;
         this.librariesLoaded = false;
+        this._librariesPromise = null;
+        this._activationPromise = null;
+        this._desiredEnabled = false;
+        this._lifecycleGeneration = 0;
+        this._rebuildGeneration = 0;
         this.sheetImages = {};
         this.lastError = null;
 
@@ -60,10 +70,9 @@ class MapEditor3D {
     /**
      * Load three.js and the runtime's 3D module into the page.
      *
-     * Both are read from the runtime directory with fs and injected as classic
-     * scripts: the editor is packaged separately from `runtime/`, so a relative
-     * <script src> in index.html would resolve in the source tree and break in
-     * a distributed build. Loading on demand also means an editor session that
+     * Desktop builds read both from the runtime directory and inject them as
+     * classic scripts. Web builds load the same files from the bundled project's
+     * URL-addressable runtime. Loading on demand means an editor session that
      * never opens the 3D view never parses two megabytes of three.js.
      */
     async ensureLibraries() {
@@ -71,6 +80,31 @@ class MapEditor3D {
         if (typeof window !== 'undefined' && window.THREE && window.Reactor3D) {
             this.librariesLoaded = true;
             return true;
+        }
+
+        if (this._librariesPromise) return this._librariesPromise;
+        this._librariesPromise = this.loadLibraries();
+        const loaded = await this._librariesPromise;
+        if (!loaded) this._librariesPromise = null;
+        return loaded;
+    }
+
+    async loadLibraries() {
+        const host = typeof window !== 'undefined' ? window.RPGReactorHost : null;
+        if (host?.mode === 'web' && host.projectRoot && typeof host.assetUrl === 'function') {
+            const files = [
+                this.path.join(host.projectRoot, 'js', 'libs', 'three.js'),
+                this.path.join(host.projectRoot, 'js', 'reactor_3d.js')
+            ];
+            try {
+                for (const file of files) {
+                    await this.injectScriptUrl(host.assetUrl(file), file);
+                }
+            } catch (error) {
+                this.lastError = error.message;
+                return false;
+            }
+            return this.finishLibraryLoad();
         }
 
         const runtimePath = this.projectController?.projectManager?.getRuntimePath?.();
@@ -99,6 +133,10 @@ class MapEditor3D {
             return false;
         }
 
+        return this.finishLibraryLoad();
+    }
+
+    finishLibraryLoad() {
         this.librariesLoaded = !!(window.THREE && window.Reactor3D);
         if (!this.librariesLoaded) this.lastError = 'three.js did not define THREE.';
         return this.librariesLoaded;
@@ -118,6 +156,20 @@ class MapEditor3D {
         });
     }
 
+    injectScriptUrl(url, label) {
+        return new Promise((resolve, reject) => {
+            const element = document.createElement('script');
+            element.src = url;
+            element.dataset.rrSource = label;
+            element.onload = resolve;
+            element.onerror = () => {
+                element.remove?.();
+                reject(new Error(`Could not load ${label}`));
+            };
+            document.head.appendChild(element);
+        });
+    }
+
     //-------------------------------------------------------------------------
     // Enable / disable
 
@@ -126,24 +178,76 @@ class MapEditor3D {
     }
 
     async setEnabled(on) {
-        if (on === this.enabled) return this.enabled;
-        if (!on) {
+        const requested = on === true;
+        this._desiredEnabled = requested;
+        if (!requested) {
+            this._lifecycleGeneration++;
             this.teardown();
             return false;
         }
-
-        if (!await this.ensureLibraries()) {
-            console.error(`3D view unavailable: ${this.lastError}`);
-            return false;
+        if (this.enabled) return true;
+        if (this._activationPromise) {
+            const active = await this._activationPromise;
+            if (active || !this._desiredEnabled) return active;
+            return this.setEnabled(true);
         }
 
-        this.enabled = true;
-        this.createCanvas();
-        await this.rebuild();
-        this.startLoop();
-        this.listenForEdits();
-        this.showPixi(false);
-        return true;
+        const generation = ++this._lifecycleGeneration;
+        const activation = this.activate(generation);
+        const tracked = activation.finally(() => {
+            if (this._activationPromise === tracked) this._activationPromise = null;
+        });
+        this._activationPromise = tracked;
+        return tracked;
+    }
+
+    async activate(generation) {
+        try {
+            if (!await this.ensureLibraries()) {
+                console.error(`3D view unavailable: ${this.lastError}`);
+                return false;
+            }
+            if (!this.activationIsCurrent(generation)) return false;
+
+            this.enabled = true;
+            if (!this.createCanvas()) throw new Error('The 3D map container could not be found.');
+            if (!this.activationIsCurrent(generation)) {
+                this.teardown();
+                return false;
+            }
+
+            const rebuilt = await this.rebuild();
+            if (!this.activationIsCurrent(generation)) {
+                this.teardown();
+                return false;
+            }
+            if (!rebuilt) throw new Error('The open map could not be built in 3D.');
+
+            // Draw once before committing the preference. Context, shader, and
+            // first-frame errors therefore fail while durable state is still 2D.
+            this.render(typeof performance !== 'undefined' ? performance.now() : 0);
+            this.startLoop();
+            this.listenForEdits();
+            this.showPixi(false);
+            return true;
+        } catch (error) {
+            if (generation === this._lifecycleGeneration) this.fail(error);
+            else this.teardown();
+            return false;
+        }
+    }
+
+    activationIsCurrent(generation) {
+        return this._desiredEnabled && generation === this._lifecycleGeneration;
+    }
+
+    fail(error) {
+        this.lastError = error?.message || String(error || '3D view unavailable');
+        console.error(`3D view unavailable: ${this.lastError}`);
+        this._desiredEnabled = false;
+        this._lifecycleGeneration++;
+        this.teardown();
+        if (typeof this.onFailure === 'function') this.onFailure(this.lastError);
     }
 
     /**
@@ -166,7 +270,7 @@ class MapEditor3D {
         const runRebuild = () => {
             this._lastRebuildAt = Date.now();
             this._rebuildTimer = null;
-            this.rebuild().catch(error => console.error('3D rebuild failed:', error));
+            this.rebuild().catch(error => this.fail(error));
         };
         this._onMapEdited = () => {
             const since = Date.now() - (this._lastRebuildAt || 0);
@@ -231,25 +335,50 @@ class MapEditor3D {
 
     teardown() {
         this.enabled = false;
+        this._rebuildGeneration++;
         this.stopLoop();
         this.stopListeningForEdits();
-        this.clearScene();
-        if (this.renderer) {
-            this.renderer.dispose();
-            this.renderer = null;
+        this.detachInput();
+        try { this.clearScene(); } catch (error) {
+            console.error('Could not completely clear the 3D scene:', error);
         }
-        if (this.canvas && this.canvas.parentNode) {
-            this.canvas.parentNode.removeChild(this.canvas);
+        const sharedPixiRenderer = this._sharedPixiRenderer;
+        if (this.renderer) {
+            const renderer = this.renderer;
+            this.renderer = null;
+            try { renderer.dispose(); } catch (_) {}
+        }
+        if (this.inputSurface?.parentNode) {
+            this.inputSurface.parentNode.removeChild(this.inputSurface);
         }
         if (this.hint && this.hint.parentNode) {
             this.hint.parentNode.removeChild(this.hint);
         }
         this.hint = null;
-        this.detachInput();
+        this.inputSurface = null;
+        if (sharedPixiRenderer) {
+            try {
+                if (this.canvas && this._pixiCanvasStyle !== null) {
+                    this.canvas.style.cssText = this._pixiCanvasStyle;
+                }
+                sharedPixiRenderer.resetState?.();
+                const size = this._pixiSize;
+                if (size) sharedPixiRenderer.resize?.(size.width, size.height);
+            } catch (error) {
+                console.error('Could not restore the 2D renderer state:', error);
+            }
+        }
         this.canvas = null;
         this.camera = null;
         this.sheetImages = {};
+        this._sharedPixiRenderer = null;
+        this._pixiCanvasStyle = null;
+        this._pixiSize = null;
         this.showPixi(true);
+        const app = this.projectController?.app;
+        if (this._pixiWasRunning) app?.start?.();
+        try { app?.render?.(); } catch (_) {}
+        this._pixiWasRunning = false;
         window.reactor?.updateMapZoom?.();
     }
 
@@ -262,7 +391,9 @@ class MapEditor3D {
      */
     showPixi(visible) {
         const canvas = this.projectController?.app?.canvas;
-        if (canvas) canvas.style.display = visible ? 'block' : 'none';
+        // 3D renders into PIXI's WebGL canvas, so only the 2D scene is paused;
+        // the shared canvas itself must remain visible.
+        if (canvas) canvas.style.display = visible || this._sharedPixiRenderer ? 'block' : 'none';
         // The 2D scrollbars sit above everything at z-index 1000 and scroll a
         // canvas that is no longer on screen, so they go with it.
         for (const bar of document.querySelectorAll('.custom-scrollbar')) {
@@ -276,21 +407,66 @@ class MapEditor3D {
 
     createCanvas() {
         const container = this.container();
-        if (!container) return;
+        if (!container) return false;
+        if (this.renderer && this.canvas) return true;
 
-        this.canvas = document.createElement('canvas');
-        this.canvas.id = 'map-3d-canvas';
-        this.canvas.style.cssText =
-            'position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 5;';
-        container.appendChild(this.canvas);
+        const app = this.projectController?.app;
+        const pixiRenderer = app?.renderer;
+        const context = pixiRenderer?.gl;
+        if (!app?.canvas || !context) {
+            throw new Error('The 2D WebGL renderer is unavailable for the 3D map view.');
+        }
+        if (pixiRenderer.context?.webGLVersion !== 2 || context.isContextLost?.()) {
+            throw new Error('WebGL 2 is unavailable for the 3D map view.');
+        }
+
+        // Chromium/ANGLE can terminate its GPU process when NW.js creates a
+        // second WebGL2 context beside PIXI's on Windows. PIXI supports sharing
+        // its context with Three.js as long as each renderer resets its state
+        // before handing ownership back.
+        this.canvas = app.canvas;
+        this._sharedPixiRenderer = pixiRenderer;
+        this._pixiWasRunning = app.ticker?.started === true;
+        this._pixiCanvasStyle = this.canvas.style.cssText || '';
+        const pixiScreen = pixiRenderer.screen;
+        this._pixiSize = pixiScreen && Number.isFinite(pixiScreen.width) && Number.isFinite(pixiScreen.height)
+            ? { width: pixiScreen.width, height: pixiScreen.height }
+            : null;
+        app.stop?.();
+        pixiRenderer.resetState?.();
+        Object.assign(this.canvas.style, {
+            position: 'absolute',
+            inset: '0',
+            width: '100%',
+            height: '100%',
+            display: 'block',
+            zIndex: '5'
+        });
+
+        // Keep PIXI's event system from receiving 3D painting/orbit gestures.
+        // This surface handles input only and creates no additional GPU context.
+        this.inputSurface = document.createElement('div');
+        this.inputSurface.id = 'map-3d-input';
+        this.inputSurface.style.cssText =
+            'position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 6;';
+        container.appendChild(this.inputSurface);
 
         this.createHint(container);
-        this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
-        this.renderer.setPixelRatio(window.devicePixelRatio || 1);
+        try {
+            this.renderer = new THREE.WebGLRenderer({
+                canvas: this.canvas,
+                context,
+                antialias: false
+            });
+        } catch (error) {
+            throw error;
+        }
+        this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
         if (THREE.SRGBColorSpace) this.renderer.outputColorSpace = THREE.SRGBColorSpace;
         this.camera = Reactor3D.createCamera({ fov: 40 });
         this.resize();
         this.attachInput();
+        return true;
     }
 
     /**
@@ -347,9 +523,16 @@ class MapEditor3D {
      */
     async rebuild() {
         if (!this.enabled || !this.renderer) return false;
+        const request = ++this._rebuildGeneration;
+        const renderer = this.renderer;
         const mapData = this.currentMap();
         const tileset = this.currentTileset();
         if (!mapData || !tileset) return false;
+        const budgetError = this.previewBudgetError(mapData);
+        if (budgetError) {
+            this.lastError = budgetError;
+            throw new RangeError(budgetError);
+        }
 
         // Asset caches are keyed by file name, which is only unique within one
         // project: opening a second project whose tileset or character sheet
@@ -371,6 +554,7 @@ class MapEditor3D {
         // Loaded before the scene is built, because building it is synchronous
         // and a parallax that arrives afterwards would arrive to no scene.
         const parallaxes = await this.loadParallaxes(mapData);
+        if (!this.rebuildIsCurrent(request, renderer)) return false;
 
         this.clearScene();
         this.mapScene = new Reactor3D.MapScene(mapData, bitmaps, {
@@ -387,7 +571,8 @@ class MapEditor3D {
         this.applyAtmosphere(mapData);
         this.buildGrid(mapData);
         this.buildHoverCell();
-        await this.buildEvents(mapData);
+        if (!await this.buildEvents(mapData, request)) return false;
+        if (!this.rebuildIsCurrent(request, renderer)) return false;
         // Frame the map when it is a different map, not on every rebuild.
         // A rebuild happens on every edit, and re-framing threw away wherever
         // the author had orbited and zoomed to — so the view jumped back and
@@ -410,6 +595,37 @@ class MapEditor3D {
             events: this.eventGroup ? this.eventGroup.children.length : 0
         };
         return true;
+    }
+
+    rebuildIsCurrent(request, renderer = this.renderer) {
+        return this.enabled && request === this._rebuildGeneration && renderer === this.renderer;
+    }
+
+    previewBudgetError(mapData) {
+        const cells = Number(mapData?.width) * Number(mapData?.height);
+        if (!Number.isFinite(cells) || cells <= 0) return 'The map dimensions are invalid.';
+        // The largest production map validated throughout the 3D work is
+        // 200x200. Unlike the chunked 2D renderer, 3D must construct the whole
+        // scene before one frame can draw, so larger maps need a future culler
+        // rather than an allocation attempted on the renderer process.
+        if (cells > 40000) {
+            return 'This map is too large for the 3D editor preview (40,000-cell limit).';
+        }
+
+        const data = Array.isArray(mapData.data) ? mapData.data : [];
+        let estimatedQuads = 0;
+        for (let layer = 0; layer < 4; layer++) {
+            const start = layer * cells;
+            const end = Math.min(data.length, start + cells);
+            for (let index = start; index < end; index++) {
+                const tileId = Number(data[index]) || 0;
+                if (tileId > 0) estimatedQuads += tileId >= 2048 ? 4 : 1;
+                if (estimatedQuads > 400000) {
+                    return 'This map has too much tile geometry for the 3D editor preview.';
+                }
+            }
+        }
+        return '';
     }
 
     /**
@@ -619,16 +835,18 @@ class MapEditor3D {
      * their tile, coloured by trigger so a parallel process reads differently
      * from something you walk into.
      */
-    async buildEvents(mapData) {
+    async buildEvents(mapData, request = this._rebuildGeneration) {
         if (!this.mapScene) return;
+        const mapScene = this.mapScene;
         const scene = this.mapScene.scene();
+        const sheets = await this.loadCharacterSheets(mapData);
+        if (!this.rebuildIsCurrent(request) || mapScene !== this.mapScene) return false;
+
         this.eventGroup = new THREE.Group();
         this.billboards = [];
         this.labels = [];
         this.pickables = [];
         this.selected = null;
-
-        const sheets = await this.loadCharacterSheets(mapData);
         const cube = new THREE.BoxGeometry(0.55, 0.55, 0.55);
 
         for (const event of mapData.events || []) {
@@ -714,6 +932,7 @@ class MapEditor3D {
 
         scene.add(this.eventGroup);
         this.faceCamera();
+        return true;
     }
 
     /**
@@ -1181,7 +1400,8 @@ class MapEditor3D {
     }
 
     attachInput() {
-        if (!this.canvas) return;
+        const input = this.inputSurface || this.canvas;
+        if (!input) return;
         this._onPointerDown = event => {
             this.pointer = {
                 x: event.clientX,
@@ -1192,7 +1412,7 @@ class MapEditor3D {
                 pan: event.button !== 0 || event.shiftKey,
                 paint: false
             };
-            this.canvas.setPointerCapture?.(event.pointerId);
+            input.setPointerCapture?.(event.pointerId);
             // Once per gesture: what is being looked at cannot change until
             // the camera moves, and the raycast is not free.
             this.seatPivot();
@@ -1259,7 +1479,7 @@ class MapEditor3D {
         this._onPointerUp = event => {
             const drag = this.pointer;
             this.pointer = null;
-            this.canvas.releasePointerCapture?.(event.pointerId);
+            input.releasePointerCapture?.(event.pointerId);
             if (drag && drag.paint) {
                 this.endPaint();
                 return;
@@ -1357,28 +1577,29 @@ class MapEditor3D {
             if (container) this._resizeObserver.observe(container);
         }
 
-        this.canvas.addEventListener('pointerdown', this._onPointerDown);
-        this.canvas.addEventListener('pointermove', this._onPointerMove);
-        this.canvas.addEventListener('pointerup', this._onPointerUp);
-        this.canvas.addEventListener('pointercancel', this._onPointerUp);
-        this.canvas.addEventListener('pointerleave', this._onPointerLeave);
-        this.canvas.addEventListener('dblclick', this._onDoubleClick);
-        this.canvas.addEventListener('wheel', this._onWheel, { passive: false });
-        this.canvas.addEventListener('contextmenu', this._onContextMenu);
+        input.addEventListener('pointerdown', this._onPointerDown);
+        input.addEventListener('pointermove', this._onPointerMove);
+        input.addEventListener('pointerup', this._onPointerUp);
+        input.addEventListener('pointercancel', this._onPointerUp);
+        input.addEventListener('pointerleave', this._onPointerLeave);
+        input.addEventListener('dblclick', this._onDoubleClick);
+        input.addEventListener('wheel', this._onWheel, { passive: false });
+        input.addEventListener('contextmenu', this._onContextMenu);
         window.addEventListener('resize', this._onResize);
         this.installFlyKeys();
     }
 
     detachInput() {
-        if (this.canvas) {
-            this.canvas.removeEventListener('pointerdown', this._onPointerDown);
-            this.canvas.removeEventListener('pointermove', this._onPointerMove);
-            this.canvas.removeEventListener('pointerup', this._onPointerUp);
-            this.canvas.removeEventListener('pointercancel', this._onPointerUp);
-            this.canvas.removeEventListener('pointerleave', this._onPointerLeave);
-            this.canvas.removeEventListener('dblclick', this._onDoubleClick);
-            this.canvas.removeEventListener('wheel', this._onWheel);
-            this.canvas.removeEventListener('contextmenu', this._onContextMenu);
+        const input = this.inputSurface || this.canvas;
+        if (input) {
+            input.removeEventListener('pointerdown', this._onPointerDown);
+            input.removeEventListener('pointermove', this._onPointerMove);
+            input.removeEventListener('pointerup', this._onPointerUp);
+            input.removeEventListener('pointercancel', this._onPointerUp);
+            input.removeEventListener('pointerleave', this._onPointerLeave);
+            input.removeEventListener('dblclick', this._onDoubleClick);
+            input.removeEventListener('wheel', this._onWheel);
+            input.removeEventListener('contextmenu', this._onContextMenu);
         }
         if (this._onResize) window.removeEventListener('resize', this._onResize);
         this.removeFlyKeys();
@@ -1776,9 +1997,15 @@ class MapEditor3D {
             // pointer moved over it — those handlers render directly — and
             // otherwise showed nothing at all.
             if (!this.enabled) { this.frame = null; return; }
-            this.frame = requestAnimationFrame(tick);
-            this.stepFly(now);
-            this.render(now);
+            this.frame = null;
+            try {
+                this.stepFly(now);
+                this.render(now);
+            } catch (error) {
+                this.fail(error);
+                return;
+            }
+            if (this.enabled) this.frame = requestAnimationFrame(tick);
         };
         this.frame = requestAnimationFrame(tick);
     }

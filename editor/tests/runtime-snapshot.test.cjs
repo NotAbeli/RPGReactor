@@ -47,6 +47,81 @@ test('MV RenderTexture and ES5 Filter compatibility preserve legacy construction
     assert.match(source, /Object\.defineProperty\(this, key, Object\.getOwnPropertyDescriptor\(inst, key\)\)/);
 });
 
+test('MV filterArea shaders use PIXI 8 filter globals without overriding them', () => {
+    const source = fs.readFileSync(path.join(workspaceRoot, 'runtime', 'reactor_mv_compat.js'), 'utf8');
+    const start = source.indexOf('    function installPixiCompatibility()');
+    const end = source.indexOf('\n    function installAudioFontCompatibility()', start);
+    let programOptions = null;
+    let uniformStructures = null;
+
+    class Filter {
+        constructor(options) { this.options = options; }
+    }
+    class UniformGroup {
+        constructor(structures) {
+            uniformStructures = structures;
+            this.uniforms = Object.fromEntries(Object.entries(structures)
+                .map(([name, entry]) => [name, entry.value]));
+        }
+    }
+    const PIXI = {
+        TextureSource: function TextureSource() {},
+        Filter,
+        UniformGroup,
+        GlProgram: {
+            from(options) {
+                programOptions = options;
+                return options;
+            }
+        }
+    };
+    const installer = vm.runInNewContext(
+        `(function() { const global = globalThis; ${source.slice(start, end)}; return installPixiCompatibility; })()`,
+        { console, PIXI }
+    );
+    installer();
+
+    const fragment = `
+        varying vec2 vTextureCoord;
+        uniform sampler2D uSampler;
+        uniform highp vec4 filterArea;
+        uniform mediump vec4 filterClamp;
+        uniform vec2 size;
+        vec2 mapCoord(vec2 coord) {
+            coord *= filterArea.xy;
+            coord += filterArea.zw;
+            return coord;
+        }
+        vec2 unmapCoord(vec2 coord) {
+            coord -= filterArea.zw;
+            coord /= filterArea.xy;
+            return coord;
+        }
+        void main(void) {
+            vec2 coord = unmapCoord(mapCoord(vTextureCoord));
+            gl_FragColor = texture2D(uSampler, clamp(coord / size, filterClamp.xy, filterClamp.zw));
+        }
+    `;
+    const filter = new PIXI.Filter('', fragment, { size: [320, 180] });
+
+    assert.doesNotMatch(programOptions.fragment, /\bfilterArea\b/);
+    assert.match(programOptions.fragment, /coord \*= uInputSize\.xy/);
+    assert.match(programOptions.fragment, /coord \+= uOutputFrame\.xy/);
+    assert.match(programOptions.fragment, /coord -= uOutputFrame\.xy/);
+    assert.match(programOptions.fragment, /uniform highp vec4 uOutputFrame/);
+    assert.doesNotMatch(programOptions.fragment, /\bfilterClamp\b/);
+    assert.match(programOptions.fragment, /uniform highp vec4 uInputClamp/);
+    assert.match(programOptions.fragment, /clamp\(coord \/ size, uInputClamp\.xy, uInputClamp\.zw\)/);
+    assert.deepEqual(Object.keys(uniformStructures), ['size']);
+    assert.deepEqual(filter.uniforms.size, [320, 180]);
+    for (const globalName of [
+        'uInputSize', 'uInputPixel', 'uInputClamp', 'uOutputFrame',
+        'uGlobalFrame', 'uOutputTexture'
+    ]) {
+        assert.equal(globalName in filter.uniforms, false, `${globalName} remains owned by PIXI`);
+    }
+});
+
 test('PIXI 8 snapshots stay finite and game-loop startup waits for Application.init', async () => {
     const source = fs.readFileSync(path.join(workspaceRoot, 'runtime', 'reactor_core.js'), 'utf8');
     const start = source.indexOf('Bitmap.snap = function(stage)');

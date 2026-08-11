@@ -3187,6 +3187,10 @@
         };
         if (PIXI.Filter && PIXI.GlProgram && PIXI.UniformGroup && !PIXI.Filter.__mvCompatWrapped) {
             const OriginalFilter = PIXI.Filter;
+            const filterGlobalUniforms = new Set([
+                "uInputSize", "uInputPixel", "uInputClamp", "uOutputFrame",
+                "uGlobalFrame", "uOutputTexture"
+            ]);
             const inferUniformType = function(glslType) {
                 return ({
                     float: "f32",
@@ -3201,12 +3205,14 @@
             };
             const buildUniformStructures = function(shaderSource, uniforms) {
                 const structures = {};
-                const uniformRegex = /uniform\s+(float|int|bool|vec2|vec3|vec4|mat3|mat4)\s+(\w+)\s*;/g;
+                const uniformRegex = /uniform\s+(?:(?:lowp|mediump|highp)\s+)?(float|int|bool|vec2|vec3|vec4|mat3|mat4)\s+(\w+)\s*;/g;
                 let match;
                 while ((match = uniformRegex.exec(shaderSource))) {
                     const type = inferUniformType(match[1]);
                     const name = match[2];
-                    if (type && name !== "filterArea") structures[name] = { value: uniforms && uniforms[name], type: type };
+                    if (type && name !== "filterArea" && !filterGlobalUniforms.has(name)) {
+                        structures[name] = { value: uniforms && uniforms[name], type: type };
+                    }
                 }
                 return structures;
             };
@@ -3232,8 +3238,18 @@
                 fragment = String(fragment || "");
                 fragment = fragment.replace(/varying\s+/g, "in ");
                 fragment = fragment.replace(/uniform\s+sampler2D\s+uSampler\s*;/g, "uniform sampler2D uTexture;");
-                fragment = fragment.replace(/uniform\s+vec4\s+filterArea\s*;/g, "uniform highp vec4 uInputSize;");
+                fragment = fragment.replace(
+                    /uniform\s+(?:(?:lowp|mediump|highp)\s+)?vec4\s+filterArea\s*;/g,
+                    "uniform highp vec4 uInputSize;\nuniform highp vec4 uOutputFrame;"
+                );
                 fragment = fragment.replace(/\bfilterArea\s*\.\s*xy\b/g, "uInputSize.xy");
+                fragment = fragment.replace(/\bfilterArea\s*\.\s*zw\b/g, "uOutputFrame.xy");
+                fragment = fragment.replace(/\bfilterArea\b/g, "vec4(uInputSize.xy, uOutputFrame.xy)");
+                fragment = fragment.replace(
+                    /uniform\s+(?:(?:lowp|mediump|highp)\s+)?vec4\s+filterClamp\s*;/g,
+                    "uniform highp vec4 uInputClamp;"
+                );
+                fragment = fragment.replace(/\bfilterClamp\b/g, "uInputClamp");
                 fragment = fragment.replace(/\buSampler\b/g, "uTexture");
                 fragment = fragment.replace(/\btexture2D\s*\(/g, "texture(");
                 if (/\bgl_FragColor\b/.test(fragment) && !/out\s+vec4\s+finalColor\s*;/.test(fragment)) {

@@ -374,6 +374,7 @@ class ProjectController {
         if (!this.projectLoaded) return;
         if (!await this.confirmUnsavedChanges()) return;
 
+        if (typeof this.disableMap3DView === 'function') await this.disableMap3DView();
         this.releaseProjectLock();
         if (this.tilemapManager) this.tilemapManager.destroy();
         this.tilemapManager = null;
@@ -557,6 +558,7 @@ class ProjectController {
         if (!dbLoaded) {
             this.uiManager.updateStatus('Error loading database');
             this.logProjectOpen('populate:database-failed');
+            if (typeof this.disableMap3DView === 'function') await this.disableMap3DView();
             this.releaseProjectLock();
             if (this.tilemapManager) this.tilemapManager.destroy();
             this.tilemapManager = null;
@@ -1371,6 +1373,7 @@ class ProjectController {
         }
         this.mapEditor3D.rebuild().catch(error => {
             console.error('Failed to rebuild the 3D view:', error);
+            this.mapEditor3D.fail?.(error);
         });
     }
 

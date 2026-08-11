@@ -29,6 +29,14 @@ class OptionsManager {
         this.modal = null;
         this.SETTINGS_KEY = 'rr-settings';
         this.settings = this._loadSettings();
+        // 3D takes temporary ownership of PIXI's WebGL context and must never
+        // auto-enter from a previous process. A failed driver initialization
+        // can end the renderer before JavaScript gets a chance to roll the
+        // setting back, otherwise making every later project repeat the crash.
+        if (this.settings.map3DView === true) {
+            this.settings.map3DView = false;
+            this._saveSettings();
+        }
         window.addEventListener('rr-language-changed', () => {
             this._updateLanguageButton();
             if (this.modal && this.modal.style.display !== 'none') this._renderContent();
@@ -61,7 +69,7 @@ class OptionsManager {
 
     /** Defaults; merged over whatever's saved. */
     _defaultSettings() {
-        return { theme: 'dark', language: 'en', animateAutotiles: true };
+        return { theme: 'dark', language: 'en', animateAutotiles: true, map3DView: false };
     }
 
     _loadSettings() {
@@ -118,8 +126,9 @@ class OptionsManager {
     /**
      * Whether the map canvas shows the 3D view.
      *
-     * Off by default and stored like every other preference, so an editor that
-     * has never been switched into 3D never loads three.js at all.
+     * Off at the start of every process. It remains active across map/project
+     * changes in the current session, but a fresh launch requires an explicit
+     * opt-in so a graphics failure cannot become a startup loop.
      */
     getMap3DView() {
         return this.settings.map3DView === true;
@@ -143,9 +152,6 @@ class OptionsManager {
         const next = enabled === true;
         this.settings.map3DView = next;
         this._saveSettings();
-        window.dispatchEvent(new CustomEvent('rr-map-3d-view-changed', {
-            detail: { enabled: next }
-        }));
     }
 
     _languageFlagHtml(languageId) {

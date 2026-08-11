@@ -414,7 +414,7 @@ test('an empty view still gives an answer', () => {
 test('the pivot is seated once a gesture, not once a frame', () => {
     // What is being looked at cannot change until the camera moves, and the
     // raycast is not free on a two-hundred-tile map.
-    assert.match(source, /this\.canvas\.setPointerCapture\?\.\(event\.pointerId\);\n\s*\/\/[\s\S]*?this\.seatPivot\(\);/);
+    assert.match(source, /input\.setPointerCapture\?\.\(event\.pointerId\);\n\s*\/\/[\s\S]*?this\.seatPivot\(\);/);
     assert.match(source, /if \(this\.flyKeys\.size === 1\) this\.seatPivot\(\);/,
         'and once at the start of a flight, so its speed is judged against what is in front');
 });

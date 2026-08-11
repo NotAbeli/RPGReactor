@@ -66,6 +66,11 @@ test('web distribution uses the bundled Demo, staged runtime, and current artifa
         const firstHash = crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex');
         const archivedManagers = execFileSync('unzip', ['-p', archive, 'project/js/reactor_managers.js']);
         assert.deepEqual(archivedManagers, fs.readFileSync(path.resolve(editorRoot, '..', 'runtime', 'reactor_managers.js')));
+        const archived3D = execFileSync('unzip', ['-p', archive, 'project/js/reactor_3d.js']);
+        assert.deepEqual(archived3D, fs.readFileSync(path.resolve(editorRoot, '..', 'runtime', 'reactor_3d.js')));
+        const archivedThree = execFileSync(
+            'unzip', ['-p', archive, 'project/js/libs/three.js'], { maxBuffer: 4 * 1024 * 1024 });
+        assert.deepEqual(archivedThree, fs.readFileSync(path.resolve(editorRoot, '..', 'runtime', 'libs', 'three.js')));
         const plugins = execFileSync('unzip', ['-p', archive, 'project/js/reactor_plugins.js'], { encoding: 'utf8' });
         assert.equal(plugins, fs.readFileSync(path.resolve(
             editorRoot, '..', 'template', 'Demo', 'js', 'reactor_plugins.js'), 'utf8'));
@@ -84,6 +89,7 @@ test('web distribution uses the bundled Demo, staged runtime, and current artifa
         const webStyles = execFileSync('unzip', ['-p', archive, 'css/styles.css'], { encoding: 'utf8' });
         assert.match(webHtml, /id="html-menu-bar"/);
         assert.match(webHtml, /id="submenu-file"/);
+        assert.doesNotMatch(webHtml, /<script[^>]+three\.js/, 'three.js remains lazy in the Web editor');
         assert.match(webMenuRule(webStyles), /overflow:\s*visible/);
         assert.match(webMenuRule(webStyles), /flex-wrap:\s*wrap/);
 

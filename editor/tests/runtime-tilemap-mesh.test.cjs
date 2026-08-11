@@ -7,12 +7,13 @@ const PIXI = require('pixi.js');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const core = fs.readFileSync(path.join(repoRoot, 'runtime', 'reactor_core.js'), 'utf8');
+const sprites = fs.readFileSync(path.join(repoRoot, 'runtime', 'reactor_sprites.js'), 'utf8');
 
 function loadTileLayers() {
     const start = core.indexOf('Tilemap.Layer = function()');
     const end = core.indexOf('Tilemap.Renderer = function()', start);
     assert.ok(start >= 0 && end > start);
-    const context = { PIXI, Tilemap: {}, console, performance };
+    const context = { PIXI, Tilemap: function Tilemap() {}, console, performance };
     vm.runInNewContext(core.slice(start, end), context);
     return context;
 }
@@ -84,6 +85,55 @@ test('clearing a runtime layer preserves plugin children and hides stale geometr
     assert.equal(layer._v8TileRoot.parent, layer);
     assert.equal(layer._v8Mesh.visible, false);
     assert.equal(layer.size(), 0);
+});
+
+test('a render-time camera repaint synchronizes every mesh before returning', () => {
+    const context = loadTileLayers();
+    const { Tilemap } = context;
+    const methodsStart = core.indexOf('Tilemap.prototype._syncV8TileLayers = function()');
+    const methodsEnd = core.indexOf('\nTilemap.prototype._createLayers = function()', methodsStart);
+    vm.runInNewContext(core.slice(methodsStart, methodsEnd), context);
+
+    const lower = meshLayer(context);
+    const upper = meshLayer(context);
+    const pluginLayer = meshLayer(context);
+    const tilemap = new Tilemap();
+    Object.assign(tilemap, {
+        origin: { x: 48, y: 0 },
+        _margin: 20,
+        tileWidth: 48,
+        tileHeight: 48,
+        _lowerLayer: lower,
+        _upperLayer: upper,
+        children: [lower, upper, pluginLayer],
+        _needsRepaint: true,
+        _lastAnimationFrame: 0,
+        _lastStartX: 0,
+        _lastStartY: 0,
+        animationFrame: 0,
+        _addAllSpots() {
+            for (const layer of [lower, upper, pluginLayer]) {
+                layer.clear();
+                layer.addRect(0, 0, 0, 0, 0, 48, 48);
+            }
+        },
+        _sortChildren() {}
+    });
+
+    tilemap.updateTransform();
+
+    for (const layer of [lower, upper, pluginLayer]) {
+        assert.equal(layer._v8MeshDirty, false);
+        assert.equal(layer._v8Mesh.visible, true);
+    }
+});
+
+test('the current map camera reaches the tilemap before its child update', () => {
+    const start = sprites.indexOf('Spriteset_Map.prototype.update = function()');
+    const end = sprites.indexOf('\n};', start);
+    const body = sprites.slice(start, end);
+    assert.ok(body.indexOf('this.updateTilemap();') < body.indexOf('Spriteset_Base.prototype.update.call(this);'));
+    assert.equal((body.match(/this\.updateTilemap\(\);/g) || []).length, 1);
 });
 
 test('the forced sprite fallback pools tiles and renders map shadows', () => {
