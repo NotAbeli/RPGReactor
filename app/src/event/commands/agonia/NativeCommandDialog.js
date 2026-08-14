@@ -425,12 +425,35 @@ class NativeCommandDialog {
         const containers = this._scanProjectDataContainers();
         for (const { datalist, kind } of suggestionKinds) {
             datalist.innerHTML = '';
-            for (const value of AgoniaNativeCommands.collectSuggestions(kind, containers)) {
+            let values;
+            if (kind === 'faceNames') values = this._scanImageFolder('faces');
+            else if (kind === 'pictureNames') values = this._scanImageFolder('pictures');
+            else values = AgoniaNativeCommands.collectSuggestions(kind, containers);
+            for (const value of values) {
                 const opt = document.createElement('option');
                 opt.value = value;
                 datalist.appendChild(opt);
             }
         }
+    }
+
+    _scanImageFolder(sub) {
+        const names = [];
+        try {
+            const projectPath = this.projectController && this.projectController.currentProject
+                && this.projectController.currentProject.path;
+            if (projectPath && this.fs && this.path) {
+                const dir = this.path.join(projectPath, 'img', sub);
+                if (this.fs.existsSync(dir)) {
+                    for (const file of this.fs.readdirSync(dir)) {
+                        if (/\.png$/i.test(file)) names.push(file.replace(/\.png$/i, ''));
+                    }
+                }
+            }
+        } catch (e) {
+            // Suggestions are best-effort; free text still works.
+        }
+        return names.sort((a, b) => a.localeCompare(b, 'ru'));
     }
 
     _scanProjectDataContainers() {

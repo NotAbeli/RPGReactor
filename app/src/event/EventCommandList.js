@@ -1245,6 +1245,12 @@ class EventCommandList {
             722: { name: 'Enemy HP', color: 'var(--color-syntax-function)' },
             723: { name: 'All Enemies Phase', color: 'var(--color-syntax-function)' },
             724: { name: 'Fill Chest with Loot', color: 'var(--color-syntax-type)' },
+            740: { name: 'Text Pop', color: 'var(--color-syntax-type)' },
+            741: { name: 'Slide Title', color: 'var(--color-syntax-type)' },
+            742: { name: 'Slide Text', color: 'var(--color-syntax-type)' },
+            743: { name: 'Slide Face', color: 'var(--color-syntax-type)' },
+            744: { name: 'Slide Background', color: 'var(--color-syntax-type)' },
+            745: { name: 'Show Slide', color: 'var(--color-syntax-type)' },
             401: { name: 'Text', color: 'var(--color-syntax-comment)' },
             402: { name: 'When', color: 'var(--color-syntax-string)' },
             403: { name: 'When Cancel', color: 'var(--color-syntax-string)' },
@@ -2071,6 +2077,33 @@ class EventCommandList {
                 const max = Number(params[3]) || min;
                 const chestId = String(params[0] || '').trim();
                 description = `${chestId || tt('Auto chest ID (unique per event)')}: ${params[1] || ''} ${min === max ? min : min + '-' + max}`;
+                break;
+            }
+            case 740: {
+                const mode = Number(params[0]);
+                const target = mode === -1 ? tt('Player') : `${tt('Event')} #${params[1] || 1}`;
+                const text = String(params[3] || '').substring(0, 60);
+                description = `${target}: "${text}"`;
+                break;
+            }
+            case 741: {
+                description = String(params[0] || '').substring(0, 60);
+                break;
+            }
+            case 742: {
+                description = String(params[0] || '').replace(/\n/g, ' ').substring(0, 60);
+                break;
+            }
+            case 743: {
+                description = `${params[0] || ''} [${params[1] || 0}]`;
+                break;
+            }
+            case 744: {
+                description = String(params[0] || '');
+                break;
+            }
+            case 745: {
+                description = `${params[0] || 300} ${tt('frames')}`;
                 break;
             }
             case 655: {

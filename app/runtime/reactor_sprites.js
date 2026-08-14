@@ -4181,6 +4181,269 @@ Spriteset_Map.prototype.animationBaseDelay = function() {
 };
 
 //-----------------------------------------------------------------------------
+// Agonia Engine presentation sprites
+//
+// Sprite_AgoniaTextPop   — floating text over a character (command 740)
+// Sprite_AgoniaSlide     — full-screen intro slide overlay (commands 741-745)
+//
+
+function Sprite_AgoniaTextPop() {
+    this.initialize(...arguments);
+}
+
+Sprite_AgoniaTextPop.prototype = Object.create(Sprite.prototype);
+Sprite_AgoniaTextPop.prototype.constructor = Sprite_AgoniaTextPop;
+
+Sprite_AgoniaTextPop.prototype.initialize = function(target, text, duration) {
+    Sprite.prototype.initialize.call(this);
+    this._target = target;
+    this._duration = Math.max(10, duration);
+    this._elapsed = 0;
+    this._rise = 0;
+    this.anchor.x = 0.5;
+    this.anchor.y = 1;
+    this.z = 9;
+    this.createText(String(text || ""));
+    this.updatePosition();
+    this.opacity = 0;
+};
+
+Sprite_AgoniaTextPop.prototype.fontSize = function() {
+    return 26;
+};
+
+// Parse \c[n] escape codes into colored segments rendered into one bitmap.
+Sprite_AgoniaTextPop.prototype.createText = function(text) {
+    const size = this.fontSize();
+    const segments = [];
+    let colorIndex = 0;
+    let lastIndex = 0;
+    const re = /\\c\[(\d+)\]/gi;
+    let match;
+    while ((match = re.exec(text))) {
+        if (match.index > lastIndex) {
+            segments.push({ text: text.slice(lastIndex, match.index), c: colorIndex });
+        }
+        colorIndex = Number(match[1]);
+        lastIndex = re.lastIndex;
+    }
+    if (lastIndex < text.length || segments.length === 0) {
+        segments.push({ text: text.slice(lastIndex), c: colorIndex });
+    }
+    const measure = new Bitmap(1, 1);
+    measure.fontSize = size;
+    let width = 0;
+    for (const seg of segments) width += measure.measureTextWidth(seg.text);
+    width = Math.min(Graphics.width - 20, Math.ceil(width) + 10);
+    const height = size + 12;
+    this.bitmap = new Bitmap(width, height);
+    this.bitmap.fontSize = size;
+    this.bitmap.outlineColor = "rgba(0,0,0,0.85)";
+    this.bitmap.outlineWidth = 4;
+    let x = 5;
+    for (const seg of segments) {
+        this.bitmap.textColor = ColorManager.textColor(seg.c);
+        this.bitmap.drawText(seg.text, x, 0, Math.max(1, width - x), height, "left");
+        x += this.bitmap.measureTextWidth(seg.text);
+    }
+};
+
+Sprite_AgoniaTextPop.prototype.update = function() {
+    Sprite.prototype.update.call(this);
+    this._elapsed++;
+    this._rise = Math.min(this._rise + 0.35, 24);
+    this.updatePosition();
+    if (this._elapsed < 10) {
+        this.opacity = Math.min(255, this.opacity + 30);
+    } else if (this._elapsed > this._duration - 20) {
+        this.opacity = Math.max(0, this.opacity - 18);
+    } else {
+        this.opacity = 255;
+    }
+};
+
+Sprite_AgoniaTextPop.prototype.updatePosition = function() {
+    if (this._target && this._target.screenX) {
+        this.x = this._target.screenX();
+        this.y = this._target.screenY() - 52 - this._rise;
+    }
+};
+
+Sprite_AgoniaTextPop.prototype.isDone = function() {
+    return this._elapsed >= this._duration;
+};
+
+Sprite_AgoniaTextPop.prototype.destroy = function(options) {
+    if (this.bitmap) this.bitmap.destroy();
+    Sprite.prototype.destroy.call(this, options);
+};
+
+function Sprite_AgoniaSlide() {
+    this.initialize(...arguments);
+}
+
+Sprite_AgoniaSlide.prototype = Object.create(Sprite.prototype);
+Sprite_AgoniaSlide.prototype.constructor = Sprite_AgoniaSlide;
+
+Sprite_AgoniaSlide.prototype.initialize = function(config, duration) {
+    Sprite.prototype.initialize.call(this);
+    this._config = config;
+    this._fade = 15;
+    this._hold = Math.max(30, duration);
+    this._elapsed = 0;
+    this._total = this._hold + this._fade * 2;
+    this._ownBitmaps = [];
+    this._parts = [];
+    this.buildContent();
+    this.opacity = 0;
+};
+
+Sprite_AgoniaSlide.prototype.buildContent = function() {
+    const config = this._config;
+
+    const dim = new Sprite();
+    const dimBitmap = new Bitmap(Graphics.width, Graphics.height);
+    dimBitmap.fillAll("rgba(0,0,0,0.9)");
+    dim.bitmap = dimBitmap;
+    this._ownBitmaps.push(dimBitmap);
+    this.addPart(dim);
+
+    if (config.bgName) {
+        const bg = new Sprite();
+        bg.bitmap = ImageManager.loadPicture(config.bgName);
+        bg._agoniaStretch = true;
+        this.addPart(bg);
+    }
+
+    const hasFace = !!config.faceName;
+    if (hasFace) {
+        const face = new Sprite();
+        face.bitmap = ImageManager.loadFace(config.faceName);
+        const index = Number(config.faceIndex) || 0;
+        face.setFrame((index % 4) * 144, Math.floor(index / 4) * 144, 144, 144);
+        face.anchor.x = 0.5;
+        face.x = Graphics.width / 2;
+        face.y = 70;
+        this.addPart(face);
+    }
+
+    const titleY = hasFace ? 236 : 110;
+    const textY = hasFace ? 320 : 210;
+    if (config.title) {
+        this.makeText(String(config.title), 44, "#f4f0e6", titleY);
+    }
+    if (config.text) {
+        const lines = String(config.text).split(/\r?\n/).slice(0, 8);
+        for (let i = 0; i < lines.length; i++) {
+            this.makeText(lines[i], 26, "#e8e4da", textY + i * 38);
+        }
+    }
+};
+
+Sprite_AgoniaSlide.prototype.addPart = function(sprite) {
+    this._parts.push(sprite);
+    this.addChild(sprite);
+};
+
+Sprite_AgoniaSlide.prototype.makeText = function(text, size, color, y) {
+    const sprite = new Sprite();
+    const bitmap = new Bitmap(Graphics.width, size + 14);
+    bitmap.fontSize = size;
+    bitmap.fontBold = true;
+    bitmap.textColor = color;
+    bitmap.outlineColor = "rgba(0,0,0,0.8)";
+    bitmap.outlineWidth = Math.max(2, Math.floor(size / 14));
+    bitmap.drawText(text, 20, 0, Graphics.width - 40, size + 14, "center");
+    sprite.bitmap = bitmap;
+    sprite.y = y;
+    this._ownBitmaps.push(bitmap);
+    this.addPart(sprite);
+    return sprite;
+};
+
+Sprite_AgoniaSlide.prototype.update = function() {
+    Sprite.prototype.update.call(this);
+    this._elapsed++;
+    for (const part of this._parts) {
+        if (part._agoniaStretch && part.bitmap && part.bitmap.isReady() && !part._agoniaStretched) {
+            part._agoniaStretched = true;
+            if (part.bitmap.width > 0 && part.bitmap.height > 0) {
+                part.scale.x = Graphics.width / part.bitmap.width;
+                part.scale.y = Graphics.height / part.bitmap.height;
+            }
+        }
+    }
+    if (this._elapsed < this._fade) {
+        this.opacity = Math.floor((255 * this._elapsed) / this._fade);
+    } else if (this._elapsed > this._total - this._fade) {
+        this.opacity = Math.max(0, Math.floor((255 * (this._total - this._elapsed)) / this._fade));
+    } else {
+        this.opacity = 255;
+    }
+};
+
+Sprite_AgoniaSlide.prototype.isDone = function() {
+    return this._elapsed >= this._total;
+};
+
+Sprite_AgoniaSlide.prototype.destroy = function(options) {
+    for (const bitmap of this._ownBitmaps) bitmap.destroy();
+    Sprite.prototype.destroy.call(this, options);
+};
+
+const _Spriteset_Map_createLowerLayer_Agonia = Spriteset_Map.prototype.createLowerLayer;
+Spriteset_Map.prototype.createLowerLayer = function() {
+    _Spriteset_Map_createLowerLayer_Agonia.call(this);
+    this._agoniaTextPops = [];
+    this._agoniaSlideSprite = null;
+};
+
+const _Spriteset_Map_update_Agonia = Spriteset_Map.prototype.update;
+Spriteset_Map.prototype.update = function() {
+    _Spriteset_Map_update_Agonia.call(this);
+    this.updateAgoniaTextPops();
+    this.updateAgoniaSlide();
+};
+
+Spriteset_Map.prototype.updateAgoniaTextPops = function() {
+    if (!$gameTemp || !$gameTemp.retrieveAgoniaTextPops) return;
+    for (const request of $gameTemp.retrieveAgoniaTextPops()) {
+        const sprite = new Sprite_AgoniaTextPop(request.target, request.text, request.duration);
+        this.addChild(sprite);
+        this._agoniaTextPops.push(sprite);
+    }
+    for (const sprite of this._agoniaTextPops.slice()) {
+        sprite.update();
+        if (sprite.isDone()) {
+            this._agoniaTextPops.remove(sprite);
+            this.removeChild(sprite);
+            sprite.destroy();
+        }
+    }
+};
+
+Spriteset_Map.prototype.updateAgoniaSlide = function() {
+    if (!$gameTemp) return;
+    if ($gameTemp._agoniaSlideActive && !this._agoniaSlideSprite && $gameTemp._agoniaSlideConfig) {
+        this._agoniaSlideSprite = new Sprite_AgoniaSlide(
+            $gameTemp._agoniaSlideConfig,
+            $gameTemp._agoniaSlideDuration || 300
+        );
+        this.addChild(this._agoniaSlideSprite);
+    }
+    if (this._agoniaSlideSprite) {
+        this._agoniaSlideSprite.update();
+        if (this._agoniaSlideSprite.isDone()) {
+            this.removeChild(this._agoniaSlideSprite);
+            this._agoniaSlideSprite.destroy();
+            this._agoniaSlideSprite = null;
+            $gameTemp._agoniaSlideActive = false;
+            $gameTemp._agoniaSlideConfig = null;
+        }
+    }
+};
+
+//-----------------------------------------------------------------------------
 // Spriteset_Battle
 //
 // The set of sprites on the battle screen.

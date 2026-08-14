@@ -233,6 +233,43 @@ class PluginCommandMigration {
                     code: 724,
                     parameters: [m[1] === 'this' ? '' : m[1], m[2], Number(m[3]), Number(m[4] || m[3]), Number(m[5]), m[6] ? Number(m[6]) : '']
                 })
+            },
+            {
+                // Dead since the original plugin was lost; restored natively
+                // as command 740. The legacy slot argument is dropped.
+                plugin: 'NastyTextPop',
+                match: /^nastytextpop\s+(-?\d+)\s+\d+\s+(\d+)\s+(.+)$/i,
+                parse: (m) => {
+                    const targetId = Number(m[1]);
+                    const mode = targetId === -1 ? -1 : 0;
+                    return {
+                        code: 740,
+                        parameters: [mode, mode === -1 ? 0 : targetId, Number(m[2]),
+                            m[3].replace(/\s+/g, ' ').trim()]
+                    };
+                }
+            },
+            {
+                // Dead intro-slide setters (SDS = the lost intro plugin);
+                // restored natively as commands 741-744.
+                plugin: 'SDS_Intro',
+                match: /^sds_settitle\s+(.+)$/i,
+                parse: (m) => ({ code: 741, parameters: [m[1].trim()] })
+            },
+            {
+                plugin: 'SDS_Intro',
+                match: /^sds_settext\s+(.+)$/i,
+                parse: (m) => ({ code: 742, parameters: [m[1].trim().replace(/^"+|"+$/g, '')] })
+            },
+            {
+                plugin: 'SDS_Intro',
+                match: /^sds_setface\s+(\S+)\s+(\d+)$/i,
+                parse: (m) => ({ code: 743, parameters: [m[1], Number(m[2])] })
+            },
+            {
+                plugin: 'SDS_Intro',
+                match: /^sds_setbg\s+(\S+)$/i,
+                parse: (m) => ({ code: 744, parameters: [m[1]] })
             }
         ];
     }
@@ -484,7 +521,6 @@ class PluginCommandMigration {
                     manifestWrite = prefix + JSON.stringify(kept, null, 2) + ';\n';
                 }
             }
-
             const needsEngineDir = !projectMeta.enginePluginsDir
                 && options.enginePluginsDir
                 && fs.existsSync(options.enginePluginsDir);

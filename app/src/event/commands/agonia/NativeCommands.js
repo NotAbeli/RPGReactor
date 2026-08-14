@@ -439,6 +439,73 @@ class AgoniaNativeCommands {
                     { key: 'value', index: 4, type: 'number', label: 'Total Coins', default: 10, min: 1 },
                     { key: 'maxItemValue', index: 5, type: 'number', label: 'Max Item Value', default: '', min: 1, optional: true, optionalLabel: 'Not set' }
                 ]
+            },
+            {
+                code: 740,
+                id: 'textPop',
+                name: 'Text Pop',
+                section: 'Presentation',
+                help: 'Shows floating text above a character. Supports \\c[n] color codes.',
+                fields: [
+                    { key: 'mode', index: 0, type: 'select', label: 'Target', default: -1, options: [
+                        { value: -1, label: 'Player' },
+                        { value: 0, label: 'Event by ID' }
+                    ] },
+                    { key: 'eventId', index: 1, type: 'number', label: 'Event ID', default: 1, min: 1, visibleIf: { field: 'mode', in: [0] } },
+                    { key: 'duration', index: 2, type: 'number', label: 'Duration (frames)', default: 60, min: 10 },
+                    { key: 'text', index: 3, type: 'multiline', label: 'Text', default: '' }
+                ]
+            },
+            {
+                code: 741,
+                id: 'slideTitle',
+                name: 'Slide Title',
+                section: 'Presentation',
+                help: 'Sets the title of the intro slide (shown by Show Slide).',
+                fields: [
+                    { key: 'title', index: 0, type: 'string', label: 'Title', default: '' }
+                ]
+            },
+            {
+                code: 742,
+                id: 'slideText',
+                name: 'Slide Text',
+                section: 'Presentation',
+                help: 'Sets the body text of the intro slide (shown by Show Slide).',
+                fields: [
+                    { key: 'text', index: 0, type: 'multiline', label: 'Text', default: '' }
+                ]
+            },
+            {
+                code: 743,
+                id: 'slideFace',
+                name: 'Slide Face',
+                section: 'Presentation',
+                help: 'Sets the face image of the intro slide.',
+                fields: [
+                    { key: 'faceName', index: 0, type: 'suggestion', label: 'Face', default: '', suggestions: 'faceNames' },
+                    { key: 'faceIndex', index: 1, type: 'number', label: 'Face Index', default: 0, min: 0, max: 7 }
+                ]
+            },
+            {
+                code: 744,
+                id: 'slideBackground',
+                name: 'Slide Background',
+                section: 'Presentation',
+                help: 'Sets the background picture of the intro slide.',
+                fields: [
+                    { key: 'bgName', index: 0, type: 'suggestion', label: 'Picture', default: '', suggestions: 'pictureNames' }
+                ]
+            },
+            {
+                code: 745,
+                id: 'showSlide',
+                name: 'Show Slide',
+                section: 'Presentation',
+                help: 'Shows the configured intro slide full-screen and waits until it finishes.',
+                fields: [
+                    { key: 'duration', index: 0, type: 'number', label: 'Duration (frames)', default: 300, min: 30 }
+                ]
             }
         ];
     }

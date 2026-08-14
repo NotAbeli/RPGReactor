@@ -21,7 +21,20 @@ Game_Temp.prototype.initialize = function() {
     this._commonEventQueue = [];
     this._animationQueue = [];
     this._balloonQueue = [];
+    // Agonia Engine: floating text pops (Sprite_AgoniaTextPop) and the
+    // intro slide overlay (Sprite_AgoniaSlide) driven by commands 740-745.
+    this._agoniaTextPopQueue = [];
+    this._agoniaSlideConfig = null;
+    this._agoniaSlideActive = false;
     this._lastActionData = [0, 0, 0, 0, 0, 0];
+};
+
+Game_Temp.prototype.requestAgoniaTextPop = function(target, text, duration) {
+    this._agoniaTextPopQueue.push({ target, text, duration });
+};
+
+Game_Temp.prototype.retrieveAgoniaTextPops = function() {
+    return this._agoniaTextPopQueue.splice(0);
 };
 
 Game_Temp.prototype.isPlaytest = function() {
@@ -9666,6 +9679,9 @@ Game_Interpreter.prototype.updateWaitMode = function() {
         case "image":
             waiting = !ImageManager.isReady();
             break;
+        case "agoniaSlide":
+            waiting = !!($gameTemp && $gameTemp._agoniaSlideActive);
+            break;
     }
     if (!waiting) {
         this._waitMode = "";
@@ -11808,6 +11824,87 @@ Game_Interpreter.prototype.command724 = function(params) {
     const args = ["FillChest", chestId, category, count, value];
     if (maxItemValue !== null) args.push(maxItemValue);
     this.pluginCommand("SDL", args);
+    return true;
+};
+
+//
+// Presentation commands (740-745). Native engine implementations: the legacy
+// NastyTextPop and SDS_Set* plugin commands had no handler anywhere, so these
+// are fresh functionality (floating text pops and an intro slide overlay)
+// rendered by Sprite_AgoniaTextPop / Sprite_AgoniaSlide in reactor_sprites.
+//
+
+// 740: Text Pop — floating text over a character.
+//      params: [mode(-1 player / 0 event by id), eventId, duration(frames),
+//               text(\c[n] codes supported)]
+Game_Interpreter.prototype.command740 = function(params) {
+    const mode = Number(params[0] === undefined ? -1 : params[0]);
+    const eventId = Number(params[1] || 0);
+    const duration = Math.max(10, Number(params[2] || 60));
+    const text = String(params[3] || "");
+    const target = mode === -1 ? $gamePlayer : ($gameMap && $gameMap.event(eventId));
+    if (!target) {
+        console.warn("[Agonia] Text Pop: target not found (" + (mode === -1 ? "player" : "event " + eventId) + ")");
+        return true;
+    }
+    if (typeof $gameTemp !== "undefined" && $gameTemp) {
+        $gameTemp.requestAgoniaTextPop(target, text, duration);
+    }
+    return true;
+};
+
+// 741-744: Intro slide setters — accumulate the slide configuration.
+Game_Interpreter.prototype._agoniaSlideConfig = function() {
+    if (typeof $gameTemp === "undefined" || !$gameTemp) return null;
+    if (!$gameTemp._agoniaSlideConfig) {
+        $gameTemp._agoniaSlideConfig = { title: "", text: "", faceName: "", faceIndex: 0, bgName: "" };
+    }
+    return $gameTemp._agoniaSlideConfig;
+};
+
+// 741: Slide Title. params: [title]
+Game_Interpreter.prototype.command741 = function(params) {
+    const config = this._agoniaSlideConfig();
+    if (config) config.title = String(params[0] || "");
+    return true;
+};
+
+// 742: Slide Text. params: [text]
+Game_Interpreter.prototype.command742 = function(params) {
+    const config = this._agoniaSlideConfig();
+    if (config) config.text = String(params[0] || "");
+    return true;
+};
+
+// 743: Slide Face. params: [faceName, faceIndex]
+Game_Interpreter.prototype.command743 = function(params) {
+    const config = this._agoniaSlideConfig();
+    if (config) {
+        config.faceName = String(params[0] || "");
+        config.faceIndex = Number(params[1] || 0);
+    }
+    return true;
+};
+
+// 744: Slide Background. params: [pictureName]
+Game_Interpreter.prototype.command744 = function(params) {
+    const config = this._agoniaSlideConfig();
+    if (config) config.bgName = String(params[0] || "");
+    return true;
+};
+
+// 745: Show Slide — renders the accumulated slide and waits until done.
+//      params: [duration(frames)]
+Game_Interpreter.prototype.command745 = function(params) {
+    if (typeof $gameTemp === "undefined" || !$gameTemp) return true;
+    const config = $gameTemp._agoniaSlideConfig;
+    if (!config) {
+        console.warn("[Agonia] Show Slide: nothing configured (use Slide Title/Text/Face/Background first)");
+        return true;
+    }
+    $gameTemp._agoniaSlideDuration = Math.max(30, Number(params[0] || 300));
+    $gameTemp._agoniaSlideActive = true;
+    this.setWaitMode("agoniaSlide");
     return true;
 };
 

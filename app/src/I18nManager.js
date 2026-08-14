@@ -98,12 +98,18 @@ Object.assign(RR_EVENT_COMMAND_NAMES, {
         'Enemy Phase': 'Фаза Врага',
         'Enemy HP': 'HP Врага',
         'All Enemies Phase': 'Фаза Всех Врагов',
-        'Fill Chest with Loot': 'Наполнить Сундук Лутом'
+        'Fill Chest with Loot': 'Наполнить Сундук Лутом',
+        'Text Pop': 'Всплывающий Текст',
+        'Slide Title': 'Слайд: Заголовок',
+        'Slide Text': 'Слайд: Текст',
+        'Slide Face': 'Слайд: Лицо',
+        'Slide Background': 'Слайд: Фон',
+        'Show Slide': 'Показать Слайд'
     }
 });
 
 Object.assign(RR_EVENT_SECTION_NAMES, {
-    ru: { 'Message & Flow': 'Сообщения И Поток', 'Map & Screen': 'Карта И Экран', 'Battle & System': 'Бой И Система', 'Message': 'Сообщения', 'Game Progression': 'Прогресс Игры', 'Flow Control': 'Управление Потоком', 'Party': 'Группа', 'Actor': 'Актёр', 'Movement': 'Движение', 'Character': 'Персонаж', 'Picture': 'Изображение', 'Timing': 'Время', 'Screen': 'Экран', 'Audio & Video': 'Аудио И Видео', 'Scene Control': 'Управление Сценой', 'System Settings': 'Системные Настройки', 'Map': 'Карта', 'Battle': 'Бой', 'Advanced': 'Дополнительно', 'Inventory': 'Инвентарь', 'Utility': 'Утилиты', 'Agonia Engine': 'Движок Agonia', 'Lighting': 'Освещение', 'Camera': 'Камера', 'Enemies': 'Враги' }
+    ru: { 'Message & Flow': 'Сообщения И Поток', 'Map & Screen': 'Карта И Экран', 'Battle & System': 'Бой И Система', 'Message': 'Сообщения', 'Game Progression': 'Прогресс Игры', 'Flow Control': 'Управление Потоком', 'Party': 'Группа', 'Actor': 'Актёр', 'Movement': 'Движение', 'Character': 'Персонаж', 'Picture': 'Изображение', 'Timing': 'Время', 'Screen': 'Экран', 'Audio & Video': 'Аудио И Видео', 'Scene Control': 'Управление Сценой', 'System Settings': 'Системные Настройки', 'Map': 'Карта', 'Battle': 'Бой', 'Advanced': 'Дополнительно', 'Inventory': 'Инвентарь', 'Utility': 'Утилиты', 'Agonia Engine': 'Движок Agonia', 'Lighting': 'Освещение', 'Camera': 'Камера', 'Enemies': 'Враги', 'Presentation': 'Презентация' }
 });
 
 Object.assign(RR_EVENT_COMMAND_NAMES, {
@@ -1700,6 +1706,8 @@ Object.assign(RR_TEXT_TRANSLATIONS.ru, {
     'Loch (search)': 'Обыск', 'Wound': 'Ранение', 'Operation': 'Операция', 'Amount': 'Количество',
     'Min Items': 'Мин. Предметов', 'Max Items': 'Макс. Предметов', 'Total Coins': 'Всего Монет',
     'Max Item Value': 'Макс. Цена Предмета',
+    'Presentation': 'Презентация', 'Title': 'Заголовок', 'Face': 'Лицо', 'Face Index': 'Индекс Лица',
+    'Picture': 'Изображение',
     'Type': 'Тип', 'Animation': 'Анимация', 'State': 'Состояние', 'Map ID': 'ID Карты', 'Vignette': 'Виньетка',
     'Shadows & Map Switches': 'Тени и Переключатели Карт', 'Player radius': 'Радиус игрока',
     'Default Tint': 'Тинт по умолчанию', 'Player Light Influence': 'Влияние света игрока',
