@@ -1035,7 +1035,8 @@ SDB.Tracer = SDB.Tracer || {};
     Sprite_SDBDebug.prototype.constructor = Sprite_SDBDebug;
     
     Sprite_SDBDebug.prototype.initialize = function() {
-        PIXI.Graphics.call(this);
+        if (typeof PIXISuper === "function") { PIXISuper(PIXI.Graphics, this); }
+        else { PIXI.Graphics.call(this); }
         this.z = 999;
         this._textSprite = new Sprite(new Bitmap(Graphics.width, 400));
         this.addChild(this._textSprite);

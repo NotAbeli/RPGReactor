@@ -1569,7 +1569,15 @@ Imported.TerraxLighting = true; // Backwards-compat hook
     Lightmask.prototype.constructor = Lightmask;
 
     Lightmask.prototype.initialize = function() {
-        BaseClass.call(this);
+        // Pixi v6+ base classes are ES6 classes: `PIXI.Container.call(this)`
+        // throws "cannot be invoked without 'new'". PIXISuper (pixi_compat)
+        // bridges the legacy ES5 super call; fall back to direct call only
+        // on ancient Pixi where it still works.
+        if (typeof PIXISuper === "function") {
+            PIXISuper(BaseClass, this);
+        } else {
+            BaseClass.call(this);
+        }
         this._width = Graphics.width;
         this._height = Graphics.height;
         this._sprites = [];

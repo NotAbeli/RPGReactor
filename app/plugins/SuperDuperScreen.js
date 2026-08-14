@@ -429,7 +429,8 @@
     // PIXI Filter Class
     //=========================================================================
     function SuperDuperFilter() {
-        PIXI.Filter.call(this, null, fragmentSrc);
+        if (typeof PIXISuper === "function") { PIXISuper(PIXI.Filter, this, [null, fragmentSrc]); }
+        else { PIXI.Filter.call(this, null, fragmentSrc); }
         this.uniforms.uWaveTime = 0.0;
         this.uniforms.uNoiseTime = 0.0;
         this.uniforms.uResolution = [scrW, scrH];
@@ -512,6 +513,21 @@
 
     Scene_Base.prototype.updateSuperDuperFilter = function() {
         if (!this._superDuperFilter) return;
+
+        // Pixi v8 (Agonia runtime): the CRT filter's fragment shader and the
+        // legacy Filter.apply(input, output) contract are Pixi-4 era. On v8
+        // the filter renders the whole scene black (scene tree healthy,
+        // direct-stage sprites still visible). Skip the effect until the
+        // shader is ported; every other feature of the plugin keeps working.
+        if (typeof PIXI !== "undefined" && PIXI.TextureSource) {
+            if (this.filters && this.filters.indexOf(this._superDuperFilter) !== -1) {
+                var newFilters = this.filters.slice();
+                newFilters.splice(newFilters.indexOf(this._superDuperFilter), 1);
+                this.filters = newFilters.length > 0 ? newFilters : null;
+                this.filterArea = null;
+            }
+            return;
+        }
 
         var config = getSuperDuperConfig();
         

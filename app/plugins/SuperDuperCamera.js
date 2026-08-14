@@ -1193,8 +1193,9 @@
         SmoothCamDebugLayer.prototype = Object.create(PIXI.Container.prototype);
         SmoothCamDebugLayer.prototype.constructor = SmoothCamDebugLayer;
         SmoothCamDebugLayer.prototype.initialize = function() {
-            PIXI.Container.call(this);
-            this.z = 999999; 
+            if (typeof PIXISuper === "function") { PIXISuper(PIXI.Container, this); }
+            else { PIXI.Container.call(this); }
+            this.z = 999999;
             
             this._g = new PIXI.Graphics();
             this.addChild(this._g);
