@@ -2136,6 +2136,15 @@ SceneManager.update = function(deltaTime) {
 };
 
 SceneManager.determineRepeatNumber = function(deltaTime) {
+    // MV plugins routinely wrap SceneManager.update and re-invoke it via
+    // .call(this) WITHOUT the deltaTime argument (SuperDuperGameOver et al —
+    // MV's update had no parameters). undefined/NaN would poison
+    // _smoothDeltaTime forever, the repeat number becomes 0 every frame, and
+    // the game freezes on the loading spinner with the scene never created.
+    // Treat a non-finite delta as one normal frame.
+    if (!Number.isFinite(deltaTime)) {
+        deltaTime = 1;
+    }
     // [Note] We consider environments where the refresh rate is higher than
     //   60Hz, but ignore sudden irregular deltaTime.
     this._smoothDeltaTime *= 0.8;

@@ -86,6 +86,16 @@ class Main {
         this.numScripts = scriptUrls.length;
         window.addEventListener("load", this.onWindowLoad.bind(this));
         window.addEventListener("error", this.onWindowError.bind(this));
+        // MV plugins (SRD_GameUpgrade and friends) capture window.onload at
+        // load time and call it back from their wrapper on the load event.
+        // The MV main.js assigned this property synchronously, before the
+        // dynamically injected plugin scripts executed; ours only used
+        // addEventListener, so the property was null and the wrapper crashed
+        // (null.apply) on the first load event. Assign a no-op — plugins
+        // chain onto it, our real boot flows through the listener above.
+        if (typeof window.onload !== "function") {
+            window.onload = function() {};
+        }
     }
 
     onScriptLoad() {
@@ -150,7 +160,25 @@ class Main {
     initEffekseerRuntime() {
         const onLoad = this.onEffekseerLoad.bind(this);
         const onError = this.onEffekseerError.bind(this);
-        effekseer.initRuntime(effekseerWasmUrl, onLoad, onError);
+        // The effekseer loader can die silently: when the emscripten promise
+        // rejects (broken/missing wasm), neither callback is ever invoked and
+        // the game hangs on the loading spinner with zero errors. Continue
+        // without effekseer after a grace period instead.
+        let settled = false;
+        const guard = (callback) => (...args) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(this._effekseerTimeout);
+            callback(...args);
+        };
+        this._effekseerTimeout = setTimeout(() => {
+            if (!settled) {
+                settled = true;
+                console.warn("effekseer.initRuntime did not answer; continuing without Effekseer.");
+                this.onEffekseerLoad();
+            }
+        }, 8000);
+        effekseer.initRuntime(effekseerWasmUrl, guard(onLoad), guard(onError));
     }
 
     onEffekseerLoad() {
