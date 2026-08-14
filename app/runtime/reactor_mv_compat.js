@@ -2091,6 +2091,17 @@
             });
         }
 
+        // ---- AudioManager.checkWebAudioError (MV core method; MZ dropped
+        // it and OcRam_Audio_EX's checkErrors override calls it every frame,
+        // killing Scene_Base.update for MV projects) ----
+        if (global.AudioManager) {
+            def(AudioManager, "checkWebAudioError", function(webAudio) {
+                if (webAudio && webAudio.isError && webAudio.isError()) {
+                    throw new Error("Failed to load: " + (webAudio.url || "audio"));
+                }
+            });
+        }
+
         // ---- StorageManager backup API (YEP_SaveCore calls cleanBackup
         // after every successful save) ----
         if (global.StorageManager) {
