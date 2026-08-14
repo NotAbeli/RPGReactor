@@ -38,3 +38,10 @@
 - Теги точек отката: `fork-baseline` (f281fbb, базовый коммит форка), `pre-plugin-migration` (4e5e2ab), `rollback-before-plugin-migration`.
 - История откатов через `git reset --hard` — перед крупными правками фиксировать тег/коммит.
 - Память проекта (страницы wiki, сессии): глобальный vault `~/loam-memory` (qmd-коллекция `global-memory`), страницы `agonia-*`.
+
+## GitHub
+
+- Remotes: `origin` = https://github.com/NotAbeli/RPGReactor.git (наш форк, main — канон Agonia Engine), `upstream` = https://github.com/Psychronic-Games/RPGReactor.git (апстрим жив, ушёл на 0.98.1 при нашей базе 0.96.0 — cherry-pick фиксов делать выборочно).
+- Аутентификация HTTPS: Git Credential Manager (токен сохранён в Windows Credential Manager, аккаунт NotAbeli). `gh` CLI стоит в `%LOCALAPPDATA%\Programs\gh\bin` (в user PATH), но не залогинен: GCM-токен без scope `read:org`. Для API/gh в скриптах: `$env:GH_TOKEN` можно получить через `"protocol=https`nhost=github.com`n`n" | git credential fill` (строка password).
+- **Сеть сбоит перемежающе** (DPI): fetch/push иногда висят → просто ретрай; при упоре — VPN. SSH-over-443 настроен в `~/.ssh/config` (Host github.com → ssh.github.com:443) как запасной транспорт; ключ `~/.ssh/id_ed25519` (без passphrase) в аккаунт не загружен — при необходимости добавить через веб или `gh ssh-key add` после `gh auth login`.
+- Коммитить только по явной просьбе; пушить в origin после завершённых блоков работы.
