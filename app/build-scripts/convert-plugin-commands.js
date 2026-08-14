@@ -60,6 +60,7 @@ function main() {
     const scope = pluginNames.length ? pluginNames.join(', ') : 'all families';
     console.log(`Plugin command migration (${scope})${report.dryRun ? ' [dry run]' : ''}`);
     console.log(`  converted commands : ${report.converted}`);
+    if (report.removed > 0) console.log(`  removed (dead)     : ${report.removed}`);
     const files = Object.entries(report.filesTouched);
     if (files.length) {
         console.log(`  files touched      : ${files.length}`);

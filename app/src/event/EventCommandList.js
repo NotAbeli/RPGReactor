@@ -1232,6 +1232,12 @@ class EventCommandList {
             735: { name: 'Show Hint', color: 'var(--color-syntax-type)' },
             736: { name: 'Text Mark', color: 'var(--color-syntax-type)' },
             737: { name: 'Show Title', color: 'var(--color-syntax-type)' },
+            700: { name: 'Player Light', color: 'var(--color-syntax-type)' },
+            701: { name: 'Event Light', color: 'var(--color-syntax-type)' },
+            702: { name: 'Region Block', color: 'var(--color-syntax-type)' },
+            703: { name: 'Darkness Tint', color: 'var(--color-syntax-type)' },
+            704: { name: 'Local Switch', color: 'var(--color-syntax-type)' },
+            720: { name: 'Loot Give', color: 'var(--color-syntax-type)' },
             401: { name: 'Text', color: 'var(--color-syntax-comment)' },
             402: { name: 'When', color: 'var(--color-syntax-string)' },
             403: { name: 'When Cancel', color: 'var(--color-syntax-string)' },
@@ -1972,6 +1978,45 @@ class EventCommandList {
             }
             case 737: {
                 description = `${params[0] || ''}: ${String(params[1] || '').substring(0, 60)}`;
+                break;
+            }
+            case 700: {
+                const type = Number(params[0]) === 1 ? tt('Fire') : tt('Normal');
+                const radius = Number(params[1]) || 0;
+                const mode = Number(params[2]) === 1;
+                const color = String(params[4] || '');
+                const preset = String(params[5] || '');
+                description = radius === 0
+                    ? `${type}: ${tt('extinguish')}`
+                    : `${type}: ${mode ? tt('grow to') : tt('set')} ${radius}` + (color ? `, ${color}` : '') + (preset ? `, ${tt('preset')} ${preset}` : '');
+                break;
+            }
+            case 701: {
+                description = `${Number(params[0]) === 1 ? tt('ON') : tt('OFF')} → ${tt('Light ID')} ${params[1] || 1}`;
+                break;
+            }
+            case 702: {
+                const on = Number(params[1]) === 1;
+                description = on
+                    ? `${tt('Region')} ${params[0] || 0}: ${tt('ON')} ${params[2] || ''}`
+                    : `${tt('Region')} ${params[0] || 0}: ${tt('OFF')}`;
+                break;
+            }
+            case 703: {
+                const fade = Number(params[0]) === 1;
+                description = `${fade ? tt('Fade') : tt('Set')} ${params[1] || ''}` + (fade ? `, ${params[2] || 60} ${tt('frames')}` : '');
+                break;
+            }
+            case 704: {
+                const states = [tt('OFF'), tt('ON'), tt('Toggle')];
+                const mapId = Number(params[2]) || 0;
+                description = `#${params[0] || 1} ${states[Number(params[1]) || 0]}` + (mapId > 0 ? ` (${tt('Map')} ${mapId})` : '');
+                break;
+            }
+            case 720: {
+                const min = Number(params[1]) || 1;
+                const max = Number(params[2]) || min;
+                description = `${params[0] || ''}: ${min === max ? min : min + '-' + max}`;
                 break;
             }
             case 655: {

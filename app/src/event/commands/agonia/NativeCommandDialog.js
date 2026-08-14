@@ -162,10 +162,44 @@ class NativeCommandDialog {
             wrap.appendChild(this.renderSuggestionField(field));
         } else if (field.type === 'multiline') {
             wrap.appendChild(this.renderMultilineField(field));
+        } else if (field.type === 'color') {
+            wrap.appendChild(this.renderColorField(field));
         } else {
             wrap.appendChild(this.renderTextField(field));
         }
         return wrap;
+    }
+
+    renderColorField(field) {
+        const line = document.createElement('div');
+        line.style.cssText = 'display: flex; gap: 8px; align-items: center;';
+
+        const current = String(this.values[field.key] !== undefined ? this.values[field.key] : (field.default || ''));
+        const picker = document.createElement('input');
+        picker.type = 'color';
+        picker.value = /^#[0-9a-fA-F]{6}$/.test(current) ? current : '#000000';
+        picker.style.cssText = `
+            width: 34px; height: 28px; padding: 0;
+            border: 1px solid var(--color-border-input);
+            border-radius: 4px; background: none; cursor: pointer; flex-shrink: 0;
+        `;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = current;
+        input.placeholder = '#rrggbb';
+        input.style.cssText = this._inputStyle() + ' flex: 1;';
+        picker.addEventListener('input', () => {
+            input.value = picker.value;
+            this.values[field.key] = picker.value;
+        });
+        input.addEventListener('input', () => {
+            this.values[field.key] = input.value.trim();
+            if (/^#[0-9a-fA-F]{6}$/.test(input.value.trim())) picker.value = input.value.trim();
+        });
+        line.appendChild(picker);
+        line.appendChild(input);
+        this.fieldElements[field.key] = { input: picker, hexInput: input };
+        return line;
     }
 
     renderSuggestionField(field) {
@@ -465,9 +499,13 @@ class NativeCommandDialog {
             } else if (field.type === 'variableId') {
                 value = value !== undefined && value !== null ? Number(value) : (field.default !== undefined ? field.default : 1);
             } else if (field.type === 'number') {
-                value = Number(value !== undefined && value !== '' ? value : (field.default !== undefined ? field.default : 0));
-                if (field.min !== undefined) value = Math.max(field.min, value);
-                if (field.max !== undefined) value = Math.min(field.max, value);
+                if (field.optional && (value === undefined || value === null || value === '')) {
+                    value = '';
+                } else {
+                    value = Number(value !== undefined && value !== '' ? value : (field.default !== undefined ? field.default : 0));
+                    if (field.min !== undefined) value = Math.max(field.min, value);
+                    if (field.max !== undefined) value = Math.min(field.max, value);
+                }
             } else {
                 value = String(value !== undefined ? value : '');
             }

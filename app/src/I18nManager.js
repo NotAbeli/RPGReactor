@@ -85,12 +85,18 @@ Object.assign(RR_EVENT_COMMAND_NAMES, {
         'Open Craft': 'Открыть Крафт',
         'Show Hint': 'Показать Подсказку',
         'Text Mark': 'Метка',
-        'Show Title': 'Показать Титул'
+        'Show Title': 'Показать Титул',
+        'Player Light': 'Свет Игрока',
+        'Event Light': 'Свет События',
+        'Region Block': 'Блок Региона',
+        'Darkness Tint': 'Тонировка Тьмы',
+        'Local Switch': 'Локальный Переключатель',
+        'Loot Give': 'Выдать Лут'
     }
 });
 
 Object.assign(RR_EVENT_SECTION_NAMES, {
-    ru: { 'Message & Flow': 'Сообщения И Поток', 'Map & Screen': 'Карта И Экран', 'Battle & System': 'Бой И Система', 'Message': 'Сообщения', 'Game Progression': 'Прогресс Игры', 'Flow Control': 'Управление Потоком', 'Party': 'Группа', 'Actor': 'Актёр', 'Movement': 'Движение', 'Character': 'Персонаж', 'Picture': 'Изображение', 'Timing': 'Время', 'Screen': 'Экран', 'Audio & Video': 'Аудио И Видео', 'Scene Control': 'Управление Сценой', 'System Settings': 'Системные Настройки', 'Map': 'Карта', 'Battle': 'Бой', 'Advanced': 'Дополнительно', 'Inventory': 'Инвентарь', 'Utility': 'Утилиты', 'Agonia Engine': 'Движок Agonia' }
+    ru: { 'Message & Flow': 'Сообщения И Поток', 'Map & Screen': 'Карта И Экран', 'Battle & System': 'Бой И Система', 'Message': 'Сообщения', 'Game Progression': 'Прогресс Игры', 'Flow Control': 'Управление Потоком', 'Party': 'Группа', 'Actor': 'Актёр', 'Movement': 'Движение', 'Character': 'Персонаж', 'Picture': 'Изображение', 'Timing': 'Время', 'Screen': 'Экран', 'Audio & Video': 'Аудио И Видео', 'Scene Control': 'Управление Сценой', 'System Settings': 'Системные Настройки', 'Map': 'Карта', 'Battle': 'Бой', 'Advanced': 'Дополнительно', 'Inventory': 'Инвентарь', 'Utility': 'Утилиты', 'Agonia Engine': 'Движок Agonia', 'Lighting': 'Освещение' }
 });
 
 Object.assign(RR_EVENT_COMMAND_NAMES, {
@@ -1672,7 +1678,22 @@ Object.assign(RR_TEXT_TRANSLATIONS.ru, {
     'Stamina & Dash': 'Стамина и Бег', 'Variables & Switches': 'Переменные и Переключатели',
     'Dash Blocking Switches': 'Переключатели-блокираторы бега',
     'Dashing is blocked while any of these switches is ON. Comma-separated switch IDs.': 'Бег запрещён, пока хотя бы один из этих переключателей включён. ID через запятую.',
-    'Agonia Engine': 'Движок Agonia'
+    'Agonia Engine': 'Движок Agonia',
+    'Lighting': 'Освещение',
+    'Fire': 'Огонь', 'Normal': 'Обычный', 'extinguish': 'погасить', 'grow to': 'рост до', 'set': 'задать',
+    'Light ID': 'ID Света', 'Region': 'Регион', 'preset': 'пресет', 'Fade': 'Плавно', 'Set': 'Задать',
+    'Toggle': 'Переключить', 'Player Light': 'Свет игрока', 'Instant': 'Мгновенно', 'Grow': 'Рост',
+    'Duration (frames)': 'Длительность (кадры)', 'Color': 'Цвет', 'Falloff Preset': 'Пресет Затухания',
+    'Vignette Multiplier': 'Множитель Виньетки', 'Not set': 'Не задан', 'Shadow Color': 'Цвет Тени',
+    'Tint Color': 'Цвет Тонировки', 'Speed (frames)': 'Скорость (кадры)', 'Switch Index': 'Индекс Переключателя',
+    'Current map': 'Текущая карта', 'Category': 'Категория', 'Min Coins': 'Мин. Монет', 'Max Coins': 'Макс. Монет',
+    'Type': 'Тип', 'Animation': 'Анимация', 'State': 'Состояние', 'Map ID': 'ID Карты', 'Vignette': 'Виньетка',
+    'Shadows & Map Switches': 'Тени и Переключатели Карт', 'Player radius': 'Радиус игрока',
+    'Default Tint': 'Тинт по умолчанию', 'Player Light Influence': 'Влияние света игрока',
+    'Breathing Speed': 'Скорость дыхания', 'Vignette Color': 'Цвет виньетки', 'Vignette Scale': 'Масштаб виньетки',
+    'Vignette Sharpness': 'Резкость виньетки', 'Vignette Disable Switch': 'Переключатель отключения виньетки',
+    'Use Real Shadows': 'Реальные тени', 'MapSwitch Base': 'База лок. переключателей',
+    'MapSwitch Stride': 'Шаг лок. переключателей', 'Wall Softness': 'Мягкость стен'
 });
 Object.assign(RR_TEXT_TRANSLATIONS.pt, { 'OK': 'OK', 'Cancel': 'Cancelar', 'Clear': 'Limpar', 'Play': 'Reproduzir', 'Stop': 'Parar' });
 

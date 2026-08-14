@@ -85,6 +85,71 @@ class PluginCommandMigration {
                 plugin: 'SuperDuperMessage',
                 match: /^mark\((.+)\)$/i,
                 parse: (m) => ({ code: 736, parameters: [m[1].trim()] })
+            },
+            {
+                plugin: 'SDLight',
+                match: /^(light|fire)\s+(radius|radiusgrow)\s+(\d+)((?:\s+\S+)*)$/i,
+                parse: (m) => {
+                    const type = m[1].toLowerCase() === 'fire' ? 1 : 0;
+                    const mode = m[2].toLowerCase() === 'radiusgrow' ? 1 : 0;
+                    const radius = Number(m[3]);
+                    let duration = 0;
+                    let color = '';
+                    let preset = '';
+                    let mult = '';
+                    for (const token of m[4].trim().split(/\s+/).filter(Boolean)) {
+                        const tMatch = /^t(\d+)$/i.exec(token);
+                        if (tMatch) { duration = Number(tMatch[1]); continue; }
+                        if (!color && token.startsWith('#')) { color = token; continue; }
+                        if (mult === '' && !Number.isNaN(Number(token))) { mult = Number(token); continue; }
+                        if (!preset) preset = token;
+                    }
+                    return { code: 700, parameters: [type, radius, mode, duration, color, preset, mult] };
+                }
+            },
+            {
+                plugin: 'SDLight',
+                match: /^light\s+(on|off)\s+(\d+)$/i,
+                parse: (m) => ({ code: 701, parameters: [/^on$/i.test(m[1]) ? 1 : 0, Number(m[2])] })
+            },
+            {
+                plugin: 'SDLight',
+                match: /^regionblock\s+(\d+)\s+(on|off)(?:\s+(#\S+))?$/i,
+                parse: (m) => ({
+                    code: 702,
+                    parameters: [Number(m[1]), /^on$/i.test(m[2]) ? 1 : 0, m[3] || '#000000']
+                })
+            },
+            {
+                plugin: 'SDLight',
+                match: /^tint\s+(set|fade)\s+(#\S+)(?:\s+(\d+))?$/i,
+                parse: (m) => ({
+                    code: 703,
+                    parameters: [/^fade$/i.test(m[1]) ? 1 : 0, m[2], Number(m[3] || 60)]
+                })
+            },
+            {
+                plugin: 'SDLight',
+                match: /^localswitch\s+(\d+)\s+(on|off|toggle)(?:\s+map\s+(\d+)|\s+(\d+))?$/i,
+                parse: (m) => {
+                    const state = /^on$/i.test(m[2]) ? 1 : /^toggle$/i.test(m[2]) ? 2 : 0;
+                    return { code: 704, parameters: [Number(m[1]), state, Number(m[3] || m[4] || 0)] };
+                }
+            },
+            {
+                plugin: 'SuperDuperLoot',
+                match: /^sdl\s+give\s+(\S+)\s+(\d+)(?:-(\d+))?$/i,
+                parse: (m) => ({
+                    code: 720,
+                    parameters: [m[1], Number(m[2]), Number(m[3] || m[2])]
+                })
+            },
+            {
+                // Dead command: handled by no plugin (left over from an old
+                // lighting setup). The user opted to drop it on migration.
+                plugin: 'SDLight',
+                match: /^light\s+switch\s+reset$/i,
+                parse: () => ({ remove: true })
             }
         ];
     }
@@ -122,6 +187,7 @@ class PluginCommandMigration {
         if (command.code === 356) {
             const parsed = this.parseLegacyCommand(String((command.parameters || [])[0] || ''), pluginSet);
             if (!parsed) return false;
+            if (parsed.remove) return 'remove';
             command.code = parsed.code;
             command.parameters = parsed.parameters;
             return true;
@@ -148,6 +214,7 @@ class PluginCommandMigration {
      */
     static convertDataContainer(container, pluginSet) {
         let converted = 0;
+        let removed = 0;
         const visit = (value) => {
             if (!value || typeof value !== 'object') return;
             if (Array.isArray(value)) {
@@ -155,14 +222,21 @@ class PluginCommandMigration {
                 return;
             }
             if (Array.isArray(value.list)) {
-                for (const command of value.list) {
-                    if (this.convertCommand(command, pluginSet)) converted++;
+                const removeAt = [];
+                for (let i = 0; i < value.list.length; i++) {
+                    const result = this.convertCommand(value.list[i], pluginSet);
+                    if (result === 'remove') removeAt.push(i);
+                    else if (result) converted++;
+                }
+                for (let i = removeAt.length - 1; i >= 0; i--) {
+                    value.list.splice(removeAt[i], 1);
+                    removed++;
                 }
             }
             Object.values(value).forEach(v => { if (v && typeof v === 'object') visit(v); });
         };
         visit(container);
-        return { converted };
+        return { converted, removed };
     }
 
     /**
@@ -213,7 +287,7 @@ class PluginCommandMigration {
         const pluginSet = new Set(pluginNames);
         const report = {
             ok: false, error: null, dryRun: !!options.dryRun,
-            backupPath: null, converted: 0, skipped: 0,
+            backupPath: null, converted: 0, removed: 0, skipped: 0,
             filesTouched: {}, convertedByPlugin: {}, movedPlugins: []
         };
         if (!fs || !path || !projectPath) {
@@ -250,10 +324,11 @@ class PluginCommandMigration {
                     continue;
                 }
                 const before = report.converted;
-                const { converted } = this.convertDataContainer(json, pluginSet);
-                if (converted > 0) {
+                const { converted, removed } = this.convertDataContainer(json, pluginSet);
+                if (converted > 0 || removed > 0) {
                     report.converted += converted;
-                    report.filesTouched[file] = converted;
+                    report.removed += removed;
+                    report.filesTouched[file] = converted + removed;
                     pendingWrites.push({ full, json });
                     // Attribute conversions by rereading the new codes.
                     const byPlugin = {};

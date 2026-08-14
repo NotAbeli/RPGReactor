@@ -247,6 +247,20 @@ class DatabaseManager {
                 'Regen Variable ID': 0,
                 'Stamina Display Variable ID': 0,
                 'Dash Control Switch ID': 0
+            },
+            lighting: {
+                'Player radius': 150,
+                'Default Tint': '#000000',
+                'Player Light Influence': 1,
+                'Breathing Speed': 0,
+                'Vignette Color': '#000000',
+                'Vignette Scale': 1,
+                'Vignette Sharpness': 1,
+                'Vignette Disable Switch': 0,
+                'Use Real Shadows': false,
+                'MapSwitch Base': 0,
+                'MapSwitch Stride': 0,
+                'Wall Softness': 1
             }
         };
     }
@@ -300,11 +314,14 @@ class DatabaseManager {
                 const end = text.lastIndexOf(']');
                 if (start < 0 || end <= start) break;
                 const plugins = JSON.parse(text.slice(start, end + 1));
-                const entry = plugins.find(p => p && String(p.name) === 'SuperDuperMovement');
-                if (!entry || !entry.parameters) break;
-                for (const key of Object.keys(defaults.stamina)) {
-                    if (entry.parameters[key] !== undefined) {
-                        defaults.stamina[key] = this.constructor.normalizeAgoniaValue(entry.parameters[key]);
+                const sectionPlugin = { stamina: 'SuperDuperMovement', lighting: 'SDLight' };
+                for (const [section, pluginName] of Object.entries(sectionPlugin)) {
+                    const entry = plugins.find(p => p && String(p.name) === pluginName);
+                    if (!entry || !entry.parameters) continue;
+                    for (const key of Object.keys(defaults[section])) {
+                        if (entry.parameters[key] !== undefined) {
+                            defaults[section][key] = this.constructor.normalizeAgoniaValue(entry.parameters[key]);
+                        }
                     }
                 }
                 break;

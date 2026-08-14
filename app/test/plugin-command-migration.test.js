@@ -86,7 +86,7 @@ test('parseLegacyCommand handles the real corpus strings', () => {
         assert.deepEqual(parsed.parameters, expected.parameters, `params for: ${text}`);
     }
     // Non-convertible strings stay untouched.
-    for (const foreign of ['fire radius 0 #C04000', 'RegionBlock 8 ON #555555', 'SDL Give тех 1-3', 'Title clear', 'Hint show_preset_icon df 24 текст']) {
+    for (const foreign of ['Title clear', 'Hint show_preset_icon df 24 текст', 'vignette color #333333']) {
         assert.strictEqual(PluginCommandMigration.parseLegacyCommand(foreign), null, `foreign: ${foreign}`);
     }
 });
@@ -176,7 +176,7 @@ test('applyToProject converts all families, relocates plugins and stays idempote
 
         const report = PluginCommandMigration.applyToProject({ fs, path, projectPath });
         assert.strictEqual(report.ok, true, report.error);
-        assert.strictEqual(report.converted, 12);
+        assert.strictEqual(report.converted, 13);
         assert.strictEqual(report.movedPlugins.length, 9);
         assert.ok(fs.existsSync(report.backupPath), 'backup folder exists');
 
@@ -190,7 +190,8 @@ test('applyToProject converts all families, relocates plugins and stays idempote
         assert.deepEqual(list[4].parameters, [2, 5, 0]);
         assert.strictEqual(list[5].code, 732);
         assert.strictEqual(list[6].code, 736);
-        assert.strictEqual(list[7].code, 356, 'SDLight string untouched');
+        assert.strictEqual(list[7].code, 700, 'SDLight fire string converted');
+        assert.deepEqual(list[7].parameters, [1, 0, 0, 0, '#C04000', '', '']);
 
         const common = JSON.parse(fs.readFileSync(path.join(projectPath, 'data', 'CommonEvents.json'), 'utf8'));
         const ceList = common[1].list;
@@ -251,7 +252,7 @@ test('applyToProject dry-run writes nothing', () => {
         const beforeManifest = fs.readFileSync(path.join(projectPath, 'js', 'plugins.js'), 'utf8');
         const report = PluginCommandMigration.applyToProject({ fs, path, projectPath, dryRun: true });
         assert.strictEqual(report.ok, true);
-        assert.strictEqual(report.converted, 12);
+        assert.strictEqual(report.converted, 13);
         assert.strictEqual(fs.readFileSync(path.join(projectPath, 'data', 'Map001.json'), 'utf8'), beforeMap);
         assert.strictEqual(fs.readFileSync(path.join(projectPath, 'js', 'plugins.js'), 'utf8'), beforeManifest);
     } finally {

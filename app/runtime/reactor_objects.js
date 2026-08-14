@@ -11612,4 +11612,91 @@ Game_Interpreter.prototype.command737 = function(params) {
     return true;
 };
 
+//
+// SDLight wrappers (codes 700-704). Argument order reproduces the plugin's
+// positional parser exactly (t<N> is cut from any position, color follows the
+// radius, then named preset, then numeric vignette multiplier), so behaviour
+// is bit-for-bit with the legacy strings.
+//
+
+// 700: Player Light — light/fire radius|radiusgrow.
+//      params: [type(0 normal/1 fire), radius, mode(0 instant/1 grow),
+//               duration(0 = plugin default), color, preset, vignetteMult]
+Game_Interpreter.prototype.command700 = function(params) {
+    const type = Number(params[0] || 0);
+    const radius = Number(params[1] || 0);
+    const mode = Number(params[2] || 0);
+    const duration = Math.max(0, Number(params[3] || 0));
+    const color = String(params[4] || "").trim();
+    const preset = String(params[5] || "").trim();
+    const vignetteMult = params[6];
+    const args = [mode === 1 ? "radiusgrow" : "radius", String(radius)];
+    if (duration > 0) args.push("t" + duration);
+    if (color) args.push(color);
+    if (preset) args.push(preset);
+    if (vignetteMult !== undefined && vignetteMult !== null && vignetteMult !== "") {
+        args.push(String(vignetteMult));
+    }
+    this.pluginCommand(type === 1 ? "fire" : "light", args);
+    return true;
+};
+
+// 701: Event Light — Light on/off <customId>.
+//      params: [state(0 off/1 on), lightId]
+Game_Interpreter.prototype.command701 = function(params) {
+    const on = Number(params[0]) === 1;
+    const lightId = Number(params[1] || 0);
+    this.pluginCommand("Light", [on ? "on" : "off", String(lightId)]);
+    return true;
+};
+
+// 702: Region Block — RegionBlock <id> ON #color | OFF.
+//      The legacy corpus passes the literal "ON" between id and color; the
+//      plugin reads args[1] as the color, so keep the exact token order.
+//      params: [regionId, state(0 off/1 on), color]
+Game_Interpreter.prototype.command702 = function(params) {
+    const regionId = Number(params[0] || 0);
+    const on = Number(params[1]) === 1;
+    const color = String(params[2] || "#000000");
+    this.pluginCommand("RegionBlock", on
+        ? [String(regionId), "ON", color]
+        : [String(regionId), "OFF"]);
+    return true;
+};
+
+// 703: Darkness Tint — tint set/fade.
+//      params: [mode(0 set/1 fade), color, speedFrames(fade only)]
+Game_Interpreter.prototype.command703 = function(params) {
+    const fade = Number(params[0]) === 1;
+    const color = String(params[1] || "#000000");
+    const args = [fade ? "fade" : "set", color];
+    if (fade) args.push(String(Math.max(1, Number(params[2] || 60))));
+    this.pluginCommand("Tint", args);
+    return true;
+};
+
+// 704: Local Switch — LocalSwitch <idx> on|off|toggle [mapId].
+//      params: [switchIdx, state(0 off/1 on/2 toggle), mapId(0 = current map)]
+Game_Interpreter.prototype.command704 = function(params) {
+    const idx = Number(params[0] || 1);
+    const state = Number(params[1] || 0);
+    const mapId = Number(params[2] || 0);
+    const args = [String(idx), state === 1 ? "on" : state === 2 ? "toggle" : "off"];
+    if (mapId > 0) args.push(String(mapId));
+    this.pluginCommand("LocalSwitch", args);
+    return true;
+};
+
+// 720: Loot Give — SuperDuperLoot "SDL Give <category> <min>-<max>".
+//      params: [category, minAmount, maxAmount]
+Game_Interpreter.prototype.command720 = function(params) {
+    const category = String(params[0] || "").trim();
+    if (!category) return true;
+    const min = Math.max(1, Number(params[1] || 1));
+    const max = Math.max(min, Number(params[2] || min));
+    const amount = min === max ? String(min) : min + "-" + max;
+    this.pluginCommand("SDL", ["Give", category, amount]);
+    return true;
+};
+
 //-----------------------------------------------------------------------------

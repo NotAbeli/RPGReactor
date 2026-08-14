@@ -3266,7 +3266,8 @@ PluginManager.setup = function(plugins) {
 // stringified here because plugins read parameters as MV strings.
 //
 PluginManager.AGONIA_MODULE_SECTIONS = {
-    SuperDuperMovement: "stamina"
+    SuperDuperMovement: "stamina",
+    SDLight: "lighting"
 };
 
 PluginManager._agoniaConfig = null;

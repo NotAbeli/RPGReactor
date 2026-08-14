@@ -222,6 +222,100 @@ class AgoniaNativeCommands {
                     { key: 'preset', index: 0, type: 'suggestion', label: 'Preset', suggestions: 'hintPresets' },
                     { key: 'text', index: 1, type: 'suggestion', label: 'Text', suggestions: 'titleTexts' }
                 ]
+            },
+            {
+                code: 700,
+                id: 'playerLight',
+                name: 'Player Light',
+                section: 'Lighting',
+                help: 'Sets the player light: radius, growth animation, color and falloff preset. Fire type adds flicker. Radius 0 extinguishes.',
+                fields: [
+                    { key: 'type', index: 0, type: 'select', label: 'Type', default: 0, options: [
+                        { value: 0, label: 'Normal' },
+                        { value: 1, label: 'Fire (flicker)' }
+                    ] },
+                    { key: 'radius', index: 1, type: 'number', label: 'Radius', default: 0, min: 0, max: 999 },
+                    { key: 'mode', index: 2, type: 'select', label: 'Animation', default: 0, options: [
+                        { value: 0, label: 'Instant' },
+                        { value: 1, label: 'Grow' }
+                    ] },
+                    { key: 'duration', index: 3, type: 'number', label: 'Duration (frames)', default: 0, min: 0, optionalLabel: 'Plugin default', visibleIf: { field: 'mode', in: [1] } },
+                    { key: 'color', index: 4, type: 'color', label: 'Color', default: '' },
+                    { key: 'preset', index: 5, type: 'suggestion', label: 'Falloff Preset', suggestions: 'lightPresets' },
+                    { key: 'vignetteMult', index: 6, type: 'number', label: 'Vignette Multiplier', default: '', min: 0, step: 0.01, optional: true, optionalLabel: 'Not set' }
+                ]
+            },
+            {
+                code: 701,
+                id: 'eventLight',
+                name: 'Event Light',
+                section: 'Lighting',
+                help: 'Turns a map event light source (custom ID) on or off.',
+                fields: [
+                    { key: 'state', index: 0, type: 'select', label: 'State', default: 1, options: [
+                        { value: 1, label: 'ON' },
+                        { value: 0, label: 'OFF' }
+                    ] },
+                    { key: 'lightId', index: 1, type: 'number', label: 'Light ID', default: 1, min: 1 }
+                ]
+            },
+            {
+                code: 702,
+                id: 'regionBlock',
+                name: 'Region Block',
+                section: 'Lighting',
+                help: 'Marks a map region as blocking light (walls) with a shadow color, or removes the block.',
+                fields: [
+                    { key: 'regionId', index: 0, type: 'number', label: 'Region ID', default: 7, min: 1, max: 255 },
+                    { key: 'state', index: 1, type: 'select', label: 'State', default: 1, options: [
+                        { value: 1, label: 'ON' },
+                        { value: 0, label: 'OFF' }
+                    ] },
+                    { key: 'color', index: 2, type: 'color', label: 'Shadow Color', default: '#000000', visibleIf: { field: 'state', in: [1] } }
+                ]
+            },
+            {
+                code: 703,
+                id: 'darknessTint',
+                name: 'Darkness Tint',
+                section: 'Lighting',
+                help: 'Sets the darkness tint of the whole map, instantly or fading.',
+                fields: [
+                    { key: 'mode', index: 0, type: 'select', label: 'Mode', default: 0, options: [
+                        { value: 0, label: 'Set (instant)' },
+                        { value: 1, label: 'Fade' }
+                    ] },
+                    { key: 'color', index: 1, type: 'color', label: 'Tint Color', default: '#111111' },
+                    { key: 'speed', index: 2, type: 'number', label: 'Speed (frames)', default: 60, min: 1, visibleIf: { field: 'mode', in: [1] } }
+                ]
+            },
+            {
+                code: 704,
+                id: 'localSwitch',
+                name: 'Local Switch',
+                section: 'Lighting',
+                help: 'A per-map switch (independent from global switches). Can target another map by ID.',
+                fields: [
+                    { key: 'switchIdx', index: 0, type: 'number', label: 'Switch Index', default: 1, min: 1 },
+                    { key: 'state', index: 1, type: 'select', label: 'State', default: 1, options: [
+                        { value: 1, label: 'ON' },
+                        { value: 0, label: 'OFF' },
+                        { value: 2, label: 'Toggle' }
+                    ] },
+                    { key: 'mapId', index: 2, type: 'number', label: 'Map ID', default: 0, min: 0, optional: true, optionalLabel: 'Current map' }
+                ]
+            },
+            {
+                code: 720,
+                id: 'lootGive',
+                name: 'Loot Give',
+                section: 'Inventory',
+                help: 'Gives random loot of a category worth the given coin range.',
+                fields: [
+                    { key: 'category', index: 0, type: 'suggestion', label: 'Category', suggestions: 'lootCategories' },
+                    { key: 'min', index: 1, type: 'number', label: 'Min Coins', default: 1, min: 1 },
+                    { key: 'max', index: 2, type: 'number', label: 'Max Coins', default: 1, min: 1 }
+                ]
             }
         ];
     }
@@ -345,6 +439,31 @@ class AgoniaNativeCommands {
                 if (text) values.add(text);
             } else if (command.code === 356) {
                 const match = /^Title\s+show\s+\S+\s+(.+)$/i.exec(String(params[0] || '').trim());
+                if (match) values.add(match[1]);
+            }
+        } else if (kind === 'lightPresets') {
+            // Built-in SDLight falloff presets plus everything used in data.
+            ['global', 'global2', 'spichka', 'lamp', '1', '2', '3'].forEach(v => values.add(v));
+            if (command.code === 700) {
+                const preset = String(params[5] || '').trim();
+                if (preset) values.add(preset);
+            } else if (command.code === 356) {
+                const tokens = String(params[0] || '').trim().split(/\s+/).slice(2);
+                // Skip radius value, t<N>, color tokens and numbers.
+                for (let i = 1; i < tokens.length; i++) {
+                    const token = tokens[i];
+                    if (/^t\d+$/i.test(token)) continue;
+                    if (/^#?[0-9a-fA-F]{3,8}$/.test(token) && token.includes('#')) continue;
+                    if (!Number.isNaN(Number(token))) continue;
+                    values.add(token);
+                }
+            }
+        } else if (kind === 'lootCategories') {
+            if (command.code === 720) {
+                const category = String(params[0] || '').trim();
+                if (category) values.add(category);
+            } else if (command.code === 356) {
+                const match = /^SDL\s+Give\s+(\S+)/i.exec(String(params[0] || '').trim());
                 if (match) values.add(match[1]);
             }
         }
