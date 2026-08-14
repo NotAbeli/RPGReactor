@@ -395,6 +395,101 @@ class PluginCommandMigration {
     }
 
     /**
+     * Rebuild data/AgoniaEngine.json from the project's live tuning:
+     * engineModules parameters first, plugin manifest second, plain
+     * defaults last. Repairs a sidecar that was seeded from the wrong
+     * source (pre-migration manifest) and overrode tuned module parameters.
+     */
+    static reseedAgoniaConfig(options) {
+        const { fs, path, projectPath } = options;
+        const report = { ok: false, error: null, written: null, seeded: {} };
+        if (!fs || !path || !projectPath) {
+            report.error = 'fs, path and projectPath are required';
+            return report;
+        }
+        try {
+            const defaults = {
+                stamina: {
+                    'Max Stamina': 100, 'Dash Speed Level': 5, 'Horizontal Mult': 1,
+                    'Vertical Mult': 1, 'Diagonal Mult': 1, 'Drain Per Frame': 0.5,
+                    'Recover Per Frame': 0.4, 'Dash Blocking Switches': [],
+                    'Max Stamina Variable ID': 0, 'Regen Variable ID': 0,
+                    'Stamina Display Variable ID': 0, 'Dash Control Switch ID': 0
+                },
+                lighting: {
+                    'Player radius': 150, 'Default Tint': '#000000',
+                    'Player Light Influence': 1, 'Breathing Speed': 0,
+                    'Vignette Color': '#000000', 'Vignette Scale': 1,
+                    'Vignette Sharpness': 1, 'Vignette Disable Switch': 0,
+                    'Use Real Shadows': false, 'MapSwitch Base': 0,
+                    'MapSwitch Stride': 0, 'Wall Softness': 1
+                }
+            };
+            const sectionPlugins = { stamina: 'SuperDuperMovement', lighting: 'SDLight' };
+            const normalize = (value) => {
+                if (Array.isArray(value)) return value.map(Number).filter(n => !Number.isNaN(n));
+                if (typeof value === 'string') {
+                    const trimmed = value.trim();
+                    if (trimmed.startsWith('[')) {
+                        try { return normalize(JSON.parse(trimmed)); } catch (e) { /* keep string */ }
+                    }
+                    if (trimmed === 'true') return true;
+                    if (trimmed === 'false') return false;
+                    if (trimmed !== '' && !Number.isNaN(Number(trimmed))) return Number(trimmed);
+                }
+                return value;
+            };
+            const applyEntry = (entry, source) => {
+                if (!entry || !entry.parameters) return;
+                for (const [section, pluginName] of Object.entries(sectionPlugins)) {
+                    if (String(entry.name) !== pluginName) continue;
+                    report.seeded[section] = source;
+                    for (const key of Object.keys(defaults[section])) {
+                        if (entry.parameters[key] !== undefined) {
+                            defaults[section][key] = normalize(entry.parameters[key]);
+                        }
+                    }
+                }
+            };
+            const metaPath = path.join(projectPath, 'project.rpgreactor');
+            if (fs.existsSync(metaPath)) {
+                const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8').replace(/^\uFEFF/, ''));
+                for (const module of (Array.isArray(meta.engineModules) ? meta.engineModules : [])) {
+                    applyEntry(module, 'engineModules');
+                }
+            }
+            const jsPath = path.join(projectPath, 'js');
+            for (const manifest of ['reactor_plugins.js', 'plugins.js']) {
+                const manifestPath = path.join(jsPath, manifest);
+                if (!fs.existsSync(manifestPath)) continue;
+                const text = fs.readFileSync(manifestPath, 'utf8');
+                const start = text.indexOf('[');
+                const end = text.lastIndexOf(']');
+                if (start < 0 || end <= start) break;
+                for (const plugin of JSON.parse(text.slice(start, end + 1))) {
+                    applyEntry(plugin, 'manifest');
+                }
+                break;
+            }
+            const target = path.join(projectPath, 'data', 'AgoniaEngine.json');
+            let backup = null;
+            if (fs.existsSync(target)) {
+                backup = target + '.bak';
+                fs.copyFileSync(target, backup);
+            }
+            fs.mkdirSync(path.join(projectPath, 'data'), { recursive: true });
+            fs.writeFileSync(target, JSON.stringify(defaults, null, 2) + '\n', 'utf8');
+            report.ok = true;
+            report.written = target;
+            report.backup = backup;
+            return report;
+        } catch (error) {
+            report.error = error.message || String(error);
+            return report;
+        }
+    }
+
+    /**
      * Full project conversion. options:
      *   fs, path           - injected node modules (required)
      *   projectPath        - absolute project directory (required)

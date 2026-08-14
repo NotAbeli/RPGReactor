@@ -274,6 +274,8 @@ class DatabaseManager {
                     return this.normalizeAgoniaValue(JSON.parse(trimmed));
                 } catch (e) { /* keep as string */ }
             }
+            if (trimmed === 'true') return true;
+            if (trimmed === 'false') return false;
             if (trimmed !== '' && !Number.isNaN(Number(trimmed))) return Number(trimmed);
         }
         return value;
@@ -297,14 +299,48 @@ class DatabaseManager {
         return result;
     }
 
+    /** Which engine module feeds which settings section. */
+    static get AGONIA_SECTION_PLUGINS() {
+        return { stamina: 'SuperDuperMovement', lighting: 'SDLight' };
+    }
+
     /**
-     * Seed stamina values from the project plugin manifest when the sidecar
-     * does not exist yet, so switching to database settings continues the
-     * game's current tuning instead of resetting it to plugin defaults.
+     * Seed values for the AgoniaEngine.json sidecar when it does not exist
+     * yet, so switching to database settings continues the game's current
+     * tuning instead of resetting it. Source order:
+     *   1. engineModules parameters in project.rpgreactor — after a plugin
+     *      command migration the tuning lives here, NOT in the manifest
+     *      (reading only the manifest seeded plain defaults and the runtime
+     *      config merge then overrode the tuned module parameters —
+     *      regression: wrong movement speed, shadows off, HUD variables 0)
+     *   2. the plugin manifest (pre-migration projects)
+     *   3. plain defaults
      */
-    agoniaFromManifest(projectPath) {
+    agoniaSeedValues(projectPath) {
         const defaults = this.constructor.agoniaDefaults();
+        const sectionPlugins = this.constructor.AGONIA_SECTION_PLUGINS;
+        const applyEntry = (entry) => {
+            if (!entry || !entry.parameters) return;
+            for (const [section, pluginName] of Object.entries(sectionPlugins)) {
+                if (String(entry.name) !== pluginName) continue;
+                for (const key of Object.keys(defaults[section])) {
+                    if (entry.parameters[key] !== undefined) {
+                        defaults[section][key] = this.constructor.normalizeAgoniaValue(entry.parameters[key]);
+                    }
+                }
+            }
+        };
         try {
+            // 1. engineModules in project.rpgreactor
+            const metaPath = this.path.join(projectPath, 'project.rpgreactor');
+            if (this.fs.existsSync(metaPath)) {
+                const meta = JSON.parse(this.fs.readFileSync(metaPath, 'utf8').replace(/^\uFEFF/, ''));
+                for (const module of (Array.isArray(meta.engineModules) ? meta.engineModules : [])) {
+                    applyEntry(module);
+                }
+            }
+            // 2. plugin manifest (pre-migration projects; a plugin still in
+            // the manifest wins only for sections its module didn't seed).
             const jsPath = this.path.join(projectPath, 'js');
             for (const manifest of ['reactor_plugins.js', 'plugins.js']) {
                 const manifestPath = this.path.join(jsPath, manifest);
@@ -313,35 +349,32 @@ class DatabaseManager {
                 const start = text.indexOf('[');
                 const end = text.lastIndexOf(']');
                 if (start < 0 || end <= start) break;
-                const plugins = JSON.parse(text.slice(start, end + 1));
-                const sectionPlugin = { stamina: 'SuperDuperMovement', lighting: 'SDLight' };
-                for (const [section, pluginName] of Object.entries(sectionPlugin)) {
-                    const entry = plugins.find(p => p && String(p.name) === pluginName);
-                    if (!entry || !entry.parameters) continue;
-                    for (const key of Object.keys(defaults[section])) {
-                        if (entry.parameters[key] !== undefined) {
-                            defaults[section][key] = this.constructor.normalizeAgoniaValue(entry.parameters[key]);
-                        }
-                    }
+                for (const plugin of JSON.parse(text.slice(start, end + 1))) {
+                    applyEntry(plugin);
                 }
                 break;
             }
         } catch (e) {
-            // Unreadable manifest: plain defaults are fine.
+            // Unreadable metadata: plain defaults are fine.
         }
         return defaults;
+    }
+
+    // Legacy alias kept for older callers.
+    agoniaFromManifest(projectPath) {
+        return this.agoniaSeedValues(projectPath);
     }
 
     async loadAgonia(projectPath) {
         if (!this.fs || !this.path) return this.constructor.agoniaDefaults();
         const filePath = this.path.join(projectPath, 'data', this.constructor.AGONIA_FILENAME);
-        if (!this.fs.existsSync(filePath)) return this.agoniaFromManifest(projectPath);
+        if (!this.fs.existsSync(filePath)) return this.agoniaSeedValues(projectPath);
         try {
             return this.constructor.normalizeAgonia(
                 await this._readJsonWithRetry(filePath));
         } catch (error) {
             console.error(`Error loading ${this.constructor.AGONIA_FILENAME}:`, error);
-            return this.agoniaFromManifest(projectPath);
+            return this.agoniaSeedValues(projectPath);
         }
     }
 

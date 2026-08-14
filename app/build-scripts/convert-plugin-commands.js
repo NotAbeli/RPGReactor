@@ -14,10 +14,11 @@ const path = require('node:path');
 const PluginCommandMigration = require('../src/PluginCommandMigration.js');
 
 function usage() {
-    console.log('Usage: node build-scripts/convert-plugin-commands.js <projectPath> [--dry-run] [--plugin <name>]');
-    console.log('  --plugin   relocate only this family (repeatable); default: all known families');
-    console.log('  --dry-run  report what would change without writing');
-    console.log(`  families   : ${PluginCommandMigration.FAMILIES.join(', ')}`);
+    console.log('Usage: node build-scripts/convert-plugin-commands.js <projectPath> [--dry-run] [--plugin <name>] [--reseed-agonia]');
+    console.log('  --plugin        relocate only this family (repeatable); default: all known families');
+    console.log('  --dry-run       report what would change without writing');
+    console.log('  --reseed-agonia rebuild data/AgoniaEngine.json from live tuning (engineModules, then manifest); backs up the old file');
+    console.log(`  families        : ${PluginCommandMigration.FAMILIES.join(', ')}`);
 }
 
 function detectEnginePluginsDir() {
@@ -34,9 +35,11 @@ function main() {
     }
     const positional = [];
     let dryRun = false;
+    let reseedAgonia = false;
     const pluginNames = [];
     for (let i = 0; i < args.length; i++) {
         if (args[i] === '--dry-run') dryRun = true;
+        else if (args[i] === '--reseed-agonia') reseedAgonia = true;
         else if (args[i] === '--plugin') pluginNames.push(args[++i]);
         else if (args[i] === '--help' || args[i] === '-h') { usage(); process.exit(0); }
         else positional.push(args[i]);
@@ -45,6 +48,20 @@ function main() {
     if (!projectPath || !fs.existsSync(projectPath)) {
         console.error(`Project path not found: ${projectPath || '(missing)'}`);
         process.exit(1);
+    }
+
+    if (reseedAgonia) {
+        const report = PluginCommandMigration.reseedAgoniaConfig({ fs, path, projectPath });
+        if (!report.ok) {
+            console.error(`Reseed failed: ${report.error}`);
+            process.exit(1);
+        }
+        console.log('AgoniaEngine.json reseeded');
+        console.log(`  stamina source : ${report.seeded.stamina || 'defaults'}`);
+        console.log(`  lighting source: ${report.seeded.lighting || 'defaults'}`);
+        console.log(`  written        : ${report.written}`);
+        if (report.backup) console.log(`  backup         : ${report.backup}`);
+        process.exit(0);
     }
 
     const report = PluginCommandMigration.applyToProject({
