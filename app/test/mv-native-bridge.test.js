@@ -33,10 +33,47 @@ function makeSandbox(projectDir) {
         Spriteset_Map: function () { },
         Sprite: function () { },
         Bitmap: function () { },
+        // MV-shaped Input with the real gamepad poll path (hardening target)
+        Input: {
+            _currentState: {},
+            _previousState: {},
+            _latestButton: null,
+            _pressedTime: 0,
+            _gamepadStates: [],
+            gamepadMapper: { 0: 'ok', 1: 'cancel' },
+            _pollGamepads() { },
+            _updateGamepadState(gamepad) {
+                const lastState = this._gamepadStates[gamepad.index] || [];
+                const newState = [];
+                const buttons = gamepad.buttons;
+                for (let i = 0; i < buttons.length; i++) newState[i] = buttons[i].pressed;
+                for (let j = 0; j < newState.length; j++) {
+                    if (newState[j] !== lastState[j]) {
+                        const buttonName = this.gamepadMapper[j];
+                        if (buttonName) this._currentState[buttonName] = newState[j];
+                    }
+                }
+                this._gamepadStates[gamepad.index] = newState;
+            },
+            isTriggered(name) {
+                return this._currentState[name] && !this._previousState[name];
+            },
+            update() {
+                for (const name in this._currentState) this._previousState[name] = this._currentState[name];
+            },
+        },
+        TouchInput: { isTriggered: () => false },
+        Window_TitleCommand: function () { },
+        // Minimal event bus so the hardening's window listeners are testable
+        _rrListeners: {},
+        addEventListener(type, fn) {
+            (this._rrListeners[type] = this._rrListeners[type] || []).push(fn);
+        },
         ImageManager: { loadSystem: () => ({ isReady: () => false }), loadPicture: () => ({}), loadFace: () => ({}) },
         Graphics: { width: 816, height: 624 },
         $gameTemp: {},
         $gamePlayer: { screenX: () => 400, screenY: () => 300 },
+        navigator: { getGamepads: () => [] },
         document: {
             createElement: () => ({ type: '', src: '', async: false, onerror: null, _url: '' }),
             body: { appendChild: tag => scriptTags.push(tag) },
@@ -171,7 +208,8 @@ test('bridge installs the native 7XX commands and dispatches to pluginCommand', 
         const { sandbox, pluginCalls } = makeSandbox(dir);
         vm.runInContext('$plugins = []; PluginManager.setup($plugins);', sandbox);
 
-        const GI = sandbox.Game_Interpreter;
+    sandbox.Window_TitleCommand.prototype.processOk = function () { };
+    const GI = sandbox.Game_Interpreter;
         const it = Object.create(GI.prototype);
         for (const code of [700, 701, 702, 703, 704, 705, 706, 707, 709, 710,
             711, 712, 713, 714, 715, 716, 717, 718, 719, 720, 721, 722, 723,
@@ -348,6 +386,72 @@ test('chest helpers operate on the SuperDuperInventory storage format', () => {
         assert.strictEqual(gained.length, 1, 'moved to party');
         run(718, ['комод']);
         assert.ok(slots['комод'].every(s => s === null));
+    } finally {
+        cleanupTemp(dir);
+    }
+});
+
+test('input hardening swallows gamepad drift spikes but honors held presses', () => {
+    const dir = tempDir();
+    try {
+        writeFixture(dir);
+        const { sandbox } = makeSandbox(dir);
+        vm.runInContext('$plugins = []; PluginManager.setup($plugins);', sandbox);
+        assert.ok(sandbox.window.__rrInputHardened, 'hardening installed');
+
+        const Input = sandbox.Input;
+        const pad = pressed => ({ index: 0, axes: [0, 0],
+            buttons: pressed.map(p => ({ pressed: p, value: p ? 1 : 0 })) });
+
+        // Poll 1 (bootstrap, released): establishes the raw baseline.
+        Input._updateGamepadState(pad([false]));
+        assert.ok(!Input._currentState.ok);
+
+        // Single-frame spike: pressed this poll only -> must be swallowed.
+        Input._updateGamepadState(pad([true]));
+        assert.ok(!Input._currentState.ok, 'drift spike suppressed');
+
+        // Released again -> still nothing.
+        Input._updateGamepadState(pad([false]));
+        assert.ok(!Input._currentState.ok);
+
+        // A real press: held across two polls -> honored on the second.
+        Input._updateGamepadState(pad([true]));   // deferred (first stable frame)
+        assert.ok(!Input._currentState.ok);
+        Input._updateGamepadState(pad([true]));   // second frame -> press lands
+        assert.strictEqual(Input._currentState.ok, true);
+
+        // Release passes through immediately.
+        Input._updateGamepadState(pad([false]));
+        assert.strictEqual(Input._currentState.ok, false);
+    } finally {
+        cleanupTemp(dir);
+    }
+});
+
+test('input hardening blocks synthetic (untrusted) DOM events at capture', () => {
+    const dir = tempDir();
+    try {
+        writeFixture(dir);
+        const { sandbox } = makeSandbox(dir);
+        vm.runInContext('$plugins = []; PluginManager.setup($plugins);', sandbox);
+
+        let stopped = false;
+        const ev = { isTrusted: false,
+            stopPropagation() { stopped = true; },
+            preventDefault() { } };
+        const keydown = sandbox._rrListeners.keydown || [];
+        assert.ok(keydown.length > 0, 'keydown capture listeners exist');
+        keydown.forEach(fn => fn(ev));
+        assert.ok(stopped, 'synthetic event stopped before game handlers');
+
+        // A trusted event flows through untouched.
+        let stoppedTrusted = false;
+        const trusted = { isTrusted: true,
+            stopPropagation() { stoppedTrusted = true; },
+            preventDefault() { } };
+        keydown.forEach(fn => fn(trusted));
+        assert.ok(!stoppedTrusted, 'trusted event untouched');
     } finally {
         cleanupTemp(dir);
     }
