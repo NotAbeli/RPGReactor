@@ -291,21 +291,33 @@ DataManager.onLoad = function(object) {
 // otherwise Scene_Boot.loadGameFonts and Game_System font lookups crash an
 // MV project at boot with "Cannot read properties of undefined".
 DataManager.normalizeDataSystem = function(dataSystem) {
-    if (!dataSystem || dataSystem.advanced) return;
-    dataSystem.advanced = {
-        gameId: "agonia-" + String(dataSystem.gameTitle || "game"),
-        screenScale: 0,
-        screenWidth: 816,
-        screenHeight: 624,
-        uiAreaWidth: 816,
-        uiAreaHeight: 624,
-        mainFontFilename: "mplus-1m-regular.ttf",
-        numberFontFilename: "mplus-1m-regular.ttf",
-        fallbackFonts: "Verdana, SimSun, sans-serif",
-        fontSize: 28,
-        windowOpacity: 192,
-        showFps: false
-    };
+    if (!dataSystem) return;
+    if (!dataSystem.advanced) {
+        dataSystem.advanced = {
+            gameId: "agonia-" + String(dataSystem.gameTitle || "game"),
+            screenScale: 0,
+            screenWidth: 816,
+            screenHeight: 624,
+            uiAreaWidth: 816,
+            uiAreaHeight: 624,
+            mainFontFilename: "mplus-1m-regular.ttf",
+            numberFontFilename: "mplus-1m-regular.ttf",
+            fallbackFonts: "Verdana, SimSun, sans-serif",
+            fontSize: 28,
+            windowOpacity: 192,
+            showFps: false
+        };
+    }
+    // Scene_Title reads titleCommandWindow.background/offsetX/offsetY for the
+    // command window's look; MV titles carried no such block.
+    if (!dataSystem.titleCommandWindow) {
+        dataSystem.titleCommandWindow = {
+            background: 0,
+            offsetX: 0,
+            offsetY: 0,
+            visible: true
+        };
+    }
 };
 
 DataManager.isMapObject = function(object) {
