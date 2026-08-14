@@ -18,6 +18,10 @@ node_modules/
 dist/
 build/
 out/
+dist-editor/
+
+# ===== NW.js runtime junk (auto-created profile/cache next to exe) =====
+/AGONIA/
 .nw-cache/
 .nw-codec-cache/
 package.nw
