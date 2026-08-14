@@ -1251,6 +1251,21 @@ class EventCommandList {
             743: { name: 'Slide Face', color: 'var(--color-syntax-type)' },
             744: { name: 'Slide Background', color: 'var(--color-syntax-type)' },
             745: { name: 'Show Slide', color: 'var(--color-syntax-type)' },
+            705: { name: 'Light Setting', color: 'var(--color-syntax-type)' },
+            706: { name: 'Light Flicker', color: 'var(--color-syntax-type)' },
+            707: { name: 'Flashlight', color: 'var(--color-syntax-type)' },
+            709: { name: 'Vignette Color', color: 'var(--color-syntax-type)' },
+            713: { name: 'Shift Camera', color: 'var(--color-syntax-function)' },
+            714: { name: 'Zoom Control', color: 'var(--color-syntax-function)' },
+            727: { name: 'CRT Screen', color: 'var(--color-syntax-type)' },
+            729: { name: 'Treasure Popup', color: 'var(--color-syntax-type)' },
+            738: { name: 'Text Fast-Forward', color: 'var(--color-syntax-type)' },
+            746: { name: 'Clear Round Items', color: 'var(--color-syntax-type)' },
+            747: { name: 'Set Save Name', color: 'var(--color-syntax-function)' },
+            748: { name: 'Reset Event Locations', color: 'var(--color-syntax-function)' },
+            749: { name: 'Enemy HP Variable', color: 'var(--color-syntax-function)' },
+            750: { name: 'Hide Choice', color: 'var(--color-syntax-type)' },
+            751: { name: 'Gift', color: 'var(--color-syntax-type)' },
             401: { name: 'Text', color: 'var(--color-syntax-comment)' },
             402: { name: 'When', color: 'var(--color-syntax-string)' },
             403: { name: 'When Cancel', color: 'var(--color-syntax-string)' },
@@ -1982,7 +1997,13 @@ class EventCommandList {
                 break;
             }
             case 735: {
-                description = `${params[0] || ''}: ${String(params[1] || '').substring(0, 60)}`;
+                const hMode = Number(params[0]) || 0;
+                if (hMode === 1) { description = tt('Hide'); }
+                else if (hMode === 2) { description = tt('Clear'); }
+                else {
+                    const icon = params[3] !== '' && params[3] !== undefined ? ` [${tt('Icon')} ${params[3]}]` : '';
+                    description = `${params[1] || ''}: ${String(params[2] || '').substring(0, 60)}${icon}`;
+                }
                 break;
             }
             case 736: {
@@ -2077,6 +2098,70 @@ class EventCommandList {
                 const max = Number(params[3]) || min;
                 const chestId = String(params[0] || '').trim();
                 description = `${chestId || tt('Auto chest ID (unique per event)')}: ${params[1] || ''} ${min === max ? min : min + '-' + max}`;
+                break;
+            }
+            case 705: {
+                const mode = Number(params[0]);
+                const labels = [tt('Color'), tt('Brightness'), tt('Smoothness'), tt('Falloff Preset')];
+                const value = mode === 0 ? String(params[1] || '') : (mode === 3 ? String(params[1] || '') : params[1]);
+                const target = mode === 0 && Number(params[2]) === 1 ? ` #${params[3] || 1}` : '';
+                description = `${labels[mode]}: ${value}${target}`;
+                break;
+            }
+            case 706: {
+                const states = [tt('OFF'), tt('ON'), tt('Toggle')];
+                description = states[Number(params[0]) || 0];
+                break;
+            }
+            case 707: {
+                description = params[0] !== '' && params[0] !== undefined ? `${tt('Brightness')}: ${params[0]}` : tt('ON');
+                break;
+            }
+            case 709: {
+                description = String(params[0] || '');
+                break;
+            }
+            case 713: {
+                description = `${params[0] || 0}, ${params[1] || 0}` + (Number(params[2]) > 0 ? `, ${params[2]} ${tt('frames')}` : '');
+                break;
+            }
+            case 714: {
+                if (Number(params[0]) === 1) {
+                    description = `${tt('Default')}: ×${params[1] || 1}`;
+                } else {
+                    description = tt('Reset zoom') + (Number(params[2]) > 0 ? `, ${params[2]} ${tt('frames')}` : '');
+                }
+                break;
+            }
+            case 727: {
+                const modes = [tt('OFF'), tt('ON'), tt('Preset')];
+                description = Number(params[0]) === 2 ? `${tt('Preset')}: ${params[1] || ''}` : modes[Number(params[0]) || 0];
+                break;
+            }
+            case 729: {
+                description = Number(params[0]) === 1 ? tt('Show') : tt('Hide');
+                break;
+            }
+            case 738: {
+                const modes = [tt('Enable'), tt('Disable'), tt('Disable next message')];
+                description = modes[Number(params[0]) || 0];
+                break;
+            }
+            case 747: {
+                description = String(params[0] || '').substring(0, 60);
+                break;
+            }
+            case 749: {
+                description = `→ ${tt('Variable')} ${this._fmtVar(params[0])}`;
+                break;
+            }
+            case 750: {
+                const switchId = Number(params[1]) || 0;
+                description = `#${params[0] || 1}` + (switchId > 0 ? ` (${tt('If Switch')} ${switchId})` : '');
+                break;
+            }
+            case 751: {
+                description = `${params[0] || ''}: ${this._agoniaItemName(0, params[1])}`;
                 break;
             }
             case 740: {

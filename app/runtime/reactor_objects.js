@@ -11598,11 +11598,21 @@ Game_Interpreter.prototype.command734 = function() {
 // 735: Show Hint — SimpleCustomHints.
 //      params: [preset, text]
 Game_Interpreter.prototype.command735 = function(params) {
-    const preset = String(params[0] || "");
-    const text = String(params[1] || "");
-    const args = ["show_preset"];
-    if (preset) args.push(preset);
-    if (text) args.push(text);
+    const mode = Number(params[0] || 0);
+    if (mode === 2) { this.pluginCommand("Hint", ["clear"]); return true; }
+    if (mode === 1) { this.pluginCommand("Hint", ["hide"]); return true; }
+    const preset = String(params[1] || "");
+    const text = String(params[2] || "");
+    const iconId = params[3];
+    let args;
+    if (iconId !== undefined && iconId !== null && iconId !== "") {
+        args = ["show_preset_icon", preset, String(iconId)];
+        if (text) args.push(text);
+    } else {
+        args = ["show_preset"];
+        if (preset) args.push(preset);
+        if (text) args.push(text);
+    }
     this.pluginCommand("Hint", args);
     return true;
 };
@@ -11662,7 +11672,12 @@ Game_Interpreter.prototype.command700 = function(params) {
 Game_Interpreter.prototype.command701 = function(params) {
     const on = Number(params[0]) === 1;
     const lightId = Number(params[1] || 0);
-    this.pluginCommand("Light", [on ? "on" : "off", String(lightId)]);
+    const target = Number(params[2] || 0);
+    if (target === 1) {
+        this.pluginCommand("Light", [on ? "on" : "off"]);
+    } else {
+        this.pluginCommand("Light", [on ? "on" : "off", String(lightId)]);
+    }
     return true;
 };
 
@@ -11905,6 +11920,133 @@ Game_Interpreter.prototype.command745 = function(params) {
     $gameTemp._agoniaSlideDuration = Math.max(30, Number(params[0] || 300));
     $gameTemp._agoniaSlideActive = true;
     this.setWaitMode("agoniaSlide");
+    return true;
+};
+
+// ---- Wave-2 native commands (mirror of the MV bridge snippet) ----
+
+// 705: Light Setting. params: [mode(0 color/1 bright/2 smooth/3 preset), value, target(0 player/1 event), eventId]
+Game_Interpreter.prototype.command705 = function(params) {
+    const mode = Number(params[0] || 0);
+    const value = String(params[1] === undefined ? "" : params[1]);
+    const target = Number(params[2] || 0);
+    let args;
+    if (mode === 0) {
+        args = target === 1 ? ["color", String(Number(params[3] || 0)), value] : ["color", value];
+    } else if (mode === 1) args = ["brightness", value];
+    else if (mode === 2) args = ["smooth", value];
+    else args = ["preset", value];
+    this.pluginCommand("Light", args);
+    return true;
+};
+
+// 706: Light Flicker. params: [0 off/1 on/2 toggle]
+Game_Interpreter.prototype.command706 = function(params) {
+    const state = Number(params[0] || 2);
+    if (state === 2) this.pluginCommand("fire", []);
+    else this.pluginCommand("Light", ["flicker", state === 1 ? "on" : "off"]);
+    return true;
+};
+
+// 707: Flashlight. params: [brightness?]
+Game_Interpreter.prototype.command707 = function(params) {
+    const args = ["flashlight"];
+    if (params[0] !== "" && params[0] !== undefined && params[0] !== null) args.push(String(params[0]));
+    this.pluginCommand("Light", args);
+    return true;
+};
+
+// 709: Vignette Color. params: [#color]
+Game_Interpreter.prototype.command709 = function(params) {
+    this.pluginCommand("Vignette", ["color", String(params[0] || "#000000")]);
+    return true;
+};
+
+// 713: Shift Camera. params: [dx, dy, duration]
+Game_Interpreter.prototype.command713 = function(params) {
+    this.pluginCommand("ShiftCamera", [String(Number(params[0] || 0)), String(Number(params[1] || 0)),
+        String(Math.max(0, Number(params[2] || 0)))]);
+    return true;
+};
+
+// 714: Zoom Control. params: [mode(0 reset/1 set default), value, duration]
+Game_Interpreter.prototype.command714 = function(params) {
+    const mode = Number(params[0] || 0);
+    const duration = Math.max(0, Number(params[2] || 0));
+    if (mode === 1) this.pluginCommand("SetDefaultZoom", [String(Number(params[1] || 1))]);
+    else this.pluginCommand("ResetZoom", [String(duration)]);
+    return true;
+};
+
+// 727: CRT Screen. params: [mode(0 off/1 on/2 preset), name]
+Game_Interpreter.prototype.command727 = function(params) {
+    const mode = Number(params[0] || 1);
+    const args = [mode === 0 ? "OFF" : mode === 2 ? "PRESET" : "ON"];
+    if (mode === 2) args.push(String(params[1] || "Default"));
+    this.pluginCommand("SUPERDUPER", args);
+    return true;
+};
+
+// 729: Treasure Popup. params: [1 show/0 hide]
+Game_Interpreter.prototype.command729 = function(params) {
+    this.pluginCommand(Number(params[0]) === 1 ? "show_treasure_popup" : "hide_treasure_popup", []);
+    return true;
+};
+
+// 738: Text Fast-Forward. params: [0 enable/1 disable/2 next]
+Game_Interpreter.prototype.command738 = function(params) {
+    const mode = Number(params[0] || 0);
+    this.pluginCommand(mode === 1 ? "DISABLETEXTFF" : mode === 2 ? "DISABLENEXTTEXTFF" : "ENABLETEXTFF", []);
+    return true;
+};
+
+// 746: Clear Round Items.
+Game_Interpreter.prototype.command746 = function() {
+    this.pluginCommand("SDI_ClearRoundItems", []);
+    return true;
+};
+
+// 747: Set Save Name. params: [name]
+Game_Interpreter.prototype.command747 = function(params) {
+    this.pluginCommand("SetSaveName", [String(params[0] || "")]);
+    return true;
+};
+
+// 748: Reset Event Locations.
+Game_Interpreter.prototype.command748 = function() {
+    this.pluginCommand("ResetAllEventLocations", []);
+    return true;
+};
+
+// 749: Enemy HP Variable (MEHP_SETUP). params: [variableId]
+Game_Interpreter.prototype.command749 = function(params) {
+    this.pluginCommand("MEHP_SETUP", [String(Math.max(1, Number(params[0] || 1)))]);
+    return true;
+};
+
+// 750: Hide Choice. params: [choiceIndex(1-based), switchId]
+Game_Interpreter.prototype.command750 = function(params) {
+    try {
+        const index = Math.max(1, Number(params[0] || 1));
+        const switchId = Math.max(0, Number(params[1] || 0));
+        const hidden = switchId > 0
+            ? (typeof $gameSwitches !== "undefined" && $gameSwitches.value(switchId))
+            : true;
+        if (!hidden) return true;
+        if (typeof $gameMessage !== "undefined" && $gameMessage && $gameMessage._choices) {
+            $gameMessage._choices.splice(index - 1, 1);
+        }
+    } catch (e) { /* never break a scene over a choice */ }
+    return true;
+};
+
+// 751: Gift. params: [actorName, itemId]
+Game_Interpreter.prototype.command751 = function(params) {
+    try {
+        if (typeof window !== "undefined" && typeof window.gift === "function") {
+            window.gift(String(params[0] || ""), Number(params[1] || 0));
+        }
+    } catch (e) { /* optional plugin surface */ }
     return true;
 };
 

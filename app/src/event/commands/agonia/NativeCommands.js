@@ -196,10 +196,16 @@ class AgoniaNativeCommands {
                 id: 'showHint',
                 name: 'Show Hint',
                 section: 'Message',
-                help: 'Shows a hint popup with the given preset style.',
+                help: 'Shows, hides or clears hint popups.',
                 fields: [
-                    { key: 'preset', index: 0, type: 'suggestion', label: 'Preset', suggestions: 'hintPresets' },
-                    { key: 'text', index: 1, type: 'multiline', label: 'Text', default: '' }
+                    { key: 'mode', index: 0, type: 'select', label: 'Mode', default: 0, options: [
+                        { value: 0, label: 'Show' },
+                        { value: 1, label: 'Hide' },
+                        { value: 2, label: 'Clear' }
+                    ] },
+                    { key: 'preset', index: 1, type: 'suggestion', label: 'Preset', suggestions: 'hintPresets', visibleIf: { field: 'mode', in: [0] } },
+                    { key: 'text', index: 2, type: 'multiline', label: 'Text', default: '', visibleIf: { field: 'mode', in: [0] } },
+                    { key: 'iconId', index: 3, type: 'number', label: 'Icon Index', default: '', min: 0, optional: true, optionalLabel: 'No icon', visibleIf: { field: 'mode', in: [0] } }
                 ]
             },
             {
@@ -250,13 +256,74 @@ class AgoniaNativeCommands {
                 id: 'eventLight',
                 name: 'Event Light',
                 section: 'Lighting',
-                help: 'Turns a map event light source (custom ID) on or off.',
+                help: 'Turns a map event light source (custom ID) on or off. Player target toggles the player light.',
                 fields: [
                     { key: 'state', index: 0, type: 'select', label: 'State', default: 1, options: [
                         { value: 1, label: 'ON' },
                         { value: 0, label: 'OFF' }
                     ] },
-                    { key: 'lightId', index: 1, type: 'number', label: 'Light ID', default: 1, min: 1 }
+                    { key: 'lightId', index: 1, type: 'number', label: 'Light ID', default: 1, min: 1, visibleIf: { field: 'target', in: [0] } },
+                    { key: 'target', index: 2, type: 'select', label: 'Target', default: 0, options: [
+                        { value: 0, label: 'Event light' },
+                        { value: 1, label: 'Player' }
+                    ] }
+                ]
+            },
+            {
+                code: 705,
+                id: 'lightSetting',
+                name: 'Light Setting',
+                section: 'Lighting',
+                help: 'Changes the player light color, brightness, smoothness or falloff preset.',
+                fields: [
+                    { key: 'mode', index: 0, type: 'select', label: 'Setting', default: 0, options: [
+                        { value: 0, label: 'Color' },
+                        { value: 1, label: 'Brightness' },
+                        { value: 2, label: 'Smoothness' },
+                        { value: 3, label: 'Falloff Preset' }
+                    ] },
+                    { key: 'color', index: 1, type: 'color', label: 'Color', default: '#ffffff', visibleIf: { field: 'mode', in: [0] } },
+                    { key: 'value', index: 1, type: 'number', label: 'Value', default: 1, min: 0, step: 0.01, visibleIf: { field: 'mode', in: [1, 2] } },
+                    { key: 'preset', index: 1, type: 'suggestion', label: 'Falloff Preset', suggestions: 'lightPresets', visibleIf: { field: 'mode', in: [3] } },
+                    { key: 'target', index: 2, type: 'select', label: 'Target', default: 0, visibleIf: { field: 'mode', in: [0] }, options: [
+                        { value: 0, label: 'Player' },
+                        { value: 1, label: 'Event light by ID' }
+                    ] },
+                    { key: 'eventId', index: 3, type: 'number', label: 'Light ID', default: 1, min: 1, visibleIf: { field: 'target', in: [1] } }
+                ]
+            },
+            {
+                code: 706,
+                id: 'lightFlicker',
+                name: 'Light Flicker',
+                section: 'Lighting',
+                help: 'Toggles the fire flicker of the player light.',
+                fields: [
+                    { key: 'state', index: 0, type: 'select', label: 'State', default: 1, options: [
+                        { value: 1, label: 'ON' },
+                        { value: 0, label: 'OFF' },
+                        { value: 2, label: 'Toggle' }
+                    ] }
+                ]
+            },
+            {
+                code: 707,
+                id: 'flashlight',
+                name: 'Flashlight',
+                section: 'Lighting',
+                help: 'Turns the player flashlight on with an optional brightness.',
+                fields: [
+                    { key: 'brightness', index: 0, type: 'number', label: 'Brightness', default: '', min: 0, step: 0.01, optional: true, optionalLabel: 'Plugin default' }
+                ]
+            },
+            {
+                code: 709,
+                id: 'vignetteColor',
+                name: 'Vignette Color',
+                section: 'Lighting',
+                help: 'Sets the color of the screen-edge vignette.',
+                fields: [
+                    { key: 'color', index: 0, type: 'color', label: 'Color', default: '#000000' }
                 ]
             },
             {
@@ -505,6 +572,133 @@ class AgoniaNativeCommands {
                 help: 'Shows the configured intro slide full-screen and waits until it finishes.',
                 fields: [
                     { key: 'duration', index: 0, type: 'number', label: 'Duration (frames)', default: 300, min: 30 }
+                ]
+            },
+            {
+                code: 713,
+                id: 'shiftCamera',
+                name: 'Shift Camera',
+                section: 'Camera',
+                help: 'Shifts the camera by tile offsets from its current position.',
+                fields: [
+                    { key: 'dx', index: 0, type: 'number', label: 'Shift X (tiles)', default: 0, step: 0.5 },
+                    { key: 'dy', index: 1, type: 'number', label: 'Shift Y (tiles)', default: 0, step: 0.5 },
+                    { key: 'duration', index: 2, type: 'number', label: 'Duration (frames)', default: 0, min: 0, optionalLabel: 'Instant' }
+                ]
+            },
+            {
+                code: 714,
+                id: 'zoomControl',
+                name: 'Zoom Control',
+                section: 'Camera',
+                help: 'Resets the zoom or changes the default zoom level the camera returns to.',
+                fields: [
+                    { key: 'mode', index: 0, type: 'select', label: 'Mode', default: 0, options: [
+                        { value: 0, label: 'Reset zoom' },
+                        { value: 1, label: 'Set default zoom' }
+                    ] },
+                    { key: 'value', index: 1, type: 'number', label: 'Scale', default: 1, min: 0.1, max: 8, step: 0.1, visibleIf: { field: 'mode', in: [1] } },
+                    { key: 'duration', index: 2, type: 'number', label: 'Duration (frames)', default: 0, min: 0, optionalLabel: 'Instant', visibleIf: { field: 'mode', in: [0] } }
+                ]
+            },
+            {
+                code: 727,
+                id: 'crtScreen',
+                name: 'CRT Screen',
+                section: 'Screen',
+                help: 'Turns the CRT screen effect on, off or applies a preset.',
+                fields: [
+                    { key: 'mode', index: 0, type: 'select', label: 'Mode', default: 1, options: [
+                        { value: 1, label: 'ON' },
+                        { value: 0, label: 'OFF' },
+                        { value: 2, label: 'Preset' }
+                    ] },
+                    { key: 'preset', index: 1, type: 'suggestion', label: 'Preset', default: '', visibleIf: { field: 'mode', in: [2] } }
+                ]
+            },
+            {
+                code: 729,
+                id: 'treasurePopup',
+                name: 'Treasure Popup',
+                section: 'Screen',
+                help: 'Shows or hides the item/gold pickup popups.',
+                fields: [
+                    { key: 'state', index: 0, type: 'select', label: 'State', default: 1, options: [
+                        { value: 1, label: 'Show' },
+                        { value: 0, label: 'Hide' }
+                    ] }
+                ]
+            },
+            {
+                code: 738,
+                id: 'textFastForward',
+                name: 'Text Fast-Forward',
+                section: 'Message',
+                help: 'Controls the message fast-forward (FF) behavior.',
+                fields: [
+                    { key: 'mode', index: 0, type: 'select', label: 'Mode', default: 0, options: [
+                        { value: 0, label: 'Enable' },
+                        { value: 1, label: 'Disable' },
+                        { value: 2, label: 'Disable next message' }
+                    ] }
+                ]
+            },
+            {
+                code: 746,
+                id: 'clearRoundItems',
+                name: 'Clear Round Items',
+                section: 'Inventory',
+                help: 'Removes the round of items lying on the map (drop system).',
+                fields: []
+            },
+            {
+                code: 747,
+                id: 'setSaveName',
+                name: 'Set Save Name',
+                section: 'Utility',
+                help: 'Sets a fixed name for the next save file.',
+                fields: [
+                    { key: 'name', index: 0, type: 'string', label: 'Name', default: '' }
+                ]
+            },
+            {
+                code: 748,
+                id: 'resetEventLocations',
+                name: 'Reset Event Locations',
+                section: 'Utility',
+                help: 'Restores every event on the map to its original position.',
+                fields: []
+            },
+            {
+                code: 749,
+                id: 'enemyHpVariable',
+                name: 'Enemy HP Variable',
+                section: 'Enemies',
+                help: 'Binds this event\u0027s map-enemy HP to a game variable.',
+                fields: [
+                    { key: 'variableId', index: 0, type: 'variableId', label: 'Variable', default: 1 }
+                ]
+            },
+            {
+                code: 750,
+                id: 'hideChoice',
+                name: 'Hide Choice',
+                section: 'Message',
+                help: 'Removes a choice option from the following Show Choices call (optionally only when a switch is ON).',
+                fields: [
+                    { key: 'choiceIndex', index: 0, type: 'number', label: 'Choice (1-based)', default: 1, min: 1, max: 6 },
+                    { key: 'switchId', index: 1, type: 'switchId', label: 'If Switch', default: 0, optional: true, optionalLabel: 'Always' }
+                ]
+            },
+            {
+                code: 751,
+                id: 'gift',
+                name: 'Gift',
+                section: 'Party',
+                help: 'Gives a gift item to a named actor (SuperDuperGifts).',
+                fields: [
+                    { key: 'actorName', index: 0, type: 'string', label: 'Actor Name', default: '' },
+                    { key: 'itemId', index: 1, type: 'itemRef', label: 'Item', default: 1 }
                 ]
             }
         ];

@@ -173,9 +173,10 @@ test('bridge installs the native 7XX commands and dispatches to pluginCommand', 
 
         const GI = sandbox.Game_Interpreter;
         const it = Object.create(GI.prototype);
-        for (const code of [700, 701, 702, 703, 704, 710, 711, 712, 715,
-            716, 717, 718, 719, 720, 721, 722, 723, 724, 725, 726, 730,
-            731, 732, 733, 734, 735, 736, 737, 740, 741, 742, 743, 744, 745]) {
+        for (const code of [700, 701, 702, 703, 704, 705, 706, 707, 709, 710,
+            711, 712, 713, 714, 715, 716, 717, 718, 719, 720, 721, 722, 723,
+            724, 725, 726, 727, 729, 730, 731, 732, 733, 734, 735, 736, 737,
+            738, 740, 741, 742, 743, 744, 745, 746, 747, 748, 749, 750, 751]) {
             assert.strictEqual(typeof GI.prototype['command' + code], 'function',
                 'command' + code + ' installed');
         }
@@ -222,6 +223,85 @@ test('bridge installs the native 7XX commands and dispatches to pluginCommand', 
         assert.strictEqual(it.command733(), true);
         it._params = undefined;
         assert.doesNotThrow(() => it.command734());
+
+        // ---- Wave-2 commands (all under the same no-arg MV contract) ----
+        pluginCalls.length = 0;
+        run(705, [0, '#aabbcc', 0]);
+        run(705, [1, 2.5]);
+        run(705, [3, 'spichka']);
+        run(706, [1]);
+        run(706, [2]);
+        run(707, ['']);
+        run(709, ['#123456']);
+        run(713, [2, -1, 30]);
+        run(714, [0, 0, 20]);
+        run(714, [1, 2]);
+        run(727, [1]);
+        run(727, [2, 'VHS']);
+        run(729, [0]);
+        run(738, [2]);
+        run(746, []);
+        run(747, ['Слот 1']);
+        run(748, []);
+        run(749, [12]);
+        assert.deepEqual(pluginCalls, [
+            { command: 'Light', args: ['color', '#aabbcc'] },
+            { command: 'Light', args: ['brightness', '2.5'] },
+            { command: 'Light', args: ['preset', 'spichka'] },
+            { command: 'Light', args: ['flicker', 'on'] },
+            { command: 'fire', args: [] },
+            { command: 'Light', args: ['flashlight'] },
+            { command: 'Vignette', args: ['color', '#123456'] },
+            { command: 'ShiftCamera', args: ['2', '-1', '30'] },
+            { command: 'ResetZoom', args: ['20'] },
+            { command: 'SetDefaultZoom', args: ['2'] },
+            { command: 'SUPERDUPER', args: ['ON'] },
+            { command: 'SUPERDUPER', args: ['PRESET', 'VHS'] },
+            { command: 'hide_treasure_popup', args: [] },
+            { command: 'DISABLENEXTTEXTFF', args: [] },
+            { command: 'SDI_ClearRoundItems', args: [] },
+            { command: 'SetSaveName', args: ['Слот 1'] },
+            { command: 'ResetAllEventLocations', args: [] },
+            { command: 'MEHP_SETUP', args: ['12'] },
+        ]);
+
+        // 701 player target -> bare Light on/off
+        pluginCalls.length = 0;
+        run(701, [1, 0, 1]);
+        run(701, [0, 5, 0]);
+        assert.deepEqual(pluginCalls, [
+            { command: 'Light', args: ['on'] },
+            { command: 'Light', args: ['off', '5'] },
+        ]);
+
+        // 735 show/hide/clear + icon form
+        pluginCalls.length = 0;
+        run(735, [0, 'df', 'Текст', '']);
+        run(735, [0, 'df', 'Текст', 24]);
+        run(735, [1]);
+        run(735, [2]);
+        assert.deepEqual(pluginCalls, [
+            { command: 'Hint', args: ['show_preset', 'df', 'Текст'] },
+            { command: 'Hint', args: ['show_preset_icon', 'df', '24', 'Текст'] },
+            { command: 'Hint', args: ['hide'] },
+            { command: 'Hint', args: ['clear'] },
+        ]);
+
+        // 750 hide choice: unconditional and switch-gated
+        sandbox.$gameMessage = { _choices: ['Да', 'Нет', 'Может'] };
+        sandbox.$gameSwitches = { value: id => id === 9 };
+        run(750, [2, 0]); // always hide #2
+        assert.deepEqual(sandbox.$gameMessage._choices, ['Да', 'Может']);
+        run(750, [1, 9]); // switch 9 is ON -> hides
+        assert.deepEqual(sandbox.$gameMessage._choices, ['Может']);
+        run(750, [1, 5]); // switch 5 is OFF -> keeps
+        assert.deepEqual(sandbox.$gameMessage._choices, ['Может']);
+
+        // 751 gift through window.gift
+        const gifts = [];
+        sandbox.window.gift = (name, id) => gifts.push({ name, id });
+        run(751, ['Настя', 19]);
+        assert.deepEqual(gifts, [{ name: 'Настя', id: 19 }]);
     } finally {
         cleanupTemp(dir);
     }

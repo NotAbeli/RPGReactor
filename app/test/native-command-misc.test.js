@@ -108,7 +108,7 @@ test('command732/733/734 delegate to samsara and craft', () => {
 test('command735/737 build hint and title argument lines', () => {
     const rt = makeRuntime(MISC_CHUNK);
     const it = rt.interpreter();
-    it.command735(['df', 'Знакомьтесь - ваш инввентарь']);
+    it.command735([0, 'df', 'Знакомьтесь - ваш инввентарь', '']);
     it.command737(['TL', 'НОВАЯ ЖИЗНЬ']);
     assert.deepEqual(rt.calls, [
         { command: 'Hint', args: ['show_preset', 'df', 'Знакомьтесь - ваш инввентарь'] },
