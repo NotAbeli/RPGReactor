@@ -279,7 +279,33 @@ DataManager.onLoad = function(object) {
         this.loadMapSidecar(object);
     } else {
         this.extractArrayMetadata(object);
+        if (object === window.$dataSystem) {
+            this.normalizeDataSystem(object);
+        }
     }
+};
+
+// MV projects carry no $dataSystem.advanced block (an MZ-only group), but the
+// runtime reads it for fonts, window opacity, screen size and storage keys.
+// Fill MZ defaults once, at load, so every reader sees a complete object —
+// otherwise Scene_Boot.loadGameFonts and Game_System font lookups crash an
+// MV project at boot with "Cannot read properties of undefined".
+DataManager.normalizeDataSystem = function(dataSystem) {
+    if (!dataSystem || dataSystem.advanced) return;
+    dataSystem.advanced = {
+        gameId: "agonia-" + String(dataSystem.gameTitle || "game"),
+        screenScale: 0,
+        screenWidth: 816,
+        screenHeight: 624,
+        uiAreaWidth: 816,
+        uiAreaHeight: 624,
+        mainFontFilename: "mplus-1m-regular.ttf",
+        numberFontFilename: "mplus-1m-regular.ttf",
+        fallbackFonts: "Verdana, SimSun, sans-serif",
+        fontSize: 28,
+        windowOpacity: 192,
+        showFps: false
+    };
 };
 
 DataManager.isMapObject = function(object) {

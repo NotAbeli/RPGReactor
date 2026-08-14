@@ -309,9 +309,14 @@ Scene_Boot.prototype.loadPlayerData = function() {
 };
 
 Scene_Boot.prototype.loadGameFonts = function() {
-    const advanced = $dataSystem.advanced;
-    FontManager.load("rmmz-mainfont", advanced.mainFontFilename);
-    FontManager.load("rmmz-numberfont", advanced.numberFontFilename);
+    // MV projects have no $dataSystem.advanced (an MZ-only block), so the
+    // font filenames are undefined; FontManager.load would throw reading
+    // .mainFontFilename and kill Scene_Boot. Fall back to the MZ defaults.
+    const advanced = $dataSystem.advanced || {};
+    const mainFont = advanced.mainFontFilename || "mplus-1m-regular.ttf";
+    const numberFont = advanced.numberFontFilename || "mplus-1m-regular.ttf";
+    FontManager.load("rmmz-mainfont", mainFont);
+    FontManager.load("rmmz-numberfont", numberFont);
 };
 
 Scene_Boot.prototype.isPlayerDataLoaded = function() {

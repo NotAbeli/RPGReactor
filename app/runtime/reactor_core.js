@@ -540,6 +540,20 @@ Graphics.initialize = async function() {
     await this._createPixiApp();
     this._createEffekseerContext();
 
+    // MV semantics: Graphics.width/height are valid from the very first
+    // moment (MV's main.js passed the window size into Graphics.initialize
+    // synchronously). MZ resizes later, from Scene_Boot.start — but MV
+    // plugins (SuperDuperSplash and friends) build Bitmaps from
+    // Graphics.width inside Scene.create(), before any resize, and a 0x150
+    // bitmap gets no canvas and no 2d context. Seed the MV default size
+    // right after the renderer exists; Scene_Boot.resizeScreen still
+    // applies the project's real resolution afterwards.
+    if (this._width <= 0 || this._height <= 0) {
+        this.resize(816, 624);
+        this.boxWidth = 816;
+        this.boxHeight = 624;
+    }
+
     return !!this._app;
 };
 
