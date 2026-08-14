@@ -306,7 +306,19 @@ class ProjectManager {
                 }
                 this.writeZipArchive(this.path.join(projectPath, zipName), archiveEntries);
                 for (const relPath of oldRuntimeFiles) {
-                    this.fs.rmSync(this.path.join(projectPath, relPath), { force: true });
+                    // unlinkSync, not rmSync: on Windows rmSync may leave the
+                    // file listed (POSIX delete-pending) while other handles
+                    // (editor/AV watchers) are open. unlinkSync deletes for real.
+                    const filePath = this.path.join(projectPath, relPath);
+                    try {
+                        this.fs.unlinkSync(filePath);
+                    } catch (unlinkError) {
+                        try {
+                            this.fs.rmSync(filePath, { force: true });
+                        } catch (rmError) {
+                            throw unlinkError;
+                        }
+                    }
                 }
                 this.removeEmptyDirs(this.path.join(jsPath, 'libs'));
                 archivedTo = zipName;
@@ -355,6 +367,58 @@ class ProjectManager {
         }
 
         return null;
+    }
+
+    /**
+     * Make sure a migrated project runs on the Agonia (Reactor) runtime for
+     * playtest. Migrations move plugins into engineModules in
+     * project.rpgreactor and native 700+ commands into event data — both are
+     * understood only by the Reactor runtime, while a spawned playtest loads
+     * the project's own index.html. When an RPG Maker corescript still lives
+     * in js/ AND the project carries engine modules, switch the project over
+     * once (same procedure as the manual Build-menu item: MV files are
+     * quarantined into rpgmaker-runtime-backup.zip first).
+     */
+    async ensureAgoniaRuntimeForPlaytest(projectPath) {
+        const result = { switched: false, alreadyReactor: false, skipped: null, archivedTo: null, error: null };
+        if (!this.fs || !this.path) {
+            result.error = 'File system not available.';
+            return result;
+        }
+        try {
+            const jsPath = this.path.join(projectPath, 'js');
+            if (this.fs.existsSync(this.path.join(jsPath, 'reactor_main.js'))) {
+                result.alreadyReactor = true;
+                return result;
+            }
+            const hasMvCorescript = this.fs.existsSync(this.path.join(jsPath, 'rpg_managers.js'))
+                || this.fs.existsSync(this.path.join(jsPath, 'main.js'));
+            if (!hasMvCorescript) {
+                result.skipped = 'no RPG Maker corescript in js/';
+                return result;
+            }
+            const metaPath = this.path.join(projectPath, 'project.rpgreactor');
+            let hasEngineModules = false;
+            if (this.fs.existsSync(metaPath)) {
+                const meta = JSON.parse(this.fs.readFileSync(metaPath, 'utf8').replace(/^\uFEFF/, ''));
+                hasEngineModules = Array.isArray(meta.engineModules) && meta.engineModules.length > 0;
+            }
+            if (!hasEngineModules) {
+                result.skipped = 'project has no engine modules (not migrated)';
+                return result;
+            }
+            const install = await this.installReactorRuntime(projectPath, this.path.basename(projectPath), {});
+            if (!install.ok) {
+                result.error = install.error;
+                return result;
+            }
+            result.switched = true;
+            result.archivedTo = install.archivedTo;
+            return result;
+        } catch (error) {
+            result.error = error.message || String(error);
+            return result;
+        }
     }
 
     getTemplateProjectPath() {
