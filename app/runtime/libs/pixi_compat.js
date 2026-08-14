@@ -439,6 +439,23 @@
             ON_MANUAL: true
         };
     }
+    // v5/v6 exposed PIXI.GC_MODES (texture garbage collection policy) and
+    // plugins like SRD_GameUpgrade assign PIXI.settings.GC_MODE =
+    // PIXI.GC_MODES.MANUAL at load time. v8 has automatic texture GC with no
+    // manual mode at all; the enum is gone and reading `.MANUAL` of undefined
+    // crashed the first plugin before the game booted. Restore the numeric
+    // enum as a no-op — v8 ignores the value.
+    if (!PIXI.GC_MODES) {
+        PIXI.GC_MODES = { DEFAULT: 0, AUTO: 1, MANUAL: 2 };
+    }
+    // v8 replaced the @pixi/tilemap addon with the corescript's own Tilemap
+    // renderer, so the old PIXI.tilemap namespace is gone. Plugins from the
+    // MV era (SRD_GameUpgrade) still assign PIXI.tilemap.TileRenderer.SCALE_MODE
+    // at load time; without the stub that line crashes startup. The value is
+    // inert — nothing in the v8 tilemap reads it.
+    if (!PIXI.tilemap) {
+        PIXI.tilemap = { TileRenderer: { SCALE_MODE: undefined } };
+    }
     if (_isV8Pixi || !PIXI.DRAW_MODES) {
         PIXI.DRAW_MODES = {
             POINTS: "point-list",
