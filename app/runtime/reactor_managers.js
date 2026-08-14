@@ -3248,7 +3248,9 @@ PluginManager._parameters = {};
 PluginManager._commands = {};
 
 PluginManager.setup = function(plugins) {
-    for (const plugin of plugins) {
+    const merged = this.mergeEngineModules(plugins || []);
+    this.applyAgoniaEngineConfig(merged);
+    for (const plugin of merged) {
         const pluginName = Utils.extractFileName(plugin.name);
         if (plugin.status && !this._scripts.includes(pluginName)) {
             this.setParameters(pluginName, plugin.parameters);
@@ -3256,6 +3258,116 @@ PluginManager.setup = function(plugins) {
             this._scripts.push(pluginName);
         }
     }
+};
+
+//
+// Agonia Engine settings sidecar (data/AgoniaEngine.json). Section names map
+// to the plugin they configure; values use natural JSON types and are
+// stringified here because plugins read parameters as MV strings.
+//
+PluginManager.AGONIA_MODULE_SECTIONS = {
+    SuperDuperMovement: "stamina"
+};
+
+PluginManager._agoniaConfig = null;
+
+PluginManager.readAgoniaEngineConfig = function() {
+    if (this._agoniaConfig) return this._agoniaConfig;
+    this._agoniaConfig = {};
+    if (typeof process === "undefined") return this._agoniaConfig;
+    try {
+        const fs = require("fs");
+        const path = require("path");
+        const configPath = path.join(process.cwd(), "data", "AgoniaEngine.json");
+        if (fs.existsSync(configPath)) {
+            const parsed = JSON.parse(fs.readFileSync(configPath, "utf8"));
+            if (parsed && typeof parsed === "object") this._agoniaConfig = parsed;
+        }
+    } catch (e) {
+        // Unreadable sidecar: plugins keep their manifest parameters.
+    }
+    return this._agoniaConfig;
+};
+
+PluginManager.applyAgoniaEngineConfig = function(plugins) {
+    const config = this.readAgoniaEngineConfig();
+    const sections = Object.keys(config);
+    if (!sections.length) return plugins;
+    for (const plugin of plugins) {
+        if (!plugin || !plugin.status) continue;
+        const section = this.AGONIA_MODULE_SECTIONS[Utils.extractFileName(plugin.name)];
+        if (!section || !config[section] || typeof config[section] !== "object") continue;
+        const parameters = Object.assign({}, plugin.parameters || {});
+        for (const [key, value] of Object.entries(config[section])) {
+            if (value === undefined || value === null) continue;
+            parameters[key] = typeof value === "object" ? JSON.stringify(value) : String(value);
+        }
+        plugin.parameters = parameters;
+    }
+    return plugins;
+};
+
+//
+// Engine modules: plugin functionality absorbed by the engine itself.
+//
+// A project may move a catalog plugin out of js/plugins.js into the
+// "engineModules" list in project.rpgreactor. The engine then loads it from
+// the engine catalog as if it were still enabled in the manifest, so every
+// plugin function (including Plugin Command hooks) keeps working while the
+// project's plugin list stays clean.
+//
+// Entry shape:
+//   { "name": "SuperDuperInventory", "parameters": {...},
+//     "orderBefore": ["SRD_GameUpgrade", ...] }
+// "orderBefore" lists the manifest plugin names that preceded the entry in
+// the original plugins.js, so the merged list preserves load order.
+//
+PluginManager._engineModules = null;
+
+PluginManager.resolveEngineModules = function() {
+    if (this._engineModules) return this._engineModules;
+    this._engineModules = [];
+    if (typeof process === "undefined") return this._engineModules;
+    try {
+        const fs = require("fs");
+        const path = require("path");
+        const metaPath = path.join(process.cwd(), "project.rpgreactor");
+        if (!fs.existsSync(metaPath)) return this._engineModules;
+        const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+        const modules = meta && meta.engineModules;
+        if (Array.isArray(modules)) {
+            this._engineModules = modules.filter(m => m && typeof m.name === "string");
+        }
+    } catch (e) {
+        // Ignore unreadable metadata: engine modules simply stay off.
+    }
+    return this._engineModules;
+};
+
+PluginManager.mergeEngineModules = function(plugins) {
+    const modules = this.resolveEngineModules();
+    if (!modules.length) return plugins;
+    const present = new Set(plugins.map(p => Utils.extractFileName(p.name)));
+    const merged = plugins.slice();
+    for (const module of modules) {
+        if (present.has(Utils.extractFileName(module.name))) continue;
+        const orderBefore = Array.isArray(module.orderBefore)
+            ? module.orderBefore.map(n => Utils.extractFileName(n))
+            : [];
+        let insertAt = 0;
+        for (let i = 0; i < merged.length; i++) {
+            if (orderBefore.includes(Utils.extractFileName(merged[i].name))) {
+                insertAt = i + 1;
+            }
+        }
+        merged.splice(insertAt, 0, {
+            name: module.name,
+            status: true,
+            description: "",
+            parameters: module.parameters || {},
+        });
+    }
+    return merged;
 };
 
 PluginManager.parameters = function(name) {

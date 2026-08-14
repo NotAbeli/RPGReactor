@@ -11353,3 +11353,263 @@ Game_Interpreter.prototype.command357 = function(params) {
 };
 
 //-----------------------------------------------------------------------------
+// Agonia Engine native event commands (codes 700+).
+//
+// These wrap plugin functionality that the engine also ships as an engine
+// module (project.rpgreactor "engineModules"), so events keep working with a
+// clean project plugin list. Parameters are structured; no string parsing at
+// runtime.
+//
+// 715: Open Chest (stored) — SuperDuperInventory VisualChestStored.
+//      params: [chestId] — empty string = auto ID "Map<mapId>_Event<eventId>".
+Game_Interpreter.prototype.command715 = function(params) {
+    const chestId = params && params.length ? String(params[0] || "") : "";
+    this.pluginCommand("VisualChestStored", chestId ? [chestId] : []);
+    return true;
+};
+
+// Chest-storage helpers shared by commands 716-719. The data format is the
+// one SuperDuperInventory keeps in $gameSystem._sdiChests (array of slots,
+// each null or { item, amount }), so saves stay compatible whether the
+// engine module is loaded or not.
+Game_Interpreter.prototype._agoniaChestItems = function(chestId) {
+    const id = String(chestId || "");
+    if (!id || !$gameSystem || !$gameSystem.getChestItems) return null;
+    return $gameSystem.getChestItems(id);
+};
+
+Game_Interpreter.prototype._agoniaChestItemRef = function(type, id) {
+    if (typeof $dataItems === "undefined") return null;
+    const table = type === 1 ? $dataWeapons : type === 2 ? $dataArmors : $dataItems;
+    return (table && table[id]) || null;
+};
+
+// 716: Add Item to Chest.
+//      params: [chestId, itemType(0 item/1 weapon/2 armor), itemId, amount, fullSwitchId]
+Game_Interpreter.prototype.command716 = function(params) {
+    const chestId = params[0];
+    const itemType = Number(params[1] || 0);
+    const itemId = Number(params[2] || 0);
+    const amount = Math.max(1, Number(params[3] || 1));
+    const fullSwitchId = Number(params[4] || 0);
+    const chest = this._agoniaChestItems(chestId);
+    const item = this._agoniaChestItemRef(itemType, itemId);
+    if (chest && item && $gameSystem.addItemToChest) {
+        // The storage keeps one stack per slot ({item, amount}), so a single
+        // call carries the whole amount; "full" means no free slot was left.
+        const added = $gameSystem.addItemToChest(String(chestId), item, amount);
+        if (fullSwitchId > 0 && $gameSwitches) {
+            $gameSwitches.setValue(fullSwitchId, !added);
+        }
+    } else {
+        console.warn("[Agonia] Add Item to Chest: inventory module unavailable or bad item reference");
+        if (fullSwitchId > 0 && $gameSwitches) $gameSwitches.setValue(fullSwitchId, true);
+    }
+    return true;
+};
+
+// 717: Remove Item from Chest.
+//      params: [chestId, itemType, itemId, amount, toInventory(0 destroy/1 give)]
+Game_Interpreter.prototype.command717 = function(params) {
+    const chestId = params[0];
+    const itemType = Number(params[1] || 0);
+    const itemId = Number(params[2] || 0);
+    const amount = Math.max(1, Number(params[3] || 1));
+    const toInventory = Number(params[4] || 0) === 1;
+    const chest = this._agoniaChestItems(chestId);
+    if (!chest) {
+        console.warn("[Agonia] Remove Item from Chest: inventory module unavailable");
+        return true;
+    }
+    let left = amount;
+    for (let i = 0; i < chest.length && left > 0; i++) {
+        const slot = chest[i];
+        if (!slot || !slot.item || slot.item.id !== itemId) continue;
+        if (this._agoniaSlotItemType(slot.item) !== itemType) continue;
+        while (left > 0 && slot.amount > 0) {
+            slot.amount--;
+            left--;
+            if (toInventory && $gameParty && $gameParty.gainItem) {
+                $gameParty.gainItem(slot.item, 1);
+            }
+        }
+        if (slot.amount <= 0) chest[i] = null;
+    }
+    return true;
+};
+
+// 718: Clear Chest.
+//      params: [chestId]
+Game_Interpreter.prototype.command718 = function(params) {
+    const chest = this._agoniaChestItems(params[0]);
+    if (chest) {
+        chest.fill(null);
+    } else {
+        console.warn("[Agonia] Clear Chest: inventory module unavailable");
+    }
+    return true;
+};
+
+// 719: Check Chest -> variable.
+//      params: [chestId, variableId, mode, itemType, itemId]
+//      mode: 0 total amount / 1 isEmpty flag / 2 used stacks /
+//            3 amount of the given item / 4 has the given item (1/0)
+Game_Interpreter.prototype.command719 = function(params) {
+    const chest = this._agoniaChestItems(params[0]);
+    const variableId = Number(params[1] || 0);
+    const mode = Number(params[2] || 0);
+    if (!chest) {
+        console.warn("[Agonia] Check Chest: inventory module unavailable");
+        if (variableId > 0 && $gameVariables) $gameVariables.setValue(variableId, 0);
+        return true;
+    }
+    let value = 0;
+    if (mode === 1) {
+        value = chest.every(slot => !slot) ? 1 : 0;
+    } else if (mode === 2) {
+        value = chest.filter(slot => !!slot).length;
+    } else if (mode === 3 || mode === 4) {
+        const itemType = Number(params[3] || 0);
+        const itemId = Number(params[4] || 0);
+        let found = false;
+        for (const slot of chest) {
+            if (!slot || !slot.item || slot.item.id !== itemId || slot.amount <= 0) continue;
+            if (this._agoniaSlotItemType(slot.item) !== itemType) continue;
+            found = true;
+            if (mode === 3) value += slot.amount;
+        }
+        if (mode === 4) value = found ? 1 : 0;
+    } else {
+        for (const slot of chest) {
+            if (slot && slot.amount > 0) value += slot.amount;
+        }
+    }
+    if (variableId > 0 && $gameVariables) $gameVariables.setValue(variableId, value);
+    return true;
+};
+
+// Classify a stored chest item (0 item/1 weapon/2 armor). Items carry
+// itypeId; weapons/armors don't, so their table membership decides.
+Game_Interpreter.prototype._agoniaSlotItemType = function(item) {
+    if (!item) return -1;
+    if (item.itypeId !== undefined) return 0;
+    if (typeof $dataWeapons !== "undefined" && $dataWeapons) {
+        for (const entry of $dataWeapons) {
+            if (entry && entry.id === item.id) return 1;
+        }
+    }
+    return 2;
+};
+
+// 725: Stamina Control — SuperDuperMovement.
+//      params: [operation(0 add/1 fill/2 exhaust), amount]
+Game_Interpreter.prototype.command725 = function(params) {
+    const operation = Number(params[0] || 0);
+    const amount = Number(params[1] || 0);
+    if (!$gamePlayer || $gamePlayer._stamina === undefined) {
+        console.warn("[Agonia] Stamina: movement module unavailable");
+        return true;
+    }
+    if (operation === 1) {
+        this.pluginCommand("Stamina", ["fill"]);
+    } else if (operation === 2) {
+        this.pluginCommand("Stamina", ["exhaust"]);
+    } else {
+        this.pluginCommand("Stamina", ["add", String(amount)]);
+    }
+    return true;
+};
+
+// 726: Dash — SuperDuperMovement_Addon (AltimitDash).
+//      params: [target(0 this event/1 player/2 event by id), eventId, dashName]
+Game_Interpreter.prototype.command726 = function(params) {
+    const target = Number(params[0] || 0);
+    const eventId = Number(params[1] || 0);
+    const dashName = String(params[2] || "");
+    if (target === 1) {
+        this.pluginCommand("AltimitDash", ["playerDash", dashName]);
+    } else if (target === 2) {
+        this.pluginCommand("AltimitDash", ["eventDash", String(eventId), dashName]);
+    } else {
+        this.pluginCommand("AltimitDash", ["dash", dashName]);
+    }
+    return true;
+};
+
+// 730: Wait Async — WaitAsync plugin.
+//      params: [frames]
+Game_Interpreter.prototype.command730 = function(params) {
+    this.pluginCommand("WaitAsync", [String(Math.max(0, Number(params[0] || 0)))]);
+    return true;
+};
+
+// 731: Damage Flash — SuperDuperDamageFlash (SDDF).
+//      params: [target(0 this event/1 player/2 event by id), eventId, frames]
+Game_Interpreter.prototype.command731 = function(params) {
+    const target = Number(params[0] || 0);
+    const eventId = Number(params[1] || 0);
+    const frames = Number(params[2] || 0);
+    if (target === 1) {
+        this.pluginCommand("SDDF", ["FLASH", "PLAYER"]);
+    } else if (target === 2) {
+        this.pluginCommand("SDDF", ["FLASH", "EVENT", String(eventId)]);
+    } else if (frames > 0) {
+        this.pluginCommand("SDDF", ["FLASH", String(frames)]);
+    } else {
+        this.pluginCommand("SDDF", ["FLASH"]);
+    }
+    return true;
+};
+
+// 732: Save to Samsara — SuperDuperSamsara.
+Game_Interpreter.prototype.command732 = function() {
+    this.pluginCommand("SaveToSamsara", []);
+    return true;
+};
+
+// 733: Load from Samsara — SuperDuperSamsara.
+Game_Interpreter.prototype.command733 = function() {
+    this.pluginCommand("LoadFromSamsara", []);
+    return true;
+};
+
+// 734: Open Craft — SimpleCraftSystem.
+Game_Interpreter.prototype.command734 = function() {
+    this.pluginCommand("CraftSystem", ["open"]);
+    return true;
+};
+
+// 735: Show Hint — SimpleCustomHints.
+//      params: [preset, text]
+Game_Interpreter.prototype.command735 = function(params) {
+    const preset = String(params[0] || "");
+    const text = String(params[1] || "");
+    const args = ["show_preset"];
+    if (preset) args.push(preset);
+    if (text) args.push(text);
+    this.pluginCommand("Hint", args);
+    return true;
+};
+
+// 736: Text Mark — SuperDuperMessage (mark).
+//      params: [markId]
+Game_Interpreter.prototype.command736 = function(params) {
+    const markId = String(params[0] || "").trim();
+    if (typeof window !== "undefined" && typeof window.mark === "function") {
+        window.mark(markId);
+    } else {
+        console.warn("[Agonia] Text Mark: message module unavailable");
+    }
+    return true;
+};
+
+// 737: Show Title — SimpleCustomHints (Title show).
+//      params: [preset, text]
+Game_Interpreter.prototype.command737 = function(params) {
+    const preset = String(params[0] || "");
+    const text = String(params[1] || "");
+    this.pluginCommand("Title", ["show", preset, text].filter(v => v !== ""));
+    return true;
+};
+
+//-----------------------------------------------------------------------------

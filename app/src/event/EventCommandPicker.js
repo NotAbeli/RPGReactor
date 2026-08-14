@@ -234,6 +234,14 @@ class EventCommandPicker {
                 ]
             }
         };
+
+        // Agonia Engine native commands (codes 700+) come from the registry.
+        if (typeof AgoniaNativeCommands !== 'undefined') {
+            this.commandData.tab4 = {
+                name: 'Agonia Engine',
+                columns: [{ sections: AgoniaNativeCommands.pickerSections() }]
+            };
+        }
     }
 
     _t(key, params = {}) {
@@ -347,7 +355,7 @@ class EventCommandPicker {
             padding: 4px;
         `;
 
-        const tabs = ['tab1', 'tab2', 'tab3'];
+        const tabs = Object.keys(this.commandData);
         tabs.forEach((tabKey, index) => {
             const tab = document.createElement('button');
             tab.textContent = this._sectionName(this.commandData[tabKey].name);

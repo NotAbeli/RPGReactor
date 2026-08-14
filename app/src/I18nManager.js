@@ -36,7 +36,8 @@ const RR_DB_TYPE_KEYS = {
     actors: 'menu.actors', classes: 'menu.classes', skills: 'menu.skills', items: 'menu.items',
     weapons: 'menu.weapons', armors: 'menu.armors', enemies: 'menu.enemies', troops: 'menu.troops',
     states: 'menu.states', animations: 'menu.animations', tilesets: 'menu.tilesets', commonEvents: 'menu.commonEvents',
-    system: 'menu.system', system1: 'db.system1', system2: 'db.system2', types: 'menu.types', terms: 'menu.terms'
+    system: 'menu.system', system1: 'db.system1', system2: 'db.system2', types: 'menu.types', terms: 'menu.terms',
+    agonia: 'db.agonia'
 };
 
 const RR_EVENT_COMMAND_NAMES = {
@@ -69,12 +70,27 @@ Object.assign(RR_EVENT_COMMAND_NAMES, {
         'Change Battle BGM': 'Изменить BGM Боя', 'Change Victory ME': 'Изменить ME Победы', 'Change Save Access': 'Изменить Доступ К Сохранению', 'Change Menu Access': 'Изменить Доступ К Меню', 'Change Encounter': 'Изменить Встречи', 'Change Formation Access': 'Изменить Доступ К Построению', 'Change Window Color': 'Изменить Цвет Окна', 'Change Defeat ME': 'Изменить ME Поражения', 'Change Vehicle BGM': 'Изменить BGM Транспорта', 'Change Actor Images': 'Изменить Изображения Актёра', 'Change Vehicle Image': 'Изменить Изображение Транспорта',
         'Change Map Name Display': 'Изменить Отображение Имени Карты', 'Change Tileset': 'Изменить Тайлсет', 'Change Battle Background': 'Изменить Фон Боя', 'Change Parallax': 'Изменить Параллакс', 'Get Location Info': 'Получить Инфо О Месте',
         'Change Enemy HP': 'Изменить HP Врага', 'Change Enemy MP': 'Изменить MP Врага', 'Change Enemy TP': 'Изменить TP Врага', 'Change Enemy State': 'Изменить Состояние Врага', 'Enemy Recover All': 'Полное Восстановление Врага', 'Enemy Appear': 'Появление Врага', 'Enemy Transform': 'Превратить Врага', 'Show Battle Animation': 'Показать Боевую Анимацию', 'Force Action': 'Принудительное Действие', 'Abort Battle': 'Прервать Бой',
-        'Script': 'Скрипт', 'Plugin Command': 'Команда Плагина'
+        'Script': 'Скрипт', 'Plugin Command': 'Команда Плагина',
+        'Open Chest (Stored)': 'Открыть Сундук (Хранилище)',
+        'Add Item to Chest': 'Положить Предмет в Сундук',
+        'Remove Item from Chest': 'Убрать Предмет из Сундука',
+        'Clear Chest': 'Очистить Сундук',
+        'Check Chest': 'Проверить Сундук',
+        'Stamina': 'Стамина',
+        'Dash': 'Рывок',
+        'Wait Async': 'Асинхронное Ожидание',
+        'Damage Flash': 'Вспышка Урона',
+        'Save to Samsara': 'Сохранить (Самсара)',
+        'Load from Samsara': 'Загрузить (Самсара)',
+        'Open Craft': 'Открыть Крафт',
+        'Show Hint': 'Показать Подсказку',
+        'Text Mark': 'Метка',
+        'Show Title': 'Показать Титул'
     }
 });
 
 Object.assign(RR_EVENT_SECTION_NAMES, {
-    ru: { 'Message & Flow': 'Сообщения И Поток', 'Map & Screen': 'Карта И Экран', 'Battle & System': 'Бой И Система', 'Message': 'Сообщения', 'Game Progression': 'Прогресс Игры', 'Flow Control': 'Управление Потоком', 'Party': 'Группа', 'Actor': 'Актёр', 'Movement': 'Движение', 'Character': 'Персонаж', 'Picture': 'Изображение', 'Timing': 'Время', 'Screen': 'Экран', 'Audio & Video': 'Аудио И Видео', 'Scene Control': 'Управление Сценой', 'System Settings': 'Системные Настройки', 'Map': 'Карта', 'Battle': 'Бой', 'Advanced': 'Дополнительно' }
+    ru: { 'Message & Flow': 'Сообщения И Поток', 'Map & Screen': 'Карта И Экран', 'Battle & System': 'Бой И Система', 'Message': 'Сообщения', 'Game Progression': 'Прогресс Игры', 'Flow Control': 'Управление Потоком', 'Party': 'Группа', 'Actor': 'Актёр', 'Movement': 'Движение', 'Character': 'Персонаж', 'Picture': 'Изображение', 'Timing': 'Время', 'Screen': 'Экран', 'Audio & Video': 'Аудио И Видео', 'Scene Control': 'Управление Сценой', 'System Settings': 'Системные Настройки', 'Map': 'Карта', 'Battle': 'Бой', 'Advanced': 'Дополнительно', 'Inventory': 'Инвентарь', 'Utility': 'Утилиты', 'Agonia Engine': 'Движок Agonia' }
 });
 
 Object.assign(RR_EVENT_COMMAND_NAMES, {
@@ -454,6 +470,7 @@ const RR_I18N_STRINGS = {
         'forge.generateSave': 'Generate & Save to Library',
 
         'db.system1': 'System 1',
+        'db.agonia': 'Agonia Engine',
         'db.system2': 'System 2',
         'db.search': 'Search {title}...',
         'db.selectEntry': 'Select an entry from the list',
@@ -1362,7 +1379,7 @@ const RR_ADDITIONAL_LOCALES = {
         'options.title': 'Параметры', 'options.appearance': 'Внешний Вид', 'options.language': 'Язык', 'options.palette': 'Палитра', 'options.mode': 'Режим', 'options.dark': 'Тёмный', 'options.light': 'Светлый', 'options.themeNote': 'Тема применяется сразу. Переоткройте вкладки редактора, чтобы обновить элементы Canvas.', 'options.languageNote': 'Язык сразу применяется к локализованному тексту интерфейса. Некоторые глубокие формы будут локализованы постепенно.',
         'about.title': 'О Agonia Engine', 'about.description': 'Открытый кроссплатформенный RPG-движок на NW.js и PixiJS v8', 'about.compatibility': 'Создавайте потрясающие RPG в профессиональном редакторе для Windows, Mac и Linux. В большинстве случаев совместим с проектами RPG Maker MZ и MV; совместимость во время выполнения в основном зависит от corescripts и плагинов проекта.', 'about.linksTitle': 'Ссылки Psychronic', 'about.itch': 'Itch.io - Плагины И Инструменты', 'about.steam': 'Steam - Игры Psychronic', 'about.github': 'GitHub - Другие Проекты', 'about.youtube': 'YouTube - Psychronic Games', 'about.rarelyTypicalPlayers': 'YouTube - Rarely Typical Players Podcast', 'about.discord': 'Discord - Присоединиться К Сообществу', 'about.license': 'Лицензия: MIT',
         'forge.tools': 'Инструменты', 'forge.welcome': 'Набор инструментов генерации ресурсов. Выберите инструмент на боковой панели или ниже.', 'forge.openProject': 'Откройте проект, чтобы использовать инструменты Кузницы.', 'forge.tab.procedural': 'Процедурно', 'forge.tab.outfit': 'Кузница Костюмов', 'forge.tab.hair': 'Кузница Волос', 'forge.tab.parts': 'Части (PNG)', 'forge.style': 'Стиль:', 'forge.frame': 'Кадр:', 'forge.sheet': 'Лист:', 'forge.saveAs': 'Сохранить как:', 'forge.saveSheet': 'Сохранить Лист', 'forge.generateSave': 'Создать И Сохранить В Библиотеку', 'forge.characterGenerator.description': 'Создавайте листы спрайтов персонажей из многослойных частей.', 'forge.animationGenerator.description': 'Создавайте листы процедурной анимации (геометрия, частицы и т. д.).', 'forge.soundEffectGenerator.description': 'Процедурный синтезатор SFX: архетипы в стиле sfxr и Web Audio.', 'forge.effekseerGenerator.description': 'Создавайте эффекты частиц Effekseer (.efkefc) по рецептам без редактора Effekseer.',
-        'db.system1': 'Система 1', 'db.system2': 'Система 2', 'db.search': 'Поиск {title}...', 'db.selectEntry': 'Выберите запись из списка', 'db.changeMaximum': 'Изменить максимум', 'db.selectEntryToDelete': 'Выберите запись для удаления', 'db.deleteConfirm': 'Удалить «{name}»?', 'db.unknownType': 'Неизвестный тип базы данных: {type}', 'db.saved': 'База данных сохранена',
+        'db.system1': 'Система 1', 'db.system2': 'Система 2', 'db.agonia': 'Движок Agonia', 'db.search': 'Поиск {title}...', 'db.selectEntry': 'Выберите запись из списка', 'db.changeMaximum': 'Изменить максимум', 'db.selectEntryToDelete': 'Выберите запись для удаления', 'db.deleteConfirm': 'Удалить «{name}»?', 'db.unknownType': 'Неизвестный тип базы данных: {type}', 'db.saved': 'База данных сохранена',
         'event.name': 'Имя События:', 'event.position': 'Позиция:', 'event.note': 'Заметка:', 'event.newPage': 'Новая Страница События', 'event.copyPage': 'Копировать Страницу', 'event.pastePage': 'Вставить Страницу', 'event.deletePage': 'Удалить Страницу', 'event.clearPage': 'Очистить Страницу', 'event.page': 'Страница {number}', 'event.contents': 'Содержимое', 'event.selectCommand': 'Выберите Команду События', 'event.conditions': 'Условия', 'event.image': 'Изображение', 'event.options': 'Опции', 'event.autonomousMovement': 'Автономное Движение', 'event.priority': 'Приоритет', 'event.trigger': 'Триггер',
         'status.noProjectLoaded': 'Проект не загружен', 'status.playtestNotImplemented': 'Режим теста пока не реализован', 'status.playtestSaveFailed': 'Тест отменён: не удалось сохранить проект', 'status.loadMapFirst': 'Сначала загрузите карту', 'status.eventModeEnabled': 'Режим событий включён', 'status.eventModeDisabled': 'Режим событий отключён', 'status.lightModeEnabled': 'Режим света включён', 'status.lightModeDisabled': 'Режим света отключён', 'status.lightPreviewEnabled': 'Предпросмотр освещения включён', 'status.lightPreviewDisabled': 'Предпросмотр освещения отключён', 'overlay.lightPreview': 'Предпросмотр освещения (как в плейтесте)', 'menu.lightManager': 'Освещение', 'toolbar.title.lightMode': 'Режим света', 'lightManager.title': 'Освещение', 'lightManager.add': '+ Источник', 'lightManager.duplicate': 'Дублировать', 'lightManager.delete': 'Удалить', 'lightManager.reset': 'Сбросить override', 'lightManager.save': '💾 Сохранить', 'lightManager.tabProps': 'Свойства', 'lightManager.tabPresets': 'Пресеты', 'lightManager.tabLib': 'Библиотека', 'lightManager.noSelection': 'Кликните по источнику на карте, чтобы править его свойства.', 'lightManager.libEmpty': 'Библиотека пуста. Выберите источник и «Сохранить как шаблон».', 'alert.loadProjectFirst': 'Сначала загрузите проект.'
     },
@@ -1639,6 +1656,24 @@ Object.assign(RR_TEXT_TRANSLATIONS.es, { 'OK': 'OK', 'Cancel': 'Cancelar', 'Clea
 Object.assign(RR_TEXT_TRANSLATIONS['zh-Hant'], { 'OK': '確定', 'Cancel': '取消', 'Clear': '清除', 'Play': '播放', 'Stop': '停止' });
 Object.assign(RR_TEXT_TRANSLATIONS['zh-Hans'], { 'OK': '确定', 'Cancel': '取消', 'Clear': '清除', 'Play': '播放', 'Stop': '停止' });
 Object.assign(RR_TEXT_TRANSLATIONS.ru, { 'OK': 'OK', 'Cancel': 'Отмена', 'Clear': 'Очистить', 'Play': 'Играть', 'Stop': 'Стоп' });
+
+Object.assign(RR_TEXT_TRANSLATIONS.ru, { 'Chest ID': 'ID Сундука', 'Auto chest ID (unique per event)': 'Авто ID сундука (уникален для события)' });
+
+Object.assign(RR_TEXT_TRANSLATIONS.ru, {
+    'Put': 'Положить', 'Take': 'Забрать', 'To inventory': 'В инвентарь',
+    'Total item amount': 'Общее кол-во предметов', 'Is empty (1/0)': 'Пуст (1/0)', 'Used slots': 'Занято слотов',
+    'Item Type': 'Тип Предмета', 'Item': 'Предмет', 'Weapon': 'Оружие', 'Armor': 'Броня',
+    'Amount': 'Количество', 'Destination': 'Назначение', 'Destroy': 'Уничтожить',
+    'Move to party inventory': 'Переложить в инвентарь группы', 'Mode': 'Режим',
+    'Full Switch': 'Переключатель Полноты', 'No switch': 'Без переключателя', 'Variable': 'Переменная',
+    'Amount of item': 'Количество Предмета', 'Has item (1/0)': 'Есть ли Предмет (1/0)',
+    'Add amount': 'Добавить количество', 'Fill': 'Восстановить', 'Exhaust': 'Истощить',
+    'Open crafting window': 'Открыть окно крафта',
+    'Stamina & Dash': 'Стамина и Бег', 'Variables & Switches': 'Переменные и Переключатели',
+    'Dash Blocking Switches': 'Переключатели-блокираторы бега',
+    'Dashing is blocked while any of these switches is ON. Comma-separated switch IDs.': 'Бег запрещён, пока хотя бы один из этих переключателей включён. ID через запятую.',
+    'Agonia Engine': 'Движок Agonia'
+});
 Object.assign(RR_TEXT_TRANSLATIONS.pt, { 'OK': 'OK', 'Cancel': 'Cancelar', 'Clear': 'Limpar', 'Play': 'Reproduzir', 'Stop': 'Parar' });
 
 Object.assign(RR_TEXT_TRANSLATIONS.ja, { 'New': '新規', 'Cut': '切り取り', 'Copy': 'コピー', 'Paste': '貼り付け', 'Delete': '削除', 'Select All': 'すべて選択', 'Copy As Text': 'テキストとしてコピー', 'Copy As HTML': 'HTMLとしてコピー', 'Toggle Skip': 'スキップ切替', 'Test': 'テスト', 'No event commands in clipboard to paste.': '貼り付けるイベントコマンドがクリップボードにありません。', 'Variable': '変数', 'Single': '単体', 'Batch': '範囲', 'Set': '代入', 'Sub': '減算', 'Mul': '乗算', 'Div': '除算', 'Mod': '剰余', 'Random': '乱数', 'Game Data': 'ゲームデータ', 'Min:': '最小:', 'Max:': '最大:', 'Member #:': 'メンバー番号:', 'Weapon': '武器', 'Shield': '盾', 'Head': '頭', 'Body': '体', 'Accessory': '装飾品', 'Entire Troop': '敵グループ全体', 'Player': 'プレイヤー', 'This Event': 'このイベント', 'Wait for Completion': '完了まで待つ', 'frames': 'フレーム', 'Face:': '顔:', 'Message:': 'メッセージ:', 'Maximum 4 lines of text': '最大4行のテキスト', 'Window Position:': 'ウィンドウ位置:', 'Preview': 'プレビュー', 'Open in Folder': 'フォルダーで開く', 'Please enter a valid number between 1 and 5000.': '1から5000までの有効な数値を入力してください。' });

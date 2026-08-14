@@ -84,7 +84,10 @@ class DatabaseManager {
             mapInfos: [],
             // Per-tile 3D classification. Not one of the dataFiles: those are
             // the MZ database format, and this is ours, stored beside them.
-            tileset3d: null
+            tileset3d: null,
+            // Agonia Engine settings (data/AgoniaEngine.json): stamina etc.
+            // Same sidecar pattern as tileset3d — never blocks the database.
+            agonia: null
         };
 
         // Initialize Node.js modules if running in NW.js
@@ -122,6 +125,7 @@ class DatabaseManager {
                 loaded[key] = await this.loadJSON(dataPath, filename);
             }
             loaded.tileset3d = await this.loadTileset3D(projectPath);
+            loaded.agonia = await this.loadAgonia(projectPath);
             Object.assign(this.data, loaded);
             this.projectPath = projectPath;
             this.dataGeneration++;
@@ -215,6 +219,129 @@ class DatabaseManager {
         }
     }
 
+    /**
+     * Agonia Engine settings sidecar (data/AgoniaEngine.json).
+     *
+     * Shape: { stamina: { <plugin parameter name>: value, ... }, ...future }.
+     * Section keys intentionally match the plugin parameter names so the
+     * runtime can merge them straight into module parameters. Values use
+     * natural JSON types (numbers, arrays); the runtime stringifies when
+     * feeding PluginManager parameters.
+     */
+    static get AGONIA_FILENAME() {
+        return 'AgoniaEngine.json';
+    }
+
+    static agoniaDefaults() {
+        return {
+            stamina: {
+                'Max Stamina': 100,
+                'Dash Speed Level': 5,
+                'Horizontal Mult': 1,
+                'Vertical Mult': 1,
+                'Diagonal Mult': 1,
+                'Drain Per Frame': 0.5,
+                'Recover Per Frame': 0.4,
+                'Dash Blocking Switches': [],
+                'Max Stamina Variable ID': 0,
+                'Regen Variable ID': 0,
+                'Stamina Display Variable ID': 0,
+                'Dash Control Switch ID': 0
+            }
+        };
+    }
+
+    static normalizeAgoniaValue(value) {
+        if (Array.isArray(value)) return value.map(Number).filter(n => !Number.isNaN(n));
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (trimmed.startsWith('[')) {
+                try {
+                    return this.normalizeAgoniaValue(JSON.parse(trimmed));
+                } catch (e) { /* keep as string */ }
+            }
+            if (trimmed !== '' && !Number.isNaN(Number(trimmed))) return Number(trimmed);
+        }
+        return value;
+    }
+
+    static normalizeAgonia(config) {
+        const defaults = this.agoniaDefaults();
+        if (!config || typeof config !== 'object') return this.agoniaDefaults();
+        const result = {};
+        for (const section of Object.keys(defaults)) {
+            result[section] = {};
+            const source = config[section] && typeof config[section] === 'object' ? config[section] : {};
+            for (const key of Object.keys(defaults[section])) {
+                result[section][key] = this.normalizeAgoniaValue(source[key] !== undefined ? source[key] : defaults[section][key]);
+            }
+        }
+        // Preserve unknown sections untouched for forward compatibility.
+        for (const section of Object.keys(config)) {
+            if (!(section in result)) result[section] = config[section];
+        }
+        return result;
+    }
+
+    /**
+     * Seed stamina values from the project plugin manifest when the sidecar
+     * does not exist yet, so switching to database settings continues the
+     * game's current tuning instead of resetting it to plugin defaults.
+     */
+    agoniaFromManifest(projectPath) {
+        const defaults = this.constructor.agoniaDefaults();
+        try {
+            const jsPath = this.path.join(projectPath, 'js');
+            for (const manifest of ['reactor_plugins.js', 'plugins.js']) {
+                const manifestPath = this.path.join(jsPath, manifest);
+                if (!this.fs.existsSync(manifestPath)) continue;
+                const text = this.fs.readFileSync(manifestPath, 'utf8');
+                const start = text.indexOf('[');
+                const end = text.lastIndexOf(']');
+                if (start < 0 || end <= start) break;
+                const plugins = JSON.parse(text.slice(start, end + 1));
+                const entry = plugins.find(p => p && String(p.name) === 'SuperDuperMovement');
+                if (!entry || !entry.parameters) break;
+                for (const key of Object.keys(defaults.stamina)) {
+                    if (entry.parameters[key] !== undefined) {
+                        defaults.stamina[key] = this.constructor.normalizeAgoniaValue(entry.parameters[key]);
+                    }
+                }
+                break;
+            }
+        } catch (e) {
+            // Unreadable manifest: plain defaults are fine.
+        }
+        return defaults;
+    }
+
+    async loadAgonia(projectPath) {
+        if (!this.fs || !this.path) return this.constructor.agoniaDefaults();
+        const filePath = this.path.join(projectPath, 'data', this.constructor.AGONIA_FILENAME);
+        if (!this.fs.existsSync(filePath)) return this.agoniaFromManifest(projectPath);
+        try {
+            return this.constructor.normalizeAgonia(
+                await this._readJsonWithRetry(filePath));
+        } catch (error) {
+            console.error(`Error loading ${this.constructor.AGONIA_FILENAME}:`, error);
+            return this.agoniaFromManifest(projectPath);
+        }
+    }
+
+    async saveAgonia(projectPath) {
+        if (!this.fs || !this.path) return false;
+        const filePath = this.path.join(projectPath, 'data', this.constructor.AGONIA_FILENAME);
+        try {
+            this._writeFileAtomic(this.fs, filePath,
+                JSON.stringify(this.constructor.normalizeAgonia(this.data.agonia), null, 2) + '\n');
+            this.captureSavedState('agonia');
+            return true;
+        } catch (error) {
+            console.error(`Error saving ${this.constructor.AGONIA_FILENAME}:`, error);
+            return false;
+        }
+    }
+
     captureSavedState(dataKey = null) {
         const entries = dataKey
             ? this.dataFiles.filter(([key]) => key === dataKey)
@@ -224,6 +351,9 @@ class DatabaseManager {
         }
         if (!dataKey || dataKey === 'tileset3d') {
             this.savedState.tileset3d = this.serialize(this.data.tileset3d || null);
+        }
+        if (!dataKey || dataKey === 'agonia') {
+            this.savedState.agonia = this.serialize(this.data.agonia || null);
         }
     }
 
@@ -236,6 +366,10 @@ class DatabaseManager {
         if (this.savedState.tileset3d !== undefined
             && this.serialize(this.data.tileset3d || null) !== this.savedState.tileset3d) {
             dirty.push('tileset3d');
+        }
+        if (this.savedState.agonia !== undefined
+            && this.serialize(this.data.agonia || null) !== this.savedState.agonia) {
+            dirty.push('agonia');
         }
         return dirty;
     }
@@ -531,6 +665,9 @@ class DatabaseManager {
         }
         if (!await this.saveTileset3D(projectPath)) {
             failed.push(this.tileset3DClasses()?.FILENAME || 'Tilesets.r3d.json');
+        }
+        if (!await this.saveAgonia(projectPath)) {
+            failed.push('AgoniaEngine.json');
         }
         if (failed.length) console.error(`Failed to save database files: ${failed.join(', ')}`);
         return failed.length === 0;

@@ -151,6 +151,14 @@ class EventCommandList {
             eventEditor.projectController
         );
 
+        // Agonia Engine native commands (codes 700+)
+        this.nativeCommandDialog = typeof NativeCommandDialog !== 'undefined'
+            ? new NativeCommandDialog(
+                eventEditor.databaseManager,
+                eventEditor.projectController
+            )
+            : null;
+
         // Toggle command editor (shared for codes 136-139, 216, 281)
         this.toggleCommandEditor = new ToggleCommandEditor(
             eventEditor.databaseManager,
@@ -1209,6 +1217,21 @@ class EventCommandList {
             355: { name: 'Script', color: 'var(--color-syntax-keyword)' },
             356: { name: 'Plugin Command', color: 'var(--color-syntax-keyword)' },
             357: { name: 'Plugin Command', color: 'var(--color-syntax-keyword)' },
+            715: { name: 'Open Chest (Stored)', color: 'var(--color-syntax-type)' },
+            716: { name: 'Add Item to Chest', color: 'var(--color-syntax-type)' },
+            717: { name: 'Remove Item from Chest', color: 'var(--color-syntax-type)' },
+            718: { name: 'Clear Chest', color: 'var(--color-syntax-type)' },
+            719: { name: 'Check Chest', color: 'var(--color-syntax-type)' },
+            725: { name: 'Stamina', color: 'var(--color-syntax-function)' },
+            726: { name: 'Dash', color: 'var(--color-syntax-function)' },
+            730: { name: 'Wait Async', color: 'var(--color-syntax-string)' },
+            731: { name: 'Damage Flash', color: 'var(--color-syntax-function)' },
+            732: { name: 'Save to Samsara', color: 'var(--color-syntax-function)' },
+            733: { name: 'Load from Samsara', color: 'var(--color-syntax-function)' },
+            734: { name: 'Open Craft', color: 'var(--color-syntax-type)' },
+            735: { name: 'Show Hint', color: 'var(--color-syntax-type)' },
+            736: { name: 'Text Mark', color: 'var(--color-syntax-type)' },
+            737: { name: 'Show Title', color: 'var(--color-syntax-type)' },
             401: { name: 'Text', color: 'var(--color-syntax-comment)' },
             402: { name: 'When', color: 'var(--color-syntax-string)' },
             403: { name: 'When Cancel', color: 'var(--color-syntax-string)' },
@@ -1873,6 +1896,84 @@ class EventCommandList {
                 }
                 break;
             }
+            case 715: {
+                // Open Chest (Stored) - Agonia native command
+                const chestId = String(params[0] || '').trim();
+                description = chestId
+                    ? `${tt('Chest ID')}: ${chestId}`
+                    : tt('Auto chest ID (unique per event)');
+                break;
+            }
+            case 716:
+            case 717: {
+                // Add / Remove Item from Chest
+                const chestId = String(params[0] || '').trim();
+                const itemName = this._agoniaItemName(params[1], params[2]);
+                const amount = params[3] || 1;
+                const verb = code === 716 ? tt('Put') : tt('Take');
+                description = `${verb}: ${itemName} ×${amount} → ${chestId || tt('Auto chest ID (unique per event)')}`;
+                if (code === 717 && Number(params[4]) === 1) {
+                    description += ` (${tt('To inventory')})`;
+                }
+                break;
+            }
+            case 718: {
+                const chestId = String(params[0] || '').trim();
+                description = `${tt('Chest ID')}: ${chestId}`;
+                break;
+            }
+            case 719: {
+                const chestId = String(params[0] || '').trim();
+                const mode = Number(params[2]) || 0;
+                if (mode === 3 || mode === 4) {
+                    const itemName = this._agoniaItemName(params[3], params[4]);
+                    const label = mode === 3 ? tt('Amount of item') : tt('Has item (1/0)');
+                    description = `${label}: ${itemName} → ${tt('Variable')} ${this._fmtVar(params[1])} (${chestId})`;
+                } else {
+                    const modes = [tt('Total item amount'), tt('Is empty (1/0)'), tt('Used slots')];
+                    description = `${modes[mode]} → ${tt('Variable')} ${this._fmtVar(params[1])} (${chestId})`;
+                }
+                break;
+            }
+            case 725: {
+                const op = Number(params[0]) || 0;
+                const ops = [tt('Add amount'), tt('Fill'), tt('Exhaust')];
+                description = op === 0 ? `${ops[0]}: ${params[1] || 0}` : ops[op];
+                break;
+            }
+            case 726: {
+                const target = Number(params[0]) || 0;
+                const targets = [tt('This Event'), tt('Player'), `${tt('Event')} #${params[1] || 1}`];
+                description = `${targets[target]}: ${params[2] || ''}`;
+                break;
+            }
+            case 730: {
+                description = `${params[0] || 0} ${tt('frames')}`;
+                break;
+            }
+            case 731: {
+                const target = Number(params[0]) || 0;
+                const targets = [tt('This Event'), tt('Player'), `${tt('Event')} #${params[1] || 1}`];
+                description = targets[target];
+                if (target === 0 && Number(params[2]) > 0) description += `, ${params[2]} ${tt('frames')}`;
+                break;
+            }
+            case 734: {
+                description = tt('Open crafting window');
+                break;
+            }
+            case 735: {
+                description = `${params[0] || ''}: ${String(params[1] || '').substring(0, 60)}`;
+                break;
+            }
+            case 736: {
+                description = String(params[0] || '');
+                break;
+            }
+            case 737: {
+                description = `${params[0] || ''}: ${String(params[1] || '').substring(0, 60)}`;
+                break;
+            }
             case 655: {
                 // Script continuation (rows are hidden; this is defensive)
                 const scriptLine = params[0] || '';
@@ -2305,6 +2406,15 @@ class EventCommandList {
         const num = `#${id.toString().padStart(4, '0')}`;
         const name = this._lookupVariableName(id);
         return name ? `${num} ${name}` : `${num} ${tt('(unnamed)')}`;
+    }
+
+    /** Agonia chest commands: item name from the project database (0 item/1 weapon/2 armor) */
+    _agoniaItemName(type, id) {
+        const tt = (text) => (typeof window !== 'undefined' && window.I18n) ? window.I18n.tText(text) : text;
+        const data = this.eventEditor.databaseManager && this.eventEditor.databaseManager.data;
+        const table = Number(type) === 1 ? (data && data.weapons) : Number(type) === 2 ? (data && data.armors) : (data && data.items);
+        const entry = table && table[Number(id)];
+        return (entry && entry.name) || `${tt('Item')} ${id}`;
     }
 
     /** Format a Game Data operand: type+param1+param2 → readable string */
@@ -3130,6 +3240,19 @@ class EventCommandList {
             // For erase picture commands, open the editor immediately
             if (code === 235) {
                 this.erasePictureEditor.show(null, (command) => {
+                    if (command) {
+                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
+                        this.selectedIndices = [insertIndex];
+                        this.refreshCommandList(page, pageIndex);
+                    }
+                });
+                return;
+            }
+
+            // For Agonia Engine native commands, open the dialog immediately
+            if (AgoniaNativeCommands.byCode(code)) {
+                if (!this.nativeCommandDialog) return;
+                this.nativeCommandDialog.showForCode(code, (command) => {
                     if (command) {
                         page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
                         this.selectedIndices = [insertIndex];
@@ -4498,6 +4621,18 @@ class EventCommandList {
         // Erase Picture command
         if (code === 235) {
             this.erasePictureEditor.show(command, (editedCommand) => {
+                if (editedCommand) {
+                    replaceSingle(editedCommand);
+                    this.refreshCommandList(page, pageIndex);
+                }
+            });
+            return;
+        }
+
+        // Agonia Engine native commands
+        if (AgoniaNativeCommands.byCode(code)) {
+            if (!this.nativeCommandDialog) return;
+            this.nativeCommandDialog.show(command, (editedCommand) => {
                 if (editedCommand) {
                     replaceSingle(editedCommand);
                     this.refreshCommandList(page, pageIndex);

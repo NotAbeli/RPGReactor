@@ -46,6 +46,9 @@ class DatabaseEditorUI {
             }
         };
         this.system1Editor = new DatabaseSystem1Editor(databaseManager, system1ProjectManager, this.commonUI, this);
+        this.agoniaEditor = typeof DatabaseAgoniaEditor !== 'undefined'
+            ? new DatabaseAgoniaEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this)
+            : null;
         this.system2Editor = new DatabaseSystem2Editor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         this.commonEventEditor = new DatabaseCommonEventEditor(databaseManager, eventProjectManager, this.commonUI, this);
 
@@ -372,6 +375,12 @@ class DatabaseEditorUI {
                 const { detailEl } = this.prepareDatabaseSection('system2', this._dbTitle('system2', 'System 2'), { showListPanel: false });
 
                 this.system2Editor.showSystem2Detail(detailEl);
+                return;
+            }
+            case 'agonia': {
+                if (!this.agoniaEditor) return;
+                const { detailEl } = this.prepareDatabaseSection('agonia', this._dbTitle('agonia', 'Agonia Engine'), { showListPanel: false });
+                this.agoniaEditor.showAgoniaDetail(detailEl);
                 return;
             }
             case 'types': {
@@ -1123,7 +1132,8 @@ class DatabaseEditorUI {
             { name: 'System 1', type: 'system1' },
             { name: 'System 2', type: 'system2' },
             { name: 'Types', type: 'types' },
-            { name: 'Terms', type: 'terms' }
+            { name: 'Terms', type: 'terms' },
+            { name: 'Agonia Engine', type: 'agonia' }
         ];
 
         categories.forEach(category => {
