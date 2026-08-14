@@ -378,8 +378,10 @@ class PluginCommandMigration {
 
     /**
      * Build the engine-module entry for a plugin leaving the manifest.
-     * orderBefore preserves the original load position (names of every
-     * manifest entry that preceded it).
+     * orderBefore preserves the original load position: names of every
+     * loadable (status true) manifest entry that preceded it. Separator
+     * rows and disabled plugins are skipped — anchoring on them later
+     * pushes the module to the wrong position in the merged list.
      */
     static buildEngineModuleEntry(plugins, pluginName) {
         const orderBefore = [];
@@ -389,7 +391,7 @@ class PluginCommandMigration {
                 parameters = entry.parameters || {};
                 break;
             }
-            if (entry && entry.name) orderBefore.push(String(entry.name));
+            if (entry && entry.name && entry.status) orderBefore.push(String(entry.name));
         }
         return { name: pluginName, parameters, orderBefore };
     }
@@ -482,6 +484,201 @@ class PluginCommandMigration {
             report.ok = true;
             report.written = target;
             report.backup = backup;
+            return report;
+        } catch (error) {
+            report.error = error.message || String(error);
+            return report;
+        }
+    }
+
+    /**
+     * Compute the exact runtime load order for a project: manifest entries
+     * merged with engineModules using the same anchoring rules as
+     * PluginManager.mergeEngineModules (only loadable entries anchor).
+     * Used by --print-order to verify order without launching the game.
+     */
+    static computeLoadOrder(options) {
+        const { fs, path, projectPath } = options;
+        const report = { ok: false, error: null, names: [] };
+        if (!fs || !path || !projectPath) {
+            report.error = 'fs, path and projectPath are required';
+            return report;
+        }
+        try {
+            const jsPath = path.join(projectPath, 'js');
+            let manifestPath = null;
+            for (const candidate of ['reactor_plugins.js', 'plugins.js']) {
+                const full = path.join(jsPath, candidate);
+                if (fs.existsSync(full)) { manifestPath = full; break; }
+            }
+            const plugins = [];
+            if (manifestPath) {
+                const text = fs.readFileSync(manifestPath, 'utf8');
+                const start = text.indexOf('[');
+                const end = text.lastIndexOf(']');
+                if (start >= 0 && end > start) {
+                    plugins.push(...JSON.parse(text.slice(start, end + 1)));
+                }
+            }
+            const metaPath = path.join(projectPath, 'project.rpgreactor');
+            let modules = [];
+            if (fs.existsSync(metaPath)) {
+                const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8').replace(/^\uFEFF/, ''));
+                modules = Array.isArray(meta.engineModules) ? meta.engineModules : [];
+            }
+            // Mirror PluginManager.mergeEngineModules, including the
+            // dependency-order pass over pending modules (canonical
+            // orderBefore prefixes order them even with an empty manifest).
+            const present = new Set(plugins.map(p => p && String(p.name)));
+            const pending = modules.filter(m => m && m.name && !present.has(String(m.name)));
+            const merged = plugins.slice();
+            const pendingNames = new Set(pending.map(m => String(m.name)));
+            const pendingDeps = new Map();
+            for (const module of pending) {
+                const orderBefore = Array.isArray(module.orderBefore)
+                    ? module.orderBefore.map(String) : [];
+                pendingDeps.set(module, orderBefore.filter(n => pendingNames.has(n)).length);
+            }
+            const sorted = pending.slice().sort((a, b) => (pendingDeps.get(a) || 0) - (pendingDeps.get(b) || 0));
+            for (const module of sorted) {
+                const orderBefore = Array.isArray(module.orderBefore)
+                    ? module.orderBefore.map(String) : [];
+                let insertAt = 0;
+                for (let i = 0; i < merged.length; i++) {
+                    if (merged[i] && merged[i].status && orderBefore.includes(String(merged[i].name))) {
+                        insertAt = i + 1;
+                    }
+                }
+                merged.splice(insertAt, 0, { name: module.name, status: true, parameters: module.parameters || {} });
+            }
+            report.names = merged.filter(p => p && p.status && p.name).map(p => String(p.name));
+            report.ok = true;
+            return report;
+        } catch (error) {
+            report.error = error.message || String(error);
+            return report;
+        }
+    }
+
+    /**
+     * Move EVERY remaining manifest plugin into the project config:
+     * enabled ones -> engineModules (with full parameters and load order),
+     * disabled ones -> disabledPlugins (name + parameters, not loaded).
+     * After this the plugin manifest is empty and every plugin setting
+     * lives in project.rpgreactor under version control.
+     */
+    static harvestAllPlugins(options) {
+        const { fs, path, projectPath } = options;
+        const report = {
+            ok: false, error: null, manifestPath: null, backupPath: null,
+            moved: [], disabled: [], manifestWritten: false
+        };
+        if (!fs || !path || !projectPath) {
+            report.error = 'fs, path and projectPath are required';
+            return report;
+        }
+        try {
+            const jsPath = path.join(projectPath, 'js');
+            let manifestPath = null;
+            for (const candidate of ['reactor_plugins.js', 'plugins.js']) {
+                const full = path.join(jsPath, candidate);
+                if (fs.existsSync(full)) { manifestPath = full; break; }
+            }
+            if (!manifestPath) {
+                report.error = 'plugin manifest not found (js/plugins.js / js/reactor_plugins.js)';
+                return report;
+            }
+            report.manifestPath = manifestPath;
+            const manifestText = fs.readFileSync(manifestPath, 'utf8');
+            const start = manifestText.indexOf('[');
+            const end = manifestText.lastIndexOf(']');
+            if (start < 0 || end <= start) {
+                report.error = 'manifest does not contain a $plugins array';
+                return report;
+            }
+            const plugins = JSON.parse(manifestText.slice(start, end + 1));
+            if (!Array.isArray(plugins) || plugins.length === 0) {
+                report.error = 'manifest is already empty — nothing to harvest';
+                return report;
+            }
+
+            const metaPath = path.join(projectPath, 'project.rpgreactor');
+            let projectMeta = {};
+            if (fs.existsSync(metaPath)) {
+                projectMeta = JSON.parse(fs.readFileSync(metaPath, 'utf8').replace(/^\uFEFF/, ''));
+            }
+            const modules = Array.isArray(projectMeta.engineModules) ? projectMeta.engineModules : [];
+            const moduleNames = new Set(modules.map(m => m && String(m.name)));
+            const disabled = Array.isArray(projectMeta.disabledPlugins) ? projectMeta.disabledPlugins.slice() : [];
+            const disabledNames = new Set(disabled.map(d => d && String(d.name)));
+
+            // Normalize every module's orderBefore against the canonical
+            // original order: separators and disabled plugins removed, and
+            // modules ordered by their position in the ORIGINAL manifest
+            // (the merged engineModules list may have accumulated in
+            // migration order, which differs).
+            const canonical = [];
+            for (const entry of plugins) {
+                if (entry && entry.name && entry.status && !/^-+$/.test(String(entry.name))) {
+                    canonical.push(String(entry.name));
+                }
+            }
+            const moduleByName = new Map(modules.map(m => [String(m.name), m]));
+            for (const name of canonical) {
+                if (!moduleNames.has(name)) {
+                    modules.push(this.buildEngineModuleEntry(plugins, name));
+                    moduleNames.add(name);
+                }
+            }
+            // Reorder the whole engineModules list to match the canonical
+            // original order; unknown modules keep their relative position
+            // at the end.
+            const rank = new Map(canonical.map((name, i) => [name, i]));
+            modules.sort((a, b) => {
+                const ra = rank.has(String(a.name)) ? rank.get(String(a.name)) : canonical.length;
+                const rb = rank.has(String(b.name)) ? rank.get(String(b.name)) : canonical.length;
+                if (ra !== rb) return ra - rb;
+                return 0;
+            });
+            // Rewrite orderBefore for every module from the canonical order.
+            for (let i = 0; i < modules.length; i++) {
+                modules[i].orderBefore = canonical.slice(0, rank.has(String(modules[i].name))
+                    ? rank.get(String(modules[i].name)) : canonical.length);
+            }
+
+            for (const entry of plugins) {
+                if (!entry || !entry.name) continue;
+                const name = String(entry.name);
+                // Separator rows ("------") are manifest cosmetics, not plugins.
+                if (/^-+$/.test(name)) continue;
+                if (entry.status) {
+                    report.moved.push(name);
+                } else {
+                    if (!disabledNames.has(name)) {
+                        disabled.push({ name, parameters: entry.parameters || {} });
+                        disabledNames.add(name);
+                    }
+                    report.disabled.push(name);
+                }
+            }
+
+            projectMeta.engineModules = modules;
+            projectMeta.disabledPlugins = disabled;
+            projectMeta.modified = new Date().toISOString();
+
+            // Backup, then write both files.
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+            const backupPath = path.join(projectPath, `manifest-harvest-backup-${stamp}`);
+            fs.mkdirSync(backupPath, { recursive: true });
+            fs.copyFileSync(manifestPath, path.join(backupPath, path.basename(manifestPath)));
+            if (fs.existsSync(metaPath)) fs.copyFileSync(metaPath, path.join(backupPath, 'project.rpgreactor'));
+            report.backupPath = backupPath;
+
+            fs.writeFileSync(metaPath, JSON.stringify(projectMeta, null, 2) + '\n', 'utf8');
+            const prefix = manifestText.slice(0, start);
+            fs.writeFileSync(manifestPath, prefix + '[];\n', 'utf8');
+            report.manifestWritten = true;
+            report.ok = true;
             return report;
         } catch (error) {
             report.error = error.message || String(error);

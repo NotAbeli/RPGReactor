@@ -202,3 +202,125 @@ test('mergeEngineModules preserves original load order against the pre-migration
         cleanupTemp(dir);
     }
 });
+
+test('mergeEngineModules ignores separators and disabled plugins as anchors (live-data shape)', () => {
+    // Regression: the live project's orderBefore lists contain separator
+    // rows ("------", status off) and disabled plugins. Anchoring on the
+    // LAST such entry (they repeat to the end of the manifest) pushed every
+    // module to the tail of the merged list, inverting plugin alias order
+    // (camera loaded before movement; zoom/cursor broke in playtest).
+    const SEP = '--------------------------------------';
+    const originalOrder = [
+        'SRD_GameUpgrade', 'SuperDuperCore', 'WaitAsync', SEP,
+        'YEP_SaveEventLocations', SEP, 'SuperDuperMovement', SEP,
+        'SuperDuperScreen', 'SuperDuperCamera', 'SuperDuperLight',
+        'SuperDuperInventory', SEP, 'N_HideIdleMouse', SEP,
+        'SuperDuperEnemies', 'SRD_LightEditor', 'ProfilingOverlay'
+    ];
+    const manifestShape = name => (name === SEP
+        ? { name, status: false, parameters: {} }
+        : { name, status: name !== 'SuperDuperLight', parameters: {} });
+    // Live manifest: separators and the disabled SuperDuperLight kept.
+    const manifest = originalOrder.filter(n => !['WaitAsync', 'SuperDuperMovement', 'SuperDuperCamera', 'SuperDuperInventory', 'SuperDuperEnemies'].includes(n)).map(manifestShape);
+    // Modules carry the DIRTY orderBefore: full prefix including separators
+    // and disabled plugins (exactly what buildEngineModuleEntry produced
+    // before the fix).
+    const dirty = name => ({ name, parameters: {}, orderBefore: originalOrder.slice(0, originalOrder.indexOf(name)) });
+    const modules = ['WaitAsync', 'SuperDuperMovement', 'SuperDuperCamera', 'SuperDuperInventory', 'SuperDuperEnemies'].map(dirty);
+
+    const dir = tempDir();
+    try {
+        fs.writeFileSync(path.join(dir, 'project.rpgreactor'), JSON.stringify({ engineModules: modules }));
+        const ctx = makePluginManager(dir);
+        const mergedNames = ctx.PluginManager.mergeEngineModules(manifest).map(p => p.name);
+
+        // Merged LOAD order must equal the original load order (separators
+        // and disabled plugins stay in the list but never load).
+        const expected = originalOrder.filter(n => n !== SEP && n !== 'SuperDuperLight');
+        const loaded = ctx.PluginManager.mergeEngineModules(manifest)
+            .filter(p => p.status).map(p => p.name);
+        assert.deepEqual(loaded, expected);
+    } finally {
+        cleanupTemp(dir);
+    }
+});
+
+test('buildEngineModuleEntry records only loadable predecessors', () => {
+    const SEP = '--------------------------------------';
+    const plugins = [
+        { name: 'A', status: true, parameters: {} },
+        { name: SEP, status: false, parameters: {} },
+        { name: 'B', status: false, parameters: {} },
+        { name: 'C', status: true, parameters: { k: 'v' } }
+    ];
+    const entry = PluginCommandMigration.buildEngineModuleEntry(plugins, 'C');
+    assert.deepEqual(entry.orderBefore, ['A'], 'separator and disabled entries skipped');
+    assert.deepEqual(entry.parameters, { k: 'v' });
+});
+
+test('harvestAllPlugins moves everything into project config and empties the manifest', () => {
+    const dir = tempDir();
+    try {
+        fs.mkdirSync(path.join(dir, 'js'), { recursive: true });
+        fs.mkdirSync(path.join(dir, 'data'), { recursive: true });
+        const plugins = [
+            { name: 'A', status: true, description: '', parameters: { pa: '1' } },
+            { name: '--------------------------------------', status: false, description: '', parameters: {} },
+            { name: 'B', status: true, description: '', parameters: { pb: '2' } },
+            { name: 'C', status: false, description: '', parameters: { pc: '3' } }
+        ];
+        fs.writeFileSync(path.join(dir, 'js', 'plugins.js'), 'var $plugins = ' + JSON.stringify(plugins) + ';\n');
+        fs.writeFileSync(path.join(dir, 'project.rpgreactor'), JSON.stringify({
+            engineModules: [{ name: 'Existing', parameters: {}, orderBefore: [] }]
+        }));
+
+        const report = PluginCommandMigration.harvestAllPlugins({ fs, path, projectPath: dir });
+        assert.strictEqual(report.ok, true, report.error);
+        assert.deepEqual(report.moved.sort(), ['A', 'B']);
+        assert.deepEqual(report.disabled, ['C']);
+
+        const manifest = fs.readFileSync(path.join(dir, 'js', 'plugins.js'), 'utf8');
+        assert.ok(!manifest.includes('"A"') && !manifest.includes('"C"'), 'manifest emptied');
+        const meta = JSON.parse(fs.readFileSync(path.join(dir, 'project.rpgreactor'), 'utf8'));
+        // Modules are re-sorted to the canonical original order; unknown
+        // modules (Existing) keep relative order at the end.
+        assert.strictEqual(meta.engineModules.length, 3);
+        assert.deepEqual(meta.engineModules.map(m => m.name), ['A', 'B', 'Existing']);
+        const a = meta.engineModules.find(m => m.name === 'A');
+        assert.strictEqual(a.parameters.pa, '1');
+        assert.deepEqual(a.orderBefore, [], 'nothing precedes A');
+        const b = meta.engineModules.find(m => m.name === 'B');
+        assert.deepEqual(b.orderBefore, ['A'], 'separator does not anchor');
+        assert.deepEqual(meta.disabledPlugins, [{ name: 'C', parameters: { pc: '3' } }]);
+        assert.ok(fs.existsSync(report.backupPath), 'backup folder created');
+
+        // Idempotent: second run reports nothing to harvest.
+        const again = PluginCommandMigration.harvestAllPlugins({ fs, path, projectPath: dir });
+        assert.strictEqual(again.ok, false);
+        assert.ok(String(again.error).includes('already empty'));
+    } finally {
+        cleanupTemp(dir);
+    }
+});
+
+test('computeLoadOrder mirrors the runtime merge (separators ignored)', () => {
+    const SEP = '--------------------------------------';
+    const dir = tempDir();
+    try {
+        fs.mkdirSync(path.join(dir, 'js'), { recursive: true });
+        fs.writeFileSync(path.join(dir, 'js', 'plugins.js'),
+            'var $plugins = [' +
+            '{"name":"First","status":true,"parameters":{}},' +
+            JSON.stringify({ name: SEP, status: false, parameters: {} }) + ',' +
+            '{"name":"Last","status":true,"parameters":{}}' +
+            '];\n');
+        fs.writeFileSync(path.join(dir, 'project.rpgreactor'), JSON.stringify({
+            engineModules: [{ name: 'Middle', parameters: {}, orderBefore: ['First', SEP] }]
+        }));
+        const report = PluginCommandMigration.computeLoadOrder({ fs, path, projectPath: dir });
+        assert.strictEqual(report.ok, true, report.error);
+        assert.deepEqual(report.names, ['First', 'Middle', 'Last']);
+    } finally {
+        cleanupTemp(dir);
+    }
+});

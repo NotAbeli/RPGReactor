@@ -3349,15 +3349,33 @@ PluginManager.mergeEngineModules = function(plugins) {
     const modules = this.resolveEngineModules();
     if (!modules.length) return plugins;
     const present = new Set(plugins.map(p => Utils.extractFileName(p.name)));
+    const pending = modules.filter(m => !present.has(Utils.extractFileName(m.name)));
+    if (!pending.length) return plugins;
     const merged = plugins.slice();
-    for (const module of modules) {
-        if (present.has(Utils.extractFileName(module.name))) continue;
+    // Process modules in dependency order: a module whose orderBefore names
+    // another pending module must be inserted after it. Modules harvested
+    // from the manifest carry canonical prefixes, so sorting pending entries
+    // by (number of pending predecessors) ascending reproduces the original
+    // order even when the manifest is empty and no anchors exist yet.
+    const pendingNames = new Set(pending.map(m => Utils.extractFileName(m.name)));
+    const pendingDeps = new Map();
+    for (const module of pending) {
         const orderBefore = Array.isArray(module.orderBefore)
-            ? module.orderBefore.map(n => Utils.extractFileName(n))
-            : [];
+            ? module.orderBefore.map(n => Utils.extractFileName(n)) : [];
+        pendingDeps.set(module, orderBefore.filter(n => pendingNames.has(n)).length);
+    }
+    const sorted = pending.slice().sort((a, b) => (pendingDeps.get(a) || 0) - (pendingDeps.get(b) || 0));
+    for (const module of sorted) {
+        const orderBefore = Array.isArray(module.orderBefore)
+            ? module.orderBefore.map(n => Utils.extractFileName(n)) : [];
+        // Anchor the insertion only on entries that actually load. Legacy
+        // orderBefore lists may name separator entries ("-----", status off)
+        // or disabled plugins; anchoring on those pushed modules to the end
+        // of the list and inverted plugin alias order (camera before
+        // movement broke zoom/cursor in playtest).
         let insertAt = 0;
         for (let i = 0; i < merged.length; i++) {
-            if (orderBefore.includes(Utils.extractFileName(merged[i].name))) {
+            if (merged[i] && merged[i].status && orderBefore.includes(Utils.extractFileName(merged[i].name))) {
                 insertAt = i + 1;
             }
         }

@@ -14,10 +14,12 @@ const path = require('node:path');
 const PluginCommandMigration = require('../src/PluginCommandMigration.js');
 
 function usage() {
-    console.log('Usage: node build-scripts/convert-plugin-commands.js <projectPath> [--dry-run] [--plugin <name>] [--reseed-agonia]');
+    console.log('Usage: node build-scripts/convert-plugin-commands.js <projectPath> [options]');
     console.log('  --plugin        relocate only this family (repeatable); default: all known families');
     console.log('  --dry-run       report what would change without writing');
     console.log('  --reseed-agonia rebuild data/AgoniaEngine.json from live tuning (engineModules, then manifest); backs up the old file');
+    console.log('  --harvest-all   move every remaining manifest plugin into project.rpgreactor (enabled -> engineModules, disabled -> disabledPlugins) and empty the manifest');
+    console.log('  --print-order   print the runtime plugin load order without launching the game');
     console.log(`  families        : ${PluginCommandMigration.FAMILIES.join(', ')}`);
 }
 
@@ -36,10 +38,14 @@ function main() {
     const positional = [];
     let dryRun = false;
     let reseedAgonia = false;
+    let harvestAll = false;
+    let printOrder = false;
     const pluginNames = [];
     for (let i = 0; i < args.length; i++) {
         if (args[i] === '--dry-run') dryRun = true;
         else if (args[i] === '--reseed-agonia') reseedAgonia = true;
+        else if (args[i] === '--harvest-all') harvestAll = true;
+        else if (args[i] === '--print-order') printOrder = true;
         else if (args[i] === '--plugin') pluginNames.push(args[++i]);
         else if (args[i] === '--help' || args[i] === '-h') { usage(); process.exit(0); }
         else positional.push(args[i]);
@@ -61,6 +67,31 @@ function main() {
         console.log(`  lighting source: ${report.seeded.lighting || 'defaults'}`);
         console.log(`  written        : ${report.written}`);
         if (report.backup) console.log(`  backup         : ${report.backup}`);
+        process.exit(0);
+    }
+
+    if (harvestAll) {
+        const report = PluginCommandMigration.harvestAllPlugins({ fs, path, projectPath });
+        if (!report.ok) {
+            console.error(`Harvest failed: ${report.error}`);
+            process.exit(1);
+        }
+        console.log('Plugin harvest complete');
+        console.log(`  moved to engineModules : ${report.moved.length}${report.moved.length ? ' (' + report.moved.join(', ') + ')' : ''}`);
+        console.log(`  saved as disabled      : ${report.disabled.length}${report.disabled.length ? ' (' + report.disabled.join(', ') + ')' : ''}`);
+        console.log(`  manifest emptied       : ${report.manifestPath}`);
+        console.log(`  backup                 : ${report.backupPath}`);
+        process.exit(0);
+    }
+
+    if (printOrder) {
+        const order = PluginCommandMigration.computeLoadOrder({ fs, path, projectPath });
+        if (!order.ok) {
+            console.error(`Failed: ${order.error}`);
+            process.exit(1);
+        }
+        console.log(`Runtime load order (${order.names.length} plugins):`);
+        order.names.forEach((name, i) => console.log(`  ${String(i).padStart(2)} ${name}`));
         process.exit(0);
     }
 
