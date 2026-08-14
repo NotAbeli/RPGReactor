@@ -64,24 +64,11 @@ class PlaytestManager {
             }
         }
 
-        // A migrated project (plugins in engineModules, native 700+ event
-        // commands) only works on the Agonia runtime, while the spawned
-        // playtest loads the project's own index.html. Switch the project
-        // over once, right before its first playtest after migration.
-        try {
-            const ensure = this.projectManager?.ensureAgoniaRuntimeForPlaytest;
-            if (typeof ensure === 'function') {
-                const switched = await ensure.call(this.projectManager, projectPath);
-                if (switched && switched.switched) {
-                    console.log('Playtest: switched project to Agonia runtime'
-                        + (switched.archivedTo ? ` (MV corescript archived to ${switched.archivedTo})` : ''));
-                } else if (switched && switched.error) {
-                    console.error('Playtest: could not ensure Agonia runtime:', switched.error);
-                }
-            }
-        } catch (e) {
-            console.error('Playtest: runtime switch check failed:', e);
-        }
+        // NOTE: migrated projects (engineModules + native 700+ commands) run
+        // on their own corescript with the RPGReactor bridge snippet in
+        // js/rpg_managers.js; the spawned playtest loads the project's
+        // index.html directly. No runtime switching here anymore.
+
 
         // Close existing playtest process if any
         if (this.playtestProcess) {

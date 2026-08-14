@@ -292,20 +292,34 @@ DataManager.onLoad = function(object) {
 // MV project at boot with "Cannot read properties of undefined".
 DataManager.normalizeDataSystem = function(dataSystem) {
     if (!dataSystem) return;
+    // MV plugins (SRD_GameUpgrade) declare the project resolution as
+    // SceneManager._screenWidth/_screenHeight — MV's SceneManager.run fed
+    // those into Graphics.initialize. They are already set by the time
+    // System.json loads (plugins run first), so honor them here and
+    // Scene_Boot.resizeScreen applies the real project resolution instead
+    // of the MZ defaults.
+    const sm = typeof SceneManager !== "undefined" ? SceneManager : null;
+    const screenWidth = sm && Number(sm._screenWidth) > 0 ? Number(sm._screenWidth) : 816;
+    const screenHeight = sm && Number(sm._screenHeight) > 0 ? Number(sm._screenHeight) : 624;
+    const boxWidth = sm && Number(sm._boxWidth) > 0 ? Number(sm._boxWidth) : screenWidth;
+    const boxHeight = sm && Number(sm._boxHeight) > 0 ? Number(sm._boxHeight) : screenHeight;
     if (!dataSystem.advanced) {
         dataSystem.advanced = {
             gameId: "agonia-" + String(dataSystem.gameTitle || "game"),
             screenScale: 0,
-            screenWidth: 816,
-            screenHeight: 624,
-            uiAreaWidth: 816,
-            uiAreaHeight: 624,
+            screenWidth: screenWidth,
+            screenHeight: screenHeight,
+            // adjustBoxSize() subtracts an 8px margin from the UI area; pad it
+            // back so Graphics.boxWidth lands exactly on the MV value.
+            uiAreaWidth: boxWidth + 8,
+            uiAreaHeight: boxHeight + 8,
             mainFontFilename: "mplus-1m-regular.ttf",
             numberFontFilename: "mplus-1m-regular.ttf",
             fallbackFonts: "Verdana, SimSun, sans-serif",
             fontSize: 28,
             windowOpacity: 192,
-            showFps: false
+            showFps: false,
+            __agoniaFilled: true
         };
     }
     // Scene_Title reads titleCommandWindow.background/offsetX/offsetY for the
@@ -317,6 +331,23 @@ DataManager.normalizeDataSystem = function(dataSystem) {
             offsetY: 0,
             visible: true
         };
+    }
+    // Apply the resolution immediately. MV splash plugins replace
+    // Scene_Boot.prototype.start WITHOUT chaining to the original
+    // (SuperDuperSplash: goto(splash) instead), so MZ's resizeScreen call at
+    // the end of start never runs and the game stays at the boot default
+    // size forever. System.json loads while Scene_Boot still waits in
+    // isReady(), before any visible scene — resizing here is equivalent and
+    // chain-proof. Only for the block we just filled ourselves.
+    if (dataSystem.advanced.__agoniaFilled && typeof Graphics !== "undefined" &&
+        Graphics._app && Graphics.resize) {
+        try {
+            Graphics.resize(dataSystem.advanced.screenWidth, dataSystem.advanced.screenHeight);
+            Graphics.boxWidth = dataSystem.advanced.uiAreaWidth - 8;
+            Graphics.boxHeight = dataSystem.advanced.uiAreaHeight - 8;
+        } catch (e) {
+            // A resize failure must never block the data load.
+        }
     }
 };
 

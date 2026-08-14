@@ -285,6 +285,12 @@ Scene_Boot.prototype.isReady = function() {
 };
 
 Scene_Boot.prototype.onDatabaseLoaded = function() {
+    // Second normalization choke point: plugins can replace
+    // DataManager.loadDataFile/onLoad wholesale, which skips the
+    // DataManager.onLoad normalization of MV System.json.
+    if (DataManager.normalizeDataSystem) {
+        DataManager.normalizeDataSystem($dataSystem);
+    }
     this.setEncryptionInfo();
     this.loadSystemImages();
     this.loadPlayerData();

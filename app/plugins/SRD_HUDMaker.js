@@ -1928,7 +1928,11 @@ Sprite_HUDObject.prototype.setupAnimationInfo = function(aniInfo) {
 	this._sMin   = aniInfo.s.min;
 	this._sMax   = aniInfo.s.max;
 	this._sDir   = 1;
-	this._scale  = 1;
+	// Renamed from _scale: PIXI v8 (Agonia runtime) stores its internal
+	// ObservablePoint in the own property `_scale`; this plugin's numeric
+	// animation field overwrote it and `sprite.scale.x = ...` then threw
+	// "Cannot create property 'x' on number '1'".
+	this._hudScale  = 1;
 	this._sCheck = 1;
 	this._baseXScale = 1;
 	this._baseYScale = 1;
@@ -1946,7 +1950,7 @@ Sprite_HUDObject.prototype.setupAnimationInfo = function(aniInfo) {
 Sprite_HUDObject.prototype.resetAnimations = function() {
 	this._xOffset = this._xMin;
 	this._yOffset = this._yMin;
-	this._scale  = this._sMin;
+	this._hudScale  = this._sMin;
 	this._sCheck = this._sMin;
 	this.scale.x = this._baseXScale + (this._sMin - 1);
 	this.scale.y = this._baseYScale + (this._sMin - 1);
@@ -2110,7 +2114,7 @@ Sprite_HUDObject.prototype.updatePrecision = function() {
 Sprite_HUDObject.prototype.updateAnimations = function() {
 	this.updateAnimation('_xOffset', this._xSpeed, this._xLoop, this._xMin, this._xMax, '_xDir');
 	this.updateAnimation('_yOffset', this._ySpeed, this._yLoop, this._yMin, this._yMax, '_yDir');
-	this.updateAnimation('_scale', this._sSpeed, this._sLoop, this._sMin, this._sMax, '_sDir');
+	this.updateAnimation('_hudScale', this._sSpeed, this._sLoop, this._sMin, this._sMax, '_sDir');
 	this.updateAnimation('rotation', this._rSpeed, this._rLoop, this._rMin, this._rMax, '_rDir');
 	this.updatePosition();
 	this.updateScale();
@@ -2171,8 +2175,8 @@ Sprite_HUDObject.prototype.updatePosition = function() {
 };
 
 Sprite_HUDObject.prototype.updateScale = function() {
-	if(this._sCheck !== this._scale) {
-		this._sCheck = this._scale;
+	if(this._sCheck !== this._hudScale) {
+		this._sCheck = this._hudScale;
 		this.updateRealScale();
 	}
 };

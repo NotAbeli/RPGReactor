@@ -59,6 +59,7 @@ test('patched loader resolves local overrides first', () => {
         fs.writeFileSync(path.join(engineDir, 'Engine.js'), '// engine', 'utf8');
         const scripts = [];
         const context = {
+            window: null,
             PluginManager: { _path: 'js/plugins/', onError: function () { } },
             process: { env: { RPGREACTOR_PLUGINS_DIR: engineDir }, cwd: () => projectDir },
             require: name => {
@@ -71,6 +72,7 @@ test('patched loader resolves local overrides first', () => {
                 body: { appendChild: script => scripts.push(script) },
             },
         };
+        context.window = context;
         vm.createContext(context);
         vm.runInContext(snippet, context);
         context.PluginManager.loadScript('Local.js');
@@ -91,6 +93,7 @@ test('snippet re-execution is a no-op via the guard flag', () => {
     const projectDir = tempDir();
     try {
         const context = {
+            window: null,
             PluginManager: { _path: 'js/plugins/', onError: function () { } },
             process: { env: {}, cwd: () => projectDir },
             require: () => null,
@@ -99,9 +102,10 @@ test('snippet re-execution is a no-op via the guard flag', () => {
                 body: { appendChild: () => { } },
             },
         };
+        context.window = context;
         vm.createContext(context);
         vm.runInContext(snippet, context);
-        assert.strictEqual(context.PluginManager.__rpgReactorCatalog, true);
+        assert.strictEqual(context.PluginManager.__rpgReactorCatalogV2, true);
         const originalLoadScript = context.PluginManager.loadScript;
         vm.runInContext(snippet, context);
         assert.strictEqual(context.PluginManager.loadScript, originalLoadScript);
@@ -113,14 +117,17 @@ test('snippet re-execution is a no-op via the guard flag', () => {
 test('snippet bails out safely in environments without require', () => {
     const snippet = extractSnippet();
     const context = {
+        window: null,
         PluginManager: { _path: 'js/plugins/', onError: function () { } },
         document: {
             createElement: () => ({ type: '', src: '', async: false, _url: '' }),
             body: { appendChild: () => { } },
         },
     };
+    context.window = context;
     vm.createContext(context);
     assert.doesNotThrow(() => vm.runInContext(snippet, context));
-    assert.strictEqual(context.PluginManager.__rpgReactorCatalog, true);
+    assert.strictEqual(context.PluginManager.__rpgReactorCatalogV2, true);
+    // Without require at all the snippet returns before installing anything.
     assert.strictEqual(context.PluginManager.loadScript, undefined);
 });

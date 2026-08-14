@@ -2124,6 +2124,31 @@
             });
         }
 
+        // ---- Scene_Base.pictureContainerRect (SRD CameraCore picture zoom) ----
+        // SuperDuperCamera's CameraCore block re-homes Spriteset_Base's
+        // createPictures onto the scene (Scene_Base.prototype
+        // .createPicturesForCameraCore) so pictures render above the camera
+        // transform. In MV, createPictures used nothing spriteset-specific,
+        // so running it with `this` = the scene worked. The MZ-shaped
+        // implementation calls this.pictureContainerRect(), which only the
+        // spriteset has — the scene crashed with "pictureContainerRect is
+        // not a function" and Scene_Map stayed half-built.
+        if (global.Scene_Base) {
+            def(Scene_Base.prototype, "pictureContainerRect", function() {
+                return new Rectangle(0, 0, Graphics.width, Graphics.height);
+            });
+        }
+
+        // ---- Scene_Message.isMessageWindowClosing guard ----
+        // A half-built scene (a create() that threw partway) reaches isBusy()
+        // with _messageWindow still undefined; the unguarded read turned the
+        // original create error into an endless isClosing TypeError loop.
+        if (global.Scene_Message) {
+            def(Scene_Message.prototype, "isMessageWindowClosing", function() {
+                return !!(this._messageWindow && this._messageWindow.isClosing());
+            });
+        }
+
         // ---- ImageManager MV reservation/cache API ----
         if (global.ImageManager) {
             def(ImageManager, "loadEmptyBitmap", function() {
