@@ -6,8 +6,14 @@
     "nwjs-v0.107.0-win-x64.zip": "0db62fa39d4ccd1a6e4490539952426eb59baaa301dea56b25e730c4535bf123",
     "nwjs-sdk-v0.107.0-linux-x64.tar.gz": "454c1257445ed834dc126848aea5e72a72dfc2a910fd3eafed376bb4b8fbe9b7",
     "nwjs-sdk-v0.107.0-osx-x64.zip": "e1344a94d52cdc5bcba9344dae6c57e7032b926dd806694962dd1c6efa966e9b",
-    "nwjs-sdk-v0.107.0-win-x64.zip": "926c5529a2714a05a3d2f5b9e1f66de64e8375f80a50fa7cbbeb620fcb77234e"
+    "nwjs-sdk-v0.107.0-win-x64.zip": "926c5529a2714a05a3d2f5b9e1f66de64e8375f80a50fa7cbbeb620fcb77234e",
+    "nwjs-v0.114.0-linux-x64.tar.gz": "31e7e6ebde8f7c2b2eb837ccaa7a5b8a39ca0ccb7de373ec3c5cdc191d8b3c84",
+    "nwjs-v0.114.0-osx-x64.zip": "e7662240e93709b4a122bb690caab2caa6ba9c9249002f3bdabf6b30b277fdd7",
+    "nwjs-v0.114.0-win-x64.zip": "4acd0e6a14086ed4397cbb64b0a163030f72a17cfd9a76c8a61cec160e0c0e01",
+    "nwjs-sdk-v0.114.0-linux-x64.tar.gz": "4f073e76ce5e9461d3f46a24abe2f2d9152cd68e384d43d17a4e9cd639b83c3f",
+    "nwjs-sdk-v0.114.0-osx-x64.zip": "3adbdeb387c653a0ef0fdd415216303ea03a89e299c49cdf1c7c56c1bb70a9a6",
+    "nwjs-sdk-v0.114.0-win-x64.zip": "b4487590e05b9bd3704b5c07dd54ecac22fdf07c6891f3cea31986ee8c6159f9"
   },
   "codecs": {},
-  "policy": "Public release builds require the exact archive names they acquire to be pinned here with trusted SHA-256 values. NW.js 0.107.0 hashes are copied from https://dl.nwjs.io/v0.107.0/SHASUMS256.txt. Do not populate this file from an archive downloaded during the same build."
+  "policy": "Public release builds require the exact archive names they acquire to be pinned here with trusted SHA-256 values. Hashes are copied from the official https://dl.nwjs.io/v<version>/SHASUMS256.txt (0.107.0 and 0.114.0 pinned). Do not populate this file from an archive downloaded during the same build."
 }

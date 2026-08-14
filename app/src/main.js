@@ -92,6 +92,7 @@ class RPGReactor {
             toggleLightMode: () => this.toggleLightMode(),
             disableEventModeIfActive: () => this.disableEventModeIfActive(),
             installRuntime: () => this.projectController.installReactorRuntime(),
+            migratePlugins: () => this.projectController.migratePluginsToEngineCatalog(),
             openBuildManager: () => this.buildManager.open(),
             openDistEditor: () => this.distEditorManager.open()
         });

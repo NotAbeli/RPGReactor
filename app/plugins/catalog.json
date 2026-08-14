@@ -1,0 +1,355 @@
+{
+  "engine": "agonia",
+  "plugins": [
+    {
+      "name": "AltimitMovementDebug",
+      "file": "AltimitMovementDebug.js",
+      "version": "",
+      "author": "Altimit Community Contributors",
+      "description": "Debug display layer for AltimitMovement"
+    },
+    {
+      "name": "DoorZLayer",
+      "file": "DoorZLayer.js",
+      "version": "1.2",
+      "author": "*",
+      "description": "v1.2 Dynamic Door Z-Layer — дверь над/под героем по Y"
+    },
+    {
+      "name": "EventOpacityNote",
+      "file": "EventOpacityNote.js",
+      "version": "",
+      "author": "Gemini AI",
+      "description": "Позволяет задать прозрачность и реальный сдвиг (Offset) события через примечание."
+    },
+    {
+      "name": "MOG_TitlePictureCom",
+      "file": "MOG_TitlePictureCom.js",
+      "version": "1.6",
+      "author": "Moghunter",
+      "description": "(v1.6 *) Adiciona comandos em imagens no lugar da janela."
+    },
+    {
+      "name": "MOG_TreasurePopup",
+      "file": "MOG_TreasurePopup.js",
+      "version": "1.1",
+      "author": "Moghunter",
+      "description": "(v1.1) Apresenta o ícone e o nome do tesouro ganho."
+    },
+    {
+      "name": "N_HideIdleMouse",
+      "file": "N_HideIdleMouse.js",
+      "version": "",
+      "author": "Nolonar (Modified by Korolev)",
+      "description": "Automatically hides mouse if it hasn't been moved for a while."
+    },
+    {
+      "name": "OcRam_Audio_EX",
+      "file": "OcRam_Audio_EX.js",
+      "version": "2.12",
+      "author": "OcRam",
+      "description": "v2.12 This plugin provides dynamic sound positioning and adds 2 'generic' BGS channels which will also play in battle. PLUGIN NAME MUST BE OcRam_Audio_EX.js"
+    },
+    {
+      "name": "PlayerSpeedMonitor",
+      "file": "PlayerSpeedMonitor.js",
+      "version": "",
+      "author": "...",
+      "description": "Player speed monitor (автоматическое ВКЛЮЧЕНИЕ переключателя по скорости, после таймера; включает переключатель при старте сцены карты)."
+    },
+    {
+      "name": "ProfilingOverlay",
+      "file": "ProfilingOverlay.js",
+      "version": "",
+      "author": "Developer",
+      "description": "Профайлер производительности: показывает, какое событие/общее событие грузит систему и почему локация лагает."
+    },
+    {
+      "name": "SDLight",
+      "file": "SDLight.js",
+      "version": "1.0",
+      "author": "Super Duper Team",
+      "description": "v1.0 SDLight — модульная система освещения (рефакторинг SuperDuperLight v5.9.46)"
+    },
+    {
+      "name": "SRD_GameUpgrade",
+      "file": "SRD_GameUpgrade.js",
+      "version": "",
+      "author": "SumRndmDde (Исправлено: Korolev)",
+      "description": "Enables more customization over the core mechanics of one's game while also providing additional functions for future plugins."
+    },
+    {
+      "name": "SRD_HUDMaker",
+      "file": "SRD_HUDMaker.js",
+      "version": "",
+      "author": "SumRndmDde",
+      "description": "Allows developers to create their own map-based HUD through an in-game GUI window!"
+    },
+    {
+      "name": "SRD_LightEditor",
+      "file": "SRD_LightEditor.js",
+      "version": "1.0",
+      "author": "Super Duper Team",
+      "description": "v1.0 Добавляет вкладку \"Light Editor\" в SRD Super Tools Engine (F12) для живой настройки SDLight: свет игрока, tint, vignette, flashlight + экспорт значений."
+    },
+    {
+      "name": "SRD_OptionsCreator",
+      "file": "SRD_OptionsCreator.js",
+      "version": "",
+      "author": "SumRndmDde",
+      "description": "Provides developers with the ability to add \"options\" to the Options Menu."
+    },
+    {
+      "name": "SRD_OptionsUpgrade",
+      "file": "SRD_OptionsUpgrade.js",
+      "version": "",
+      "author": "SumRndmDde",
+      "description": "Upgrades the Options Menu. Commands are placed into different categories and a description window has been added."
+    },
+    {
+      "name": "SRD_SuperToolsEngine",
+      "file": "SRD_SuperToolsEngine.js",
+      "version": "",
+      "author": "SumRndmDde",
+      "description": "The heart of all maker-style plugins; it adds a playtesting editor that can be opened with F12."
+    },
+    {
+      "name": "SimpleCraftSystem",
+      "file": "SimpleCraftSystem.js",
+      "version": "41.0",
+      "author": "Korolev",
+      "description": "(v41.0 GLOBAL SOUNDS) Общие звуки и звук ошибки крафта."
+    },
+    {
+      "name": "SimpleCustomHints",
+      "file": "SimpleCustomHints.js",
+      "version": "4.4",
+      "author": "Korolev",
+      "description": "(v4.4) SuperDuperHints. Подсказки с плавной физикой и Кинематографичные Титры (HUD Maker Layer Sync)."
+    },
+    {
+      "name": "SimplePreloader",
+      "file": "SimplePreloader.js",
+      "version": "1.5",
+      "author": "Gemini AI",
+      "description": "(v1.5 RESERVATION FIX) Исправление исчезновения: ресурсы теперь \"бронируются\" в памяти."
+    },
+    {
+      "name": "SingleEventTrigger",
+      "file": "SingleEventTrigger.js",
+      "version": "1.0",
+      "author": "Gemini Assistant",
+      "description": "(v1.0) Запрещает запуск нескольких событий одновременно при нажатии кнопки действия."
+    },
+    {
+      "name": "SuperDuperBattle",
+      "file": "SuperDuperBattle.js",
+      "version": "1.45",
+      "author": "SDB Team (Jarvis Protocol)",
+      "description": "ABS Core: Боевая система. Fix: Script Call Safety."
+    },
+    {
+      "name": "SuperDuperCamera",
+      "file": "SuperDuperCamera.js",
+      "version": "7.7.0",
+      "author": "SumRndmDde + Bridge + Korolev",
+      "description": "SuperDuperCamera: зум, стабилизированная камера, Hard Points барьеры, прицеливание."
+    },
+    {
+      "name": "SuperDuperChoices",
+      "file": "SuperDuperChoices.js",
+      "version": "4.3",
+      "author": "Korolev",
+      "description": "(v4.3) SuperDuperChoices. Кинематографичные выборы с авто-шрифтом, хитбоксами и аудио."
+    },
+    {
+      "name": "SuperDuperCore",
+      "file": "SuperDuperCore.js",
+      "version": "2.1.0",
+      "author": "Korolev",
+      "description": "Super Duper Core — утилиты + конфигурация."
+    },
+    {
+      "name": "SuperDuperDamageFlash",
+      "file": "SuperDuperDamageFlash.js",
+      "version": "1.3",
+      "author": "Korolev",
+      "description": "Super Duper Damage Flash. Мигание урона и наследование графики."
+    },
+    {
+      "name": "SuperDuperDrop",
+      "file": "SuperDuperDrop.js",
+      "version": "3.5",
+      "author": "Korolev",
+      "description": "(v3.5) Super Duper Drop - Физика предметов. Анти-сдвиг (Фикс ползающих предметов)."
+    },
+    {
+      "name": "SuperDuperEnemies",
+      "file": "SuperDuperEnemies.js",
+      "version": "12.5.0",
+      "author": "Korolev",
+      "description": "v12.5.0 Super Duper Enemies. Ультимативный Движок Правил ИИ (Optimized)."
+    },
+    {
+      "name": "SuperDuperGameOver",
+      "file": "SuperDuperGameOver.js",
+      "version": "1.20",
+      "author": "Korolev",
+      "description": "Кинематографичный экран Game Over: Самсара, Hover и кастомные звуки меню."
+    },
+    {
+      "name": "SuperDuperGifts",
+      "file": "SuperDuperGifts.js",
+      "version": "",
+      "author": "Korolev",
+      "description": "Super Duper Gifts - система подарков на основе тегов и списков."
+    },
+    {
+      "name": "SuperDuperInventory",
+      "file": "SuperDuperInventory.js",
+      "version": "13.03",
+      "author": "Korolev",
+      "description": "(v13.03) Super Duper Inventory - HUD Maker Layer Sync."
+    },
+    {
+      "name": "SuperDuperItemTags",
+      "file": "SuperDuperItemTags.js",
+      "version": "",
+      "author": "Korolev",
+      "description": "Super Duper Item Tags - система кастомных свойств и тегов для предметов."
+    },
+    {
+      "name": "SuperDuperLight",
+      "file": "SuperDuperLight.js",
+      "version": "5.9.46",
+      "author": "Super Duper Team (Refactored) + Korolev",
+      "description": "v5.9.46 Super Duper Light. Идеальный фикс швов, 3 уровня хитбоксов света и Отладка."
+    },
+    {
+      "name": "SuperDuperLoot",
+      "file": "SuperDuperLoot.js",
+      "version": "1.7",
+      "author": "Korolev",
+      "description": "SuperDuperLoot - Расширенная типизация и выдача лута (включая сундуки)."
+    },
+    {
+      "name": "SuperDuperMessage",
+      "file": "SuperDuperMessage.js",
+      "version": "2.20",
+      "author": "Korolev",
+      "description": "(v2.20) Супер-Пупер Ядро Сообщений. Текст, звуки, умные выборы и перемотка."
+    },
+    {
+      "name": "SuperDuperMovement",
+      "file": "SuperDuperMovement.js",
+      "version": "1.0",
+      "author": "Korolev",
+      "description": "Векторное (пиксельное) движение + Система Стамины"
+    },
+    {
+      "name": "SuperDuperMovement_Addon",
+      "file": "SuperDuperMovement_Addon.js",
+      "version": "1.1.2",
+      "author": "Korolev",
+      "description": "Аддон для SuperDuperMovement: Умный ИИ, A*, Патрули и Боевые рывки."
+    },
+    {
+      "name": "SuperDuperNotification",
+      "file": "SuperDuperNotification.js",
+      "version": "1.4",
+      "author": "Korolev",
+      "description": "Плагин для кинематографичных каскадных уведомлений об изменении переменных."
+    },
+    {
+      "name": "SuperDuperNpcPaths",
+      "file": "SuperDuperNpcPaths.js",
+      "version": "1.0",
+      "author": "Korolev",
+      "description": "v1.0 Редактор путей/POI/выходов/маршрутов для НПС (вкладка в F12 Super Tools Engine)."
+    },
+    {
+      "name": "SuperDuperSamsara",
+      "file": "SuperDuperSamsara.js",
+      "version": "",
+      "author": "Korolev",
+      "description": "Глобальные переменные и скрытые автосохранения."
+    },
+    {
+      "name": "SuperDuperSave",
+      "file": "SuperDuperSave.js",
+      "version": "",
+      "author": "Korolev",
+      "description": "Единый интерфейс сохранения/загрузки в стиле \"Диктофон\". Содержит визуальный редактор."
+    },
+    {
+      "name": "SuperDuperScreen",
+      "file": "SuperDuperScreen.js",
+      "version": "3.5",
+      "author": "Korolev",
+      "description": "Глобальный пост-эффект VHS, размытие, свечение и цветокоррекция (UI включен). Оптимизировано!"
+    },
+    {
+      "name": "SuperDuperSettings",
+      "file": "SuperDuperSettings.js",
+      "version": "",
+      "author": "Korolev",
+      "description": "Декоративный экран настроек (фон + анимация)."
+    },
+    {
+      "name": "SuperDuperSplash",
+      "file": "SuperDuperSplash.js",
+      "version": "3.6.2",
+      "author": "Korolev",
+      "description": "Кинематографичная заставка \"Старый Телевизор\" (Линза поверх помех)."
+    },
+    {
+      "name": "SuperDuperSpriter",
+      "file": "SuperDuperSpriter.js",
+      "version": "8.9",
+      "author": "Korolev",
+      "description": "(v8.9) Комбайн спрайтов: ГГ + Библиотека NPC + Fallback + Индекс-Анимация."
+    },
+    {
+      "name": "SuperDuperSteps",
+      "file": "SuperDuperSteps.js",
+      "version": "3.1",
+      "author": "Korolev",
+      "description": "(v.3.1) Super Duper Steps - Teleport Fix Version"
+    },
+    {
+      "name": "SuperDuperVariables",
+      "file": "SuperDuperVariables.js",
+      "version": "1.3",
+      "author": "Korolev",
+      "description": "(v1.3) Мега-сборник: Реактор + Затухание + Авто-Выкл + Предмет в руке"
+    },
+    {
+      "name": "SuperDuper_Keyboard",
+      "file": "SuperDuper_Keyboard.js",
+      "version": "1.7.1",
+      "author": "Korolev",
+      "description": "v1.7.1 Абсолютный AAA-плагин настройки управления. Удобный список клавиш в параметрах."
+    },
+    {
+      "name": "WaitAsync",
+      "file": "WaitAsync.js",
+      "version": "",
+      "author": "ChatGPT",
+      "description": "Асинхронное ожидание без блокировки игрока, работает даже в параллельных событиях."
+    },
+    {
+      "name": "YEP_SaveEventLocations",
+      "file": "YEP_SaveEventLocations.js",
+      "version": "1.06",
+      "author": "Yanfly Engine Plugins",
+      "description": "v1.06 Enable specified maps to memorize the locations of"
+    },
+    {
+      "name": "YuryolStealth",
+      "file": "YuryolStealth.js",
+      "version": "",
+      "author": "Yuryol",
+      "description": "Стелс (зрение событий)"
+    }
+  ]
+}

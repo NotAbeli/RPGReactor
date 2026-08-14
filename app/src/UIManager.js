@@ -228,6 +228,11 @@ class UIManager {
                     this.callbacks.installRuntime();
                 }
                 break;
+            case 'migrate-plugins':
+                if (this.callbacks.migratePlugins) {
+                    this.callbacks.migratePlugins();
+                }
+                break;
             case 'build-deployment':
                 if (this.callbacks.openBuildManager) {
                     this.callbacks.openBuildManager();

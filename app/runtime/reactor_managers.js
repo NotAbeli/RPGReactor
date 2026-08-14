@@ -3282,8 +3282,75 @@ PluginManager.onError = function(e) {
     this._errorUrls.push(e.target._url);
 };
 
+//
+// Engine plugin catalog support.
+//
+// A project may keep its js/plugins folder empty and let the engine catalog
+// (shipped with the editor, next to the executable) provide the plugin
+// sources. Resolution order for each plugin file:
+//   1. <project>/js/plugins/<name>.js (local override)
+//   2. the engine catalog, located via:
+//      a. RPGREACTOR_PLUGINS_DIR env var (set by the editor for playtest)
+//      b. "enginePluginsDir" in project.rpgreactor (direct launch fallback)
+//
+PluginManager._enginePluginsDir = null;
+PluginManager._enginePluginsDirResolved = false;
+
+PluginManager.resolveEnginePluginsDir = function() {
+    if (this._enginePluginsDirResolved) return this._enginePluginsDir;
+    this._enginePluginsDirResolved = true;
+    if (typeof process === "undefined") return null;
+    try {
+        const fs = require("fs");
+        const path = require("path");
+        const fromEnv = process.env && process.env.RPGREACTOR_PLUGINS_DIR;
+        if (fromEnv && fs.existsSync(fromEnv)) {
+            this._enginePluginsDir = fromEnv;
+            return fromEnv;
+        }
+        const metaPath = path.join(process.cwd(), "project.rpgreactor");
+        if (fs.existsSync(metaPath)) {
+            const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+            const dir = meta && meta.enginePluginsDir;
+            if (dir && fs.existsSync(dir)) {
+                this._enginePluginsDir = dir;
+                return dir;
+            }
+        }
+    } catch (e) {
+        // Ignore unreadable metadata and keep local-only behavior.
+    }
+    return null;
+};
+
+PluginManager.localPluginExists = function(filename) {
+    try {
+        const fs = require("fs");
+        const path = require("path");
+        return fs.existsSync(path.join(process.cwd(), "js", "plugins", `${filename}.js`));
+    } catch (e) {
+        return false;
+    }
+};
+
 PluginManager.makeUrl = function(filename) {
-    return "js/plugins/" + Utils.encodeURI(filename) + ".js";
+    const localUrl = "js/plugins/" + Utils.encodeURI(filename) + ".js";
+    if (typeof process === "undefined") return localUrl;
+    if (this.localPluginExists(filename)) return localUrl;
+    const engineDir = this.resolveEnginePluginsDir();
+    if (engineDir) {
+        try {
+            const fs = require("fs");
+            const path = require("path");
+            const absolute = path.join(engineDir, `${filename}.js`);
+            if (fs.existsSync(absolute)) {
+                return encodeURI("file:///" + absolute.replace(/\\/g, "/"));
+            }
+        } catch (e) {
+            // Fall through to the local URL and surface a load error there.
+        }
+    }
+    return localUrl;
 };
 
 PluginManager.checkErrors = function() {

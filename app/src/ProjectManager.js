@@ -809,6 +809,213 @@ class ProjectManager {
             .replace(/'/g, '&#39;');
     }
 
+    // ── Engine plugin catalog ──────────────────────────────────────────
+    //
+    // The engine ships a master plugin library (app/plugins, distributed as
+    // a real folder next to the executable). Projects reference plugins
+    // through their manifest and load them from the catalog by absolute
+    // path, keeping the project's js/plugins folder empty.
+
+    static MV_CATALOG_LOADER_SNIPPET = [
+        '',
+        '// >>> RPGReactor: engine plugin catalog loader (do not remove this block) <<<',
+        '(function() {',
+        "    if (typeof PluginManager === 'undefined' || PluginManager.__rpgReactorCatalog) return;",
+        '    PluginManager.__rpgReactorCatalog = true;',
+        '    var fs = null, path = null;',
+        "    try { fs = require('fs'); path = require('path'); } catch (e) { return; }",
+        '    var engineDir = null;',
+        '    try {',
+        '        var fromEnv = process.env && process.env.RPGREACTOR_PLUGINS_DIR;',
+        '        if (fromEnv && fs.existsSync(fromEnv)) engineDir = fromEnv;',
+        '    } catch (e) {}',
+        '    if (!engineDir) {',
+        '        try {',
+        "            var metaPath = path.join(process.cwd(), 'project.rpgreactor');",
+        '            if (fs.existsSync(metaPath)) {',
+        "                var meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));",
+        '                if (meta && meta.enginePluginsDir && fs.existsSync(meta.enginePluginsDir)) {',
+        '                    engineDir = meta.enginePluginsDir;',
+        '                }',
+        '            }',
+        '        } catch (e) {}',
+        '    }',
+        '    if (!engineDir) return;',
+        '    var localExists = function(name) {',
+        '        try { return fs.existsSync(path.join(process.cwd(), PluginManager._path, name)); }',
+        '        catch (e) { return false; }',
+        '    };',
+        '    var catalogExists = function(name) {',
+        '        try { return fs.existsSync(path.join(engineDir, name)); }',
+        '        catch (e) { return false; }',
+        '    };',
+        '    PluginManager.loadScript = function(name) {',
+        '        var url = PluginManager._path + name;',
+        '        if (!localExists(name) && catalogExists(name)) {',
+        "            var abs = path.join(engineDir, name).replace(/\\\\/g, '/');",
+        "            url = encodeURI('file:///' + abs);",
+        '        }',
+        "        var script = document.createElement('script');",
+        "        script.type = 'text/javascript';",
+        '        script.src = url;',
+        '        script.async = false;',
+        '        script.onerror = PluginManager.onError.bind(PluginManager);',
+        '        script._url = url;',
+        '        document.body.appendChild(script);',
+        '    };',
+        '})();',
+        '// <<< RPGReactor: engine plugin catalog loader >>>',
+        ''
+    ].join('\n');
+
+    /**
+     * Resolve the engine's master plugin catalog directory.
+     * Candidates: RPGREACTOR_PLUGINS_DIR env override, <cwd>/plugins (dev
+     * launch), <exe dir>/plugins (packaged Windows/Linux distribution),
+     * <src dir>/../plugins (self-extracted package). Returns null when the
+     * catalog is not installed.
+     */
+    getEnginePluginsDir() {
+        if (!this.fs || !this.path || typeof process === 'undefined') return null;
+        const candidates = [];
+        const add = (dir) => {
+            if (dir && !candidates.includes(dir)) candidates.push(dir);
+        };
+        try { add(process.env.RPGREACTOR_PLUGINS_DIR); } catch (e) { /* env unavailable */ }
+        add(this.path.join(process.cwd(), 'plugins'));
+        add(this.path.join(this.path.dirname(process.execPath), 'plugins'));
+        if (typeof __dirname !== 'undefined') {
+            add(this.path.resolve(__dirname, '..', 'plugins'));
+        }
+        for (const candidate of candidates) {
+            try {
+                if (!this.fs.existsSync(candidate)) continue;
+                const stat = this.fs.statSync(candidate);
+                if (!stat.isDirectory()) continue;
+                const hasJs = this.fs.readdirSync(candidate)
+                    .some(file => file.endsWith('.js'));
+                if (hasJs) return this.path.resolve(candidate);
+            } catch (e) { /* try the next candidate */ }
+        }
+        return null;
+    }
+
+    /**
+     * Migrate a project to the engine plugin catalog:
+     * - MV corescript projects get an idempotent loader patch in
+     *   js/rpg_managers.js; Reactor projects get their runtime corescript
+     *   refreshed (the catalog fallback ships in reactor_managers.js).
+     * - Plugin files that exist in the catalog are backed up to a zip in
+     *   the project root and removed from js/plugins. Files not present in
+     *   the catalog are kept locally so nothing silently disappears.
+     * - project.rpgreactor records enginePluginsDir as launch fallback.
+     */
+    async applyEnginePluginCatalogToProject(projectPath) {
+        if (!this.fs || !this.path) {
+            return { ok: false, error: 'File system not available.' };
+        }
+        const engineDir = this.getEnginePluginsDir();
+        if (!engineDir) {
+            return { ok: false, error: 'Engine plugin catalog not found (expected a plugins/ folder beside the editor executable or in the editor source tree). Run generate-plugin-catalog or reinstall the editor.' };
+        }
+
+        try {
+            const jsPath = this.path.join(projectPath, 'js');
+            const isReactor = this.fs.existsSync(this.path.join(jsPath, 'reactor_main.js'));
+            const isMv = this.fs.existsSync(this.path.join(jsPath, 'rpg_managers.js'));
+            if (!isReactor && !isMv) {
+                return { ok: false, error: 'No recognizable game corescript found in js/ (neither reactor_main.js nor rpg_managers.js).' };
+            }
+
+            const manifestPath = this.path.join(jsPath, isReactor ? 'reactor_plugins.js' : 'plugins.js');
+            if (!this.fs.existsSync(manifestPath)) {
+                return { ok: false, error: `Plugin manifest not found: js/${isReactor ? 'reactor_plugins.js' : 'plugins.js'}` };
+            }
+
+            // Decide which local plugin files can be removed: only those
+            // that exist in the engine catalog.
+            const pluginsDir = this.path.join(jsPath, 'plugins');
+            const localFiles = this.fs.existsSync(pluginsDir)
+                ? this.fs.readdirSync(pluginsDir).filter(f => f.endsWith('.js'))
+                : [];
+            const removable = [];
+            const kept = [];
+            for (const file of localFiles) {
+                if (this.fs.existsSync(this.path.join(engineDir, file))) {
+                    removable.push(file);
+                } else {
+                    kept.push(file);
+                }
+            }
+
+            // Backup removable plugin files before deleting them.
+            let backupName = null;
+            if (removable.length) {
+                const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+                backupName = `engine-plugins-backup-${stamp}.zip`;
+                const entries = removable.map(file => ({
+                    name: `js/plugins/${file}`.split(this.path.sep).join('/'),
+                    data: this.fs.readFileSync(this.path.join(pluginsDir, file)),
+                }));
+                this.writeZipArchive(this.path.join(projectPath, backupName), entries);
+                for (const file of removable) {
+                    // unlinkSync, not rmSync: on Windows rmSync may leave the
+                    // file listed (POSIX delete-pending) while other handles
+                    // (editor/AV watchers) are open. unlinkSync deletes for real.
+                    const filePath = this.path.join(pluginsDir, file);
+                    try {
+                        this.fs.unlinkSync(filePath);
+                    } catch (unlinkError) {
+                        try {
+                            this.fs.rmSync(filePath, { force: true });
+                        } catch (rmError) {
+                            throw unlinkError;
+                        }
+                    }
+                }
+            }
+
+            // Patch the loader so plugins resolve from the catalog.
+            let patched = 'reactor-runtime';
+            if (isMv) {
+                patched = 'mv-loader';
+                const managersPath = this.path.join(jsPath, 'rpg_managers.js');
+                const source = this.fs.readFileSync(managersPath, 'utf8');
+                if (!source.includes('RPGReactor: engine plugin catalog loader')) {
+                    this._writeFileAtomic(this.fs, managersPath, source.replace(/\s*$/, '') + this.constructor.MV_CATALOG_LOADER_SNIPPET, 'utf8');
+                }
+            } else {
+                const runtimePath = this.getRuntimePath();
+                if (!runtimePath) {
+                    return { ok: false, error: 'Runtime corescript directory not found. Expected runtime/ beside the editor.', backupName };
+                }
+                await this.copyRuntimeIntoProject(runtimePath, jsPath, true);
+            }
+
+            // Record the catalog path for direct (non-editor) launches.
+            const metaPath = this.path.join(projectPath, 'project.rpgreactor');
+            let projectMeta = {};
+            if (this.fs.existsSync(metaPath)) {
+                projectMeta = JSON.parse(this.fs.readFileSync(metaPath, 'utf8').replace(/^\uFEFF/, ''));
+            }
+            projectMeta.enginePluginsDir = engineDir;
+            projectMeta.modified = new Date().toISOString();
+            this._writeFileAtomic(this.fs, metaPath, JSON.stringify(projectMeta, null, 2) + '\n', 'utf8');
+
+            return {
+                ok: true,
+                engineDir,
+                patched,
+                backupName,
+                removed: removable,
+                kept,
+            };
+        } catch (error) {
+            console.error('Error applying engine plugin catalog:', error);
+            return { ok: false, error: error.message || String(error) };
+        }
+    }
+
     async loadProject(projectPath) {
         this.lastLoadError = null;
         if (!this.fs || !this.path) {
@@ -930,3 +1137,5 @@ class ProjectManager {
         }
     }
 }
+
+if (typeof module !== 'undefined' && module.exports) module.exports = ProjectManager;

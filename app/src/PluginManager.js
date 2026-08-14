@@ -20,6 +20,35 @@ class PluginManager {
         return (typeof window !== 'undefined' && window.I18n) ? window.I18n.tText(text) : text;
     }
 
+    // ── Engine plugin catalog ──────────────────────────────────────────
+    // Plugins may live in the engine's master catalog (plugins/ beside the
+    // editor) instead of the project's js/plugins folder. Local files win
+    // on name collision (project-level override of a catalog plugin).
+
+    getEnginePluginsDir() {
+        return this.projectController?.projectManager?.getEnginePluginsDir?.() || null;
+    }
+
+    /**
+     * Resolve where a plugin's source file lives: project js/plugins first,
+     * then the engine catalog. Returns the project-local path when the file
+     * exists nowhere so missing-file handling stays consistent.
+     */
+    resolvePluginSourcePath(pluginName, projectPath) {
+        const localPath = this.path.join(projectPath, 'js', 'plugins', `${pluginName}.js`);
+        try {
+            if (this.fs.existsSync(localPath)) return localPath;
+        } catch (err) { /* fall through to the catalog */ }
+        const engineDir = this.getEnginePluginsDir();
+        if (engineDir) {
+            const catalogPath = this.path.join(engineDir, `${pluginName}.js`);
+            try {
+                if (this.fs.existsSync(catalogPath)) return catalogPath;
+            } catch (err) { /* fall through */ }
+        }
+        return localPath;
+    }
+
     constructor(projectController) {
         this.projectController = projectController;
         this.container = null;
@@ -348,7 +377,7 @@ class PluginManager {
         if (!structDefinitions && plugin.name) {
             const currentProject = this.projectController.getCurrentProject();
             const projectPath = currentProject.path;
-            const pluginPath = this.path.join(projectPath, 'js', 'plugins', `${plugin.name}.js`);
+            const pluginPath = this.resolvePluginSourcePath(plugin.name, projectPath);
             const pluginSource = this.fs.readFileSync(pluginPath, 'utf8');
             structDefinitions = this.parseStructDefinitions(pluginSource);
         } else if (!structDefinitions) {
@@ -698,7 +727,7 @@ class PluginManager {
             const projectPath = currentProject.path;
             for (const pluginName of this.availablePlugins) {
                 try {
-                    const pluginPath = this.path.join(projectPath, 'js', 'plugins', `${pluginName}.js`);
+                    const pluginPath = this.resolvePluginSourcePath(pluginName, projectPath);
                     if (this.fs.existsSync(pluginPath)) {
                         const defs = this.parseStructDefinitions(this.fs.readFileSync(pluginPath, 'utf8'));
                         if (defs[structName]) {
@@ -1971,7 +2000,7 @@ class PluginManager {
                 // manager open)
                 for (const plugin of this.plugins) {
                     try {
-                        const pluginPath = this.path.join(projectPath, 'js', 'plugins', `${plugin.name}.js`);
+                        const pluginPath = this.resolvePluginSourcePath(plugin.name, projectPath);
                         const meta = this.getPluginMetadata(pluginPath);
                         if (meta) {
                             plugin.description = meta.description || plugin.description || '';
@@ -2021,23 +2050,32 @@ class PluginManager {
     }
 
     /**
-     * Scan js/plugins folder for available plugins
+     * Scan for available plugins: the engine catalog plus the project's
+     * js/plugins folder (local files override same-named catalog plugins).
      */
     async scanAvailablePlugins(projectPath) {
         try {
-            const pluginsDir = this.path.join(projectPath, 'js', 'plugins');
+            const names = new Set();
 
-            if (!this.fs.existsSync(pluginsDir)) {
-                this.availablePlugins = [];
-                return;
+            const engineDir = this.getEnginePluginsDir();
+            if (engineDir && this.fs.existsSync(engineDir)) {
+                for (const file of this.fs.readdirSync(engineDir)) {
+                    if (file.endsWith('.js')) names.add(file.replace(/\.js$/, ''));
+                }
             }
 
-            const files = this.fs.readdirSync(pluginsDir);
-            this.availablePlugins = files
-                .filter(f => f.endsWith('.js'))
-                .map(f => f.replace('.js', ''));
+            const pluginsDir = this.path.join(projectPath, 'js', 'plugins');
+            if (this.fs.existsSync(pluginsDir)) {
+                const files = this.fs.readdirSync(pluginsDir);
+                for (const file of files) {
+                    if (file.endsWith('.js')) names.add(file.replace(/\.js$/, ''));
+                }
+            }
 
-            console.log('Found available plugins:', this.availablePlugins);
+            this.availablePlugins = Array.from(names);
+
+            console.log('Found available plugins:', this.availablePlugins.length,
+                engineDir ? `(engine catalog: ${engineDir})` : '(no engine catalog)');
         } catch (err) {
             console.error('Error scanning plugins:', err);
             this.availablePlugins = [];
@@ -2808,7 +2846,7 @@ class PluginManager {
         try {
             const currentProject = this.projectController.getCurrentProject();
             const projectPath = currentProject.path;
-            const pluginPath = this.path.join(projectPath, 'js', 'plugins', `${pluginName}.js`);
+            const pluginPath = this.resolvePluginSourcePath(pluginName, projectPath);
 
             // Read plugin file to extract metadata and parameters
             const pluginSource = this.fs.readFileSync(pluginPath, 'utf8');
@@ -3326,7 +3364,7 @@ class PluginManager {
         // those entries removable instead of aborting the details panel render.
         const currentProject = this.projectController.getCurrentProject();
         const projectPath = currentProject.path;
-        const pluginPath = this.path.join(projectPath, 'js', 'plugins', `${plugin.name}.js`);
+        const pluginPath = this.resolvePluginSourcePath(plugin.name, projectPath);
         const pluginFileExists = this.fs.existsSync(pluginPath);
         const pluginSource = pluginFileExists ? this.fs.readFileSync(pluginPath, 'utf8') : '';
         const paramMetadata = pluginFileExists ? this.parsePluginParameterMetadata(pluginSource) : {};
@@ -3343,7 +3381,7 @@ class PluginManager {
                 font-size: 12px;
                 line-height: 1.4;
             `;
-            missingFile.textContent = `${this._tt('Plugin file missing:')} js/plugins/${plugin.name}.js. ${this._tt('This entry can be removed and saved.')}`;
+            missingFile.textContent = `${this._tt('Plugin file missing:')} ${plugin.name}.js (${this._tt('not in the project or the engine catalog')}). ${this._tt('This entry can be removed and saved.')}`;
             paramsContainer.appendChild(missingFile);
         }
 

@@ -1255,6 +1255,51 @@ class ProjectController {
         return true;
     }
 
+    async migratePluginsToEngineCatalog() {
+        if (!this.projectLoaded || !this.currentProject) {
+            alert(this._tt('Open a project before migrating its plugins to the engine catalog.'));
+            return false;
+        }
+        const pm = this.projectManager;
+        const projectPath = this.currentProject.path;
+        const catalogDir = pm.getEnginePluginsDir();
+        if (!catalogDir) {
+            alert(this._tt('Engine plugin catalog not found. Expected a plugins/ folder beside the editor executable or in the editor source tree.'));
+            return false;
+        }
+
+        const summary = this._tt('This moves the project plugin files into the engine catalog workflow:')
+            + '\n\n' + this._tt('• Plugin files available in the engine catalog are backed up to a zip and removed from js/plugins')
+            + '\n' + this._tt('• The plugin loader falls back to the engine catalog (project plugins keep working)')
+            + '\n' + this._tt('• The plugin manifest (plugins.js / reactor_plugins.js) is kept with all settings')
+            + '\n\n' + this._tt('Catalog:') + ' ' + catalogDir;
+        if (!confirm(`${this._tt('Migrate plugins to the engine catalog for:')}\n${projectPath}\n\n${summary}`)) return false;
+
+        const result = await pm.applyEnginePluginCatalogToProject(projectPath);
+        if (!result.ok) {
+            this.uiManager.updateStatus('Plugin catalog migration failed');
+            alert(`${this._tt('Could not migrate plugins to the engine catalog:')}\n${result.error}`);
+            return false;
+        }
+
+        // Keep the in-memory project metadata in sync with the new field.
+        if (this.currentProject) {
+            this.currentProject.enginePluginsDir = result.engineDir;
+        }
+
+        const keptNote = result.kept.length
+            ? `\n\n${this._tt('Kept locally (not in the catalog):')} ${result.kept.join(', ')}`
+            : '';
+        const backupNote = result.backupName
+            ? `\n${this._tt('Backup:')} ${result.backupName}`
+            : '';
+        this.uiManager.updateStatus('Plugins migrated to engine catalog');
+        alert(this._tt('Plugins migrated to the engine catalog.')
+            + backupNote
+            + keptNote);
+        return true;
+    }
+
     async loadMap(mapId, options = {}) {
         const request = ++this._mapLoadRequest;
         const tilemapManager = this.tilemapManager;

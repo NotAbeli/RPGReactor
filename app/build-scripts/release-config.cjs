@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const NW_VERSION = '0.107.0';
+const NW_VERSION = '0.114.0';
 const TARGETS = Object.freeze({
     linux: { platform: 'linux', workerPlatform: 'linux', packageType: 'platform', channel: 'linux-x64' },
     windows: { platform: 'win32', workerPlatform: 'win', packageType: 'platform', channel: 'windows-x64' },
@@ -50,7 +50,7 @@ function createWorkerData({ editorRoot, target, mode, outputDir, env = process.e
         appRoot: editorRoot,
         platforms: definition.workerPlatform ? [definition.workerPlatform] : [],
         packageType: definition.packageType,
-        edition: 'normal',
+        edition: 'sdk',
         nwVersion: NW_VERSION,
         nwVersionPolicy: 'exact',
         editorNwVersion: NW_VERSION,

@@ -61,6 +61,7 @@
   },
   "devDependencies": {
     "nw-builder": "^4.17.13",
-    "png-to-ico": "^3.0.1"
+    "png-to-ico": "^3.0.1",
+    "resedit": "^3.0.2"
   }
 }

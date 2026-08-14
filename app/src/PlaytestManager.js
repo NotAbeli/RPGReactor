@@ -110,8 +110,18 @@ class PlaytestManager {
             console.log('Playtest user data dir:', userDataDir);
         }
 
+        // Point the game's plugin loader at the engine plugin catalog so
+        // projects without js/plugins files resolve plugins from the engine.
+        const spawnEnv = { ...process.env };
+        const enginePluginsDir = this.projectManager?.getEnginePluginsDir?.();
+        if (enginePluginsDir) {
+            spawnEnv.RPGREACTOR_PLUGINS_DIR = enginePluginsDir;
+            console.log('Playtest engine plugin catalog:', enginePluginsDir);
+        }
+
         const child = spawn(nwPath, launchArgs, {
             cwd: projectPath,
+            env: spawnEnv,
             stdio: 'ignore',
             detached: false,
             windowsHide: false

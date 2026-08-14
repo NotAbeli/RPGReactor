@@ -170,6 +170,52 @@ function slugifyPackageName(value) {
     return slug || 'game';
 }
 
+// Copy enabled plugins from the engine catalog (plugins/ beside the editor)
+// into the staged js/plugins so the deployed game is self-contained.
+function materializeEnginePlugins(stagingDir) {
+    const engineDirCandidates = [
+        process.env.RPGREACTOR_PLUGINS_DIR,
+        path.join(__dirname, '..', 'plugins'),
+        path.join(path.dirname(process.execPath), 'plugins'),
+    ].filter(Boolean);
+    const engineDir = engineDirCandidates.find(dir => fs.existsSync(dir));
+    if (!engineDir) return;
+
+    for (const manifestName of ['reactor_plugins.js', 'plugins.js']) {
+        const manifestPath = path.join(stagingDir, 'js', manifestName);
+        if (!fs.existsSync(manifestPath)) continue;
+        let enabled = [];
+        try {
+            const match = fs.readFileSync(manifestPath, 'utf8').match(/var\s+\$plugins\s*=\s*(\[[\s\S]*\]);/);
+            if (match) {
+                enabled = JSON.parse(match[1])
+                    .filter(entry => entry && entry.status === true && typeof entry.name === 'string')
+                    .map(entry => entry.name);
+            }
+        } catch (error) {
+            console.warn(`Could not parse ${manifestName}: ${error.message}`);
+            return;
+        }
+        const stagedPluginsDir = path.join(stagingDir, 'js', 'plugins');
+        fs.mkdirSync(stagedPluginsDir, { recursive: true });
+        let copied = 0;
+        for (const pluginName of enabled) {
+            if (!/^[\w .\-]+$/.test(pluginName)) continue;
+            const stagedPath = path.join(stagedPluginsDir, `${pluginName}.js`);
+            if (fs.existsSync(stagedPath)) continue;
+            const catalogPath = path.join(engineDir, `${pluginName}.js`);
+            if (fs.existsSync(catalogPath)) {
+                fs.copyFileSync(catalogPath, stagedPath);
+                copied++;
+            } else {
+                console.warn(`  Enabled plugin not found in project or engine catalog: ${pluginName}.js`);
+            }
+        }
+        if (copied) console.log(`Materialized ${copied} plugin(s) from the engine catalog.`);
+        return;
+    }
+}
+
 function normalizeStagedPackage(stagingDir, gameName) {
     const stagedPackagePath = path.join(stagingDir, 'package.json');
     if (!fs.existsSync(stagedPackagePath)) return;
@@ -192,6 +238,7 @@ console.log(`  ${stagingDir}\n`);
 console.log('Staging game files (excluding dev/backup files)...');
 validateProjectRuntime(projectPath);
 copyDirFiltered(projectPath, stagingDir, '');
+materializeEnginePlugins(stagingDir);
 normalizeStagedPackage(stagingDir, gameName);
 console.log('\nStaging complete.\n');
 

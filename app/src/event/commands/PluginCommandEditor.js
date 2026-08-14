@@ -259,11 +259,28 @@ class PluginCommandEditor {
     }
 
     /**
+     * Resolve a plugin source file: project js/plugins first, then the
+     * engine plugin catalog (projectManager.getEnginePluginsDir).
+     */
+    resolvePluginSourcePath(pluginName, projectPath) {
+        const localPath = this.path.join(projectPath, 'js', 'plugins', `${pluginName}.js`);
+        try {
+            if (this.fs.existsSync(localPath)) return localPath;
+            const engineDir = this.projectController?.projectManager?.getEnginePluginsDir?.();
+            if (engineDir) {
+                const catalogPath = this.path.join(engineDir, `${pluginName}.js`);
+                if (this.fs.existsSync(catalogPath)) return catalogPath;
+            }
+        } catch (err) { /* fall through to the local path */ }
+        return localPath;
+    }
+
+    /**
      * Load and parse command definitions from a plugin file
      */
     async loadPluginCommands(pluginName, projectPath) {
         try {
-            const pluginPath = this.path.join(projectPath, 'js', 'plugins', `${pluginName}.js`);
+            const pluginPath = this.resolvePluginSourcePath(pluginName, projectPath);
 
             if (!this.fs.existsSync(pluginPath)) {
                 console.warn(`Plugin file not found: ${pluginPath}`);

@@ -87,7 +87,7 @@ const editorPkg = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'),
 const appVersion = editorPkg.version || '0.0.0';
 
 // ── Files/dirs to include (whitelist) ───────────────────────────────
-const INCLUDE_DIRS = ['src', 'css', 'images', 'libs', 'build-scripts'];
+const INCLUDE_DIRS = ['src', 'css', 'images', 'libs', 'plugins', 'build-scripts'];
 const INCLUDE_REPOSITORY_DIRS = [path.join('template', 'Demo')];
 const INCLUDE_FILES = [
     'index.html', 'package.json', 'package-lock.json',
@@ -1164,6 +1164,15 @@ function buildWeb(stageRoot, stagingDir) {
                 // appended to the branded executable.
                 fs.copyFileSync(path.join(stageRoot, 'THIRD_PARTY_NOTICES.md'), path.join(appDir, 'THIRD_PARTY_NOTICES.md'));
                 fs.copyFileSync(path.join(stageRoot, 'LICENSE'), path.join(appDir, 'LICENSE'));
+
+                // Ship the engine plugin catalog as a real folder beside the
+                // executable: playtest processes in open projects load
+                // plugins from here by absolute path, and self-extracting
+                // payloads do not offer stable absolute paths.
+                const stagedPluginsDir = path.join(stageRoot, 'plugins');
+                if (fs.existsSync(stagedPluginsDir)) {
+                    copyDirRecursive(stagedPluginsDir, path.join(appDir, 'plugins'));
+                }
 
                 // Rename executable
                 logInfo('Renaming executable...');
