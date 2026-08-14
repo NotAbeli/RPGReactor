@@ -180,11 +180,19 @@ test('bridge installs the native 7XX commands and dispatches to pluginCommand', 
                 'command' + code + ' installed');
         }
 
-        it.command725([0, -25]);
-        it.command725([1, 0]);
-        it.command700([1, 60, 1, 0, '#e97451', '', '']);
-        it.command730([15]);
-        it.command740([-1, 0, 45, 'Заново...']);
+        // MV dispatch semantics: executeCommand assigns this._params and
+        // invokes the handler with NO arguments (see MV command356). This
+        // is the exact shape the live game uses — args here would hide the
+        // "Cannot read properties of undefined (reading 0)" regression.
+        const run = (code, params) => {
+            it._params = params;
+            assert.strictEqual(it['command' + code](), true, 'command' + code + ' returns true');
+        };
+        run(725, [0, -25]);
+        run(725, [1, 0]);
+        run(700, [1, 60, 1, 0, '#e97451', '', '']);
+        run(730, [15]);
+        run(740, [-1, 0, 45, 'Заново...']);
         assert.deepEqual(pluginCalls, [
             { command: 'Stamina', args: ['add', '-25'] },
             { command: 'Stamina', args: ['fill'] },
@@ -196,9 +204,9 @@ test('bridge installs the native 7XX commands and dispatches to pluginCommand', 
         assert.strictEqual(sandbox.$gameTemp._rrTextPopQueue[0].text, 'Заново...');
 
         // slide setters accumulate + show activates the wait
-        it.command741(['Заголовок']);
-        it.command743(['Kirill', 1]);
-        it.command745([300]);
+        run(741, ['Заголовок']);
+        run(743, ['Kirill', 1]);
+        run(745, [300]);
         assert.strictEqual(sandbox.$gameTemp._rrSlideConfig.title, 'Заголовок');
         assert.strictEqual(sandbox.$gameTemp._rrSlideConfig.faceName, 'Kirill');
         assert.strictEqual(sandbox.$gameTemp._rrSlideActive, true);
@@ -207,6 +215,13 @@ test('bridge installs the native 7XX commands and dispatches to pluginCommand', 
         assert.strictEqual(it.updateWaitMode(), true, 'wait blocks while slide active');
         sandbox.$gameTemp._rrSlideActive = false;
         assert.strictEqual(it.updateWaitMode(), false, 'wait releases when done');
+
+        // A command with NO parameters recorded must not throw (adapter
+        // resolves this._params || []).
+        it._params = undefined;
+        assert.strictEqual(it.command733(), true);
+        it._params = undefined;
+        assert.doesNotThrow(() => it.command734());
     } finally {
         cleanupTemp(dir);
     }
@@ -241,16 +256,17 @@ test('chest helpers operate on the SuperDuperInventory storage format', () => {
         sandbox.$gameParty = { gainItem: (item, n) => gained.push({ item, n }) };
 
         const it = Object.create(sandbox.Game_Interpreter.prototype);
-        it.command716(['комод', 0, 1, 3, 0]);
+        const run = (code, params) => { it._params = params; it['command' + code](); };
+        run(716, ['комод', 0, 1, 3, 0]);
         assert.strictEqual(slots['комод'][0].amount, 3);
-        it.command719(['комод', 7, 3, 0, 1]);
+        run(719, ['комод', 7, 3, 0, 1]);
         assert.strictEqual(varValues[7], 3);
-        it.command719(['комод', 7, 3, 1, 1]);
+        run(719, ['комод', 7, 3, 1, 1]);
         assert.strictEqual(varValues[7], 0, 'weapon id 1 is not item id 1');
-        it.command717(['комод', 0, 1, 1, 1]);
+        run(717, ['комод', 0, 1, 1, 1]);
         assert.strictEqual(slots['комод'][0].amount, 2);
         assert.strictEqual(gained.length, 1, 'moved to party');
-        it.command718(['комод']);
+        run(718, ['комод']);
         assert.ok(slots['комод'].every(s => s === null));
     } finally {
         cleanupTemp(dir);
