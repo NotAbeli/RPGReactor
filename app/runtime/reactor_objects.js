@@ -11699,4 +11699,116 @@ Game_Interpreter.prototype.command720 = function(params) {
     return true;
 };
 
+//
+// SuperDuperCamera wrappers (710-712). The plugin evals its arguments, so
+// plain numeric strings reproduce the legacy behaviour exactly; the legacy
+// "[N]" bracket convention is a plain number after migration.
+//
+
+// 710: Camera Zoom — ZoomIn.
+//      params: [scale, duration, wait]
+Game_Interpreter.prototype.command710 = function(params) {
+    const scale = Number(params[0] || 1);
+    const duration = Math.max(0, Number(params[1] || 0));
+    this.pluginCommand("ZoomIn", [String(scale), String(duration)]);
+    if (Number(params[2]) === 1 && this.setWaitMode) this.setWaitMode("camera");
+    return true;
+};
+
+// 711: Focus Camera — FocusCamera.
+//      params: [target(0 player/1 event/2 coords), eventId, x, y, duration, wait]
+Game_Interpreter.prototype.command711 = function(params) {
+    const target = Number(params[0] || 0);
+    const eventId = Number(params[1] || 0);
+    const x = Number(params[2] || 0);
+    const y = Number(params[3] || 0);
+    const duration = Math.max(0, Number(params[4] || 0));
+    if (target === 1) {
+        this.pluginCommand("FocusCamera", ["event", String(eventId), String(duration)]);
+    } else if (target === 2) {
+        this.pluginCommand("FocusCamera", [String(x), String(y), String(duration)]);
+    } else {
+        this.pluginCommand("FocusCamera", ["player", String(duration)]);
+    }
+    if (Number(params[5]) === 1 && this.setWaitMode) this.setWaitMode("camera");
+    return true;
+};
+
+// 712: Reset Focus — ResetFocus.
+//      params: [duration]
+Game_Interpreter.prototype.command712 = function(params) {
+    const duration = Math.max(0, Number(params[0] || 0));
+    this.pluginCommand("ResetFocus", [String(duration)]);
+    return true;
+};
+
+//
+// SuperDuperEnemies wrappers (721-723). The plugin's own MEHP_* switch only
+// handled combat/panic/flee/alert; shot/loch/wound entries were silently
+// ignored even though the flags exist. Everything goes through the plugin's
+// universal "SDE SET_FLAG" path (same setGenericMode), which restores the
+// intended behaviour for every phase.
+//
+
+// 721: Enemy Phase — SDE SET_FLAG SELF <phase> ON/OFF.
+//      params: [phase, state] — phase '__reset_all' -> SDE RESET_ALL.
+Game_Interpreter.prototype.command721 = function(params) {
+    const phase = String(params[0] || "").trim();
+    if (!phase) return true;
+    if (phase === "__reset_all") {
+        this.pluginCommand("SDE", ["RESET_ALL", "SELF"]);
+        return true;
+    }
+    this.pluginCommand("SDE", ["SET_FLAG", "SELF", phase, Number(params[1]) === 1 ? "ON" : "OFF"]);
+    return true;
+};
+
+// 722: Enemy HP — MEHP_ADD/SET/GET on the current event.
+//      params: [op(0 add/1 set/2 get), amount, variableId(get only)]
+Game_Interpreter.prototype.command722 = function(params) {
+    const op = Number(params[0] || 0);
+    if (op === 1) {
+        this.pluginCommand("MEHP_SET", [String(Number(params[1]) || 0)]);
+    } else if (op === 2) {
+        this.pluginCommand("MEHP_GET", [String(Math.max(1, Number(params[2]) || 1))]);
+    } else {
+        this.pluginCommand("MEHP_ADD", [String(Number(params[1]) || 0)]);
+    }
+    return true;
+};
+
+// 723: All Enemies Phase — the legacy *_ALL_START commands had no handler;
+//      restored natively by setting the flag on every map event.
+//      params: [phase, state]
+Game_Interpreter.prototype.command723 = function(params) {
+    const phase = String(params[0] || "").trim();
+    if (!phase || !$gameMap) return true;
+    const state = Number(params[1]) === 1 ? "ON" : "OFF";
+    for (const event of $gameMap.events()) {
+        if (event && event.eventId) {
+            this.pluginCommand("SDE", ["SET_FLAG", String(event.eventId()), phase, state]);
+        }
+    }
+    return true;
+};
+
+// 724: Fill Chest with Loot — SuperDuperLoot "SDL FillChest".
+//      params: [chestId('' = this event), category, minCount, maxCount,
+//               value, maxItemValue]
+Game_Interpreter.prototype.command724 = function(params) {
+    const chestId = String(params[0] || "").trim() || "this";
+    const category = String(params[1] || "").trim();
+    if (!category) return true;
+    const min = Math.max(1, Number(params[2] || 1));
+    const max = Math.max(min, Number(params[3] || min));
+    const count = min === max ? String(min) : min + "-" + max;
+    const value = String(Math.max(1, Number(params[4] || 1)));
+    const maxItemValue = params[5] === "" || params[5] === undefined || params[5] === null
+        ? null : String(Math.max(1, Number(params[5])));
+    const args = ["FillChest", chestId, category, count, value];
+    if (maxItemValue !== null) args.push(maxItemValue);
+    this.pluginCommand("SDL", args);
+    return true;
+};
+
 //-----------------------------------------------------------------------------

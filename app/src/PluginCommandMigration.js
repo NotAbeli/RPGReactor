@@ -150,8 +150,97 @@ class PluginCommandMigration {
                 plugin: 'SDLight',
                 match: /^light\s+switch\s+reset$/i,
                 parse: () => ({ remove: true })
+            },
+            {
+                plugin: 'SuperDuperCamera',
+                match: /^zoomin\s+([\d.[\]-]+(?:\s+[\d.[\]-]+)*)$/i,
+                parse: (m) => {
+                    const tokens = m[1].split(/\s+/);
+                    return { code: 710, parameters: [PluginCommandMigration.unbracket(tokens[0]), PluginCommandMigration.unbracket(tokens[1] || 0), 0] };
+                }
+            },
+            {
+                plugin: 'SuperDuperCamera',
+                match: /^zoomout\s+([\d.[\]-]+(?:\s+[\d.[\]-]+)*)$/i,
+                parse: (m) => {
+                    const tokens = m[1].split(/\s+/);
+                    const divisor = PluginCommandMigration.unbracket(tokens[0]) || 1;
+                    return { code: 710, parameters: [Math.round((1 / divisor) * 100) / 100, PluginCommandMigration.unbracket(tokens[1] || 0), 0] };
+                }
+            },
+            {
+                plugin: 'SuperDuperCamera',
+                match: /^focuscamera\s+(.+)$/i,
+                parse: (m) => {
+                    const tokens = m[1].trim().split(/\s+/);
+                    const head = tokens[0].toLowerCase();
+                    const ub = PluginCommandMigration.unbracket.bind(PluginCommandMigration);
+                    if (head === 'player') {
+                        return { code: 711, parameters: [0, 0, 0, 0, ub(tokens[1] || 0), 0] };
+                    }
+                    if (head === 'event') {
+                        return { code: 711, parameters: [1, ub(tokens[1] || 0), 0, 0, ub(tokens[2] || 0), 0] };
+                    }
+                    if (head === 'follower') return null; // no native equivalent yet
+                    return { code: 711, parameters: [2, 0, ub(tokens[0]), ub(tokens[1] || 0), ub(tokens[2] || 0), 0] };
+                }
+            },
+            {
+                plugin: 'SuperDuperCamera',
+                match: /^resetfocus(?:\s+(\[?\d+\]?))?$/i,
+                parse: (m) => ({ code: 712, parameters: [PluginCommandMigration.unbracket(m[1] || 0)] })
+            },
+            {
+                plugin: 'SuperDuperEnemies',
+                match: /^mehp_(combat|panic|flee|alert|shot|loch|wound)_(start|end)(?:\s+self|\s+\d+)?$/i,
+                parse: (m) => ({
+                    code: 721,
+                    parameters: [m[1].toLowerCase(), /^start$/i.test(m[2]) ? 1 : 0]
+                })
+            },
+            {
+                plugin: 'SuperDuperEnemies',
+                match: /^mehp_calm_reset(?:\s+self|\s+\d+)?$/i,
+                parse: () => ({ code: 721, parameters: ['__reset_all', 1] })
+            },
+            {
+                plugin: 'SuperDuperEnemies',
+                match: /^mehp_(combat|panic|flee|alert|shot|loch|wound)_all_(start|end)$/i,
+                parse: (m) => ({
+                    code: 723,
+                    parameters: [m[1].toLowerCase(), /^start$/i.test(m[2]) ? 1 : 0]
+                })
+            },
+            {
+                plugin: 'SuperDuperEnemies',
+                match: /^mehp_add(?:\s+self)?\s+(-?\d+)$/i,
+                parse: (m) => ({ code: 722, parameters: [0, Number(m[1]), 0] })
+            },
+            {
+                plugin: 'SuperDuperEnemies',
+                match: /^mehp_set(?:\s+self)?\s+(-?\d+)$/i,
+                parse: (m) => ({ code: 722, parameters: [1, Number(m[1]), 0] })
+            },
+            {
+                plugin: 'SuperDuperEnemies',
+                match: /^mehp_get(?:\s+self)?\s+(\d+)$/i,
+                parse: (m) => ({ code: 722, parameters: [2, 0, Number(m[1])] })
+            },
+            {
+                plugin: 'SuperDuperLoot',
+                match: /^sdl\s+fillchest\s+(\S+)\s+(\S+)\s+(\d+)(?:-(\d+))?\s+(\d+)(?:\s+(\d+))?$/i,
+                parse: (m) => ({
+                    code: 724,
+                    parameters: [m[1] === 'this' ? '' : m[1], m[2], Number(m[3]), Number(m[4] || m[3]), Number(m[5]), m[6] ? Number(m[6]) : '']
+                })
             }
         ];
+    }
+
+    /** Legacy eval-convention "[N]" -> plain number. */
+    static unbracket(value) {
+        const n = Number(String(value).replace(/[[\]]/g, ""));
+        return Number.isNaN(n) ? 0 : n;
     }
 
     /** Manifest plugin families this migrator can relocate to engine modules. */

@@ -388,7 +388,9 @@ class NativeCommandDialog {
         const wrap = this.fieldWraps[field.key];
         if (!wrap) return;
         const current = this.values[field.visibleIf.field];
-        const visible = field.visibleIf.in.map(Number).includes(Number(current));
+        const contains = (field.visibleIf.in || []).some(v => String(v) === String(current));
+        const excluded = (field.visibleIf.notIn || []).some(v => String(v) === String(current));
+        const visible = field.visibleIf.notIn ? !excluded : contains;
         wrap.style.display = visible ? '' : 'none';
     }
 
@@ -491,7 +493,9 @@ class NativeCommandDialog {
                     value = String(value !== undefined ? value : '').trim();
                 }
             } else if (field.type === 'select') {
-                value = value !== undefined ? Number(value) : (field.default !== undefined ? field.default : 0);
+                if (value === undefined || value === null) value = field.default !== undefined ? field.default : 0;
+                const num = Number(value);
+                if (value !== '' && !Number.isNaN(num)) value = num;
             } else if (field.type === 'itemRef') {
                 value = value !== undefined ? Number(value) : (field.default !== undefined ? field.default : 1);
             } else if (field.type === 'switchId') {

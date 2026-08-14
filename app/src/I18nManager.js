@@ -91,12 +91,19 @@ Object.assign(RR_EVENT_COMMAND_NAMES, {
         'Region Block': 'Блок Региона',
         'Darkness Tint': 'Тонировка Тьмы',
         'Local Switch': 'Локальный Переключатель',
-        'Loot Give': 'Выдать Лут'
+        'Loot Give': 'Выдать Лут',
+        'Camera Zoom': 'Зум Камеры',
+        'Focus Camera': 'Фокус Камеры',
+        'Reset Focus': 'Сбросить Фокус',
+        'Enemy Phase': 'Фаза Врага',
+        'Enemy HP': 'HP Врага',
+        'All Enemies Phase': 'Фаза Всех Врагов',
+        'Fill Chest with Loot': 'Наполнить Сундук Лутом'
     }
 });
 
 Object.assign(RR_EVENT_SECTION_NAMES, {
-    ru: { 'Message & Flow': 'Сообщения И Поток', 'Map & Screen': 'Карта И Экран', 'Battle & System': 'Бой И Система', 'Message': 'Сообщения', 'Game Progression': 'Прогресс Игры', 'Flow Control': 'Управление Потоком', 'Party': 'Группа', 'Actor': 'Актёр', 'Movement': 'Движение', 'Character': 'Персонаж', 'Picture': 'Изображение', 'Timing': 'Время', 'Screen': 'Экран', 'Audio & Video': 'Аудио И Видео', 'Scene Control': 'Управление Сценой', 'System Settings': 'Системные Настройки', 'Map': 'Карта', 'Battle': 'Бой', 'Advanced': 'Дополнительно', 'Inventory': 'Инвентарь', 'Utility': 'Утилиты', 'Agonia Engine': 'Движок Agonia', 'Lighting': 'Освещение' }
+    ru: { 'Message & Flow': 'Сообщения И Поток', 'Map & Screen': 'Карта И Экран', 'Battle & System': 'Бой И Система', 'Message': 'Сообщения', 'Game Progression': 'Прогресс Игры', 'Flow Control': 'Управление Потоком', 'Party': 'Группа', 'Actor': 'Актёр', 'Movement': 'Движение', 'Character': 'Персонаж', 'Picture': 'Изображение', 'Timing': 'Время', 'Screen': 'Экран', 'Audio & Video': 'Аудио И Видео', 'Scene Control': 'Управление Сценой', 'System Settings': 'Системные Настройки', 'Map': 'Карта', 'Battle': 'Бой', 'Advanced': 'Дополнительно', 'Inventory': 'Инвентарь', 'Utility': 'Утилиты', 'Agonia Engine': 'Движок Agonia', 'Lighting': 'Освещение', 'Camera': 'Камера', 'Enemies': 'Враги' }
 });
 
 Object.assign(RR_EVENT_COMMAND_NAMES, {
@@ -1687,6 +1694,12 @@ Object.assign(RR_TEXT_TRANSLATIONS.ru, {
     'Vignette Multiplier': 'Множитель Виньетки', 'Not set': 'Не задан', 'Shadow Color': 'Цвет Тени',
     'Tint Color': 'Цвет Тонировки', 'Speed (frames)': 'Скорость (кадры)', 'Switch Index': 'Индекс Переключателя',
     'Current map': 'Текущая карта', 'Category': 'Категория', 'Min Coins': 'Мин. Монет', 'Max Coins': 'Макс. Монет',
+    'Camera': 'Камера', 'Enemies': 'Враги', 'Scale': 'Масштаб', 'Coordinates': 'Координаты',
+    'Wait for Completion': 'Ждать Завершения', 'No': 'Нет', 'Yes': 'Да', 'Get': 'Прочитать',
+    'Reset All': 'Сбросить Всё', 'Phase': 'Фаза', 'Combat': 'Бой', 'Alert': 'Тревога',
+    'Loch (search)': 'Обыск', 'Wound': 'Ранение', 'Operation': 'Операция', 'Amount': 'Количество',
+    'Min Items': 'Мин. Предметов', 'Max Items': 'Макс. Предметов', 'Total Coins': 'Всего Монет',
+    'Max Item Value': 'Макс. Цена Предмета',
     'Type': 'Тип', 'Animation': 'Анимация', 'State': 'Состояние', 'Map ID': 'ID Карты', 'Vignette': 'Виньетка',
     'Shadows & Map Switches': 'Тени и Переключатели Карт', 'Player radius': 'Радиус игрока',
     'Default Tint': 'Тинт по умолчанию', 'Player Light Influence': 'Влияние света игрока',

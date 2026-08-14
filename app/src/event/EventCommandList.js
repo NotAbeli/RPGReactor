@@ -1238,6 +1238,13 @@ class EventCommandList {
             703: { name: 'Darkness Tint', color: 'var(--color-syntax-type)' },
             704: { name: 'Local Switch', color: 'var(--color-syntax-type)' },
             720: { name: 'Loot Give', color: 'var(--color-syntax-type)' },
+            710: { name: 'Camera Zoom', color: 'var(--color-syntax-function)' },
+            711: { name: 'Focus Camera', color: 'var(--color-syntax-function)' },
+            712: { name: 'Reset Focus', color: 'var(--color-syntax-function)' },
+            721: { name: 'Enemy Phase', color: 'var(--color-syntax-function)' },
+            722: { name: 'Enemy HP', color: 'var(--color-syntax-function)' },
+            723: { name: 'All Enemies Phase', color: 'var(--color-syntax-function)' },
+            724: { name: 'Fill Chest with Loot', color: 'var(--color-syntax-type)' },
             401: { name: 'Text', color: 'var(--color-syntax-comment)' },
             402: { name: 'When', color: 'var(--color-syntax-string)' },
             403: { name: 'When Cancel', color: 'var(--color-syntax-string)' },
@@ -2017,6 +2024,53 @@ class EventCommandList {
                 const min = Number(params[1]) || 1;
                 const max = Number(params[2]) || min;
                 description = `${params[0] || ''}: ${min === max ? min : min + '-' + max}`;
+                break;
+            }
+            case 710: {
+                description = `×${params[0] || 1}` + (Number(params[1]) > 0 ? `, ${params[1]} ${tt('frames')}` : '');
+                break;
+            }
+            case 711: {
+                const target = Number(params[0]) || 0;
+                const targets = [
+                    tt('Player'),
+                    `${tt('Event')} #${params[1] || 1}`,
+                    `(${params[2] || 0}, ${params[3] || 0})`
+                ];
+                description = targets[target] + (Number(params[4]) > 0 ? `, ${params[4]} ${tt('frames')}` : '');
+                break;
+            }
+            case 712: {
+                description = Number(params[0]) > 0 ? `${params[0]} ${tt('frames')}` : tt('Instant');
+                break;
+            }
+            case 721: {
+                const phase = String(params[0] || '');
+                if (phase === '__reset_all') {
+                    description = tt('Reset All');
+                } else {
+                    description = `${phase}: ${Number(params[1]) === 1 ? tt('ON') : tt('OFF')}`;
+                }
+                break;
+            }
+            case 722: {
+                const op = Number(params[0]) || 0;
+                if (op === 2) {
+                    description = `${tt('Get')} → ${tt('Variable')} ${this._fmtVar(params[2])}`;
+                } else {
+                    description = `${op === 1 ? tt('Set') : tt('Add')} ${params[1] || 0}`;
+                }
+                break;
+            }
+            case 723: {
+                description = `${params[0] || ''}: ${Number(params[1]) === 1 ? tt('ON') : tt('OFF')}`;
+                break;
+            }
+            case 724: {
+                const min = Number(params[2]) || 1;
+                const max = Number(params[3]) || min;
+                const chestId = String(params[0] || '').trim();
+                description = `${chestId || tt('Auto chest ID (unique per event)')}: ${params[1] || ''} ${min === max ? min : min + '-' + max}`;
                 break;
             }
             case 655: {

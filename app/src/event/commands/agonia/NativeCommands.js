@@ -316,6 +316,129 @@ class AgoniaNativeCommands {
                     { key: 'min', index: 1, type: 'number', label: 'Min Coins', default: 1, min: 1 },
                     { key: 'max', index: 2, type: 'number', label: 'Max Coins', default: 1, min: 1 }
                 ]
+            },
+            {
+                code: 710,
+                id: 'cameraZoom',
+                name: 'Camera Zoom',
+                section: 'Camera',
+                help: 'Zooms the camera. Scale 1 = normal, 2 = twice closer, 0.5 = twice farther.',
+                fields: [
+                    { key: 'scale', index: 0, type: 'number', label: 'Scale', default: 2, min: 0.1, max: 8, step: 0.1 },
+                    { key: 'duration', index: 1, type: 'number', label: 'Duration (frames)', default: 0, min: 0, optionalLabel: 'Instant' },
+                    { key: 'wait', index: 2, type: 'select', label: 'Wait for Completion', default: 0, options: [
+                        { value: 0, label: 'No' },
+                        { value: 1, label: 'Yes' }
+                    ] }
+                ]
+            },
+            {
+                code: 711,
+                id: 'focusCamera',
+                name: 'Focus Camera',
+                section: 'Camera',
+                help: 'Moves the camera focus to the player, an event, or map coordinates.',
+                fields: [
+                    { key: 'target', index: 0, type: 'select', label: 'Target', default: 0, options: [
+                        { value: 0, label: 'Player' },
+                        { value: 1, label: 'Event by ID' },
+                        { value: 2, label: 'Coordinates' }
+                    ] },
+                    { key: 'eventId', index: 1, type: 'number', label: 'Event ID', default: 1, min: 1, visibleIf: { field: 'target', in: [1] } },
+                    { key: 'x', index: 2, type: 'number', label: 'X', default: 0, visibleIf: { field: 'target', in: [2] } },
+                    { key: 'y', index: 3, type: 'number', label: 'Y', default: 0, visibleIf: { field: 'target', in: [2] } },
+                    { key: 'duration', index: 4, type: 'number', label: 'Duration (frames)', default: 0, min: 0, optionalLabel: 'Instant' },
+                    { key: 'wait', index: 5, type: 'select', label: 'Wait for Completion', default: 0, options: [
+                        { value: 0, label: 'No' },
+                        { value: 1, label: 'Yes' }
+                    ] }
+                ]
+            },
+            {
+                code: 712,
+                id: 'resetFocus',
+                name: 'Reset Focus',
+                section: 'Camera',
+                help: 'Returns the camera to the player.',
+                fields: [
+                    { key: 'duration', index: 0, type: 'number', label: 'Duration (frames)', default: 0, min: 0, optionalLabel: 'Instant' }
+                ]
+            },
+            {
+                code: 721,
+                id: 'enemyPhase',
+                name: 'Enemy Phase',
+                section: 'Enemies',
+                help: 'Sets a behaviour phase flag on this event: combat, panic, flee, alert, shot, loch or wound. "Reset All" clears every phase.',
+                fields: [
+                    { key: 'phase', index: 0, type: 'select', label: 'Phase', default: 'combat', options: [
+                        { value: 'combat', label: 'Combat' },
+                        { value: 'panic', label: 'Panic' },
+                        { value: 'flee', label: 'Flee' },
+                        { value: 'alert', label: 'Alert' },
+                        { value: 'shot', label: 'Shot' },
+                        { value: 'loch', label: 'Loch (search)' },
+                        { value: 'wound', label: 'Wound' },
+                        { value: '__reset_all', label: 'Reset All' }
+                    ] },
+                    { key: 'state', index: 1, type: 'select', label: 'State', default: 1, visibleIf: { field: 'phase', notIn: ['__reset_all'] }, options: [
+                        { value: 1, label: 'ON' },
+                        { value: 0, label: 'OFF' }
+                    ] }
+                ]
+            },
+            {
+                code: 722,
+                id: 'enemyHp',
+                name: 'Enemy HP',
+                section: 'Enemies',
+                help: 'Map-enemy HP of this event: add damage, set directly, or read into a variable.',
+                fields: [
+                    { key: 'op', index: 0, type: 'select', label: 'Operation', default: 0, options: [
+                        { value: 0, label: 'Add' },
+                        { value: 1, label: 'Set' },
+                        { value: 2, label: 'Get' }
+                    ] },
+                    { key: 'amount', index: 1, type: 'number', label: 'Amount', default: 0, visibleIf: { field: 'op', in: [0, 1] } },
+                    { key: 'variableId', index: 2, type: 'variableId', label: 'Variable', default: 1, visibleIf: { field: 'op', in: [2] } }
+                ]
+            },
+            {
+                code: 723,
+                id: 'allEnemiesPhase',
+                name: 'All Enemies Phase',
+                section: 'Enemies',
+                help: 'Sets a behaviour phase flag on every event of the current map (restored MEHP_*_ALL commands).',
+                fields: [
+                    { key: 'phase', index: 0, type: 'select', label: 'Phase', default: 'shot', options: [
+                        { value: 'combat', label: 'Combat' },
+                        { value: 'panic', label: 'Panic' },
+                        { value: 'flee', label: 'Flee' },
+                        { value: 'alert', label: 'Alert' },
+                        { value: 'shot', label: 'Shot' },
+                        { value: 'loch', label: 'Loch (search)' },
+                        { value: 'wound', label: 'Wound' }
+                    ] },
+                    { key: 'state', index: 1, type: 'select', label: 'State', default: 1, options: [
+                        { value: 1, label: 'ON' },
+                        { value: 0, label: 'OFF' }
+                    ] }
+                ]
+            },
+            {
+                code: 724,
+                id: 'fillChestLoot',
+                name: 'Fill Chest with Loot',
+                section: 'Inventory',
+                help: 'Fills a chest storage with random loot of a category (SuperDuperLoot).',
+                fields: [
+                    { key: 'chestId', index: 0, type: 'chestId', label: 'Chest ID', suggestions: true },
+                    { key: 'category', index: 1, type: 'suggestion', label: 'Category', suggestions: 'lootCategories' },
+                    { key: 'minCount', index: 2, type: 'number', label: 'Min Items', default: 1, min: 1 },
+                    { key: 'maxCount', index: 3, type: 'number', label: 'Max Items', default: 1, min: 1 },
+                    { key: 'value', index: 4, type: 'number', label: 'Total Coins', default: 10, min: 1 },
+                    { key: 'maxItemValue', index: 5, type: 'number', label: 'Max Item Value', default: '', min: 1, optional: true, optionalLabel: 'Not set' }
+                ]
             }
         ];
     }
