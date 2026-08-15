@@ -4,8 +4,7 @@
 
 ## Команды (из `app/`)
 
-- `npm test` — node:test (120 тестов), сьюты в `app/test/`
-- `npm run dev` — запуск редактора в NW.js (единственная живая сборка: дистрибутивной нет)
+- `npm test` — node:test (120 тестов), сьюты в `app/test/`- `npm run dev` — запуск редактора в NW.js (единственная живая сборка: дистрибутивной нет)
 - `npm run build:win|build:mac|build:linux` — дистрибутив
 - `node build-scripts/generate-plugin-catalog.js` — регенерация `app/plugins/catalog.json` (обязательно после добавления/удаления плагинов; тест упадёт, если забыть)
 - `node build-scripts/convert-plugin-commands.js <проект> [флаги]` — мигратор легаси-команд (356/357 → нативные 700+) и утилиты проекта: `--plugin <имя>` (скоуп), `--dry-run`, `--reseed-agonia` (пересобрать `data/AgoniaEngine.json` из тюнинга engineModules), `--harvest-all` (все остатки манифеста → engineModules/disabledPlugins), `--print-order` (порядок загрузки без запуска игры)
@@ -48,7 +47,7 @@ Retire/restore: `node build-scripts/convert-plugin-commands.js <проект> --
 
 ## Системные модули (S2+) — загрузчик
 
-Для retired-плагинов, чей функционал движку нужен целиком (слишком крупный для шима-порта): `RR.loadSystemModules` исполняет **тот же файл каталога** до всех плагинов (async=false DOM-порядок), с параметрами `слепок retired ← БД-секция` (строкификация MV). Не в `$plugins`, нигде не числится плагином; `_scripts` защищает от двойной загрузки при `--restore-retired`. Пока плагин жив как модуль — загрузчик пропускает (переходный режим, параметры идут через `applyAgoniaConfig`). Объявлены: `SDLight ← lighting`. Проверено: паритет 100.00%/100.00%, `Imported.SDLight` установлен, SRD_LightEditor доволен.
+Для retired-плагинов, чей функционал движку нужен целиком (слишком крупный для шима-порта): `RR.loadSystemModules` исполняет **тот же файл каталога** до всех плагинов (async=false DOM-порядок; порядок модулей = порядку ключей в реестре), с параметрами `слепок retired ← БД-секция` (строкификация MV). Не в `$plugins`, нигде не числится плагином; `_scripts` защищает от двойной загрузки при `--restore-retired`. Пока плагин жив как модуль — загрузчик пропускает (переходный режим, параметры идут через `applyAgoniaConfig`). Объявлены: `SDLight ← lighting`, `SuperDuperMovement ← stamina`, `SuperDuperMovement_Addon` (после Movement). Гейты: SDLight — пиксельный паритет 100.00%/100.00%; Movement — **поведенческий** (пиксельный дифф шумный на анимациях): векторные суб-тайл позиции, dash ×2, CollisionMesh, стамина тикает.
 
 Reactor-рантайм (Pixi 8) — **не выкатывать на проект**: опробован, ломает ФПС/визуалы (CRT-шейдер, legacy super-вызовы). Правки зеркалятся туда для будущего, но рабочий путь — MV-мост.
 
@@ -67,7 +66,7 @@ Reactor-рантайм (Pixi 8) — **не выкатывать на проек�
 ## Git
 
 - Теги: `fork-baseline` (f281fbb), `pre-plugin-migration` (4e5e2ab), `pre-native-commands` (= fork-база перед командами), `native-commands-baseline` (bbff1cd: мост v2 + input-харднинг, 93 теста).
-- S1-экранная система завершена 2026-08-15: движок `d5367ac`+ (116 тестов, заморозка single-writer), проект `c2859fa` (3 плагина в retiredPlugins). S2-свет завершена 2026-08-15: движок `65348a7` (120 тестов, системные модули), проект `1206694` (SDLight в retired → системный модуль). Теги: `s1-screen-complete`.
+- S1-экранная система завершена 2026-08-15: движок `d5367ac`+ (116 тестов, заморозка single-writer), проект `c2859fa` (3 плагина в retiredPlugins). S2-свет завершена 2026-08-15: движок `65348a7` (120 тестов, системные модули), проект `1206694` (SDLight в retired → системный модуль). S3-движение завершена 2026-08-15: движок `2c56483`, проект `f39e8ce` (Movement+Addon в retired → системные модули). Теги: `s1-screen-complete`, `s2-light-complete`, `s2-light-final`.
 - История откатов через `git reset --hard` — перед крупными правками фиксировать тег/коммит.
 - Память проекта: глобальный vault `~/loam-memory` (qmd `global-memory`), страницы `agonia-*`.
 
