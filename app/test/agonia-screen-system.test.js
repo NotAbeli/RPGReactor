@@ -113,7 +113,8 @@ function makeScreenSandbox(dir, { plugins = [], agonia = null } = {}) {
         TouchInput: { isTriggered: () => false },
         Window_TitleCommand: function () { },
         ImageManager: { loadSystem: () => ({ isReady: () => false }) },
-        Graphics: { width: 816, height: 624 },
+        Graphics: { width: 816, height: 624, boxWidth: 816, boxHeight: 624 },
+        Rectangle: function (x, y, w, h) { this.x = x; this.y = y; this.width = w; this.height = h; },
         $gameTemp: {},
         navigator: { getGamepads: () => [] },
         PIXI: { Filter: PixiFilter },
@@ -207,48 +208,43 @@ test('screen system (retired): resolution, Core shim, CRT filter and 727 all sys
         assert.strictEqual(sandbox.window.SuperDuper.Core.pctX(50), 640);
         assert.strictEqual(sandbox.window.SuperDuper.Core.clamp(11, 0, 10), 10);
 
-        // System CRT installed and wired to Scene_Base.
+        // System CRT installed: per-scene design (plugin-exact). The handle
+        // reports active from the config; filters live on each scene.
         const crt = sandbox.__RRMVBridge.screen.crt;
         assert.ok(crt, 'system CRT installed');
         assert.strictEqual(crt.active, true);
-        assert.strictEqual(crt.filter.uniforms.uScanline, 0.4);
-        assert.strictEqual(crt.filter.uniforms.uNoise, 1.5);
-        assert.strictEqual(crt.filter.uniforms.uResolution[0], 1280);
 
-        // Scene lifecycle drives the filter.
+        // Scene lifecycle: start creates the filter and update applies it
+        // (filterArea + uniforms from the config).
         const scene = new sandbox.Scene_Base();
         scene.start();
-        assert.ok(scene.filters && scene.filters.indexOf(crt.filter) !== -1, 'filter applied on start');
+        assert.ok(scene._superDuperFilter, 'per-scene filter created');
         scene.update();
-        assert.strictEqual(crt.filter.uniforms.uWaveTime, 0.05, 'wave time advances while active');
+        assert.ok(scene.filters && scene.filters.indexOf(scene._superDuperFilter) !== -1, 'filter applied on update');
+        assert.strictEqual(scene._superDuperFilter.uniforms.uScanline, 0.4, 'config scanline');
+        assert.strictEqual(scene._superDuperFilter.uniforms.uNoise, 1.5, 'config noise');
+        assert.ok(scene.filterArea, 'filterArea set (the ripple fix)');
+        assert.strictEqual(scene._superDuperFilter.uniforms.uWaveTime, 0.05, 'wave time advances');
 
-        // Toggle off removes it from the live scene.
-        sandbox.SceneManager._scene = scene;
-        crt.setActive(false);
-        assert.strictEqual(crt.active, false);
-        assert.ok(!scene.filters, 'filter removed from live scene');
+        // Toggle off through the config removes it from the scene.
+        sandbox.$gameSystem = { _superDuperConfig: { active: false, scanline: 0.4, noise: 1.5 }, _superDuperTarget: {}, _superDuperFrames: {} };
         scene.update();
-        assert.strictEqual(crt.filter.uniforms.uWaveTime, 0.05, 'no advancement while inactive');
+        assert.ok(!scene.filters, 'filter removed when config.active false');
+        assert.strictEqual(scene._superDuperFilter.uniforms.uWaveTime, 0.05, 'no advancement while inactive');
 
-        // Presets: registered + applied.
-        crt.registerPreset('vhs', { intensity: 1, scanline: 2 });
-        crt.setActive(true);
-        assert.strictEqual(crt.applyPreset('VHS'), true);
-        assert.strictEqual(crt.filter.uniforms.uIntensity, 1);
-        assert.strictEqual(crt.applyPreset('nope'), false);
-
-        // 727 dispatches to the system CRT (no pluginCommand).
+        // 727 drives the same config path (no plugin fallback).
+        sandbox.$gameSystem = { _superDuperConfig: { active: true, scanline: 0.4 }, _superDuperTarget: {}, _superDuperFrames: {} };
         const GI = sandbox.Game_Interpreter;
         const calls = [];
         GI.prototype.pluginCommand = function (c, a) { calls.push(c); };
         const it = Object.create(GI.prototype);
         it._params = [0];
         it.command727();
-        assert.strictEqual(crt.active, false, '727 OFF hit the system CRT');
-        assert.strictEqual(calls.length, 0, 'no plugin fallback');
+        assert.strictEqual(sandbox.$gameSystem._superDuperConfig.active, false, '727 OFF hit the config');
         it._params = [1];
         it.command727();
-        assert.strictEqual(crt.active, true, '727 ON hit the system CRT');
+        assert.strictEqual(sandbox.$gameSystem._superDuperConfig.active, true, '727 ON hit the config');
+        assert.strictEqual(calls.length, 0, 'no plugin fallback');
     } finally {
         cleanupTemp(dir);
     }

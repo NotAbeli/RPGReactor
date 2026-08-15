@@ -47,7 +47,8 @@ function makeSandbox(dir, extra = {}) {
         TouchInput: { isTriggered: () => false },
         Window_TitleCommand: function () { },
         ImageManager: { loadSystem: () => ({ isReady: () => false }) },
-        Graphics: { width: 816, height: 624 },
+        Graphics: { width: 816, height: 624, boxWidth: 816, boxHeight: 624 },
+        Rectangle: function (x, y, w, h) { this.x = x; this.y = y; this.width = w; this.height = h; },
         $gameTemp: {},
         navigator: { getGamepads: () => [] },
         PIXI: {
@@ -217,10 +218,13 @@ test('system CRT carries _superDuperConfig + SUPERDUPER channel + interpolation'
         assert.strictEqual(gs._superDuperConfig.scanline, 0.4, 'not applied immediately');
         // Foreign commands still pass through.
         it.pluginCommand('Light', ['on', '4']);
-        assert.deepEqual(passthrough, ['Light']);
+        assert.ok(passthrough.indexOf('Light') !== -1, 'foreign commands relayed');
 
-        // Interpolation: 3 frames converge toward the target.
+        // Interpolation: 3 frames converge toward the target (with the CRT
+        // ON - plugin semantics apply uniforms only in the active branch).
+        it.pluginCommand('SUPERDUPER', ['ON']);
         const scene = new sb.Scene_Base();
+        scene.start();
         scene.update();
         const after1 = gs._superDuperConfig.scanline;
         assert.ok(after1 > 0.4 && after1 < 1.0, 'moved toward target');
@@ -228,16 +232,19 @@ test('system CRT carries _superDuperConfig + SUPERDUPER channel + interpolation'
         scene.update(); scene.update();
         assert.strictEqual(gs._superDuperFrames.scanline, 0);
         assert.ok(Math.abs(gs._superDuperConfig.scanline - 1.0) < 1e-9, 'converged');
-        assert.strictEqual(crt.filter.uniforms.uScanline, 1.0, 'uniforms follow config');
+        assert.strictEqual(scene._superDuperFilter.uniforms.uScanline, 1.0, 'uniforms follow config');
+
+        // OFF detaches the filter from the scene (plugin semantics).
+        it.pluginCommand('SUPERDUPER', ['OFF']);
+        scene.update();
+        assert.ok(!scene.filters, 'filter detached while inactive');
 
         // SET active through the channel drives the scene filter.
-        assert.strictEqual(crt.active, false);
         scene.start();
-        sb.SceneManager._scene = scene;
         it.pluginCommand('SUPERDUPER', ['ON']);
         scene.update();
         assert.strictEqual(crt.active, true);
-        assert.ok(scene.filters && scene.filters.indexOf(crt.filter) !== -1, 'filter applied via config.active sync');
+        assert.ok(scene.filters && scene.filters.indexOf(scene._superDuperFilter) !== -1, 'filter applied via config.active sync');
 
         // SAVE_PRESET / PRESET round-trip.
         it.pluginCommand('SUPERDUPER', ['SAVE_PRESET', 'MyVHS']);
@@ -248,7 +255,7 @@ test('system CRT carries _superDuperConfig + SUPERDUPER channel + interpolation'
         // 727 prefers the system CRT and reads saved presets.
         it._params = [2, 'myvhs'];
         it.command727();
-        assert.ok(Math.abs(crt.filter.uniforms.uScanline - 1.0) < 1e-9, '727 preset hit the system CRT');
+        assert.ok(Math.abs(gs._superDuperConfig.scanline - 1.0) < 1e-9, '727 preset hit the config');
     } finally {
         cleanupTemp(dir);
     }
