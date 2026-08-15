@@ -43,13 +43,19 @@ test('command700 reproduces legacy light/fire argument sequences', () => {
     it.command700([1, 60, 1, 0, '#e97451', '', '']);
     // fire radius 0 #e97451 spichka t2
     it.command700([1, 0, 0, 2, '#e97451', 'spichka', '']);
-    // fire radius 0 #FF7F2E 1 lamp t7
+    // fire radius 0 #FF7F2E lamp t7 with mult=1 (corpus migration shape):
+    // SDLight re-parses a numeric token after the preset as a numeric PRESET
+    // id ('1' exists in its fallback table), overwriting the named preset.
+    // A mult of 1 is the vignette default, so it must NOT be emitted.
     it.command700([1, 0, 0, 7, '#FF7F2E', 'lamp', 1]);
+    // A non-default mult (0.5) IS emitted after the preset.
+    it.command700([1, 0, 0, 0, '#C04000', 'lamp', 0.5]);
     assert.deepEqual(rt.calls, [
         { command: 'light', args: ['radius', '0', '#C04000'] },
         { command: 'fire', args: ['radiusgrow', '60', '#e97451'] },
         { command: 'fire', args: ['radius', '0', 't2', '#e97451', 'spichka'] },
-        { command: 'fire', args: ['radius', '0', 't7', '#FF7F2E', 'lamp', '1'] }
+        { command: 'fire', args: ['radius', '0', 't7', '#FF7F2E', 'lamp'] },
+        { command: 'fire', args: ['radius', '0', '#C04000', 'lamp', '0.5'] }
     ]);
 });
 

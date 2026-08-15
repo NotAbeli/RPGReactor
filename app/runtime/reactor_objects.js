@@ -11659,10 +11659,15 @@ Game_Interpreter.prototype.command700 = function(params) {
     const args = [mode === 1 ? "radiusgrow" : "radius", String(radius)];
     if (duration > 0) args.push("t" + duration);
     if (color) args.push(color);
+    // SDLight positional parsing hazard: a NUMERIC token after the preset
+    // slot is re-parsed as a numeric PRESET id ('1' exists in the fallback
+    // table) and overwrites the named preset. A vignette multiplier of 1 is
+    // the default anyway - skip the no-op value (mirror of the MV bridge).
+    const multNum = Number(vignetteMult);
+    const multIsNoop = vignetteMult === "" || vignetteMult === undefined || vignetteMult === null
+        || (!isNaN(multNum) && multNum === 1);
     if (preset) args.push(preset);
-    if (vignetteMult !== undefined && vignetteMult !== null && vignetteMult !== "") {
-        args.push(String(vignetteMult));
-    }
+    if (!multIsNoop) args.push(String(vignetteMult));
     this.pluginCommand(type === 1 ? "fire" : "light", args);
     return true;
 };
