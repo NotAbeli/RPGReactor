@@ -38,7 +38,8 @@ class DatabaseSpriterEditor {
             { key: 'NPCMappings', label: 'Библиотека NPC', hint: 'Пресеты для событий: тег <sds:Имя> в Note события' }
         ];
 
-        this._playerTimer = null;
+        this._players = [];
+        this._masterTimer = null;
         this._playerGeneration = 0;
     }
 
@@ -391,6 +392,7 @@ class DatabaseSpriterEditor {
     }
 
     _renderCollection(content, spriter, kind) {
+        this._playerStop();
         const meta = this.collectionKeys.find(c => c.key === kind);
         const entries = DatabaseSpriterEditor.decodeCollection(spriter[kind]);
 
@@ -621,16 +623,41 @@ class DatabaseSpriterEditor {
         panel.appendChild(extRow);
     }
 
-    _listCharacterFiles() {
-        const projectPath = this._projectPath();
-        if (!projectPath) return [];
+    _req(name) {
         try {
-            const fs = window.require && window.require('fs');
-            const path = window.require && window.require('path');
-            if (!fs || !path) return [];
-            const dir = path.join(projectPath, 'img', 'characters');
-            if (!fs.existsSync(dir)) return [];
-            return fs.readdirSync(dir).filter(f => /\.png$/i.test(f)).sort();
+            if (typeof require === 'function') return require(name);
+            if (typeof window !== 'undefined' && typeof window.require === 'function') return window.require(name);
+        } catch (e) { /* not in NW/node */ }
+        return null;
+    }
+
+    _charactersDir() {
+        const projectPath = this._projectPath();
+        if (!projectPath) return null;
+        const path = this._req('path');
+        return path ? path.join(projectPath, 'img', 'characters') : null;
+    }
+
+    /** Proven file-URL helper (encodes spaces/Cyrillic) - same one the
+     *  CharacterGraphicPicker uses. */
+    _imgUrl(fileName) {
+        const dir = this._charactersDir();
+        if (!dir || !fileName || typeof RRAssetFiles === 'undefined') return '';
+        try {
+            const path = this._req('path');
+            return RRAssetFiles.toUrl(path.join(dir, fileName + '.png'));
+        } catch (e) {
+            return '';
+        }
+    }
+
+    _listCharacterFiles() {
+        if (typeof RRAssetFiles === 'undefined') return [];
+        try {
+            const dir = this._charactersDir();
+            if (!dir) return [];
+            // Relative extensionless names (subfolders kept, MV-style).
+            return RRAssetFiles.listUnique(dir, ['.png']) || [];
         } catch (e) {
             return [];
         }
@@ -744,13 +771,8 @@ class DatabaseSpriterEditor {
             padding: 8px; overflow: auto; max-height: 320px;
         `;
         const img = document.createElement('img');
-        const projectPath = this._projectPath();
         const file = vis.CharacterName;
-        if (projectPath && file) {
-            img.src = 'file:///' + (projectPath.replace(/\\/g, '/') + '/img/characters/' + file + '.png');
-        } else {
-            img.src = '';
-        }
+        img.src = file ? this._imgUrl(file) : '';
         img.style.cssText = 'image-rendering: pixelated; max-width: 100%; display: block; cursor: crosshair;';
         if (!file) {
             img.alt = this._tt('Выберите файл спрайта');
@@ -810,7 +832,9 @@ class DatabaseSpriterEditor {
     }
 
     _refreshPreview() {
-        if (this._playerRefresh) this._playerRefresh();
+        for (const p of (this._players || [])) {
+            try { if (p.reload) p.reload(); } catch (e) { /* keep editor alive */ }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -847,9 +871,8 @@ class DatabaseSpriterEditor {
         const grid = document.createElement('div');
         grid.style.cssText = 'flex:1;overflow-y:auto;padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;';
 
-        const projectPath = this._projectPath();
-        for (const file of files) {
-            const name = file.replace(/\.png$/i, '');
+        for (const record of files) {
+            const name = record.name; // extensionless, subfolder-aware
             const cell = document.createElement('div');
             cell.style.cssText = `
                 border: 1px solid ${name === currentName ? 'var(--color-accent-text, #7ab0ff)' : 'var(--color-border)'};
@@ -857,11 +880,13 @@ class DatabaseSpriterEditor {
                 background-color: var(--color-bg-deep); text-align: center;
             `;
             const thumb = document.createElement('img');
-            thumb.src = 'file:///' + (projectPath.replace(/\\/g, '/') + '/img/characters/' + file);
+            thumb.src = this._imgUrl(name);
             thumb.style.cssText = 'image-rendering: pixelated; max-width: 100%; max-height: 90px;';
             const cap = document.createElement('div');
             cap.style.cssText = 'font-size: 10px; color: var(--color-text); margin-top: 4px; word-break: break-all;';
-            cap.textContent = name;
+            cap.textContent = (typeof RRAssetFiles !== 'undefined' && RRAssetFiles.basename)
+                ? RRAssetFiles.basename(name) : name;
+            cap.title = name;
             cell.appendChild(thumb);
             cell.appendChild(cap);
             cell.addEventListener('click', () => {
@@ -885,11 +910,32 @@ class DatabaseSpriterEditor {
     // ------------------------------------------------------------------
 
     _playerStop() {
-        if (this._playerTimer) {
-            clearInterval(this._playerTimer);
-            this._playerTimer = null;
-        }
+        // Kill the shared master loop and drop every registered player
+        // (each rendered card registers one).
         this._playerGeneration++;
+        this._players = [];
+        if (this._masterTimer) {
+            clearInterval(this._masterTimer);
+            this._masterTimer = null;
+        }
+    }
+
+    _registerPlayer(player) {
+        this._players = this._players || [];
+        this._players.push(player);
+        if (!this._masterTimer) {
+            const gen = this._playerGeneration;
+            this._masterTimer = setInterval(() => {
+                if (gen !== this._playerGeneration) {
+                    clearInterval(this._masterTimer);
+                    this._masterTimer = null;
+                    return;
+                }
+                for (const p of (this._players || [])) {
+                    try { p.tick(); } catch (e) { /* keep editor alive */ }
+                }
+            }, 16);
+        }
     }
 
     _renderPlayer(entry, kind) {
@@ -903,14 +949,14 @@ class DatabaseSpriterEditor {
         title.textContent = this._tt('Живое превью');
         headRow.appendChild(title);
 
-        let playing = true;
-        let direction = 0; // 0 = down row
+        const state = { playing: true, frame: 0, tick: 0, img: null, url: '' };
         const playBtn = this._smallButton('⏸', () => {
-            playing = !playing;
-            playBtn.textContent = playing ? '⏸' : '▶';
+            state.playing = !state.playing;
+            playBtn.textContent = state.playing ? '⏸' : '▶';
         });
         headRow.appendChild(playBtn);
 
+        let direction = 0;
         const dirSel = document.createElement('select');
         dirSel.style.cssText = 'padding:3px 6px;font-size:11px;background-color:var(--color-bg-deep);border:1px solid var(--color-border);border-radius:4px;color:var(--color-text-strong);';
         for (const [lbl, val] of [['Вниз', 0], ['Влево', 1], ['Вправо', 2], ['Вверх', 3]]) {
@@ -918,7 +964,7 @@ class DatabaseSpriterEditor {
             o.value = val; o.textContent = this._tt(lbl);
             dirSel.appendChild(o);
         }
-        dirSel.addEventListener('change', () => { direction = Number(dirSel.value); });
+        dirSel.addEventListener('change', () => { direction = Number(dirSel.value); draw(); });
         headRow.appendChild(dirSel);
         headRow.appendChild(document.createElement('div')).style.cssText = 'flex:1;';
 
@@ -941,93 +987,115 @@ class DatabaseSpriterEditor {
 
         const ctx = canvas.getContext('2d');
         ctx.imageSmoothingEnabled = false;
-
-        const state = { img: null, frame: 0, tick: 0, pingDir: 1 };
         const vis = entry.Visuals || {};
 
         const reload = () => {
-            const projectPath = this._projectPath();
-            const file = vis.CharacterName;
+            const url = this._imgUrl(vis.CharacterName);
             state.img = null;
-            if (!projectPath || !file) return;
+            state.url = url;
+            if (!url) { draw(); return; }
             const img = new Image();
-            img.onload = () => { state.img = img; draw(); };
-            img.src = 'file:///' + (projectPath.replace(/\\/g, '/') + '/img/characters/' + file + '.png');
+            img.onload = () => { if (state.url === url) { state.img = img; draw(); } };
+            img.onerror = () => draw();
+            img.src = url;
         };
 
         const frameSequence = () => {
             const frames = Math.max(3, Number(vis.Frames) || 3);
             const pattern = Number(vis.Pattern) || 0;
+            const seq = [];
             if (pattern === 1) {
-                const seq = [];
                 for (let i = 0; i < frames; i++) seq.push(i);
                 for (let i = frames - 2; i > 0; i--) seq.push(i);
-                return seq;
-            }
-            if (pattern === 2) {
-                // 4-frame rhythmic: 0-1-3-2
-                const seq = [];
+            } else if (pattern === 2) {
                 for (let i = 0; i < frames; i += 4) {
                     seq.push(i % frames, (i + 1) % frames, (i + 3) % frames, (i + 2) % frames);
                 }
-                return seq;
+            } else {
+                for (let i = 0; i < frames; i++) seq.push(i);
             }
-            const seq = [];
-            for (let i = 0; i < frames; i++) seq.push(i);
-            return seq;
+            return seq.length ? seq : [0];
         };
 
         const draw = () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            if (!state.img) return;
-            const iw = state.img.naturalWidth, ih = state.img.naturalHeight;
-            const isBig = iw % (48 * 3) !== 0 || iw % 96 === 0 ? (iw / 96) % 1 === 0 : false;
-            const cols = Math.max(1, Math.floor(iw / 48));
-            const index = Number(vis.CharacterIndex) || 0;
-            const idxCol = (index % 4) * 3;
-            const idxRow = Math.floor(index / 4) * 4;
+            frameLbl.textContent = '';
+            if (!state.img) {
+                ctx.fillStyle = 'rgba(128,128,128,0.8)';
+                ctx.font = '10px sans-serif';
+                ctx.textAlign = 'center';
+                const msg = vis.CharacterName
+                    ? this._tt('Не удалось загрузить: ') + vis.CharacterName
+                    : this._tt('Выберите файл спрайта');
+                ctx.fillText(msg, canvas.width / 2, canvas.height / 2);
+                return;
+            }
+            const img = state.img;
+            const iw = img.naturalWidth, ih = img.naturalHeight;
+            if (!iw || !ih) return;
+
+            // Sheet layout: $-sheets are a single character (3 cols x 4
+            // rows); standard sheets hold 8 characters (12 cols x 8 rows).
+            // Cell size comes from the sheet itself, or the custom
+            // Width/Height when set (> 0), matching the plugin.
+            const big = (typeof RRAssetFiles !== 'undefined')
+                ? RRAssetFiles.isBigCharacter(String(vis.CharacterName || ''))
+                : String(vis.CharacterName || '').startsWith('$');
+            const gridCols = big ? 3 : 12;
+            const gridRows = big ? 4 : 8;
+            let cellW = Number(vis.Width) > 0 ? Number(vis.Width) : Math.floor(iw / gridCols);
+            let cellH = Number(vis.Height) > 0 ? Number(vis.Height) : Math.floor(ih / gridRows);
+            if (cellW <= 0) cellW = 48;
+            if (cellH <= 0) cellH = 48;
 
             const frames = Math.max(3, Number(vis.Frames) || 3);
-            const dirs = Number(vis.Directions) === 1 ? 1 : 4;
             const seq = frameSequence();
             const frame = seq[state.frame % seq.length] || 0;
 
-            const sx = (idxCol + frame) * 48;
-            const sy = (idxRow + direction) * 48 * (dirs === 4 ? 1 : 0);
-            ctx.drawImage(state.img, sx, sy, 48, 48, 24, 40, 48, 48);
-            frameLbl.textContent = 'кадр ' + frame + '/' + frames;
+            let colBase = 0, rowBase = 0;
+            if (!big) {
+                const index = Math.min(7, Math.max(0, Number(vis.CharacterIndex) || 0));
+                colBase = (index % 4) * 3;
+                rowBase = Math.floor(index / 4) * 4;
+            }
+            const sx = (colBase + Math.min(frame, gridCols - 1)) * cellW;
+            const sy = (rowBase + direction) * cellH;
+
+            // Fit the cell into the canvas, keep aspect.
+            const scale = Math.min(canvas.width / cellW, canvas.height / cellH);
+            const dw = Math.round(cellW * scale);
+            const dh = Math.round(cellH * scale);
+            const dx = Math.round((canvas.width - dw) / 2);
+            const dy = Math.round((canvas.height - dh) / 2);
+            ctx.drawImage(img, sx, sy, cellW, cellH, dx, dy, dw, dh);
+            frameLbl.textContent = this._tt('кадр') + ' ' + frame + '/' + frames;
         };
 
-        const gen = ++this._playerGeneration;
         const fps = Math.max(1, Number(vis.FPS) || 8);
         const delay = Math.max(1, Math.round(60 / fps));
-        let lastRebuild = JSON.stringify(entry);
+        let lastSnapshot = JSON.stringify(entry);
 
-        const tickFn = () => {
-            // Entry re-rendered (user edited fields): rebuild player bindings
-            if (JSON.stringify(entry) !== lastRebuild) {
-                lastRebuild = JSON.stringify(entry);
-                reload();
+        this._registerPlayer({
+            reload,
+            tick: () => {
+                // Fields changed elsewhere in the card (file/index/size):
+                // rebind the image.
+                const snap = JSON.stringify(entry);
+                if (snap !== lastSnapshot) {
+                    lastSnapshot = snap;
+                    reload();
+                    return;
+                }
+                if (!state.playing || !state.img) return;
+                state.tick++;
+                if (state.tick >= delay) {
+                    state.tick = 0;
+                    state.frame++;
+                    draw();
+                }
             }
-            if (!playing || !state.img) return;
-            state.tick++;
-            if (state.tick >= delay) {
-                state.tick = 0;
-                state.frame++;
-                draw();
-            }
-        };
-        if (this._playerTimer) clearInterval(this._playerTimer);
-        this._playerTimer = setInterval(() => {
-            if (gen !== this._playerGeneration) {
-                clearInterval(this._playerTimer);
-                this._playerTimer = null;
-                return;
-            }
-            try { tickFn(); } catch (e) { /* keep editor alive */ }
-        }, 16);
+        });
 
-        this._playerRefresh = reload;
         reload();
         return wrap;
     }
