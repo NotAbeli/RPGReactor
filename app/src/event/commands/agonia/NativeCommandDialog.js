@@ -98,6 +98,13 @@ class NativeCommandDialog {
         this.fieldElements = {};
         this.fieldWraps = {};
         this._suggestionDatalists = [];
+
+        // Specialized visual editor for the high-traffic Player Light command.
+        if (schema.code === 700 && this.renderPlayerLightEditor()) {
+            this.body.appendChild(this._footerButtons());
+            return;
+        }
+
         for (const field of schema.fields) {
             const wrap = this.renderField(field);
             this.fieldWraps[field.key] = wrap;
@@ -128,6 +135,301 @@ class NativeCommandDialog {
         buttons.appendChild(cancel);
         buttons.appendChild(ok);
         this.body.appendChild(buttons);
+    }
+
+    _footerButtons() {
+        const buttons = document.createElement('div');
+        buttons.style.cssText = 'display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;';
+        const cancel = document.createElement('button');
+        cancel.textContent = this._t('common.cancel');
+        cancel.style.cssText = this._buttonStyle(false);
+        cancel.addEventListener('click', () => this.close(null));
+        const ok = document.createElement('button');
+        ok.textContent = 'OK';
+        ok.style.cssText = this._buttonStyle(true);
+        ok.addEventListener('click', () => this.confirm());
+        buttons.appendChild(cancel);
+        buttons.appendChild(ok);
+        return buttons;
+    }
+
+    /**
+     * Visual editor for command 700 (Player Light): everything selectable,
+     * nothing typed by hand. Live canvas preview renders the REAL falloff
+     * gradient using SDLight's fallback preset steps, so "Match" vs "Lamp"
+     * vs linear is visible before OK.
+     */
+    renderPlayerLightEditor() {
+        const LIGHT_PRESETS = [
+            { id: 'spichka', label: 'Match — narrow hot flame', steps: [[0, 0.90], [0.14, 0.70], [0.30, 0.20], [0.45, 0.10], [1, 0]] },
+            { id: 'lamp', label: 'Lamp — wide soft circle', steps: [[0, 0.80], [0.10, 0.65], [0.25, 0.45], [0.42, 0.30], [0.54, 0.20], [0.65, 0.10], [1, 0]] },
+            { id: '1', label: '1 — linear', steps: [[0, 1], [1, 0]] },
+            { id: '2', label: '2 — soft linear', steps: [[0, 0.50], [0.20, 0.10], [1, 0]] },
+            { id: '3', label: '3 — bright', steps: [[0, 0.85], [1, 0]] },
+            { id: 'global', label: 'Global — cinematic', steps: [[0, 0.70], [0.01, 0.65], [0.02, 0.50], [0.03, 0.45], [0.05, 0.30], [1, 0]] },
+            { id: 'global2', label: 'Global 2 — soft', steps: [[0, 0.55], [1, 0]] }
+        ];
+        const QUICK_COLORS = ['#e97451', '#FF7F2E', '#C04000', '#ffd700', '#afe3ff', '#ffffff'];
+
+        const root = document.createElement('div');
+        root.style.cssText = 'display: flex; gap: 16px;';
+
+        // ---- left column: controls ----
+        const left = document.createElement('div');
+        left.style.cssText = 'flex: 1; display: flex; flex-direction: column; gap: 12px;';
+
+        const val = (key, def) => {
+            const v = this.values[key];
+            return v === undefined || v === null || v === '' ? def : v;
+        };
+        // normalized current values
+        let type = Number(val('type', 0));
+        let radius = Number(val('radius', 0));
+        let mode = Number(val('mode', 0));
+        let duration = Number(val('duration', 0));
+        let color = String(val('color', '#e97451'));
+        let preset = String(val('preset', ''));
+        let mult = val('vignetteMult', '');
+
+        const setVal = (key, v) => { this.values[key] = v; };
+
+        const rowLabel = (text) => {
+            const el = document.createElement('label');
+            el.style.cssText = 'color: var(--color-text-strong); font-size: 12px; font-weight: 600;';
+            el.textContent = this._t(text);
+            return el;
+        };
+
+        // Type: two big toggle buttons
+        const typeRow = document.createElement('div');
+        typeRow.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+        typeRow.appendChild(rowLabel('Type'));
+        const typeBtns = document.createElement('div');
+        typeBtns.style.cssText = 'display: flex; gap: 6px;';
+        const mkTypeBtn = (value, label, hint) => {
+            const b = document.createElement('button');
+            b.textContent = this._t(label) + (hint ? '  ' + hint : '');
+            b.style.cssText = this._buttonStyle(false) + 'flex: 1; padding: 10px;';
+            const paint = () => {
+                b.style.backgroundColor = type === value ? 'var(--color-accent-bright)' : 'var(--color-bg-input-alt)';
+                b.style.color = type === value ? 'var(--color-accent-on)' : 'var(--color-text-strong)';
+            };
+            paint();
+            b.addEventListener('click', () => { type = value; setVal('type', value); paint(); preview(); });
+            return b;
+        };
+        typeBtns.appendChild(mkTypeBtn(0, 'Normal', '◐'));
+        typeBtns.appendChild(mkTypeBtn(1, 'Fire (flicker)', '🔥'));
+        typeRow.appendChild(typeBtns);
+        left.appendChild(typeRow);
+
+        // Radius slider
+        const radiusRow = document.createElement('div');
+        radiusRow.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+        radiusRow.appendChild(rowLabel('Radius'));
+        const radiusLine = document.createElement('div');
+        radiusLine.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+        const radiusSlider = document.createElement('input');
+        radiusSlider.type = 'range'; radiusSlider.min = 0; radiusSlider.max = 350; radiusSlider.step = 5;
+        radiusSlider.value = radius;
+        radiusSlider.style.cssText = 'flex: 1; accent-color: var(--color-accent-bright);';
+        const radiusNum = document.createElement('input');
+        radiusNum.type = 'number'; radiusNum.min = 0; radiusNum.max = 999;
+        radiusNum.value = radius;
+        radiusNum.style.cssText = this._inputStyle() + 'width: 70px;';
+        const syncRadius = (v) => {
+            radius = Math.max(0, Number(v) || 0);
+            setVal('radius', radius);
+            radiusSlider.value = Math.min(350, radius);
+            radiusNum.value = radius;
+            preview();
+        };
+        radiusSlider.addEventListener('input', () => syncRadius(radiusSlider.value));
+        radiusNum.addEventListener('input', () => syncRadius(radiusNum.value));
+        radiusLine.appendChild(radiusSlider);
+        radiusLine.appendChild(radiusNum);
+        radiusRow.appendChild(radiusLine);
+        left.appendChild(radiusRow);
+
+        // Animation mode + duration
+        const animRow = document.createElement('div');
+        animRow.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+        animRow.appendChild(rowLabel('Animation'));
+        const animSel = document.createElement('select');
+        animSel.style.cssText = this._inputStyle();
+        for (const [v, label] of [[0, 'Instant'], [1, 'Grow']]) {
+            const o = document.createElement('option');
+            o.value = v; o.textContent = this._t(label);
+            animSel.appendChild(o);
+        }
+        animSel.value = mode;
+        const durLine = document.createElement('div');
+        durLine.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-top: 4px;';
+        const durLabel = rowLabel('Duration (frames)');
+        durLabel.style.display = 'none';
+        const durSlider = document.createElement('input');
+        durSlider.type = 'range'; durSlider.min = 0; durSlider.max = 300; durSlider.step = 5;
+        durSlider.value = duration;
+        durSlider.style.cssText = 'flex: 1; accent-color: var(--color-accent-bright);';
+        const durNum = document.createElement('input');
+        durNum.type = 'number'; durNum.min = 0;
+        durNum.value = duration;
+        durNum.style.cssText = this._inputStyle() + 'width: 70px;';
+        const syncMode = () => {
+            mode = Number(animSel.value);
+            setVal('mode', mode);
+            durLabel.style.display = mode === 1 ? '' : 'none';
+            durSlider.style.display = mode === 1 ? '' : 'none';
+            durNum.style.display = mode === 1 ? '' : 'none';
+        };
+        const syncDur = (v) => {
+            duration = Math.max(0, Number(v) || 0);
+            setVal('duration', duration);
+            durSlider.value = Math.min(300, duration);
+            durNum.value = duration;
+        };
+        animSel.addEventListener('change', () => { syncMode(); });
+        durSlider.addEventListener('input', () => syncDur(durSlider.value));
+        durNum.addEventListener('input', () => syncDur(durNum.value));
+        syncMode();
+        animRow.appendChild(animSel);
+        durLine.appendChild(durLabel);
+        durLine.appendChild(durSlider);
+        durLine.appendChild(durNum);
+        animRow.appendChild(durLine);
+        left.appendChild(animRow);
+
+        // Color: quick swatches + picker + hex
+        const colorRow = document.createElement('div');
+        colorRow.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+        colorRow.appendChild(rowLabel('Color'));
+        const swatchLine = document.createElement('div');
+        swatchLine.style.cssText = 'display: flex; gap: 6px; align-items: center;';
+        const colorPicker = document.createElement('input');
+        colorPicker.type = 'color';
+        colorPicker.value = /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#e97451';
+        colorPicker.style.cssText = 'width: 34px; height: 28px; padding: 0; border: 1px solid var(--color-border-input); border-radius: 4px; cursor: pointer;';
+        const colorHex = document.createElement('input');
+        colorHex.type = 'text';
+        colorHex.value = color;
+        colorHex.style.cssText = this._inputStyle() + 'width: 100px;';
+        const syncColor = (v) => {
+            color = String(v || '').trim() || '#e97451';
+            setVal('color', color);
+            if (/^#[0-9a-fA-F]{6}$/.test(color)) colorPicker.value = color;
+            colorHex.value = color;
+            preview();
+        };
+        colorPicker.addEventListener('input', () => syncColor(colorPicker.value));
+        colorHex.addEventListener('input', () => syncColor(colorHex.value));
+        swatchLine.appendChild(colorPicker);
+        swatchLine.appendChild(colorHex);
+        for (const c of QUICK_COLORS) {
+            const sw = document.createElement('button');
+            sw.title = c;
+            sw.style.cssText = `width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--color-border-input); cursor: pointer; background-color: ${c};`;
+            sw.addEventListener('click', () => syncColor(c));
+            swatchLine.appendChild(sw);
+        }
+        colorRow.appendChild(swatchLine);
+        left.appendChild(colorRow);
+
+        // Preset dropdown
+        const presetRow = document.createElement('div');
+        presetRow.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+        presetRow.appendChild(rowLabel('Falloff Preset'));
+        const presetSel = document.createElement('select');
+        presetSel.style.cssText = this._inputStyle();
+        const noneOpt = document.createElement('option');
+        noneOpt.value = '';
+        noneOpt.textContent = this._t('No preset (linear)');
+        presetSel.appendChild(noneOpt);
+        for (const p of LIGHT_PRESETS) {
+            const o = document.createElement('option');
+            o.value = p.id;
+            o.textContent = this._t(p.label);
+            presetSel.appendChild(o);
+        }
+        presetSel.value = LIGHT_PRESETS.some(p => p.id === preset) ? preset : '';
+        presetSel.addEventListener('change', () => { preset = presetSel.value; setVal('preset', preset); preview(); });
+        presetRow.appendChild(presetSel);
+        left.appendChild(presetRow);
+
+        // Vignette mult (optional)
+        const multRow = document.createElement('div');
+        multRow.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+        multRow.appendChild(rowLabel('Vignette Multiplier'));
+        const multInput = document.createElement('input');
+        multInput.type = 'number'; multInput.min = 0; multInput.step = 0.1;
+        multInput.placeholder = this._t('Not set');
+        multInput.value = mult;
+        multInput.style.cssText = this._inputStyle();
+        multInput.addEventListener('input', () => setVal('vignetteMult', multInput.value));
+        multRow.appendChild(multInput);
+        left.appendChild(multRow);
+
+        root.appendChild(left);
+
+        // ---- right column: live preview ----
+        const right = document.createElement('div');
+        right.style.cssText = 'width: 220px; display: flex; flex-direction: column; gap: 6px; align-items: center;';
+        const previewTitle = document.createElement('div');
+        previewTitle.style.cssText = 'color: var(--color-text-dim); font-size: 11px;';
+        previewTitle.textContent = this._t('Preview');
+        const canvas = document.createElement('canvas');
+        canvas.width = 200; canvas.height = 200;
+        canvas.style.cssText = 'border: 1px solid var(--color-border-input); border-radius: 6px; background: #000;';
+        right.appendChild(previewTitle);
+        right.appendChild(canvas);
+        root.appendChild(right);
+
+        const preview = () => {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, 200, 200);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, 200, 200);
+            const cx = 100, cy = 100;
+            const R = Math.max(2, 92 * (radius / 350));
+            const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
+            const rgb = (() => {
+                const m = /^#?([0-9a-fA-F]{6})$/.exec(color);
+                const hex = m ? m[1] : 'e97451';
+                return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
+            })();
+            const base = rgb.join(',');
+            const p = LIGHT_PRESETS.find(x => x.id === preset);
+            if (p) {
+                grad.addColorStop(0, `rgba(${base},1)`);
+                for (const [pos, alpha] of p.steps) {
+                    grad.addColorStop(pos, `rgba(${base},${alpha})`);
+                }
+            } else {
+                grad.addColorStop(0, `rgba(${base},1)`);
+                grad.addColorStop(1, `rgba(${base},0)`);
+            }
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(cx, cy, R, 0, Math.PI * 2);
+            ctx.fill();
+        };
+        preview();
+
+        this.body.appendChild(root);
+
+        // register hidden inputs so generic confirm() collects all values
+        this.fieldElements = this.fieldElements || {};
+        const register = (key, input) => {
+            this.fieldElements[key] = { input };
+        };
+        register('type', { input: { value: type, addEventListener() {} } });
+        register('radius', radiusNum);
+        register('mode', animSel);
+        register('duration', durNum);
+        register('color', colorHex);
+        register('preset', presetSel);
+        register('vignetteMult', multInput);
+
+        return true;
     }
 
     _buttonStyle(primary) {

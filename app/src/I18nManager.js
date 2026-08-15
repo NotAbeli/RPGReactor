@@ -1752,7 +1752,15 @@ Object.assign(RR_TEXT_TRANSLATIONS.ru, {
     'Color Temperature': 'Цветовая температура', 'Saturation': 'Насыщенность', 'Contrast': 'Контраст',
     'Brightness': 'Яркость', 'Wave Intensity': 'Интенсивность волн', 'Chroma Intensity': 'Интенсивность хроматизма',
     'Scanline Intensity': 'Интенсивность сканлайнов', 'Noise Intensity': 'Интенсивность шума',
-    'Fullscreen': 'Полный экран', 'Window Title': 'Заголовок окна'
+    'Fullscreen': 'Полный экран', 'Window Title': 'Заголовок окна',
+    'No preset (linear)': 'Без пресета (линейный)',
+    'Match — narrow hot flame': 'Спичка — узкое горячее пламя',
+    'Lamp — wide soft circle': 'Лампа — широкий мягкий круг',
+    '1 — linear': '1 — линейный', '2 — soft linear': '2 — мягкий линейный',
+    '3 — bright': '3 — яркий', 'Global — cinematic': 'Global — кинематографичный',
+    'Global 2 — soft': 'Global 2 — мягкий',
+    'Preview': 'Предпросмотр', 'Instant': 'Мгновенно', 'Grow': 'Рост',
+    'Fire (flicker)': 'Огонь (мерцание)'
 });
 Object.assign(RR_TEXT_TRANSLATIONS.pt, { 'OK': 'OK', 'Cancel': 'Cancelar', 'Clear': 'Limpar', 'Play': 'Reproduzir', 'Stop': 'Parar' });
 

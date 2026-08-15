@@ -104,7 +104,16 @@ test('SDLight corpus strings convert to native parameters', () => {
         ['fire radiusgrow 10 #e97451', 700, [1, 10, 1, 0, '#e97451', '', '']],
         ['fire radius 120 #FF7F2E', 700, [1, 120, 0, 0, '#FF7F2E', '', '']],
         ['fire radius 0 #e97451 spichka t2', 700, [1, 0, 0, 2, '#e97451', 'spichka', '']],
+        // Named preset wins over numerics: '1' is the vignette mult here.
         ['fire radius 0 #FF7F2E 1 lamp t7', 700, [1, 0, 0, 7, '#FF7F2E', 'lamp', 1]],
+        // Multi-numeric + named (CommonEvent 'Match burns' ignite):
+        // plugin semantics = preset spichka, mult 1.5 (the old grammar
+        // produced preset '1' and DROPPED spichka -> linear "standard" light).
+        ['fire radius 240 #e97451 1.5 1 spichka t140', 700, [1, 240, 0, 140, '#e97451', 'spichka', 1.5]],
+        // No named preset + integer preset id -> the id becomes the preset.
+        ['light radius 100 #ffffff 2', 700, [0, 100, 0, 0, '#ffffff', '2', '']],
+        // Fractional numerics never become preset ids.
+        ['fire radius 300 #FF7F2E 1.2 lamp t7', 700, [1, 300, 0, 7, '#FF7F2E', 'lamp', 1.2]],
         ['RegionBlock 8 ON #555555', 702, [8, 1, '#555555']],
         ['RegionBlock 7 OFF', 702, [7, 0, '#000000']],
         ['tint set #111111', 703, [0, '#111111', 60]],

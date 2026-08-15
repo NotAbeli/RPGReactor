@@ -97,13 +97,33 @@ class PluginCommandMigration {
                     let color = '';
                     let preset = '';
                     let mult = '';
+                    // SDLight's own parse order: NAMED (non-numeric) preset
+                    // tokens win first (spliced from anywhere after the color);
+                    // the remaining numerics fill [mult, brightness, smoothness]
+                    // positionally. A string like "1.5 1 spichka" therefore
+                    // means preset=spichka + mult=1.5 — NOT preset='1'. A
+                    // numeric token becomes a preset only when no named preset
+                    // exists and it matches a known fallback preset id.
+                    const KNOWN_PRESETS = new Set(['spichka', 'lamp', 'global', 'global2', '1', '2', '3']);
+                    const numerics = [];
                     for (const token of m[4].trim().split(/\s+/).filter(Boolean)) {
                         const tMatch = /^t(\d+)$/i.exec(token);
                         if (tMatch) { duration = Number(tMatch[1]); continue; }
                         if (!color && token.startsWith('#')) { color = token; continue; }
-                        if (mult === '' && !Number.isNaN(Number(token))) { mult = Number(token); continue; }
-                        if (!preset) preset = token;
+                        if (!Number.isNaN(Number(token))) {
+                            numerics.push(token);
+                            continue;
+                        }
+                        if (KNOWN_PRESETS.has(token.toLowerCase())) preset = token.toLowerCase();
                     }
+                    if (!preset && numerics.length) {
+                        const first = numerics[0];
+                        const firstNum = Number(first);
+                        if (Number.isInteger(firstNum) && KNOWN_PRESETS.has(first)) {
+                            preset = numerics.shift();
+                        }
+                    }
+                    if (numerics.length) mult = Number(numerics[0]);
                     return { code: 700, parameters: [type, radius, mode, duration, color, preset, mult] };
                 }
             },
