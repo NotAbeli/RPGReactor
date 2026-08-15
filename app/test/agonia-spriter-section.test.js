@@ -31,15 +31,22 @@ function makeDbManager() {
     return { manager, DatabaseManager: context.DatabaseManager };
 }
 
-/** The plugin's exact parsing helpers (SuperDuperSpriter.js). */
+/** The plugin's exact parsing helpers (SuperDuperSpriter.js), including
+ *  the nested safeParse of Conditions/Visuals JSON strings. */
 function pluginParseCollection(raw) {
     let arr = [];
     try {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) arr = parsed;
     } catch (e) { /* empty */ }
+    const safeParse = s => {
+        try { return JSON.parse(s); } catch (e) { return {}; }
+    };
     return arr.map(item => {
-        try { return JSON.parse(item); } catch (e) { return {}; }
+        const obj = safeParse(item);
+        if (obj.Conditions !== undefined) obj.Conditions = safeParse(obj.Conditions);
+        if (obj.Visuals !== undefined) obj.Visuals = safeParse(obj.Visuals);
+        return obj;
     });
 }
 
@@ -63,8 +70,8 @@ test('spriter seed: harvests live plugin parameters from engineModules', () => {
     try {
         const mapping = JSON.stringify({
             Name: 'Лом', Priority: 5,
-            Conditions: { MainValue: 2, SwitchId1: 0, SwitchId2: 0, SwitchId3: 15, ExtVarId: 0, ExtVarOp: 'equal', ExtVarVal: 0 },
-            Visuals: { CharacterName: 'Actor1', CharacterIndex: 3, Frames: 4, Directions: 4 }
+            Conditions: JSON.stringify({ MainValue: 2, SwitchId1: 0, SwitchId2: 0, SwitchId3: 15, ExtVarId: 0, ExtVarOp: 'equal', ExtVarVal: 0 }),
+            Visuals: JSON.stringify({ CharacterName: 'Actor1', CharacterIndex: 3, Frames: 4, Directions: 4 })
         });
         fs.writeFileSync(path.join(dir, 'project.rpgreactor'), JSON.stringify({
             engineModules: [
@@ -98,7 +105,11 @@ test('MV bridge merges the spriter section into SuperDuperSpriter params (MV for
     const SNIPPET = ProjectManager.MV_CATALOG_LOADER_SNIPPET;
     const dir = tempDir();
     try {
-        const mapping = JSON.stringify({ Name: 'Test', Conditions: { MainValue: 1 }, Visuals: { CharacterName: 'Actor2' } });
+        const mapping = JSON.stringify({
+            Name: 'Test', Priority: 0,
+            Conditions: JSON.stringify({ MainValue: 1 }),
+            Visuals: JSON.stringify({ CharacterName: 'Actor2' })
+        });
         fs.mkdirSync(path.join(dir, 'data'), { recursive: true });
         fs.writeFileSync(path.join(dir, 'project.rpgreactor'), JSON.stringify({ engineModules: [] }));
         fs.writeFileSync(path.join(dir, 'data', 'AgoniaEngine.json'), JSON.stringify({
@@ -170,18 +181,33 @@ test('editor codec round-trips MV collection strings', () => {
     };
     const encoded = Editor.encodeCollection([entry, { IdName: 'NPC' }]);
     assert.strictEqual(typeof encoded, 'string');
+    // Encoded form keeps Conditions/Visuals as JSON strings (plugin format).
+    const rawItem = JSON.parse(JSON.parse(encoded)[0]);
+    assert.strictEqual(typeof rawItem.Conditions, 'string');
+    assert.strictEqual(typeof rawItem.Visuals, 'string');
     const decoded = Editor.decodeCollection(encoded);
     assert.strictEqual(decoded.length, 2);
     assert.strictEqual(decoded[0].Name, 'Поза удара');
+    assert.strictEqual(decoded[0].Conditions.MainValue, 14);
     assert.strictEqual(decoded[0].Visuals.GridX, 3);
     assert.strictEqual(decoded[1].IdName, 'NPC');
     // Round-trip is stable.
     assert.strictEqual(Editor.encodeCollection(decoded), encoded);
-    // The plugin parser accepts the encoded form.
+    // The plugin parser accepts the encoded form and reads conditions.
     const pluginParsed = pluginParseCollection(encoded);
     assert.strictEqual(pluginParsed[0].Conditions.MainValue, 14);
-    // Garbage input decodes without throwing (items become empty objects,
-    // matching the plugin's own safeParse fallback per item).
+    assert.strictEqual(pluginParsed[0].Visuals.GridX, 3);
+    // Live-format entries (nested values already strings in the item) decode
+    // into editable objects.
+    const live = JSON.stringify([JSON.stringify({
+        Name: 'Лом', Priority: '10',
+        Conditions: JSON.stringify({ MainValue: '2', SwitchId3: '15' }),
+        Visuals: JSON.stringify({ CharacterName: 'Actor1', CharacterIndex: '3' })
+    })]);
+    const liveDecoded = Editor.decodeCollection(live);
+    assert.strictEqual(liveDecoded[0].Conditions.MainValue, '2');
+    assert.strictEqual(liveDecoded[0].Visuals.CharacterName, 'Actor1');
+    // Garbage input decodes without throwing.
     assert.deepStrictEqual(Editor.decodeCollection('not json'), []);
     assert.deepStrictEqual(Editor.decodeCollection('["broken json"]'), [{}]);
 });

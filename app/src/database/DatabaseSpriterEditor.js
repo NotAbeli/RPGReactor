@@ -64,25 +64,55 @@ class DatabaseSpriterEditor {
         return data.agonia.spriter;
     }
 
-    /** Decode the MV-encoded collection string into a plain entry array. */
+    /**
+     * Decode the MV-encoded collection string into a plain entry array.
+     * Each item is a JSON-object string; its Conditions/Visuals fields are
+     * themselves JSON strings in the plugin format (the plugin reads them
+     * with safeParse), so they are parsed here for editing.
+     */
     static decodeCollection(raw) {
         let arr = [];
         try {
             const parsed = JSON.parse(raw || '[]');
             if (Array.isArray(parsed)) arr = parsed;
         } catch (e) { /* fall through */ }
-        return arr.map(item => {
-            try {
-                return typeof item === 'string' ? JSON.parse(item) : (item || {});
-            } catch (e) {
-                return {};
+        const parseNested = v => {
+            if (typeof v === 'string') {
+                try { return JSON.parse(v); } catch (e) { return {}; }
             }
+            return (v && typeof v === 'object') ? v : {};
+        };
+        return arr.map(item => {
+            let entry;
+            try {
+                entry = typeof item === 'string' ? JSON.parse(item) : (item || {});
+            } catch (e) {
+                entry = {};
+            }
+            if (entry.Conditions !== undefined) entry.Conditions = parseNested(entry.Conditions);
+            if (entry.Visuals !== undefined) entry.Visuals = parseNested(entry.Visuals);
+            return entry;
         });
     }
 
-    /** Encode a plain entry array back into the MV plugin string format. */
+    /**
+     * Encode a plain entry array back into the MV plugin string format:
+     * Conditions/Visuals become JSON strings again (the plugin's safeParse
+     * would return {} for plain objects, losing all conditions).
+     */
     static encodeCollection(entries) {
-        return JSON.stringify((entries || []).map(entry => JSON.stringify(entry)));
+        return JSON.stringify((entries || []).map(entry => {
+            const out = {};
+            for (const key of Object.keys(entry || {})) {
+                const v = entry[key];
+                if ((key === 'Conditions' || key === 'Visuals') && v && typeof v === 'object') {
+                    out[key] = JSON.stringify(v);
+                } else {
+                    out[key] = v;
+                }
+            }
+            return JSON.stringify(out);
+        }));
     }
 
     // ------------------------------------------------------------------
