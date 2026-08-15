@@ -397,6 +397,153 @@ class PluginCommandMigration {
     }
 
     /**
+     * Retire engine modules: move them from engineModules into
+     * retiredPlugins, keeping a FULL snapshot (parameters + orderBefore) so
+     * restoreRetired can bring a plugin back at its exact canonical
+     * position with its exact tuning. Used when a system module of the
+     * engine replaces a plugin.
+     */
+    static retirePlugins(options) {
+        const { fs, path, projectPath } = options;
+        const names = (Array.isArray(options.names) ? options.names : [])
+            .map(n => String(n || '').trim()).filter(Boolean);
+        const reason = String(options.reason || 'replaced by an engine system module');
+        const report = { ok: false, error: null, retired: [], notFound: [] };
+        if (!fs || !path || !projectPath) {
+            report.error = 'fs, path and projectPath are required';
+            return report;
+        }
+        if (!names.length) {
+            report.error = 'no plugin names given';
+            return report;
+        }
+        try {
+            const metaPath = path.join(projectPath, 'project.rpgreactor');
+            if (!fs.existsSync(metaPath)) {
+                report.error = 'project.rpgreactor not found';
+                return report;
+            }
+            const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8').replace(/^\uFEFF/, ''));
+            const modules = Array.isArray(meta.engineModules) ? meta.engineModules : [];
+            const retired = Array.isArray(meta.retiredPlugins) ? meta.retiredPlugins : [];
+            const retiredNames = new Set(retired.map(r => r && String(r.name)));
+
+            for (const name of names) {
+                const idx = modules.findIndex(m => m && String(m.name) === name);
+                if (idx === -1) {
+                    report.notFound.push(name);
+                    continue;
+                }
+                const snapshot = modules.splice(idx, 1)[0];
+                if (!retiredNames.has(name)) {
+                    retired.push({
+                        name,
+                        parameters: snapshot.parameters || {},
+                        orderBefore: Array.isArray(snapshot.orderBefore) ? snapshot.orderBefore.slice() : [],
+                        reason,
+                        retiredAt: new Date().toISOString()
+                    });
+                    retiredNames.add(name);
+                }
+                report.retired.push(name);
+            }
+
+            if (!report.retired.length) {
+                report.error = 'none of the plugins are active engine modules';
+                return report;
+            }
+
+            meta.engineModules = modules;
+            meta.retiredPlugins = retired;
+            meta.modified = new Date().toISOString();
+            fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2) + '\n', 'utf8');
+            report.ok = true;
+            return report;
+        } catch (error) {
+            report.error = error.message || String(error);
+            return report;
+        }
+    }
+
+    /**
+     * Restore retired plugins back into engineModules at their canonical
+     * positions. Position recovery: every harvested module carries its full
+     * canonical orderBefore prefix (names of all preceding modules), so
+     * sorting the combined list by orderBefore.length reproduces the
+     * original order exactly; orderBefore snapshots themselves are restored
+     * verbatim from the retirement record.
+     */
+    static restoreRetired(options) {
+        const { fs, path, projectPath } = options;
+        const names = (Array.isArray(options.names) ? options.names : [])
+            .map(n => String(n || '').trim()).filter(Boolean);
+        const report = { ok: false, error: null, restored: [], notFound: [] };
+        if (!fs || !path || !projectPath) {
+            report.error = 'fs, path and projectPath are required';
+            return report;
+        }
+        if (!names.length) {
+            report.error = 'no plugin names given';
+            return report;
+        }
+        try {
+            const metaPath = path.join(projectPath, 'project.rpgreactor');
+            if (!fs.existsSync(metaPath)) {
+                report.error = 'project.rpgreactor not found';
+                return report;
+            }
+            const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8').replace(/^\uFEFF/, ''));
+            const modules = Array.isArray(meta.engineModules) ? meta.engineModules.slice() : [];
+            const retired = Array.isArray(meta.retiredPlugins) ? meta.retiredPlugins : [];
+            const present = new Set(modules.map(m => m && String(m.name)));
+
+            for (const name of names) {
+                const idx = retired.findIndex(r => r && String(r.name) === name);
+                if (idx === -1) {
+                    report.notFound.push(name);
+                    continue;
+                }
+                if (present.has(name)) continue;
+                const rec = retired.splice(idx, 1)[0];
+                modules.push({
+                    name: rec.name,
+                    parameters: rec.parameters || {},
+                    orderBefore: Array.isArray(rec.orderBefore) ? rec.orderBefore : []
+                });
+                present.add(name);
+                report.restored.push(name);
+            }
+
+            if (!report.restored.length) {
+                report.error = 'none of the plugins are retired';
+                return report;
+            }
+
+            // Canonical order: modules harvested from the original manifest
+            // carry full prefixes, so prefix length == original position.
+            modules.sort((a, b) => {
+                const la = (a.orderBefore || []).length;
+                const lb = (b.orderBefore || []).length;
+                return la - lb;
+            });
+            // Rewrite prefixes so the runtime merge yields exactly this order.
+            for (let i = 0; i < modules.length; i++) {
+                modules[i].orderBefore = modules.slice(0, i).map(m => m.name);
+            }
+
+            meta.engineModules = modules;
+            meta.retiredPlugins = retired;
+            meta.modified = new Date().toISOString();
+            fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2) + '\n', 'utf8');
+            report.ok = true;
+            return report;
+        } catch (error) {
+            report.error = error.message || String(error);
+            return report;
+        }
+    }
+
+    /**
      * Rebuild data/AgoniaEngine.json from the project's live tuning:
      * engineModules parameters first, plugin manifest second, plain
      * defaults last. Repairs a sidecar that was seeded from the wrong

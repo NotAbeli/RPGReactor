@@ -15,12 +15,15 @@ const PluginCommandMigration = require('../src/PluginCommandMigration.js');
 
 function usage() {
     console.log('Usage: node build-scripts/convert-plugin-commands.js <projectPath> [options]');
-    console.log('  --plugin        relocate only this family (repeatable); default: all known families');
-    console.log('  --dry-run       report what would change without writing');
-    console.log('  --reseed-agonia rebuild data/AgoniaEngine.json from live tuning (engineModules, then manifest); backs up the old file');
-    console.log('  --harvest-all   move every remaining manifest plugin into project.rpgreactor (enabled -> engineModules, disabled -> disabledPlugins) and empty the manifest');
-    console.log('  --print-order   print the runtime plugin load order without launching the game');
-    console.log(`  families        : ${PluginCommandMigration.FAMILIES.join(', ')}`);
+    console.log('  --plugin          relocate only this family (repeatable); default: all known families');
+    console.log('  --dry-run         report what would change without writing');
+    console.log('  --reseed-agonia   rebuild data/AgoniaEngine.json from live tuning (engineModules, then manifest); backs up the old file');
+    console.log('  --harvest-all     move every remaining manifest plugin into project.rpgreactor (enabled -> engineModules, disabled -> disabledPlugins) and empty the manifest');
+    console.log('  --print-order     print the runtime plugin load order without launching the game');
+    console.log('  --retire <a,b>    retire engine modules into retiredPlugins (full parameter snapshot; for plugins replaced by engine system modules)');
+    console.log('  --restore-retired <a,b>  bring retired plugins back at their canonical positions with their exact tuning');
+    console.log('  --reason <text>   retirement note recorded next to the snapshot');
+    console.log(`  families          : ${PluginCommandMigration.FAMILIES.join(', ')}`);
 }
 
 function detectEnginePluginsDir() {
@@ -40,12 +43,18 @@ function main() {
     let reseedAgonia = false;
     let harvestAll = false;
     let printOrder = false;
+    let retireArg = null;
+    let restoreArg = null;
+    let reasonArg = null;
     const pluginNames = [];
     for (let i = 0; i < args.length; i++) {
         if (args[i] === '--dry-run') dryRun = true;
         else if (args[i] === '--reseed-agonia') reseedAgonia = true;
         else if (args[i] === '--harvest-all') harvestAll = true;
         else if (args[i] === '--print-order') printOrder = true;
+        else if (args[i] === '--retire') retireArg = args[++i];
+        else if (args[i] === '--restore-retired') restoreArg = args[++i];
+        else if (args[i] === '--reason') reasonArg = args[++i];
         else if (args[i] === '--plugin') pluginNames.push(args[++i]);
         else if (args[i] === '--help' || args[i] === '-h') { usage(); process.exit(0); }
         else positional.push(args[i]);
@@ -67,6 +76,37 @@ function main() {
         console.log(`  lighting source: ${report.seeded.lighting || 'defaults'}`);
         console.log(`  written        : ${report.written}`);
         if (report.backup) console.log(`  backup         : ${report.backup}`);
+        process.exit(0);
+    }
+
+    if (retireArg !== null) {
+        const names = retireArg.split(',').map(s => s.trim()).filter(Boolean);
+        const report = PluginCommandMigration.retirePlugins({
+            fs, path, projectPath, names,
+            reason: reasonArg || 'replaced by an engine system module'
+        });
+        if (!report.ok) {
+            console.error(`Retire failed: ${report.error}`);
+            if (report.notFound && report.notFound.length) console.error('  not found: ' + report.notFound.join(', '));
+            process.exit(1);
+        }
+        console.log('Engine modules retired');
+        console.log(`  retired : ${report.retired.join(', ')}`);
+        if (report.notFound.length) console.log(`  missing : ${report.notFound.join(', ')}`);
+        console.log(`  restore : node build-scripts/convert-plugin-commands.js <project> --restore-retired "${report.retired.join(',')}"`);
+        process.exit(0);
+    }
+
+    if (restoreArg !== null) {
+        const names = restoreArg.split(',').map(s => s.trim()).filter(Boolean);
+        const report = PluginCommandMigration.restoreRetired({ fs, path, projectPath, names });
+        if (!report.ok) {
+            console.error(`Restore failed: ${report.error}`);
+            process.exit(1);
+        }
+        console.log('Retired plugins restored');
+        console.log(`  restored : ${report.restored.join(', ')}`);
+        if (report.notFound.length) console.log(`  missing  : ${report.notFound.join(', ')}`);
         process.exit(0);
     }
 
