@@ -110,12 +110,12 @@ test('system module: retired SDLight loads from snapshot + DB overrides, before 
         assert.strictEqual(params['Player radius'], '0');
 
         // The system scripts load FIRST (before plugin scripts); every
-        // registered module fires (SDLight, Movement, Addon, Camera) in
-        // registry order.
-        assert.strictEqual(scriptTags.length, 5);
+        // registered module fires (SDLight, Movement, Addon, Camera,
+        // Inventory) in registry order.
+        assert.strictEqual(scriptTags.length, 6);
         assert.strictEqual(scriptTags[0].src, 'js/plugins/SDLight.js');
         assert.ok(scriptTags[0].src.indexOf('SuperDuperMovement') === -1, 'SDLight leads');
-        assert.strictEqual(scriptTags[4].src, 'js/plugins/WaitAsync.js');
+        assert.strictEqual(scriptTags[5].src, 'js/plugins/WaitAsync.js');
 
         // _scripts tracks the system module (no double-load if it returns
         // to the manifest later).
@@ -162,13 +162,16 @@ test('system module: no retired record -> DB-only params still load the module',
         const systemSrcs = scriptTags.map(t => t.src);
         assert.ok(systemSrcs.includes('js/plugins/SDLight.js'), 'SDLight loaded');
         assert.strictEqual(sandbox.PluginManager.parameters('SDLight')['Player radius'], '0');
-        // Registry order: Movement before its Addon, Camera after both.
+        // Registry order: Movement before its Addon, Camera after both,
+        // Inventory after Camera.
         assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperMovement.js') !== -1, 'Movement loaded');
         assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperMovement_Addon.js') !== -1, 'Addon loaded');
         assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperMovement.js') < systemSrcs.indexOf('js/plugins/SuperDuperMovement_Addon.js'),
             'Movement before Addon');
         assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperMovement_Addon.js') < systemSrcs.indexOf('js/plugins/SuperDuperCamera.js'),
             'Camera after Movement Addon');
+        assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperCamera.js') < systemSrcs.indexOf('js/plugins/SuperDuperInventory.js'),
+            'Inventory after Camera');
     } finally {
         cleanupTemp(dir);
     }
@@ -180,8 +183,8 @@ test('system module: no DB, no snapshot -> module still loads with empty params'
         writeProject(dir, {});
         const { sandbox, scriptTags } = makeSandbox(dir);
         vm.runInContext('$plugins = []; PluginManager.setup($plugins);', sandbox);
-        // All four registered modules load with file defaults.
-        assert.strictEqual(scriptTags.length, 4, 'SDLight + Movement + Addon + Camera');
+        // All five registered modules load with file defaults.
+        assert.strictEqual(scriptTags.length, 5, 'SDLight + Movement + Addon + Camera + Inventory');
     } finally {
         cleanupTemp(dir);
     }
@@ -225,6 +228,53 @@ test('system module: retired Camera loads from snapshot + DB camera section', ()
         assert.ok(scriptTags.indexOf(camLoads[0]) < scriptTags.findIndex(t => t.src === 'js/plugins/WaitAsync.js'),
             'camera loads before plugin scripts');
         assert.ok(!sandbox.window.$plugins.some(p => p.name === 'SuperDuperCamera'));
+    } finally {
+        cleanupTemp(dir);
+    }
+});
+
+test('system module: retired Inventory loads from snapshot + DB inventory section', () => {
+    const dir = tempDir();
+    try {
+        writeProject(dir, {
+            retired: [
+                {
+                    name: 'SuperDuperInventory', reason: 'S5',
+                    parameters: {
+                        'Open Trigger': 'key_i',
+                        'Custom Key Code': '73',
+                        'Use Key': 'e',
+                        'Disable Standard Menu': 'true',
+                        'RMB Variable ID': '17',
+                        'Visual Settings': '{"Player Bg":"inventoryBackground"}',
+                        'Sound Settings': '{"Open":"","Close":""}'
+                    },
+                    orderBefore: []
+                }
+            ],
+            agonia: { inventory: { 'Custom Key Code': 73, 'Default Max Slots': 8, 'Drag Threshold': 12 } }
+        });
+        const { sandbox, scriptTags } = makeSandbox(dir);
+        vm.runInContext(`$plugins = [{name:'WaitAsync',status:true,parameters:{}}]; PluginManager.setup($plugins);`, sandbox);
+
+        const params = sandbox.PluginManager.parameters('SuperDuperInventory');
+        // Snapshot keys kept, including the JSON blobs absent from the DB.
+        assert.strictEqual(params['Open Trigger'], 'key_i');
+        assert.strictEqual(params['Use Key'], 'e');
+        assert.strictEqual(params['Disable Standard Menu'], 'true');
+        assert.strictEqual(params['RMB Variable ID'], '17');
+        assert.strictEqual(params['Visual Settings'], '{"Player Bg":"inventoryBackground"}');
+        assert.strictEqual(params['Sound Settings'], '{"Open":"","Close":""}');
+        // DB section overrides (stringified MV style).
+        assert.strictEqual(params['Custom Key Code'], '73');
+        assert.strictEqual(params['Default Max Slots'], '8');
+        assert.strictEqual(params['Drag Threshold'], '12');
+        // Loaded once as a system module after Camera, not in $plugins.
+        const invLoads = scriptTags.filter(t => String(t.src).includes('SuperDuperInventory'));
+        assert.strictEqual(invLoads.length, 1);
+        const camIdx = scriptTags.findIndex(t => t.src === 'js/plugins/SuperDuperCamera.js');
+        assert.ok(scriptTags.indexOf(invLoads[0]) > camIdx, 'after Camera');
+        assert.ok(!sandbox.window.$plugins.some(p => p.name === 'SuperDuperInventory'));
     } finally {
         cleanupTemp(dir);
     }

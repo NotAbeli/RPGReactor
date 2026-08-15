@@ -1918,6 +1918,21 @@
     var _Scene_Map_start = Scene_Map.prototype.start;
     Scene_Map.prototype.start = function() {
         _Scene_Map_start.call(this);
+        // Re-apply the key mapping: config plugins (SuperDuper.Keyboard's
+        // ConfigManager.applyData) replace Input.keyMapper wholesale AFTER
+        // this module loads, wiping the entry registered at boot time. As a
+        // system module we load before every plugin, so re-register on every
+        // map start - after ConfigManager.load - to survive the replacement.
+        if (Config.trigger === 'key_i') Input.keyMapper[Config.keyCode] = 'sdi_inv';
+        // Lift the hotbar above the HUD layer: load order no longer
+        // guarantees our addChild lands after SRDuper HUDMaker's _hud (a
+        // system module loads before every plugin). start() runs after all
+        // create* methods, so re-adding here wins regardless of alias order;
+        // the fade sprite below still ends up on top of everything.
+        if (this._sdiHotbar) {
+            this.removeChild(this._sdiHotbar);
+            this.addChild(this._sdiHotbar);
+        }
         if (this._fadeSprite) {
             this.removeChild(this._fadeSprite);
             this.addChild(this._fadeSprite);
