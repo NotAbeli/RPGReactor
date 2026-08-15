@@ -1952,6 +1952,108 @@ class PluginManager {
         return null;
     }
 
+    // ── Engine modules (project.rpgreactor) ───────────────────────────
+    // Migrated projects keep every plugin in engineModules/disabledPlugins
+    // of project.rpgreactor and an EMPTY manifest. The manager transparently
+    // edits that config in this case: the list, toggles, parameter editors
+    // and drag-order all keep working; save writes the config back instead
+    // of the manifest. orderBefore is recomputed canonically from the array
+    // order (each module precedes every later enabled module), so the
+    // bridge's dependency sort reproduces exactly the visible order.
+
+    /**
+     * Parse project.rpgreactor into a manager-shaped plugins array.
+     * Pure static: {engineModules, disabledPlugins} -> [{name, status,
+     * description:'', parameters, _rrOrderBefore}].
+     */
+    static pluginsFromEngineModules(config) {
+        const modules = (config && Array.isArray(config.engineModules)) ? config.engineModules : [];
+        const disabled = (config && Array.isArray(config.disabledPlugins)) ? config.disabledPlugins : [];
+        const out = [];
+        for (const m of modules) {
+            if (!m || !m.name) continue;
+            out.push({
+                name: String(m.name),
+                status: true,
+                description: '',
+                parameters: m.parameters && typeof m.parameters === 'object' ? m.parameters : {},
+                _rrOrderBefore: Array.isArray(m.orderBefore) ? m.orderBefore.slice() : []
+            });
+        }
+        for (const d of disabled) {
+            if (!d || !d.name) continue;
+            out.push({
+                name: String(d.name),
+                status: false,
+                description: '',
+                parameters: d.parameters && typeof d.parameters === 'object' ? d.parameters : {},
+                _rrOrderBefore: []
+            });
+        }
+        return out;
+    }
+
+    /**
+     * Serialize the manager list back into the project.rpgreactor shape.
+     * Pure static. orderBefore for each enabled module = names of every
+     * other enabled module that precedes it in the array, so the runtime
+     * merge (loadable-only anchors + dependency sort) yields the visible
+     * order verbatim.
+     */
+    static engineModulesFromPlugins(plugins) {
+        const list = Array.isArray(plugins) ? plugins : [];
+        const enabled = [];
+        const disabled = [];
+        for (const p of list) {
+            if (!p || !p.name) continue;
+            const parameters = p.parameters && typeof p.parameters === 'object' ? p.parameters : {};
+            if (p.status) {
+                enabled.push({ name: String(p.name), parameters, orderBefore: [] });
+            } else {
+                disabled.push({ name: String(p.name), parameters });
+            }
+        }
+        for (let i = 0; i < enabled.length; i++) {
+            enabled[i].orderBefore = enabled.slice(0, i).map(m => m.name);
+        }
+        return { engineModules: enabled, disabledPlugins: disabled };
+    }
+
+    /**
+     * Read project.rpgreactor for the current project. Returns the parsed
+     * object or null when absent/unreadable.
+     */
+    readProjectMeta(projectPath) {
+        try {
+            const metaPath = this.path.join(projectPath, 'project.rpgreactor');
+            if (!this.fs.existsSync(metaPath)) return null;
+            return JSON.parse(this.fs.readFileSync(metaPath, 'utf8').replace(/^\uFEFF/, ''));
+        } catch (err) {
+            console.warn('Could not read project.rpgreactor:', err);
+            return null;
+        }
+    }
+
+    /**
+     * Should the manager operate in engine-modules mode? True when the
+     * manifest carries no entries and project.rpgreactor has modules —
+     * exactly the post-migration state (empty manifest, tuning in config).
+     */
+    useEngineModulesMode(projectPath) {
+        const meta = this.readProjectMeta(projectPath);
+        if (!meta || !Array.isArray(meta.engineModules) || meta.engineModules.length === 0) return false;
+        const pluginsPath = this.resolvePluginsPath(projectPath);
+        if (!pluginsPath) return true;
+        try {
+            const text = this.fs.readFileSync(pluginsPath, 'utf8');
+            const match = text.match(/var\s+\$plugins\s*=\s*(\[[\s\S]*\]);/);
+            const arr = match ? JSON.parse(match[1]) : [];
+            return arr.filter(p => p && p.name && !/^-+$/.test(String(p.name))).length === 0;
+        } catch (err) {
+            return false;
+        }
+    }
+
     /**
      * Load plugins from reactor_plugins.js (or plugins.js for MV/MZ projects)
      */
@@ -1965,6 +2067,33 @@ class PluginManager {
             }
 
             const projectPath = currentProject.path;
+
+            // Engine-modules mode: post-migration projects keep the manifest
+            // empty and all plugins in project.rpgreactor. Edit the config
+            // instead; the same list/toggle/parameter UI applies.
+            if (this.useEngineModulesMode(projectPath)) {
+                this._modulesMode = true;
+                this._pluginsFilePath = null;
+                const meta = this.readProjectMeta(projectPath);
+                this.plugins = PluginManager.pluginsFromEngineModules(meta);
+                this.clearPluginSelection();
+                await this.scanAvailablePlugins(projectPath);
+                for (const plugin of this.plugins) {
+                    try {
+                        const pluginPath = this.resolvePluginSourcePath(plugin.name, projectPath);
+                        const meta2 = this.getPluginMetadata(pluginPath);
+                        if (meta2) {
+                            plugin.description = meta2.description || '';
+                            plugin.help = meta2.help || '';
+                            plugin.author = meta2.author || '';
+                        }
+                    } catch (err) { /* metadata is cosmetic here */ }
+                }
+                this.renderPluginList();
+                return;
+            }
+            this._modulesMode = false;
+
             const pluginsPath = this.resolvePluginsPath(projectPath);
 
             if (!pluginsPath) {
@@ -4040,6 +4169,23 @@ class PluginManager {
             }
 
             const projectPath = currentProject.path;
+
+            // Engine-modules mode: write the list back into
+            // project.rpgreactor (engineModules + disabledPlugins), leaving
+            // the empty manifest alone. orderBefore is recomputed from the
+            // visible order so the runtime merge loads exactly this order.
+            if (this._modulesMode) {
+                const metaPath = this.path.join(projectPath, 'project.rpgreactor');
+                let meta = this.readProjectMeta(projectPath) || {};
+                const state = PluginManager.engineModulesFromPlugins(this.plugins);
+                meta.engineModules = state.engineModules;
+                meta.disabledPlugins = state.disabledPlugins;
+                meta.modified = new Date().toISOString();
+                this._writeFileAtomic(this.fs, metaPath, JSON.stringify(meta, null, 2) + '\n', 'utf8');
+                alert(this._tt('Engine modules saved successfully!'));
+                return;
+            }
+
             // Use the path we loaded from, or default to reactor_plugins.js
             const pluginsPath = this._pluginsFilePath || this.path.join(projectPath, 'js', 'reactor_plugins.js');
             const isRpgMakerPluginsFile = this.path.basename(pluginsPath) === 'plugins.js';
