@@ -180,6 +180,7 @@ test('bridge snippet merges engine modules in canonical order with MV load seman
             'js/plugins/SuperDuperInventory.js',
             'js/plugins/SuperDuperBattle.js',
             'js/plugins/SuperDuperEnemies.js',
+            'js/plugins/AgoniaAudioRules.js',
             'js/plugins/A.js', 'js/plugins/WaitAsync.js', 'js/plugins/B.js',
             'js/plugins/SuperDuperMovement.js', 'js/plugins/C.js',
             'js/plugins/SDLight.js', 'js/plugins/Z.js'

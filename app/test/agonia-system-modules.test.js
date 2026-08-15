@@ -111,11 +111,11 @@ test('system module: retired SDLight loads from snapshot + DB overrides, before 
 
         // The system scripts load FIRST (before plugin scripts); every
         // registered module fires (Spriter, SDLight, Movement, Addon,
-        // Camera, Inventory, Battle, Enemies) in registry order.
-        assert.strictEqual(scriptTags.length, 9);
+        // Camera, Inventory, Battle, Enemies, AudioRules) in registry order.
+        assert.strictEqual(scriptTags.length, 10);
         assert.strictEqual(scriptTags[0].src, 'js/plugins/SuperDuperSpriter.js');
         assert.ok(scriptTags[0].src.indexOf('SuperDuperMovement') === -1, 'Spriter leads');
-        assert.strictEqual(scriptTags[8].src, 'js/plugins/WaitAsync.js');
+        assert.strictEqual(scriptTags[9].src, 'js/plugins/WaitAsync.js');
 
         // _scripts tracks the system module (no double-load if it returns
         // to the manifest later).
@@ -182,6 +182,8 @@ test('system module: no retired record -> DB-only params still load the module',
             'Battle after Inventory');
         assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperBattle.js') < systemSrcs.indexOf('js/plugins/SuperDuperEnemies.js'),
             'Enemies after Battle');
+        assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperEnemies.js') < systemSrcs.indexOf('js/plugins/AgoniaAudioRules.js'),
+            'AudioRules after Enemies');
     } finally {
         cleanupTemp(dir);
     }
@@ -193,8 +195,8 @@ test('system module: no DB, no snapshot -> module still loads with empty params'
         writeProject(dir, {});
         const { sandbox, scriptTags } = makeSandbox(dir);
         vm.runInContext('$plugins = []; PluginManager.setup($plugins);', sandbox);
-        // All eight registered modules load with file defaults.
-        assert.strictEqual(scriptTags.length, 8, 'Spriter + SDLight + Movement + Addon + Camera + Inventory + Battle + Enemies');
+        // All nine registered modules load with file defaults.
+        assert.strictEqual(scriptTags.length, 9, 'Spriter + SDLight + Movement + Addon + Camera + Inventory + Battle + Enemies + AudioRules');
     } finally {
         cleanupTemp(dir);
     }

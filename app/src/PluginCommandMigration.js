@@ -578,6 +578,12 @@ class PluginCommandMigration {
         }
         try {
             const defaults = {
+                audio: {
+                    'BGM Volume': 100, 'BGS Volume': 100,
+                    'BGS2 Volume': 90, 'BGS3 Volume': 90,
+                    'ME Volume': 100, 'SE Volume': 100,
+                    'Map Rules': '[]', 'Recent Tracks': '[]'
+                },
                 spriter: {
                     'VariableId': 17, 'EnablePoses': true, 'ApplyToActor': true,
                     'Debug': false,
@@ -643,7 +649,16 @@ class PluginCommandMigration {
                 if (typeof value === 'string') {
                     const trimmed = value.trim();
                     if (trimmed.startsWith('[')) {
-                        try { return normalize(JSON.parse(trimmed)); } catch (e) { /* keep string */ }
+                        try {
+                            const parsed = JSON.parse(trimmed);
+                            // MV plugin collections (arrays of JSON-object
+                            // strings) pass verbatim - see DatabaseManager.
+                            if (Array.isArray(parsed) && parsed.length &&
+                                parsed.every(item => typeof item === 'string' && item.trim().startsWith('{'))) {
+                                return trimmed;
+                            }
+                            return normalize(parsed);
+                        } catch (e) { /* keep string */ }
                     }
                     if (trimmed === 'true') return true;
                     if (trimmed === 'false') return false;
@@ -689,6 +704,31 @@ class PluginCommandMigration {
                 backup = target + '.bak';
                 fs.copyFileSync(target, backup);
             }
+            // Studio/DB-authored payloads (audio rules, spriter collections)
+            // have no plugin-parameter source once their plugins retired -
+            // a reseed must carry them over from the existing sidecar
+            // instead of resetting them to defaults.
+            try {
+                if (backup && fs.existsSync(backup)) {
+                    const existing = JSON.parse(fs.readFileSync(backup, 'utf8'));
+                    const preserve = {
+                        audio: ['Map Rules', 'Recent Tracks'],
+                        spriter: ['SpriteMappings', 'PoseMappings', 'NPCMappings']
+                    };
+                    const isEmptyPayload = v =>
+                        v === undefined || v === null || v === '' ||
+                        v === '[]' || (Array.isArray(v) && v.length === 0);
+                    for (const [sec, keys] of Object.entries(preserve)) {
+                        if (!existing[sec]) continue;
+                        for (const key of keys) {
+                            if (isEmptyPayload(existing[sec][key])) continue;
+                            if (isEmptyPayload(defaults[sec][key])) {
+                                defaults[sec][key] = existing[sec][key];
+                            }
+                        }
+                    }
+                }
+            } catch (e) { /* unreadable backup: defaults stand */ }
             fs.mkdirSync(path.join(projectPath, 'data'), { recursive: true });
             fs.writeFileSync(target, JSON.stringify(defaults, null, 2) + '\n', 'utf8');
             report.ok = true;

@@ -234,6 +234,19 @@ class DatabaseManager {
 
     static agoniaDefaults() {
         return {
+            // Audio Studio section. Map Rules / Recent Tracks are stored as
+            // JSON strings (object arrays must survive normalizeAgoniaValue,
+            // which only passes numeric id lists through as arrays).
+            audio: {
+                'BGM Volume': 100,
+                'BGS Volume': 100,
+                'BGS2 Volume': 90,
+                'BGS3 Volume': 90,
+                'ME Volume': 100,
+                'SE Volume': 100,
+                'Map Rules': '[]',
+                'Recent Tracks': '[]'
+            },
             // Spriter keeps the three mapping collections in MV plugin format
             // (an array of JSON-object strings, itself serialized as a
             // string): the plugin's safeParseArray expects exactly that, so

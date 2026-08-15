@@ -80,7 +80,9 @@ class RPGReactor {
             toggleEventView: () => this.toggleEventView(),
             toggleLightPreview: () => this.toggleLightPreview(),
             openDatabase: (type) => this.openDatabase(type),
-            showAudioPlayer: () => this.audioPlayer.showAudioPlayer(),
+            showAudioPlayer: () => (this.audioStudio
+                ? this.audioStudio.open()
+                : this.audioPlayer.showAudioPlayer()),
             showOptions: () => this.optionsManager.show(),
             showForgeLauncher: () => this.forgeManager.showLauncher(),
             openForgeTool: (toolId) => this.forgeManager.openTool(toolId),
@@ -282,6 +284,12 @@ class RPGReactor {
         // Initialize Audio Player
         this.audioPlayer = new AudioPlayer();
 
+        // Initialize Audio Studio (toolbar audio tool window)
+        this.audioStudio = new AudioStudio({
+            getCurrentProject: () => this.projectController ? this.projectController.getCurrentProject() : null,
+            getDatabaseManager: () => this.databaseManager || null
+        });
+
         // Initialize Options Manager (theme/preferences modal)
         this.optionsManager = new OptionsManager();
         window.addEventListener('rr-autotile-animation-changed', (event) => {
@@ -459,6 +467,9 @@ class RPGReactor {
         // Stop any audio playing in the editor before launching playtest
         if (this.audioPlayer) {
             this.audioPlayer.stopExternal();
+        }
+        if (this.audioStudio) {
+            this.audioStudio.close();
         }
 
         const success = this.playtestManager.playtest(project.path);

@@ -739,6 +739,7 @@ class UIManager {
             'map-properties-modal',
             'image-picker-modal',
             'audio-player-modal',
+            'audio-studio-modal',
             'plugin-manager-modal'
         ];
 

@@ -2,6 +2,13 @@
   "engine": "agonia",
   "plugins": [
     {
+      "name": "AgoniaAudioRules",
+      "file": "AgoniaAudioRules.js",
+      "version": "",
+      "author": "Agonia Engine",
+      "description": "Auto-start audio rules per map (engine system module, Audio Studio)"
+    },
+    {
       "name": "AltimitMovementDebug",
       "file": "AltimitMovementDebug.js",
       "version": "",

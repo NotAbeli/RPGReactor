@@ -50,11 +50,11 @@ function getReseedDefaults() {
     }
 }
 
-test('agonia defaults cover six sections in both DatabaseManager and reseed (no drift)', () => {
+test('agonia defaults cover seven sections in both DatabaseManager and reseed (no drift)', () => {
     const { DatabaseManager } = makeDbManager();
     const defaults = DatabaseManager.agoniaDefaults();
     const sections = Object.keys(defaults).sort();
-    assert.deepEqual(sections, ['camera', 'inventory', 'lighting', 'screen', 'spriter', 'stamina']);
+    assert.deepEqual(sections, ['audio', 'camera', 'inventory', 'lighting', 'screen', 'spriter', 'stamina']);
 
     const reseed = getReseedDefaults();
     assert.deepEqual(Object.keys(reseed).sort(), sections, 'reseed sections match');
@@ -125,8 +125,9 @@ test('editor SECTIONS render every defaults section with valid field types', () 
     const validTypes = new Set(['number', 'color', 'bool', 'switchId', 'variableId', 'idList', 'string']);
 
     // The spriter section is owned by the dedicated DatabaseSpriterEditor
-    // tab (own UI, MV-encoded collections), not by the flat Agonia editor.
-    const flatSections = Object.keys(defaults).filter(s => s !== 'spriter');
+    // tab and the audio section by the Audio Studio window (own UIs,
+    // MV-encoded collections), not by the flat Agonia editor.
+    const flatSections = Object.keys(defaults).filter(s => s !== 'spriter' && s !== 'audio');
     const editorSections = Editor.SECTIONS;
     assert.deepEqual(
         Object.keys(editorSections).sort(),
