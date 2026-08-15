@@ -111,11 +111,11 @@ test('system module: retired SDLight loads from snapshot + DB overrides, before 
 
         // The system scripts load FIRST (before plugin scripts); every
         // registered module fires (SDLight, Movement, Addon, Camera,
-        // Inventory) in registry order.
-        assert.strictEqual(scriptTags.length, 6);
+        // Inventory, Battle, Enemies) in registry order.
+        assert.strictEqual(scriptTags.length, 8);
         assert.strictEqual(scriptTags[0].src, 'js/plugins/SDLight.js');
         assert.ok(scriptTags[0].src.indexOf('SuperDuperMovement') === -1, 'SDLight leads');
-        assert.strictEqual(scriptTags[5].src, 'js/plugins/WaitAsync.js');
+        assert.strictEqual(scriptTags[7].src, 'js/plugins/WaitAsync.js');
 
         // _scripts tracks the system module (no double-load if it returns
         // to the manifest later).
@@ -163,7 +163,9 @@ test('system module: no retired record -> DB-only params still load the module',
         assert.ok(systemSrcs.includes('js/plugins/SDLight.js'), 'SDLight loaded');
         assert.strictEqual(sandbox.PluginManager.parameters('SDLight')['Player radius'], '0');
         // Registry order: Movement before its Addon, Camera after both,
-        // Inventory after Camera.
+        // Inventory after Camera, Battle and Enemies appended last
+        // (preserves the original overlap-pair order: Camera < Battle for
+        // Game_Map.setup, SDLight < Enemies for meetsConditions).
         assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperMovement.js') !== -1, 'Movement loaded');
         assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperMovement_Addon.js') !== -1, 'Addon loaded');
         assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperMovement.js') < systemSrcs.indexOf('js/plugins/SuperDuperMovement_Addon.js'),
@@ -172,6 +174,10 @@ test('system module: no retired record -> DB-only params still load the module',
             'Camera after Movement Addon');
         assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperCamera.js') < systemSrcs.indexOf('js/plugins/SuperDuperInventory.js'),
             'Inventory after Camera');
+        assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperInventory.js') < systemSrcs.indexOf('js/plugins/SuperDuperBattle.js'),
+            'Battle after Inventory');
+        assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperBattle.js') < systemSrcs.indexOf('js/plugins/SuperDuperEnemies.js'),
+            'Enemies after Battle');
     } finally {
         cleanupTemp(dir);
     }
@@ -183,8 +189,8 @@ test('system module: no DB, no snapshot -> module still loads with empty params'
         writeProject(dir, {});
         const { sandbox, scriptTags } = makeSandbox(dir);
         vm.runInContext('$plugins = []; PluginManager.setup($plugins);', sandbox);
-        // All five registered modules load with file defaults.
-        assert.strictEqual(scriptTags.length, 5, 'SDLight + Movement + Addon + Camera + Inventory');
+        // All seven registered modules load with file defaults.
+        assert.strictEqual(scriptTags.length, 7, 'SDLight + Movement + Addon + Camera + Inventory + Battle + Enemies');
     } finally {
         cleanupTemp(dir);
     }
@@ -275,6 +281,59 @@ test('system module: retired Inventory loads from snapshot + DB inventory sectio
         const camIdx = scriptTags.findIndex(t => t.src === 'js/plugins/SuperDuperCamera.js');
         assert.ok(scriptTags.indexOf(invLoads[0]) > camIdx, 'after Camera');
         assert.ok(!sandbox.window.$plugins.some(p => p.name === 'SuperDuperInventory'));
+    } finally {
+        cleanupTemp(dir);
+    }
+});
+
+test('system module: retired Battle + Enemies load from snapshots (no DB section)', () => {
+    const dir = tempDir();
+    try {
+        writeProject(dir, {
+            retired: [
+                {
+                    name: 'SuperDuperBattle', reason: 'S6',
+                    parameters: {
+                        'Debug Mode': 'false',
+                        'Melee List': '[{"ID":"1","Name":"Crowbar","Shape":"arc","Range":"1.5"}]',
+                        'Projectile List': '[{"ID":"1","Name":"Bullet","Speed":"8"}]',
+                        'Tracer List': '[]'
+                    },
+                    orderBefore: []
+                },
+                {
+                    name: 'SuperDuperEnemies', reason: 'S6',
+                    parameters: {
+                        'TickRate': '4',
+                        'VariableBaseId': '60',
+                        'EnemyDatabase': '[{"id":"1","match":"<enemy>","hp":"40"}]'
+                    },
+                    orderBefore: []
+                }
+            ],
+            agonia: {}
+        });
+        const { sandbox, scriptTags } = makeSandbox(dir);
+        vm.runInContext(`$plugins = [{name:'WaitAsync',status:true,parameters:{}}]; PluginManager.setup($plugins);`, sandbox);
+
+        // Snapshot params survive verbatim (JSON blobs are NOT in any DB
+        // section - snapshot is the only source, like Movement_Addon).
+        const battle = sandbox.PluginManager.parameters('SuperDuperBattle');
+        assert.strictEqual(battle['Debug Mode'], 'false');
+        assert.ok(/Crowbar/.test(battle['Melee List']), 'melee DB blob kept');
+        assert.ok(/Bullet/.test(battle['Projectile List']), 'projectile DB blob kept');
+        const enemies = sandbox.PluginManager.parameters('SuperDuperEnemies');
+        assert.strictEqual(enemies['TickRate'], '4');
+        assert.ok(/<enemy>/.test(enemies['EnemyDatabase']), 'enemy DB blob kept');
+
+        // Each loads exactly once as a system module, Battle before Enemies,
+        // neither in $plugins.
+        const bLoads = scriptTags.filter(t => String(t.src).includes('SuperDuperBattle'));
+        const eLoads = scriptTags.filter(t => String(t.src).includes('SuperDuperEnemies'));
+        assert.strictEqual(bLoads.length, 1);
+        assert.strictEqual(eLoads.length, 1);
+        assert.ok(scriptTags.indexOf(eLoads[0]) > scriptTags.indexOf(bLoads[0]), 'Enemies after Battle');
+        assert.ok(!sandbox.window.$plugins.some(p => p.name === 'SuperDuperBattle' || p.name === 'SuperDuperEnemies'));
     } finally {
         cleanupTemp(dir);
     }
