@@ -4,7 +4,7 @@
 
 ## Команды (из `app/`)
 
-- `npm test` — node:test (93 теста), сьюты в `app/test/`
+- `npm test` — node:test (116 тестов), сьюты в `app/test/`
 - `npm run dev` — запуск редактора в NW.js (единственная живая сборка: дистрибутивной нет)
 - `npm run build:win|build:mac|build:linux` — дистрибутив
 - `node build-scripts/generate-plugin-catalog.js` — регенерация `app/plugins/catalog.json` (обязательно после добавления/удаления плагинов; тест упадёт, если забыть)
@@ -33,7 +33,18 @@
 5. Input-харднинг: пад-кнопка должна прожить 2 опроса (дрейф-спайк → фантомное «ok» на титуле), синтетические (`!isTrusted`) события стопаются на capture, при фантомном OK — разовый warn в консоль.
 6. Спрайты презентации: Text Pop (740, цвета `\c[n]` из windowskin) и Слайды (741–745, wait-mode `agoniaSlide`).
 
-БД «Движок Agonia» (`data/AgoniaEngine.json`, редактор в `DatabaseAgoniaEditor`): секции `stamina` → SuperDuperMovement, `lighting` → SDLight. Сид: engineModules → манифест → дефолты (`agoniaSeedValues`); normalizeDataSystem добивает MZ-блоки MV-проектам (advanced/titleCommandWindow + ранний resize — MV-splash-плагины не зовут Scene_Boot.start).
+БД «Движок Agonia» (`data/AgoniaEngine.json`, редактор в `DatabaseAgoniaEditor`): секции `stamina` → SuperDuperMovement, `lighting` → SDLight, `camera` → SuperDuperCamera, `inventory` → SuperDuperInventory, `screen` → SuperDuperScreen (система). Сид: engineModules → манифест → дефолты (`agoniaSeedValues`); normalizeDataSystem добивает MZ-блоки MV-проектам (advanced/titleCommandWindow + ранний resize — MV-splash-плагины не зовут Scene_Boot.start).
+
+## Экранная система (S1, завершена) — single writer
+
+**Канон: разрешение/фуллскрин/заголовок/CRT принадлежат ТОЛЬКО БД-секции `screen`.** `RR.applyScreenResolution` в мосте перезаписывает все легаси-копии (SRD Game/Screen Resolution, Core Ш/В, Screen W/H) значениями из БД при каждом запуске; при retire мост берёт `SceneManager._screen*` на себя. Инвариант заморожен тестом `app/test/agonia-screen-frozen.test.js` (116 тестов): плагины живы → все копии == БД, система выключена; плагины retired → системные поля/шимы/CRT несут те же значения.
+
+Retired (в `retiredPlugins`, слепок параметров + канонический orderBefore): **SRD_GameUpgrade, SuperDuperCore, SuperDuperScreen** — заменены системными частями моста:
+- Хаб-шим SRD (`installSrdHub`): SRD-неймспейс (parse/requirePlugin/...), `Imported["SumRndmDde Game Upgrade"]=1.35` (OptionsCreator/SuperTools завязаны), GameWindowManager-стаб, тюнинг-порты (PIXI GC/scale/wrap, ImageCache, JsonEx, Decrypter, ResourceHandler — читают параметры из retired-слепка), boot-fullscreen. Читает retired-слепок, т.е. править тюнинг — через Plugin Manager при `--restore-retired` или прямо в слепке.
+- Шим `SuperDuper.Core` (API построчно; потребители — Camera/Inventory/Save/Notification/Craft/Settings).
+- Системный CRT (`installCrtFilter`): построчный порт SuperDuperScreen — per-scene фильтр, `filterArea` каждый кадр (без него — рябь), интерполяция, полный канал SUPERDUPER (`_superDuperConfig` на Game_System; Splash/GameOver пишут туда напрямую и он работает).
+
+Retire/restore: `node build-scripts/convert-plugin-commands.js <проект> --retire <a,b> [--reason ...]` / `--restore-retired <a,b>` (round-trip бит-в-бит, позиция по orderBefore-префиксам). A/B-гейт визуального паритета: пиксельный дифф скриншотов ≥99.5% (стенд: два NW-прогона с фикс-таймингом, raw-BGRA diff).
 
 Reactor-рантайм (Pixi 8) — **не выкатывать на проект**: опробован, ломает ФПС/визуалы (CRT-шейдер, legacy super-вызовы). Правки зеркалятся туда для будущего, но рабочий путь — MV-мост.
 
@@ -44,12 +55,15 @@ Reactor-рантайм (Pixi 8) — **не выкатывать на проек�
 - Кириллица в `node -e` из PowerShell ломается — пути передавать через UTF-8 файл-скрипт; .ps1 с кириллицей — UTF-8 **с BOM**.
 - `app/src` и `app/runtime` — браузерные глобальные скрипты; тестировать через `node:vm` с моками `document`/`process`/`require` (см. `app/test/mv-native-bridge.test.js`).
 - Мост-сниппет правится в `ProjectManager.MV_CATALOG_LOADER_SNIPPET`, **не** в патченном `js/rpg_managers.js` проекта; деплой — `restore-mv-runtime.js` (перепатчивает идемпотентно).
+- **Сниппет-генерация шейдеров/длинных строк**: собирать массивом строк с `.join("\n")` (как в плагине), не однострочным литералом — двойное экранирование `\n` даёт шейдер, который не компилируется на GPU (ловится только живым прогоном; в vm-моках Pixi-стаб молчит).
+- **Пробы в NW**: весь код проб в try/catch — неперехваченная ошибка из setInterval ловит глобальный error-handler MV → `SceneManager.stop()` → «игра не запускается», выглядет как баг моста. Глобал моста — `window.__RRMVBridge` (внутренний `RR` не экспортирован).
 - Не параллелить NW-плейтесты с правками файлов проекта: старые окна держат прежний код в памяти и врут в консоли (стек-номера строк от прежней версии файла).
 - Дистрибутивная сборка редактора устарела/удалена; **БД «Движок Agonia» открывать только из `npm run dev`**, пока сборка не пересоздана (старый сид перезаписывал AgoniaEngine.json дефолтами).
 
 ## Git
 
 - Теги: `fork-baseline` (f281fbb), `pre-plugin-migration` (4e5e2ab), `pre-native-commands` (= fork-база перед командами), `native-commands-baseline` (bbff1cd: мост v2 + input-харднинг, 93 теста).
+- S1-экранная система завершена 2026-08-15: движок `d5367ac`+ (116 тестов, заморозка single-writer), проект `c2859fa` (3 плагина в retiredPlugins).
 - История откатов через `git reset --hard` — перед крупными правками фиксировать тег/коммит.
 - Память проекта: глобальный vault `~/loam-memory` (qmd `global-memory`), страницы `agonia-*`.
 
