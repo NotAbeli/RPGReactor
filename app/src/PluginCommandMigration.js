@@ -578,6 +578,11 @@ class PluginCommandMigration {
         }
         try {
             const defaults = {
+                spriter: {
+                    'VariableId': 17, 'EnablePoses': true, 'ApplyToActor': true,
+                    'Debug': false,
+                    'SpriteMappings': '[]', 'PoseMappings': '[]', 'NPCMappings': '[]'
+                },
                 stamina: {
                     'Max Stamina': 100, 'Dash Speed Level': 5, 'Horizontal Mult': 1,
                     'Vertical Mult': 1, 'Diagonal Mult': 1, 'Drain Per Frame': 0.5,
@@ -626,6 +631,7 @@ class PluginCommandMigration {
                 }
             };
             const sectionPlugins = {
+                spriter: 'SuperDuperSpriter',
                 stamina: 'SuperDuperMovement',
                 lighting: 'SDLight',
                 camera: 'SuperDuperCamera',

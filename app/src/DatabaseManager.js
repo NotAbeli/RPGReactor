@@ -234,6 +234,20 @@ class DatabaseManager {
 
     static agoniaDefaults() {
         return {
+            // Spriter keeps the three mapping collections in MV plugin format
+            // (an array of JSON-object strings, itself serialized as a
+            // string): the plugin's safeParseArray expects exactly that, so
+            // the editor encodes/decodes on read/write instead of the
+            // natural JSON arrays used by the other sections.
+            spriter: {
+                'VariableId': 17,
+                'EnablePoses': true,
+                'ApplyToActor': true,
+                'Debug': false,
+                'SpriteMappings': '[]',
+                'PoseMappings': '[]',
+                'NPCMappings': '[]'
+            },
             stamina: {
                 'Max Stamina': 100,
                 'Dash Speed Level': 5,
@@ -332,8 +346,17 @@ class DatabaseManager {
         if (typeof value === 'string') {
             const trimmed = value.trim();
             if (trimmed.startsWith('[')) {
+                // MV plugin collections ('["{\\"Name\\":...}"]') are arrays of
+                // JSON-object strings; only numeric id lists (Dash Blocking
+                // Switches) normalize to number arrays, object collections
+                // must survive verbatim for the plugin's safeParseArray.
                 try {
-                    return this.normalizeAgoniaValue(JSON.parse(trimmed));
+                    const parsed = JSON.parse(trimmed);
+                    if (Array.isArray(parsed) && parsed.length &&
+                        parsed.every(item => typeof item === 'string' && item.trim().startsWith('{'))) {
+                        return trimmed;
+                    }
+                    return this.normalizeAgoniaValue(parsed);
                 } catch (e) { /* keep as string */ }
             }
             if (trimmed === 'true') return true;
@@ -364,6 +387,7 @@ class DatabaseManager {
     /** Which engine module feeds which settings section. */
     static get AGONIA_SECTION_PLUGINS() {
         return {
+            spriter: 'SuperDuperSpriter',
             stamina: 'SuperDuperMovement',
             lighting: 'SDLight',
             camera: 'SuperDuperCamera',
@@ -438,8 +462,18 @@ class DatabaseManager {
         const filePath = this.path.join(projectPath, 'data', this.constructor.AGONIA_FILENAME);
         if (!this.fs.existsSync(filePath)) return this.agoniaSeedValues(projectPath);
         try {
-            return this.constructor.normalizeAgonia(
-                await this._readJsonWithRetry(filePath));
+            const raw = await this._readJsonWithRetry(filePath);
+            const normalized = this.constructor.normalizeAgonia(raw);
+            // Sections added after the sidecar was first written (e.g.
+            // spriter) are absent from the file; normalize fills them with
+            // plain defaults, which would hide the project's live tuning.
+            // Seed just the missing sections from engineModules/manifest.
+            for (const section of Object.keys(this.constructor.agoniaDefaults())) {
+                if (raw && typeof raw === 'object' && (section in raw)) continue;
+                const seeded = this.agoniaSeedValues(projectPath);
+                if (seeded[section]) normalized[section] = seeded[section];
+            }
+            return normalized;
         } catch (error) {
             console.error(`Error loading ${this.constructor.AGONIA_FILENAME}:`, error);
             return this.agoniaSeedValues(projectPath);

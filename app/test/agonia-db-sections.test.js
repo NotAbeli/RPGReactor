@@ -50,11 +50,11 @@ function getReseedDefaults() {
     }
 }
 
-test('agonia defaults cover five sections in both DatabaseManager and reseed (no drift)', () => {
+test('agonia defaults cover six sections in both DatabaseManager and reseed (no drift)', () => {
     const { DatabaseManager } = makeDbManager();
     const defaults = DatabaseManager.agoniaDefaults();
     const sections = Object.keys(defaults).sort();
-    assert.deepEqual(sections, ['camera', 'inventory', 'lighting', 'screen', 'stamina']);
+    assert.deepEqual(sections, ['camera', 'inventory', 'lighting', 'screen', 'spriter', 'stamina']);
 
     const reseed = getReseedDefaults();
     assert.deepEqual(Object.keys(reseed).sort(), sections, 'reseed sections match');
@@ -124,11 +124,14 @@ test('editor SECTIONS render every defaults section with valid field types', () 
     const defaults = DatabaseManager.agoniaDefaults();
     const validTypes = new Set(['number', 'color', 'bool', 'switchId', 'variableId', 'idList', 'string']);
 
+    // The spriter section is owned by the dedicated DatabaseSpriterEditor
+    // tab (own UI, MV-encoded collections), not by the flat Agonia editor.
+    const flatSections = Object.keys(defaults).filter(s => s !== 'spriter');
     const editorSections = Editor.SECTIONS;
     assert.deepEqual(
         Object.keys(editorSections).sort(),
-        Object.keys(defaults).sort(),
-        'editor covers every defaults section'
+        flatSections.sort(),
+        'editor covers every flat defaults section'
     );
     for (const [section, def] of Object.entries(editorSections)) {
         const editedKeys = new Set();
@@ -221,13 +224,13 @@ test('MV bridge applies all five sections over module parameters', () => {
     }
 });
 
-test('reactor runtime AGONIA_MODULE_SECTIONS covers the five sections', () => {
+test('reactor runtime AGONIA_MODULE_SECTIONS covers the six sections', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'runtime', 'reactor_managers.js'), 'utf8');
     const start = source.indexOf('PluginManager.AGONIA_MODULE_SECTIONS');
     assert.ok(start > 0, 'section map not found');
     const end = source.indexOf('};', start);
     const block = source.slice(start, end + 2);
-    for (const name of ['stamina', 'lighting', 'camera', 'inventory', 'screen']) {
+    for (const name of ['stamina', 'lighting', 'camera', 'inventory', 'screen', 'spriter']) {
         assert.ok(block.includes(`"${name}"`), `section ${name} mapped`);
     }
 });

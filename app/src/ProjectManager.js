@@ -1012,6 +1012,7 @@ class ProjectManager {
         '                agonia = JSON.parse(fs.readFileSync(path.join(cwd, "data", "AgoniaEngine.json"), "utf8"));',
         '            } catch (e) { agonia = null; }',
         '            list = RR.applyAgoniaConfig(list, agonia, {',
+        '                SuperDuperSpriter: "spriter",',
         '                SuperDuperMovement: "stamina",',
         '                SDLight: "lighting",',
         '                SuperDuperCamera: "camera",',

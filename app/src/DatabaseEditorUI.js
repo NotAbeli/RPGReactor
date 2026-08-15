@@ -22,6 +22,9 @@ class DatabaseEditorUI {
         // Initialize modular editors
         this.commonUI = new DatabaseCommonUI(databaseManager, { getCurrentProject: () => this.currentProject });
         this.actorEditor = new DatabaseActorEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
+        this.spriterEditor = typeof DatabaseSpriterEditor !== 'undefined'
+            ? new DatabaseSpriterEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this)
+            : null;
         this.classEditor = new DatabaseClassEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         this.skillEditor = new DatabaseSkillEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         this.itemEditor = new DatabaseItemEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
@@ -375,6 +378,12 @@ class DatabaseEditorUI {
                 const { detailEl } = this.prepareDatabaseSection('system2', this._dbTitle('system2', 'System 2'), { showListPanel: false });
 
                 this.system2Editor.showSystem2Detail(detailEl);
+                return;
+            }
+            case 'spriter': {
+                if (!this.spriterEditor) return;
+                const { detailEl } = this.prepareDatabaseSection('spriter', this._dbTitle('spriter', 'Спрайтер'), { showListPanel: false });
+                this.spriterEditor.showSpriterDetail(detailEl);
                 return;
             }
             case 'agonia': {
@@ -1118,6 +1127,7 @@ class DatabaseEditorUI {
 
         const categories = [
             { name: 'Actors', type: 'actors' },
+            { name: 'Спрайтер', type: 'spriter' },
             { name: 'Classes', type: 'classes' },
             { name: 'Skills', type: 'skills' },
             { name: 'Items', type: 'items' },
