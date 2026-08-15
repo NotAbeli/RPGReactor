@@ -169,7 +169,10 @@ test('bridge snippet merges engine modules in canonical order with MV load seman
 
         // The bridge's catalog loader builds real script tags (MV semantics:
         // setup appends '.js'; separators and disabled entries never load).
+        // SuperDuperMovement_Addon is in the system-module registry but not
+        // in this fixture's modules, so it fires once as a system load first.
         assert.deepEqual(scriptTags.map(t => t.src), [
+            'js/plugins/SuperDuperMovement_Addon.js',
             'js/plugins/A.js', 'js/plugins/WaitAsync.js', 'js/plugins/B.js',
             'js/plugins/SuperDuperMovement.js', 'js/plugins/C.js',
             'js/plugins/SDLight.js', 'js/plugins/Z.js'

@@ -109,10 +109,12 @@ test('system module: retired SDLight loads from snapshot + DB overrides, before 
         assert.strictEqual(params['Use Real Shadows'], 'true');
         assert.strictEqual(params['Player radius'], '0');
 
-        // The system script loads FIRST (before plugin scripts).
-        assert.strictEqual(scriptTags.length, 2);
+        // The system scripts load FIRST (before plugin scripts); every
+        // registered module fires (SDLight, Movement, Addon) in registry order.
+        assert.strictEqual(scriptTags.length, 4);
         assert.strictEqual(scriptTags[0].src, 'js/plugins/SDLight.js');
-        assert.strictEqual(scriptTags[1].src, 'js/plugins/WaitAsync.js');
+        assert.ok(scriptTags[0].src.indexOf('SuperDuperMovement') === -1, 'SDLight leads');
+        assert.strictEqual(scriptTags[3].src, 'js/plugins/WaitAsync.js');
 
         // _scripts tracks the system module (no double-load if it returns
         // to the manifest later).
@@ -155,9 +157,15 @@ test('system module: no retired record -> DB-only params still load the module',
         writeProject(dir, { retired: [], agonia: { lighting: { 'Player radius': 0 } } });
         const { sandbox, scriptTags } = makeSandbox(dir);
         vm.runInContext('$plugins = []; PluginManager.setup($plugins);', sandbox);
-        assert.strictEqual(scriptTags.length, 1);
-        assert.strictEqual(scriptTags[0].src, 'js/plugins/SDLight.js');
+        // Every registered system module loads (SDLight, Movement, Addon).
+        const systemSrcs = scriptTags.map(t => t.src);
+        assert.ok(systemSrcs.includes('js/plugins/SDLight.js'), 'SDLight loaded');
         assert.strictEqual(sandbox.PluginManager.parameters('SDLight')['Player radius'], '0');
+        // Registry order: Movement before its Addon.
+        assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperMovement.js') !== -1, 'Movement loaded');
+        assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperMovement_Addon.js') !== -1, 'Addon loaded');
+        assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperMovement.js') < systemSrcs.indexOf('js/plugins/SuperDuperMovement_Addon.js'),
+            'Movement before Addon');
     } finally {
         cleanupTemp(dir);
     }
@@ -169,7 +177,8 @@ test('system module: no DB, no snapshot -> module still loads with empty params'
         writeProject(dir, {});
         const { sandbox, scriptTags } = makeSandbox(dir);
         vm.runInContext('$plugins = []; PluginManager.setup($plugins);', sandbox);
-        assert.strictEqual(scriptTags.length, 1, 'loads with defaults from the file itself');
+        // All three registered modules load with file defaults.
+        assert.strictEqual(scriptTags.length, 3, 'SDLight + Movement + Addon');
     } finally {
         cleanupTemp(dir);
     }
