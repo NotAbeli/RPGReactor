@@ -1901,6 +1901,18 @@ class EventCommandList {
             }
             case 356:
             case 357: {
+                // Routed audio plugin commands get a readable label
+                if (typeof AudioCommandEditor !== 'undefined' &&
+                    AudioCommandEditor.isRoutedPluginAudio(command)) {
+                    const text = String(params[0] || '').trim();
+                    const parts = text.split(/\s+/);
+                    if (parts[0].startsWith('play_')) {
+                        description = `${parts[0].replace('play_', '').toUpperCase()}: ${parts[1] || ''} (${parts[2] || 90}%)`;
+                    } else {
+                        description = `${parts[0].replace('stop_', '').toUpperCase()}: ${tt('стоп')}`;
+                    }
+                    break;
+                }
                 // Plugin Command (356 = MV, 357 = MZ)
                 const pluginName = params[0] || '';
                 // 357 stores the command's display label in params[2]; prefer it
@@ -4919,6 +4931,17 @@ class EventCommandList {
 
                     this.refreshCommandList(page, pageIndex);
                 }
+            });
+            return;
+        }
+
+        // Routed plugin audio (356 play_bgs2/3, stop_bgs2/3) opens the same
+        // channel-aware audio editor instead of the raw plugin command one.
+        if (code === 356 && typeof AudioCommandEditor !== 'undefined' &&
+            AudioCommandEditor.isRoutedPluginAudio(command)) {
+            this.audioEditor.show(command, 356, (editedCommand) => {
+                replaceSingle(editedCommand);
+                this.refreshCommandList(page, pageIndex);
             });
             return;
         }

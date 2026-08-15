@@ -26,7 +26,7 @@ class AudioCommandEditor {
     getAudioElement() {
         const player = this.getAudioPlayer();
         if (!player || !this.commandType) return null;
-        return player.getChannelAudio(this.commandType.folder);
+        return player.getChannelAudio(this.currentFolder());
     }
 
     /**
@@ -35,15 +35,15 @@ class AudioCommandEditor {
     getAudioNodes() {
         const player = this.getAudioPlayer();
         if (!player || !this.commandType) return null;
-        const channel = player.getChannel(this.commandType.folder);
+        const channel = player.getChannel(this.currentFolder());
         if (!channel) return null;
         return { gainNode: channel.gainNode, panNode: channel.panNode };
     }
 
     getCurrentChannel() {
         const player = this.getAudioPlayer();
-        if (!player || !this.commandType || !this.commandType.folder) return null;
-        return player.getChannel(this.commandType.folder);
+        if (!player || !this.commandType) return null;
+        return player.getChannel(this.currentFolder());
     }
 
     stripAudioExtension(filename) {
@@ -100,13 +100,13 @@ class AudioCommandEditor {
             this.projectController.getCurrentProject() :
             this.projectController.currentProject;
 
-        if (!currentProject || !currentProject.path || !this.commandType || !this.commandType.folder) {
+        if (!currentProject || !currentProject.path || !this.commandType || !this.currentFolder()) {
             return [];
         }
 
         const fs = require('fs');
         const path = require('path');
-        const audioFolder = path.join(currentProject.path, 'audio', this.commandType.folder);
+        const audioFolder = path.join(currentProject.path, 'audio', this.currentFolder());
 
         if (!fs.existsSync(audioFolder)) {
             return [];
@@ -119,7 +119,7 @@ class AudioCommandEditor {
         const tt = text => window.I18n ? window.I18n.tText(text) : text;
         const selectedText = container.querySelector('.audio-command-selected-track');
         if (selectedText) {
-            selectedText.textContent = selectedFile ? `[${this.commandType.folder.toUpperCase()}] ${selectedFile}` : tt('No Track Selected');
+            selectedText.textContent = selectedFile ? `[${this.currentFolder().toUpperCase()}] ${selectedFile}` : tt('No Track Selected');
         }
 
         container.querySelectorAll('.audio-track-item').forEach(item => {
@@ -131,17 +131,136 @@ class AudioCommandEditor {
     }
 
     /**
+     * Channel routing: which playback channel a Play/Fadeout command can
+     * target. BGS2/BGS3 are the OcRam_Audio_EX global channels (they keep
+     * playing in battles); they are stored as plugin commands (356).
+     */
+    static get CHANNEL_ROUTES() {
+        return {
+            241: [
+                { key: 'bgm', label: 'BGM — музыка карты', folder: 'bgm', nativeCode: 241 },
+                { key: 'bgs2', label: 'BGS2 — глобальный (играет и в бою)', folder: 'bgs', pluginCommand: 'play_bgs2' },
+                { key: 'bgs3', label: 'BGS3 — глобальный (играет и в бою)', folder: 'bgs', pluginCommand: 'play_bgs3' }
+            ],
+            245: [
+                { key: 'bgs', label: 'BGS — эмбиент карты', folder: 'bgs', nativeCode: 245 },
+                { key: 'bgs2', label: 'BGS2 — глобальный (играет и в бою)', folder: 'bgs', pluginCommand: 'play_bgs2' },
+                { key: 'bgs3', label: 'BGS3 — глобальный (играет и в бою)', folder: 'bgs', pluginCommand: 'play_bgs3' }
+            ],
+            246: [
+                { key: 'bgs', label: 'BGS — с фейдом', nativeCode: 246 },
+                { key: 'bgs2', label: 'BGS2 — мгновенный стоп', pluginCommand: 'stop_bgs2' },
+                { key: 'bgs3', label: 'BGS3 — мгновенный стоп', pluginCommand: 'stop_bgs3' }
+            ]
+        };
+    }
+
+    static channelRoute(uiCode, channelKey) {
+        const routes = AudioCommandEditor.CHANNEL_ROUTES[uiCode] || [];
+        return routes.find(r => r.key === channelKey) || routes[0] || null;
+    }
+
+    static isRoutedPluginAudio(command) {
+        if (!command || command.code !== 356) return false;
+        return AudioCommandEditor.parseAudioCommand(command) !== null;
+    }
+
+    /**
+     * Parse a command (native 241/245/246 or routed plugin 356) into the
+     * editor's UI form: { uiCode, channelKey, uiCommand }.
+     * Returns null for non-audio 356 commands.
+     */
+    static parseAudioCommand(command) {
+        if (!command) return null;
+        if (command.code === 356) {
+            const text = String((command.parameters || [])[0] || '').trim();
+            const m = text.match(/^(play_bgs2|play_bgs3|stop_bgs2|stop_bgs3)\b\s*(.*)$/);
+            if (!m) return null;
+            const pluginCommand = m[1];
+            const args = m[2].trim().split(/\s+/).filter(Boolean);
+            if (pluginCommand.startsWith('play_')) {
+                return {
+                    uiCode: 245,
+                    channelKey: pluginCommand === 'play_bgs2' ? 'bgs2' : 'bgs3',
+                    uiCommand: {
+                        code: 245,
+                        indent: command.indent || 0,
+                        parameters: [{
+                            name: args[0] || '',
+                            volume: Number(args[1]) || 90,
+                            pitch: Number(args[2]) || 100,
+                            pan: Number(args[3]) || 0
+                        }]
+                    }
+                };
+            }
+            return {
+                uiCode: 246,
+                channelKey: pluginCommand === 'stop_bgs2' ? 'bgs2' : 'bgs3',
+                uiCommand: { code: 246, indent: command.indent || 0, parameters: [0] }
+            };
+        }
+        if ([241, 245, 246, 249, 250].includes(command.code)) {
+            const native = { 241: 'bgm', 245: 'bgs', 249: 'me', 250: 'se', 246: 'bgs' }[command.code];
+            return {
+                uiCode: command.code,
+                channelKey: native,
+                uiCommand: JSON.parse(JSON.stringify(command))
+            };
+        }
+        return null;
+    }
+
+    /**
+     * Build the final command for the chosen channel: native codes stay
+     * native, BGS2/BGS3 become routed plugin commands (356).
+     */
+    static buildAudioCommand(uiCode, channelKey, uiCommand) {
+        const route = AudioCommandEditor.channelRoute(uiCode, channelKey);
+        if (!route) return uiCommand;
+        if (route.nativeCode) {
+            const out = JSON.parse(JSON.stringify(uiCommand || {}));
+            out.code = route.nativeCode;
+            return out;
+        }
+        // Plugin-routed channel
+        const indent = (uiCommand && uiCommand.indent) || 0;
+        if (route.pluginCommand.startsWith('play_')) {
+            const a = (uiCommand && uiCommand.parameters && uiCommand.parameters[0]) || {};
+            const text = [route.pluginCommand, String(a.name || ''), String(a.volume ?? 90),
+                String(a.pitch ?? 100), String(a.pan ?? 0)].join(' ');
+            return { code: 356, indent, parameters: [text] };
+        }
+        return { code: 356, indent, parameters: [route.pluginCommand] };
+    }
+
+    /**
      * Show editor for an audio command
      * @param {object} command - The command to edit (or null for new)
      * @param {number} code - Command code (241=BGM, 245=BGS, 249=ME, 250=SE, 242=Fadeout BGM, etc)
      * @param {function} callback - Callback when done editing
      */
     show(command, code, callback) {
-        this.commandType = this.getCommandType(code);
+        // Routed plugin audio (356 play_bgs2/3 / stop_bgs2/3) opens in its
+        // channel UI; native codes keep their own channel.
+        let uiCode = code;
+        let channelKey = null;
+        if (code === 356) {
+            const parsed = AudioCommandEditor.parseAudioCommand(command);
+            if (parsed) {
+                uiCode = parsed.uiCode;
+                channelKey = parsed.channelKey;
+                command = parsed.uiCommand;
+            }
+        }
+        this.commandType = this.getCommandType(uiCode);
+        this.uiCode = uiCode;
+        const routes = AudioCommandEditor.CHANNEL_ROUTES[uiCode] || [];
+        this.channel = channelKey || (routes.length ? routes[0].key : null);
         // Work on a clone: the sliders and track list mutate this.command
         // live for preview, and OK hands the clone back to the caller —
         // Cancel must leave the original command untouched.
-        this.command = command ? JSON.parse(JSON.stringify(command)) : this.createDefaultCommand(code);
+        this.command = command ? JSON.parse(JSON.stringify(command)) : this.createDefaultCommand(uiCode);
         this.applyCurrentTrackDefaults();
         this.callback = callback;
 
@@ -151,6 +270,13 @@ class AudioCommandEditor {
 
         this.renderContent();
         this.modal.style.display = 'flex';
+    }
+
+    /** Folder backing the currently selected channel (for file lists/preview). */
+    currentFolder() {
+        const route = AudioCommandEditor.channelRoute(this.uiCode, this.channel);
+        if (route && route.folder) return route.folder;
+        return this.commandType ? this.commandType.folder : null;
     }
 
     /**
@@ -357,6 +483,9 @@ class AudioCommandEditor {
             min-height: 0;
         `;
 
+        const channelBar = this.createChannelSelector(tt);
+        if (channelBar) wrapper.appendChild(channelBar);
+
         const selectedName = this.command.parameters[0]?.name || '';
 
         const info = document.createElement('div');
@@ -372,7 +501,7 @@ class AudioCommandEditor {
         selectedTrack.className = 'current-track audio-command-selected-track';
         selectedTrack.style.cssText = 'color: var(--color-accent-hover); font-size: 15px; font-weight: 600; margin-bottom: 4px;';
         selectedTrack.textContent = selectedName
-            ? `[${this.commandType.folder.toUpperCase()}] ${selectedName}`
+            ? `[${(this.currentFolder() || '').toUpperCase()}] ${selectedName}`
             : tt('No Track Selected');
         const trackTime = document.createElement('div');
         trackTime.className = 'track-time audio-command-track-time';
@@ -468,7 +597,7 @@ class AudioCommandEditor {
         });
         loopBtn.classList.add('audio-loop-button');
 
-        if (this.commandType.folder !== 'se') {
+        if (this.currentFolder() !== 'se') {
             loopBtn.classList.add('active-toggle');
             loopBtn.style.backgroundColor = 'var(--color-accent-hover)';
             loopBtn.style.borderColor = 'var(--color-accent-hover)';
@@ -618,7 +747,7 @@ class AudioCommandEditor {
         trackList.style.cssText = 'background: var(--color-bg-surface); flex: 1; overflow-y: auto; padding: 0;';
 
         if (files.length === 0) {
-            trackList.innerHTML = `<p style="color: var(--color-text-muted); padding: 20px; text-align: center;">${tt('No')} ${this.commandType.folder.toUpperCase()} ${tt('files found')}</p>`;
+            trackList.innerHTML = `<p style="color: var(--color-text-muted); padding: 20px; text-align: center;">${tt('No')} ${this.currentFolder().toUpperCase()} ${tt('files found')}</p>`;
             browser.appendChild(tabBar);
             browser.appendChild(trackList);
             return browser;
@@ -879,7 +1008,7 @@ class AudioCommandEditor {
         const loopCheckbox = document.createElement('input');
         loopCheckbox.type = 'checkbox';
         // SE should default to no loop, others should loop
-        loopCheckbox.checked = (this.commandType.folder !== 'se');
+        loopCheckbox.checked = (this.currentFolder() !== 'se');
         loopCheckbox.className = 'audio-loop-checkbox';
         loopCheckbox.style.cssText = 'margin-left: 8px;';
         loopCheckbox.addEventListener('change', (e) => {
@@ -1043,11 +1172,66 @@ class AudioCommandEditor {
     }
 
     /**
+     * Channel selector bar for routed commands (241/245/246). Returns null
+     * when the command type has no routing (ME/SE/Stop SE/Fadeout BGM).
+     */
+    createChannelSelector(tt) {
+        const routes = AudioCommandEditor.CHANNEL_ROUTES[this.uiCode];
+        if (!routes || routes.length < 2) return null;
+        const bar = document.createElement('div');
+        bar.style.cssText = `
+            display: flex; gap: 10px; align-items: center;
+            background: var(--color-bg-panel);
+            border: 1px solid var(--color-border);
+            border-radius: 4px;
+            padding: 8px 12px;
+        `;
+        const label = document.createElement('span');
+        label.textContent = tt('Канал:') + ' ';
+        label.style.cssText = 'font-size: 13px; font-weight: 600; color: var(--color-text); white-space: nowrap;';
+        bar.appendChild(label);
+        const select = document.createElement('select');
+        select.style.cssText = `
+            flex: 1; padding: 5px 8px; font-size: 12px;
+            background-color: var(--color-bg-deep); color: var(--color-text-strong);
+            border: 1px solid var(--color-border); border-radius: 4px;
+        `;
+        for (const route of routes) {
+            const opt = document.createElement('option');
+            opt.value = route.key;
+            opt.textContent = tt(route.label);
+            select.appendChild(opt);
+        }
+        select.value = this.channel || routes[0].key;
+        select.addEventListener('change', () => {
+            this.channel = select.value;
+            // Re-render: the file list follows the channel's folder, and
+            // the fadeout duration only applies to the native BGS channel.
+            this.renderContent();
+        });
+        bar.appendChild(select);
+        return bar;
+    }
+
+    /**
      * Create fadeout duration control
      */
     createFadeoutControls() {
         const tt = text => window.I18n ? window.I18n.tText(text) : text;
-        return this.createSliderControl(
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'display: flex; flex-direction: column; gap: 12px;';
+        const channelBar = this.createChannelSelector(tt);
+        if (channelBar) wrap.appendChild(channelBar);
+        const route = AudioCommandEditor.channelRoute(this.uiCode, this.channel);
+        if (route && route.pluginCommand) {
+            // OcRam stop_bgs2/3 stop instantly - no fade duration applies.
+            const note = document.createElement('div');
+            note.style.cssText = 'color: var(--color-text-muted); font-size: 12px; padding: 6px 2px;';
+            note.textContent = tt('Глобальный канал останавливается мгновенно (без фейда).');
+            wrap.appendChild(note);
+            return wrap;
+        }
+        wrap.appendChild(this.createSliderControl(
             tt('Duration (seconds):'),
             this.command.parameters[0] ?? 1,
             0,
@@ -1057,7 +1241,8 @@ class AudioCommandEditor {
             (value) => {
                 this.command.parameters[0] = parseFloat(value);
             }
-        );
+        ));
+        return wrap;
     }
 
     /**
@@ -1117,7 +1302,7 @@ class AudioCommandEditor {
 
         const fs = require('fs');
         const path = require('path');
-        const audioFolder = path.join(currentProject.path, 'audio', this.commandType.folder);
+        const audioFolder = path.join(currentProject.path, 'audio', this.currentFolder());
 
         // Check if folder exists
         if (!fs.existsSync(audioFolder)) {
@@ -1508,7 +1693,7 @@ class AudioCommandEditor {
             if (!currentProject) return;
 
             const path = require('path');
-            const audioFolder = path.join(currentProject.path, 'audio', this.commandType.folder);
+            const audioFolder = path.join(currentProject.path, 'audio', this.currentFolder());
 
             const audioFile = RRAssetFiles.find(audioFolder, filename, ['.ogg']);
 
@@ -1517,13 +1702,13 @@ class AudioCommandEditor {
                 if (player) {
                     const fileUrl = RRAssetFiles.toUrl(audioFile.absolutePath);
                     // SE shouldn't loop by default in preview
-                    const shouldLoop = (this.commandType.folder !== 'se');
+                    const shouldLoop = (this.currentFolder() !== 'se');
                     player.playExternal(fileUrl, {
                         volume: 90,
                         pitch: 100,
                         pan: 0,
                         loop: shouldLoop,
-                        audioType: this.commandType.folder // bgm, bgs, me, or se
+                        audioType: this.currentFolder() // bgm, bgs, me, or se
                     });
                 }
             }
@@ -1610,7 +1795,7 @@ class AudioCommandEditor {
         if (!currentProject || !currentProject.path) return;
 
         const path = require('path');
-        const audioFolder = path.join(currentProject.path, 'audio', this.commandType.folder);
+        const audioFolder = path.join(currentProject.path, 'audio', this.currentFolder());
 
         const audioFile = RRAssetFiles.find(audioFolder, filename, ['.ogg']);
 
@@ -1624,7 +1809,7 @@ class AudioCommandEditor {
             const loopCheckbox = document.querySelector('.audio-loop-checkbox');
             const loopButton = this.modal ? this.modal.querySelector('.audio-loop-button') : null;
             const shouldLoop = loopCheckbox ? loopCheckbox.checked :
-                (loopButton ? loopButton.classList.contains('active-toggle') : (this.commandType.folder !== 'se'));
+                (loopButton ? loopButton.classList.contains('active-toggle') : (this.currentFolder() !== 'se'));
 
             // Use the global audio player
             player.playExternal(fileUrl, {
@@ -1632,7 +1817,7 @@ class AudioCommandEditor {
                 pitch: this.command.parameters[0]?.pitch || 100,
                 pan: this.command.parameters[0]?.pan || 0,
                 loop: shouldLoop,
-                audioType: this.commandType.folder // bgm, bgs, me, or se
+                audioType: this.currentFolder() // bgm, bgs, me, or se
             });
         }
     }
@@ -1715,7 +1900,8 @@ class AudioCommandEditor {
     save() {
         // Don't stop audio - let it continue playing
         if (this.callback) {
-            this.callback(this.command);
+            const final = AudioCommandEditor.buildAudioCommand(this.uiCode, this.channel, this.command);
+            this.callback(final);
         }
         this.close();
     }
