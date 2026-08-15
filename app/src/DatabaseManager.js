@@ -261,6 +261,66 @@ class DatabaseManager {
                 'MapSwitch Base': 0,
                 'MapSwitch Stride': 0,
                 'Wall Softness': 1
+            },
+            camera: {
+                'Зум по умолчанию': 2,
+                'Зумить картинки': true,
+                'Инерция': 0.18,
+                'Сила предсказания': 0.35,
+                'Макс. скорость': 0.25,
+                'Ускорение камеры': 0.08,
+                'Инерция скорости': 0.35,
+                'Свитч отключения': 0,
+                'Включить барьеры': true,
+                'Активные регионы': 15,
+                'Регионы слева': 11,
+                'Регионы справа': 12,
+                'Регионы сверху': 13,
+                'Регионы снизу': 14,
+                'Хард-точки по краям': true,
+                'Ширина рамки': 960,
+                'Высота рамки': 540,
+                'Свитч прицеливания': 18,
+                'Поворот за курсором': true,
+                'Скорость прицеливания': 3,
+                'Обычный курсор': 'cursor',
+                'Курсор прицела': 'cursor aim',
+                'Общее событие': 12,
+                'Макс. сдвиг камеры': 90,
+                'Плавность прицела': 0.3,
+                'Возврат в центр': 60,
+                'Свитч откл. сглаживания': 0
+            },
+            inventory: {
+                'Open Trigger': 'key_i',
+                'Custom Key Code': 73,
+                'Use Key': 'e',
+                'Disable Standard Menu': true,
+                'RMB Variable ID': 17,
+                'Hotbar Watch Var': 0,
+                'Free Slots Variable': 12,
+                'Max Slots Variable': 5,
+                'Default Max Slots': 5,
+                'Drag Threshold': 12,
+                'Global Volume': 0
+            },
+            screen: {
+                'Screen Width': 1280,
+                'Screen Height': 720,
+                'Enabled on Startup': true,
+                'Overall Intensity': 0.1,
+                'Blur Radius': 0.1,
+                'Sharpening': 0.4,
+                'Bloom Intensity': 0.5,
+                'Bloom Threshold': 1,
+                'Color Temperature': 0,
+                'Saturation': 1,
+                'Contrast': 1,
+                'Brightness': 1,
+                'Wave Intensity': 0.1,
+                'Chroma Intensity': 0.5,
+                'Scanline Intensity': 0.4,
+                'Noise Intensity': 1.5
             }
         };
     }
@@ -301,7 +361,13 @@ class DatabaseManager {
 
     /** Which engine module feeds which settings section. */
     static get AGONIA_SECTION_PLUGINS() {
-        return { stamina: 'SuperDuperMovement', lighting: 'SDLight' };
+        return {
+            stamina: 'SuperDuperMovement',
+            lighting: 'SDLight',
+            camera: 'SuperDuperCamera',
+            inventory: 'SuperDuperInventory',
+            screen: 'SuperDuperScreen'
+        };
     }
 
     /**

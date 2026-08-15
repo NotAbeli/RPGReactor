@@ -1735,7 +1735,23 @@ Object.assign(RR_TEXT_TRANSLATIONS.ru, {
     'Breathing Speed': 'Скорость дыхания', 'Vignette Color': 'Цвет виньетки', 'Vignette Scale': 'Масштаб виньетки',
     'Vignette Sharpness': 'Резкость виньетки', 'Vignette Disable Switch': 'Переключатель отключения виньетки',
     'Use Real Shadows': 'Реальные тени', 'MapSwitch Base': 'База лок. переключателей',
-    'MapSwitch Stride': 'Шаг лок. переключателей', 'Wall Softness': 'Мягкость стен'
+    'MapSwitch Stride': 'Шаг лок. переключателей', 'Wall Softness': 'Мягкость стен',
+    'Camera': 'Камера', 'Screen': 'Экран', 'Resolution': 'Разрешение',
+    'CRT Effect': 'CRT-эффект', 'Color & Distortion': 'Цвет и искажения',
+    'Zoom': 'Зум', 'Smoothness': 'Плавность', 'Плавность камеры': 'Плавность камеры',
+    'Барьеры (регионы)': 'Барьеры (регионы)', 'Прицеливание': 'Прицеливание', 'Рамка камеры': 'Рамка камеры',
+    'Controls': 'Управление', 'Slots & Hotbar': 'Слоты и хотбар', 'Inventory': 'Инвентарь',
+    'Open Trigger': 'Триггер открытия', 'Use Key': 'Клавиша использования', 'Custom Key Code': 'Код клавиши',
+    'Disable Standard Menu': 'Отключить стандартное меню', 'RMB Variable ID': 'Переменная ПКМ',
+    'Hotbar Watch Var': 'Переменная наблюдения хотбара', 'Free Slots Variable': 'Переменная свободных слотов',
+    'Max Slots Variable': 'Переменная макс. слотов', 'Default Max Slots': 'Макс. слотов по умолчанию',
+    'Drag Threshold': 'Порог перетаскивания', 'Global Volume': 'Общая громкость',
+    'Screen Width': 'Ширина экрана', 'Screen Height': 'Высота экрана', 'Enabled on Startup': 'Включён при запуске',
+    'Overall Intensity': 'Общая интенсивность', 'Blur Radius': 'Радиус размытия', 'Sharpening': 'Резкость',
+    'Bloom Intensity': 'Интенсивность свечения', 'Bloom Threshold': 'Порог свечения',
+    'Color Temperature': 'Цветовая температура', 'Saturation': 'Насыщенность', 'Contrast': 'Контраст',
+    'Brightness': 'Яркость', 'Wave Intensity': 'Интенсивность волн', 'Chroma Intensity': 'Интенсивность хроматизма',
+    'Scanline Intensity': 'Интенсивность сканлайнов', 'Noise Intensity': 'Интенсивность шума'
 });
 Object.assign(RR_TEXT_TRANSLATIONS.pt, { 'OK': 'OK', 'Cancel': 'Cancelar', 'Clear': 'Limpar', 'Play': 'Reproduzir', 'Stop': 'Parar' });
 

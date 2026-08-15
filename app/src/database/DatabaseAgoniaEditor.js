@@ -73,6 +73,125 @@ class DatabaseAgoniaEditor {
                         ]
                     }
                 ]
+            },
+            screen: {
+                title: 'Screen',
+                columns: [
+                    {
+                        title: 'Resolution',
+                        fields: [
+                            { key: 'Screen Width', type: 'number', min: 320, step: 1 },
+                            { key: 'Screen Height', type: 'number', min: 240, step: 1 },
+                            { key: 'Enabled on Startup', type: 'bool' }
+                        ]
+                    },
+                    {
+                        title: 'CRT Effect',
+                        fields: [
+                            { key: 'Overall Intensity', type: 'number', step: 0.01 },
+                            { key: 'Blur Radius', type: 'number', step: 0.01 },
+                            { key: 'Sharpening', type: 'number', step: 0.01 },
+                            { key: 'Bloom Intensity', type: 'number', step: 0.01 },
+                            { key: 'Bloom Threshold', type: 'number', step: 0.01 },
+                            { key: 'Color Temperature', type: 'number', step: 0.01 }
+                        ]
+                    },
+                    {
+                        title: 'Color & Distortion',
+                        fields: [
+                            { key: 'Saturation', type: 'number', step: 0.01 },
+                            { key: 'Contrast', type: 'number', step: 0.01 },
+                            { key: 'Brightness', type: 'number', step: 0.01 },
+                            { key: 'Wave Intensity', type: 'number', step: 0.01 },
+                            { key: 'Chroma Intensity', type: 'number', step: 0.01 },
+                            { key: 'Scanline Intensity', type: 'number', step: 0.01 },
+                            { key: 'Noise Intensity', type: 'number', step: 0.01 }
+                        ]
+                    }
+                ]
+            },
+            camera: {
+                title: 'Camera',
+                columns: [
+                    {
+                        title: 'Zoom',
+                        fields: [
+                            { key: 'Зум по умолчанию', type: 'number', min: 0.1, max: 8, step: 0.05 },
+                            { key: 'Зумить картинки', type: 'bool' },
+                            { key: 'Свитч отключения', type: 'switchId' }
+                        ]
+                    },
+                    {
+                        title: 'Плавность камеры',
+                        fields: [
+                            { key: 'Инерция', type: 'number', step: 0.01 },
+                            { key: 'Сила предсказания', type: 'number', step: 0.01 },
+                            { key: 'Макс. скорость', type: 'number', step: 0.01 },
+                            { key: 'Ускорение камеры', type: 'number', step: 0.01 },
+                            { key: 'Инерция скорости', type: 'number', step: 0.01 },
+                            { key: 'Свитч откл. сглаживания', type: 'switchId' }
+                        ]
+                    },
+                    {
+                        title: 'Барьеры (регионы)',
+                        fields: [
+                            { key: 'Включить барьеры', type: 'bool' },
+                            { key: 'Активные регионы', type: 'number', min: 1, step: 1 },
+                            { key: 'Регионы слева', type: 'number', min: 1, step: 1 },
+                            { key: 'Регионы справа', type: 'number', min: 1, step: 1 },
+                            { key: 'Регионы сверху', type: 'number', min: 1, step: 1 },
+                            { key: 'Регионы снизу', type: 'number', min: 1, step: 1 },
+                            { key: 'Хард-точки по краям', type: 'bool' }
+                        ]
+                    },
+                    {
+                        title: 'Прицеливание',
+                        fields: [
+                            { key: 'Свитч прицеливания', type: 'switchId' },
+                            { key: 'Поворот за курсором', type: 'bool' },
+                            { key: 'Скорость прицеливания', type: 'number', step: 0.1 },
+                            { key: 'Макс. сдвиг камеры', type: 'number', step: 1 },
+                            { key: 'Плавность прицела', type: 'number', step: 0.01 },
+                            { key: 'Возврат в центр', type: 'number', step: 1 },
+                            { key: 'Обычный курсор', type: 'string' },
+                            { key: 'Курсор прицела', type: 'string' },
+                            { key: 'Общее событие', type: 'number', min: 0, step: 1 }
+                        ]
+                    },
+                    {
+                        title: 'Рамка камеры',
+                        fields: [
+                            { key: 'Ширина рамки', type: 'number', step: 1 },
+                            { key: 'Высота рамки', type: 'number', step: 1 }
+                        ]
+                    }
+                ]
+            },
+            inventory: {
+                title: 'Inventory',
+                columns: [
+                    {
+                        title: 'Controls',
+                        fields: [
+                            { key: 'Open Trigger', type: 'string' },
+                            { key: 'Use Key', type: 'string' },
+                            { key: 'Custom Key Code', type: 'number', min: 0, step: 1 },
+                            { key: 'Disable Standard Menu', type: 'bool' },
+                            { key: 'RMB Variable ID', type: 'variableId' }
+                        ]
+                    },
+                    {
+                        title: 'Slots & Hotbar',
+                        fields: [
+                            { key: 'Hotbar Watch Var', type: 'variableId' },
+                            { key: 'Free Slots Variable', type: 'variableId' },
+                            { key: 'Max Slots Variable', type: 'variableId' },
+                            { key: 'Default Max Slots', type: 'number', min: 1, step: 1 },
+                            { key: 'Drag Threshold', type: 'number', min: 1, step: 1 },
+                            { key: 'Global Volume', type: 'number', min: 0, max: 100, step: 1 }
+                        ]
+                    }
+                ]
             }
         };
     }
@@ -242,6 +361,14 @@ class DatabaseAgoniaEditor {
                     .map(part => Number(part.trim()))
                     .filter(n => !Number.isNaN(n) && n > 0);
             });
+            row.appendChild(input);
+        } else if (field.type === 'string') {
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = values[field.key] === undefined || values[field.key] === null
+                ? '' : String(values[field.key]);
+            input.style.cssText = this.inputStyle();
+            input.addEventListener('input', () => { values[field.key] = input.value; });
             row.appendChild(input);
         }
         return row;

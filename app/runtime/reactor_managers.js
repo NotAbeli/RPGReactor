@@ -3345,7 +3345,10 @@ PluginManager.setup = function(plugins) {
 //
 PluginManager.AGONIA_MODULE_SECTIONS = {
     SuperDuperMovement: "stamina",
-    SDLight: "lighting"
+    SDLight: "lighting",
+    SuperDuperCamera: "camera",
+    SuperDuperInventory: "inventory",
+    SuperDuperScreen: "screen"
 };
 
 PluginManager._agoniaConfig = null;
