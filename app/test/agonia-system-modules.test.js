@@ -110,11 +110,12 @@ test('system module: retired SDLight loads from snapshot + DB overrides, before 
         assert.strictEqual(params['Player radius'], '0');
 
         // The system scripts load FIRST (before plugin scripts); every
-        // registered module fires (SDLight, Movement, Addon) in registry order.
-        assert.strictEqual(scriptTags.length, 4);
+        // registered module fires (SDLight, Movement, Addon, Camera) in
+        // registry order.
+        assert.strictEqual(scriptTags.length, 5);
         assert.strictEqual(scriptTags[0].src, 'js/plugins/SDLight.js');
         assert.ok(scriptTags[0].src.indexOf('SuperDuperMovement') === -1, 'SDLight leads');
-        assert.strictEqual(scriptTags[3].src, 'js/plugins/WaitAsync.js');
+        assert.strictEqual(scriptTags[4].src, 'js/plugins/WaitAsync.js');
 
         // _scripts tracks the system module (no double-load if it returns
         // to the manifest later).
@@ -157,15 +158,17 @@ test('system module: no retired record -> DB-only params still load the module',
         writeProject(dir, { retired: [], agonia: { lighting: { 'Player radius': 0 } } });
         const { sandbox, scriptTags } = makeSandbox(dir);
         vm.runInContext('$plugins = []; PluginManager.setup($plugins);', sandbox);
-        // Every registered system module loads (SDLight, Movement, Addon).
+        // Every registered system module loads (SDLight, Movement, Addon, Camera).
         const systemSrcs = scriptTags.map(t => t.src);
         assert.ok(systemSrcs.includes('js/plugins/SDLight.js'), 'SDLight loaded');
         assert.strictEqual(sandbox.PluginManager.parameters('SDLight')['Player radius'], '0');
-        // Registry order: Movement before its Addon.
+        // Registry order: Movement before its Addon, Camera after both.
         assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperMovement.js') !== -1, 'Movement loaded');
         assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperMovement_Addon.js') !== -1, 'Addon loaded');
         assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperMovement.js') < systemSrcs.indexOf('js/plugins/SuperDuperMovement_Addon.js'),
             'Movement before Addon');
+        assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperMovement_Addon.js') < systemSrcs.indexOf('js/plugins/SuperDuperCamera.js'),
+            'Camera after Movement Addon');
     } finally {
         cleanupTemp(dir);
     }
@@ -177,8 +180,51 @@ test('system module: no DB, no snapshot -> module still loads with empty params'
         writeProject(dir, {});
         const { sandbox, scriptTags } = makeSandbox(dir);
         vm.runInContext('$plugins = []; PluginManager.setup($plugins);', sandbox);
-        // All three registered modules load with file defaults.
-        assert.strictEqual(scriptTags.length, 3, 'SDLight + Movement + Addon');
+        // All four registered modules load with file defaults.
+        assert.strictEqual(scriptTags.length, 4, 'SDLight + Movement + Addon + Camera');
+    } finally {
+        cleanupTemp(dir);
+    }
+});
+
+test('system module: retired Camera loads from snapshot + DB camera section', () => {
+    const dir = tempDir();
+    try {
+        writeProject(dir, {
+            retired: [
+                {
+                    name: 'SuperDuperCamera', reason: 'S4',
+                    parameters: {
+                        'Зум по умолчанию': '2.00',
+                        'Свитч прицеливания': '18',
+                        'Общее событие': '12',
+                        'Макс. сдвиг камеры': '90',
+                        'Пресеты мёртвой зоны': '[\"{\\\"Name\\\":\\\"Default\\\"}\"]'
+                    },
+                    orderBefore: []
+                }
+            ],
+            agonia: { camera: { 'Макс. сдвиг камеры': 120, 'Плавность прицела': 0.5 } }
+        });
+        const { sandbox, scriptTags } = makeSandbox(dir);
+        vm.runInContext(`$plugins = [{name:'WaitAsync',status:true,parameters:{}}]; PluginManager.setup($plugins);`, sandbox);
+
+        const params = sandbox.PluginManager.parameters('SuperDuperCamera');
+        // Snapshot keys kept (including JSON-array params absent from the DB section).
+        assert.strictEqual(params['Зум по умолчанию'], '2.00');
+        assert.strictEqual(params['Свитч прицеливания'], '18');
+        assert.strictEqual(params['Общее событие'], '12');
+        assert.strictEqual(params['Пресеты мёртвой зоны'], '[\"{\\\"Name\\\":\\\"Default\\\"}\"]');
+        // DB section overrides (stringified MV style).
+        assert.strictEqual(params['Макс. сдвиг камеры'], '120');
+        assert.strictEqual(params['Плавность прицела'], '0.5');
+        // Loaded exactly once as a system module (not via the plugin
+        // manifest), before the WaitAsync plugin script.
+        const camLoads = scriptTags.filter(t => String(t.src).includes('SuperDuperCamera'));
+        assert.strictEqual(camLoads.length, 1);
+        assert.ok(scriptTags.indexOf(camLoads[0]) < scriptTags.findIndex(t => t.src === 'js/plugins/WaitAsync.js'),
+            'camera loads before plugin scripts');
+        assert.ok(!sandbox.window.$plugins.some(p => p.name === 'SuperDuperCamera'));
     } finally {
         cleanupTemp(dir);
     }
