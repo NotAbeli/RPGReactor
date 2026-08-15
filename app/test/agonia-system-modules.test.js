@@ -110,12 +110,12 @@ test('system module: retired SDLight loads from snapshot + DB overrides, before 
         assert.strictEqual(params['Player radius'], '0');
 
         // The system scripts load FIRST (before plugin scripts); every
-        // registered module fires (SDLight, Movement, Addon, Camera,
-        // Inventory, Battle, Enemies) in registry order.
-        assert.strictEqual(scriptTags.length, 8);
-        assert.strictEqual(scriptTags[0].src, 'js/plugins/SDLight.js');
-        assert.ok(scriptTags[0].src.indexOf('SuperDuperMovement') === -1, 'SDLight leads');
-        assert.strictEqual(scriptTags[7].src, 'js/plugins/WaitAsync.js');
+        // registered module fires (Spriter, SDLight, Movement, Addon,
+        // Camera, Inventory, Battle, Enemies) in registry order.
+        assert.strictEqual(scriptTags.length, 9);
+        assert.strictEqual(scriptTags[0].src, 'js/plugins/SuperDuperSpriter.js');
+        assert.ok(scriptTags[0].src.indexOf('SuperDuperMovement') === -1, 'Spriter leads');
+        assert.strictEqual(scriptTags[8].src, 'js/plugins/WaitAsync.js');
 
         // _scripts tracks the system module (no double-load if it returns
         // to the manifest later).
@@ -162,10 +162,14 @@ test('system module: no retired record -> DB-only params still load the module',
         const systemSrcs = scriptTags.map(t => t.src);
         assert.ok(systemSrcs.includes('js/plugins/SDLight.js'), 'SDLight loaded');
         assert.strictEqual(sandbox.PluginManager.parameters('SDLight')['Player radius'], '0');
-        // Registry order: Movement before its Addon, Camera after both,
-        // Inventory after Camera, Battle and Enemies appended last
-        // (preserves the original overlap-pair order: Camera < Battle for
-        // Game_Map.setup, SDLight < Enemies for meetsConditions).
+        // Registry order: Spriter leads (original position #6), Movement
+        // before its Addon, Camera after both, Inventory after Camera,
+        // Battle and Enemies appended last (preserves the original
+        // overlap-pair order: Camera < Battle for Game_Map.setup,
+        // SDLight < Enemies for meetsConditions).
+        assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperSpriter.js') !== -1, 'Spriter loaded');
+        assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperSpriter.js') < systemSrcs.indexOf('js/plugins/SDLight.js'),
+            'Spriter before SDLight');
         assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperMovement.js') !== -1, 'Movement loaded');
         assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperMovement_Addon.js') !== -1, 'Addon loaded');
         assert.ok(systemSrcs.indexOf('js/plugins/SuperDuperMovement.js') < systemSrcs.indexOf('js/plugins/SuperDuperMovement_Addon.js'),
@@ -189,8 +193,8 @@ test('system module: no DB, no snapshot -> module still loads with empty params'
         writeProject(dir, {});
         const { sandbox, scriptTags } = makeSandbox(dir);
         vm.runInContext('$plugins = []; PluginManager.setup($plugins);', sandbox);
-        // All seven registered modules load with file defaults.
-        assert.strictEqual(scriptTags.length, 7, 'SDLight + Movement + Addon + Camera + Inventory + Battle + Enemies');
+        // All eight registered modules load with file defaults.
+        assert.strictEqual(scriptTags.length, 8, 'Spriter + SDLight + Movement + Addon + Camera + Inventory + Battle + Enemies');
     } finally {
         cleanupTemp(dir);
     }
@@ -334,6 +338,69 @@ test('system module: retired Battle + Enemies load from snapshots (no DB section
         assert.strictEqual(eLoads.length, 1);
         assert.ok(scriptTags.indexOf(eLoads[0]) > scriptTags.indexOf(bLoads[0]), 'Enemies after Battle');
         assert.ok(!sandbox.window.$plugins.some(p => p.name === 'SuperDuperBattle' || p.name === 'SuperDuperEnemies'));
+    } finally {
+        cleanupTemp(dir);
+    }
+});
+
+test('system module: retired Spriter loads from snapshot + DB spriter section (MV collections intact)', () => {
+    const dir = tempDir();
+    try {
+        const mapping = JSON.stringify({
+            Name: 'Sprint', Priority: 10,
+            Conditions: JSON.stringify({ MainValue: 3, SwitchId1: 0, SwitchId2: 0, SwitchId3: 0, ExtVarId: 0, ExtVarOp: 'equal', ExtVarVal: 0 }),
+            Visuals: JSON.stringify({ CharacterName: 'Actor1', CharacterIndex: 2, Frames: 4, Directions: 4 })
+        });
+        writeProject(dir, {
+            retired: [
+                {
+                    name: 'SuperDuperSpriter', reason: 'S8',
+                    parameters: {
+                        'VariableId': '17',
+                        'EnablePoses': 'false',
+                        'ApplyToActor': 'true',
+                        'SpriteMappings': JSON.stringify([mapping]),
+                        'PoseMappings': '[]',
+                        'NPCMappings': '[]'
+                    },
+                    orderBefore: []
+                }
+            ],
+            agonia: {
+                spriter: {
+                    VariableId: 17,
+                    EnablePoses: false,
+                    ApplyToActor: true,
+                    Debug: false,
+                    SpriteMappings: JSON.stringify([mapping]),
+                    PoseMappings: '[]',
+                    NPCMappings: '[]'
+                }
+            }
+        });
+        const { sandbox, scriptTags } = makeSandbox(dir);
+        vm.runInContext(`$plugins = [{name:'WaitAsync',status:true,parameters:{}}]; PluginManager.setup($plugins);`, sandbox);
+
+        const params = sandbox.PluginManager.parameters('SuperDuperSpriter');
+        assert.strictEqual(params['VariableId'], '17');
+        assert.strictEqual(params['EnablePoses'], 'false');
+        // The MV-format collection string survives verbatim.
+        assert.strictEqual(typeof params['SpriteMappings'], 'string');
+        const items = JSON.parse(params['SpriteMappings']);
+        assert.strictEqual(items.length, 1);
+        const entry = JSON.parse(items[0]);
+        assert.strictEqual(entry.Name, 'Sprint');
+        assert.strictEqual(typeof entry.Conditions, 'string', 'nested conditions stay plugin-format strings');
+        const cond = JSON.parse(entry.Conditions);
+        assert.strictEqual(cond.MainValue, 3);
+        const vis = JSON.parse(entry.Visuals);
+        assert.strictEqual(vis.CharacterIndex, 2);
+
+        // Loads first (registry head), not in $plugins.
+        const sLoads = scriptTags.filter(t => String(t.src).includes('SuperDuperSpriter'));
+        assert.strictEqual(sLoads.length, 1);
+        assert.strictEqual(scriptTags.indexOf(sLoads[0]), 0, 'Spriter leads the system loads');
+        assert.ok(!sandbox.window.$plugins.some(p => p.name === 'SuperDuperSpriter'));
     } finally {
         cleanupTemp(dir);
     }

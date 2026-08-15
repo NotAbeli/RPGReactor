@@ -1035,6 +1035,7 @@ class ProjectManager {
         '        // the DB section. Not in $plugins, not listed as a plugin',
         '        // anywhere - an engine subsystem with DB-driven config.',
         '        systemModules: {',
+        '            "SuperDuperSpriter": { section: "spriter" },',
         '            "SDLight": { section: "lighting" },',
         '            "SuperDuperMovement": { section: "stamina" },',
         '            "SuperDuperMovement_Addon": {},',
