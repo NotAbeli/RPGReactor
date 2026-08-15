@@ -1751,7 +1751,8 @@ Object.assign(RR_TEXT_TRANSLATIONS.ru, {
     'Bloom Intensity': 'Интенсивность свечения', 'Bloom Threshold': 'Порог свечения',
     'Color Temperature': 'Цветовая температура', 'Saturation': 'Насыщенность', 'Contrast': 'Контраст',
     'Brightness': 'Яркость', 'Wave Intensity': 'Интенсивность волн', 'Chroma Intensity': 'Интенсивность хроматизма',
-    'Scanline Intensity': 'Интенсивность сканлайнов', 'Noise Intensity': 'Интенсивность шума'
+    'Scanline Intensity': 'Интенсивность сканлайнов', 'Noise Intensity': 'Интенсивность шума',
+    'Fullscreen': 'Полный экран', 'Window Title': 'Заголовок окна'
 });
 Object.assign(RR_TEXT_TRANSLATIONS.pt, { 'OK': 'OK', 'Cancel': 'Cancelar', 'Clear': 'Limpar', 'Play': 'Reproduzir', 'Stop': 'Parar' });
 

@@ -307,6 +307,8 @@ class DatabaseManager {
             screen: {
                 'Screen Width': 1280,
                 'Screen Height': 720,
+                'Fullscreen': true,
+                'Window Title': '',
                 'Enabled on Startup': true,
                 'Overall Intensity': 0.1,
                 'Blur Radius': 0.1,

@@ -595,7 +595,9 @@ class PluginCommandMigration {
                     'Drag Threshold': 12, 'Global Volume': 0
                 },
                 screen: {
-                    'Screen Width': 1280, 'Screen Height': 720, 'Enabled on Startup': true,
+                    'Screen Width': 1280, 'Screen Height': 720,
+                    'Fullscreen': true, 'Window Title': '',
+                    'Enabled on Startup': true,
                     'Overall Intensity': 0.1, 'Blur Radius': 0.1, 'Sharpening': 0.4,
                     'Bloom Intensity': 0.5, 'Bloom Threshold': 1, 'Color Temperature': 0,
                     'Saturation': 1, 'Contrast': 1, 'Brightness': 1,

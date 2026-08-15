@@ -82,6 +82,8 @@ class DatabaseAgoniaEditor {
                         fields: [
                             { key: 'Screen Width', type: 'number', min: 320, step: 1 },
                             { key: 'Screen Height', type: 'number', min: 240, step: 1 },
+                            { key: 'Fullscreen', type: 'bool' },
+                            { key: 'Window Title', type: 'string' },
                             { key: 'Enabled on Startup', type: 'bool' }
                         ]
                     },
