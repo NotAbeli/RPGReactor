@@ -630,6 +630,46 @@ class AgoniaNativeCommands {
                 ]
             },
             {
+                code: 728,
+                id: 'positionalSound',
+                name: 'Positional Sound',
+                section: 'Audio',
+                help: 'Plays a positioned audio source anchored to an event (OcRam AEX): the volume ramps from full inside the radius to silence at the distance, with auto-pan surround. Stop clears the anchor\'s sources. Without an anchor (common event) it plays map-wide.',
+                fields: [
+                    { key: 'mode', index: 0, type: 'select', label: 'Mode', default: 0, options: [
+                        { value: 0, label: 'Play BGS source (looping)' },
+                        { value: 1, label: 'Play SE (one-shot)' },
+                        { value: 2, label: 'Stop sources' }
+                    ] },
+                    { key: 'anchor', index: 1, type: 'select', label: 'Anchor Event', default: 0, options: [
+                        { value: 0, label: 'This Event' },
+                        { value: 1, label: 'Event by ID' }
+                    ], help: 'The sound source position - the event the volume/pan is measured from.' },
+                    { key: 'eventId', index: 2, type: 'number', label: 'Event ID', default: 1, min: 1, visibleIf: { field: 'anchor', in: [1] } },
+                    { key: 'bgsFile', index: 3, type: 'suggestion', label: 'BGS File', default: '', suggestions: 'bgsFiles', visibleIf: { field: 'mode', in: [0] } },
+                    { key: 'seFile', index: 4, type: 'suggestion', label: 'SE File', default: '', suggestions: 'seFiles', visibleIf: { field: 'mode', in: [1] } },
+                    { key: 'volume', index: 5, type: 'number', label: 'Volume', default: 90, min: 0, max: 100, visibleIf: { field: 'mode', in: [0, 1] } },
+                    { key: 'pitch', index: 6, type: 'number', label: 'Pitch', default: 100, min: 50, max: 150, visibleIf: { field: 'mode', in: [0, 1] } },
+                    { key: 'distance', index: 7, type: 'number', label: 'Distance (tiles)', default: 20, min: 0, max: 255, help: 'Full silence at this many tiles from the anchor.', visibleIf: { field: 'mode', in: [0, 1] } },
+                    { key: 'radius', index: 8, type: 'number', label: 'Radius (tiles)', default: 0, min: 0, max: 255, help: '100% volume within this many tiles, then falloff.', visibleIf: { field: 'mode', in: [0, 1] } },
+                    { key: 'fade', index: 9, type: 'number', label: 'Fade (seconds)', default: 2, min: 0, max: 120, visibleIf: { field: 'mode', in: [0, 1] } },
+                    { key: 'type', index: 10, type: 'select', label: 'Falloff Type', default: 0, options: [
+                        { value: 0, label: 'd — dynamic (both axes)' },
+                        { value: 1, label: 'x — horizontal only' },
+                        { value: 2, label: 'y — vertical only' },
+                        { value: 3, label: 'bg — background (everywhere)' }
+                    ], visibleIf: { field: 'mode', in: [0, 1] } },
+                    { key: 'autopan', index: 11, type: 'select', label: 'Auto-pan', default: 1, options: [
+                        { value: 1, label: 'On (surround)' },
+                        { value: 0, label: 'Off' }
+                    ], visibleIf: { field: 'mode', in: [0, 1] } },
+                    { key: 'newBuffer', index: 12, type: 'select', label: 'New Buffer', default: 1, options: [
+                        { value: 1, label: 'New (multiple copies)' },
+                        { value: 0, label: 'Link (restart existing)' }
+                    ], help: 'New plays a separate buffer per call; Link restarts the anchor\'s existing source.', visibleIf: { field: 'mode', in: [0] } }
+                ]
+            },
+            {
                 code: 738,
                 id: 'textFastForward',
                 name: 'Text Fast-Forward',

@@ -730,6 +730,8 @@ class NativeCommandDialog {
             let values;
             if (kind === 'faceNames') values = this._scanImageFolder('faces');
             else if (kind === 'pictureNames') values = this._scanImageFolder('pictures');
+            else if (kind === 'bgsFiles') values = this._scanAudioFolder('bgs');
+            else if (kind === 'seFiles') values = this._scanAudioFolder('se');
             else values = AgoniaNativeCommands.collectSuggestions(kind, containers);
             for (const value of values) {
                 const opt = document.createElement('option');
@@ -737,6 +739,26 @@ class NativeCommandDialog {
                 datalist.appendChild(opt);
             }
         }
+    }
+
+    _scanAudioFolder(sub) {
+        const names = [];
+        try {
+            const projectPath = this.projectController && this.projectController.currentProject
+                && this.projectController.currentProject.path;
+            if (projectPath && this.fs && this.path) {
+                const dir = this.path.join(projectPath, 'audio', sub);
+                if (this.fs.existsSync(dir)) {
+                    for (const file of this.fs.readdirSync(dir)) {
+                        const m = file.match(/^(.+)\.(ogg|m4a|mp3|wav)$/i);
+                        if (m) names.push(m[1]);
+                    }
+                }
+            }
+        } catch (e) {
+            // Suggestions are best-effort; free text still works.
+        }
+        return names.sort((a, b) => a.localeCompare(b, 'ru'));
     }
 
     _scanImageFolder(sub) {

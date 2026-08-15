@@ -11552,6 +11552,61 @@ Game_Interpreter.prototype.command726 = function(params) {
     return true;
 };
 
+// 728: Positional Sound — OcRam_Audio_EX AEX source anchored to an event.
+//      params: [mode(0 bgs loop/1 se/2 stop), anchor(0 this/1 by id),
+//               eventId, bgsFile, seFile, volume, pitch, distance, radius,
+//               fade, type(0 d/1 x/2 y/3 bg), autopan, newBuffer]
+Game_Interpreter.prototype.command728 = function(params) {
+    const mode = Number(params[0] || 0);
+    const anchor = Number(params[1] || 0);
+    const eventId = anchor === 1 ? Number(params[2] || 0) : Number(this._eventId || 0);
+    if (mode === 2) {
+        this.pluginCommand("clear_aex", [eventId > 0 ? String(eventId) : "this"]);
+        return true;
+    }
+    if (typeof AudioManager === "undefined" || !AudioManager.playBgs || !AudioManager.playSe) return true;
+    const name = String(mode === 1 ? params[4] : params[3] || "").trim();
+    if (!name) return true;
+    const audio = {
+        name: name,
+        volume: Math.max(0, Math.min(100, Number(params[5] || 90))),
+        pitch: Math.max(50, Math.min(150, Number(params[6] || 100))),
+        pan: 0
+    };
+    if (!eventId) {
+        // No anchor event (common event context): positional falloff has no
+        // origin, so play map-wide instead of spawning a silent source.
+        if (mode === 1) AudioManager.playSe(audio);
+        else AudioManager.playBgs(audio);
+        return true;
+    }
+    const types = ["d", "x", "y", "bg"];
+    const flag = (v, dflt) => (v === undefined || v === "" ? dflt : Number(v) === 1);
+    const aex = {
+        type: types[Number(params[10] || 0)] || "d",
+        distance: Math.max(0, Number(params[7] === undefined ? 20 : params[7])),
+        radius: Math.max(0, Number(params[8] || 0)),
+        fade: Math.max(0, Number(params[9] === undefined ? 2 : params[9])),
+        pan: flag(params[11], true),
+        forced: true,
+        "new": mode === 1 ? true : flag(params[12], true),
+        started: false,
+        dynamic: true,
+        commandIndex: 0,
+        eventId: eventId,
+        linkedEvents: [eventId]
+    };
+    if (aex.type === "bg") {
+        // Mirror the plugin comment parser: background plays everywhere at
+        // full volume, no positioning.
+        aex.dynamic = false; aex.pan = false;
+        aex.distance = 0; aex.radius = 0;
+    }
+    if (mode === 1) AudioManager.playSe(audio, aex);
+    else { audio.AEX = aex; AudioManager.playBgs(audio); }
+    return true;
+};
+
 // 730: Wait Async — WaitAsync plugin.
 //      params: [frames]
 Game_Interpreter.prototype.command730 = function(params) {
