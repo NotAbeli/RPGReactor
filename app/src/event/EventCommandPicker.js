@@ -65,8 +65,6 @@ class EventCommandPicker {
                                 commands: [
                                     { name: 'Change HP', code: 311 },
                                     { name: 'Change MP', code: 312 },
-                                    { name: 'Change TP', code: 326 },
-                                    { name: 'Change State', code: 313 },
                                     { name: 'Recover All', code: 314 },
                                     { name: 'Change EXP', code: 315 },
                                     { name: 'Change Level', code: 316 },

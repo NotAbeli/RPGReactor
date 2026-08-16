@@ -27,10 +27,7 @@ class DatabaseWeaponEditor {
         // Get weapon types from system data
         const weaponTypeNames = this.databaseManager.getSystem()?.weaponTypes || [];
 
-        // Attack-animation picker: 0 = None; opens AnimationPickerModal
         const tt = text => window.I18n ? window.I18n.tText(text) : text;
-        const animations = this.databaseManager.getAnimations ? this.databaseManager.getAnimations() : [];
-        const animationLabel = (current) => AnimationPickerModal.label(animations, current);
 
         // General Settings
         const generalSection = document.createElement('div');
@@ -65,11 +62,6 @@ class DatabaseWeaponEditor {
                         <span class="db-col">
                             <label>${tt('Price')}</label>
                             <input type="number" class="database-field-value" value="${rrEscapeHtml(weapon.price || 0)}" data-field="price" data-weapon-id="${weapon.id}">
-                        </span>
-                        <span class="db-col">
-                            <label>${tt('Animation')}</label>
-                            <button type="button" class="database-field-value db-anim-picker" data-target-field="animationId" data-rr-i18n-skip>${animationLabel(weapon.animationId || 0)}</button>
-                            <input type="hidden" value="${weapon.animationId || 0}" data-field="animationId" data-weapon-id="${weapon.id}">
                         </span>
                     </div>
                 </div></div>
@@ -192,7 +184,6 @@ class DatabaseWeaponEditor {
 
         // Add event listeners
         setTimeout(() => {
-            AnimationPickerModal.bindTriggers(container, this.databaseManager, this.projectManager);
             const editableFields = container.querySelectorAll('[data-weapon-id]');
             editableFields.forEach(field => {
                 field.addEventListener('change', (e) => {

@@ -41,9 +41,6 @@ class DatabaseSkillEditor {
         // Weapon types for the required-weapon selects
         const weaponTypeNames = this.databaseManager.getSystem()?.weaponTypes || [];
 
-        // Animation picker: -1 = Normal Attack, 0 = None; opens AnimationPickerModal
-        const animations = this.databaseManager.getAnimations ? this.databaseManager.getAnimations() : [];
-        const animationLabel = (current) => AnimationPickerModal.label(animations, current);
 
         // ── General Section ──
         const generalSection = document.createElement('div');
@@ -138,10 +135,6 @@ class DatabaseSkillEditor {
                         <select class="database-field-value" data-field="hitType" data-skill-id="${skill.id}">
                             ${hitTypeNames.map((name, idx) => `<option value="${idx}" ${skill.hitType === idx ? 'selected' : ''}>${name}</option>`).join('')}
                         </select>
-                        <label>${tt('Animation')}</label>
-                        <span style="display: flex; min-width: 0;">
-                            <button type="button" class="database-field-value db-anim-picker" data-target-field="animationId" data-allow-normal-attack="1" data-rr-i18n-skip>${rrEscapeHtml(animationLabel(skill.animationId || 0))}</button>
-                            <input type="hidden" value="${rrEscapeHtml(skill.animationId || 0)}" data-field="animationId" data-skill-id="${skill.id}">
                         </span>
                     </div>
                     <div class="db-row-pair">
@@ -278,7 +271,6 @@ class DatabaseSkillEditor {
 
         // Add event listeners for all editable fields
         setTimeout(() => {
-            AnimationPickerModal.bindTriggers(container, this.databaseManager, this.projectManager);
             const editableFields = container.querySelectorAll('[data-skill-id]');
             editableFields.forEach(field => {
                 field.addEventListener('change', (e) => {

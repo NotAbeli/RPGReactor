@@ -38,7 +38,6 @@ class DatabaseEditorUI {
         this.armorEditor = new DatabaseArmorEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         this.enemyEditor = new DatabaseEnemyEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         this.stateEditor = new DatabaseStateEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
-        this.animationEditor = new DatabaseAnimationEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         const eventProjectManager = {
             getCurrentProject: () => this.currentProject,
             getTilemapManager: () => callbacks.getTilemapManager ? callbacks.getTilemapManager() : null,
@@ -196,10 +195,6 @@ class DatabaseEditorUI {
         this.closeDatabaseActionMenu();
         const viewer = document.getElementById('database-viewer');
 
-        if (this.animationEditor && this.animationEditor._currentEffekseerStop) {
-            this.animationEditor._currentEffekseerStop();
-            this.animationEditor._currentEffekseerStop = null;
-        }
 
         if (this._listKeyHandler) {
             document.removeEventListener('keydown', this._listKeyHandler);
@@ -305,10 +300,6 @@ class DatabaseEditorUI {
         this._activeDatabaseList = null;
 
         // Stop any playing animations when switching sections
-        if (this.animationEditor && this.animationEditor._currentEffekseerStop) {
-            this.animationEditor._currentEffekseerStop();
-            this.animationEditor._currentEffekseerStop = null;
-        }
 
         console.log('Opening database:', type);
         this.cleanupDatabaseListChrome();
@@ -356,10 +347,6 @@ class DatabaseEditorUI {
             case 'states':
                 data = this.databaseManager.getStates();
                 title = this._dbTitle(type, 'States');
-                break;
-            case 'animations':
-                data = this.databaseManager.getAnimations();
-                title = this._dbTitle(type, 'Animations');
                 break;
             case 'tilesets':
                 data = this.databaseManager.getTilesets();
@@ -1151,7 +1138,6 @@ class DatabaseEditorUI {
             { name: 'Items', type: 'items' },
             { name: 'Weapons', type: 'weapons' },
             { name: 'Armors', type: 'armors' },
-            { name: 'Animations', type: 'animations' },
             { name: 'Tilesets', type: 'tilesets' },
             { name: 'Common Events', type: 'commonEvents' },
             { name: 'System 1', type: 'system1' },
@@ -1206,8 +1192,6 @@ class DatabaseEditorUI {
             this.stateEditor.showStateDetail(detailEl, entry);
         } else if (type === 'tilesets') {
             this.tilesetEditor.showTilesetEditorDetail(detailEl, entry);
-        } else if (type === 'animations') {
-            this.animationEditor.showAnimationDetail(detailEl, entry);
         } else if (type === 'commonEvents') {
             this.commonEventEditor.showCommonEventDetail(detailEl, entry);
         } else {

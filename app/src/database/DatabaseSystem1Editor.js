@@ -481,48 +481,8 @@ class DatabaseSystem1Editor {
         const titleScreenSection = this.createSection(tt('Title Screen'), titleScreen);
         column.appendChild(titleScreenSection);
 
-        // Row 2: Battle Screen
-        const battleView = system.optSideView ? 'sideView' : 'frontView';
-        const battleScreen = `
-            <div class="form-row">
-                <label style="display: flex; align-items: center; gap: 8px; color: var(--color-text); cursor: pointer;">
-                    <input type="radio" class="system-radio" name="battleView" value="frontView" ${!system.optSideView ? 'checked' : ''} data-field="optSideView" data-value="false">
-                    ${tt('Front View')}
-                </label>
-            </div>
-            <div class="form-row" style="margin-top: 4px;">
-                <label style="display: flex; align-items: center; gap: 8px; color: var(--color-text); cursor: pointer;">
-                    <input type="radio" class="system-radio" name="battleView" value="sideView" ${system.optSideView ? 'checked' : ''} data-field="optSideView" data-value="true">
-                    ${tt('Side View')}
-                </label>
-            </div>
-        `;
-        const battleScreenSection = this.createSection(tt('Battle Screen'), battleScreen);
-        column.appendChild(battleScreenSection);
-
-        // Row 3: Battle System
-        const battleSystem = `
-            <div class="form-row">
-                <label style="display: flex; align-items: center; gap: 8px; color: var(--color-text); cursor: pointer;">
-                    <input type="radio" class="system-radio" name="battleSystem" value="turn" ${system.battleSystem === 0 ? 'checked' : ''} data-field="battleSystem" data-value="0">
-                    ${tt('Turn-Based')}
-                </label>
-            </div>
-            <div class="form-row" style="margin-top: 4px;">
-                <label style="display: flex; align-items: center; gap: 8px; color: var(--color-text); cursor: pointer;">
-                    <input type="radio" class="system-radio" name="battleSystem" value="timeActive" ${system.battleSystem === 1 ? 'checked' : ''} data-field="battleSystem" data-value="1">
-                    ${tt('Time Progress (Active)')}
-                </label>
-            </div>
-            <div class="form-row" style="margin-top: 4px;">
-                <label style="display: flex; align-items: center; gap: 8px; color: var(--color-text); cursor: pointer;">
-                    <input type="radio" class="system-radio" name="battleSystem" value="timeWait" ${system.battleSystem === 2 ? 'checked' : ''} data-field="battleSystem" data-value="2">
-                    ${tt('Time Progress (Wait)')}
-                </label>
-            </div>
-        `;
-        const battleSystemSection = this.createSection(tt('Battle System'), battleSystem);
-        column.appendChild(battleSystemSection);
+        // Rows 2-3 (Battle Screen / Battle System) removed with the
+        // standard turn-based battle (S13): nothing to configure.
 
         // Row 4: Options
         const options = `
@@ -581,8 +541,10 @@ class DatabaseSystem1Editor {
         column.style.cssText = 'display: flex; flex-direction: column; gap: 16px;';
 
         // Row 1: Music
-        const musicTypes = ['title', 'battle', 'victory', 'defeat', 'gameOver', 'boat', 'ship', 'airship'];
-        const musicLabels = ['Title', 'Battle', 'Victory', 'Defeat', 'Game Over', 'Boat', 'Ship', 'Airship'];
+        // Battle music slots (battle/victory/defeat) hidden with the
+        // standard battle (S13); the data rows stay intact in System.json.
+        const musicTypes = ['title', 'gameOver', 'boat', 'ship', 'airship'];
+        const musicLabels = ['Title', 'Game Over', 'Boat', 'Ship', 'Airship'];
 
         let musicRows = '';
         musicTypes.forEach((type, idx) => {
@@ -612,12 +574,9 @@ class DatabaseSystem1Editor {
         column.appendChild(musicSection);
 
         // Row 2: Sound
-        const soundTypes = ['cursor', 'ok', 'cancel', 'buzzer', 'equip', 'save', 'load', 'battleStart',
-                           'escape', 'enemyAttack', 'enemyDamage', 'enemyCollapse', 'bossCollapse1',
-                           'bossCollapse2', 'actorDamage', 'actorCollapse', 'recovery'];
-        const soundLabels = ['Cursor', 'Ok', 'Cancel', 'Buzzer', 'Equip', 'Save', 'Load', 'Battle Start',
-                            'Escape', 'Enemy Attack', 'Enemy Damage', 'Enemy Collapse', 'Boss Collapse 1',
-                            'Boss Collapse 2', 'Actor Damage', 'Actor Collapse', 'Recovery'];
+        // Battle-only system sounds hidden with the standard battle (S13).
+        const soundTypes = ['cursor', 'ok', 'cancel', 'buzzer', 'equip', 'save', 'load', 'recovery'];
+        const soundLabels = ['Cursor', 'Ok', 'Cancel', 'Buzzer', 'Equip', 'Save', 'Load', 'Recovery'];
 
         let soundRows = '';
         soundTypes.forEach((type, idx) => {

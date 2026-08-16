@@ -423,34 +423,20 @@ class DatabaseCommonEventEditor {
                 201: ['transferPlayer', TransferPlayerEditor],
                 205: ['setMovementRoute', SetMovementRouteEditor],
                 211: ['changeTransparency', ChangeTransparencyEditor],
-                212: ['showAnimation', ShowAnimationEditor],
                 213: ['balloonIcon', ShowBalloonIconEditor],
                 230: ['wait', WaitCommandEditor],
                 231: ['showPicture', ShowPictureEditor],
                 232: ['movePicture', MovePictureEditor],
                 235: ['erasePicture', ErasePictureEditor],
-                301: ['battleProcessing', BattleProcessingEditor],
                 303: ['nameInputProcessing', NameInputProcessingEditor],
                 311: ['changeHP', ChangeHPEditor],
                 312: ['changeMP', ChangeMPEditor],
-                313: ['changeState', ChangeStateEditor],
                 314: ['recoverAll', RecoverAllEditor],
                 315: ['changeEXP', ChangeEXPEditor],
                 316: ['changeLevel', ChangeLevelEditor],
                 317: ['changeParameter', ChangeParameterEditor],
-                318: ['changeSkill', ChangeSkillEditor],
                 319: ['changeEquipment', ChangeEquipmentEditor],
                 320: ['changeName', ChangeNameEditor],
-                321: ['changeClass', ChangeClassEditor],
-                326: ['changeTP', ChangeTPEditor],
-                331: ['changeEnemyHP', ChangeEnemyHPEditor],
-                332: ['changeEnemyMP', ChangeEnemyMPEditor],
-                333: ['changeEnemyState', ChangeEnemyStateEditor],
-                334: ['enemyRecoverAll', EnemyRecoverAllEditor],
-                335: ['enemyAppear', EnemyAppearEditor],
-                336: ['enemyTransform', EnemyTransformEditor],
-                337: ['showBattleAnimation', ShowBattleAnimationEditor],
-                339: ['forceAction', ForceActionEditor],
                 356: ['pluginCommand', PluginCommandEditor],
             };
 
@@ -770,10 +756,8 @@ class DatabaseCommonEventEditor {
         if (code === 129) { singleReplace(this.getEditor('changePartyMember', ChangePartyMemberEditor)); return; }
 
         // Change Battle BGM (132)
-        if (code === 132) { singleReplace(this.getEditor('changeBattleBGM', ChangeBattleBGMEditor)); return; }
 
         // Change Victory ME (133)
-        if (code === 133) { singleReplace(this.getEditor('changeVictoryME', ChangeVictoryMEEditor)); return; }
 
         // Toggle commands (134-137)
         if (code === 134) { singleReplace(this.getEditor('toggle', ToggleCommandEditor), { code: 134, title: tt('Change Save Access'), option0: tt('Disable'), option1: tt('Enable') }); return; }
@@ -785,7 +769,6 @@ class DatabaseCommonEventEditor {
         if (code === 138) { singleReplace(this.getEditor('changeWindowColor', ChangeWindowColorEditor)); return; }
 
         // Change Defeat ME (139)
-        if (code === 139) { singleReplace(this.getEditor('changeDefeatME', ChangeDefeatMEEditor)); return; }
 
         // Change Vehicle BGM (140)
         if (code === 140) { singleReplace(this.getEditor('changeVehicleBGM', ChangeVehicleBGMEditor)); return; }
@@ -835,7 +818,6 @@ class DatabaseCommonEventEditor {
         if (code === 211) { singleReplace(this.getEditor('changeTransparency', ChangeTransparencyEditor)); return; }
 
         // Show Animation (212)
-        if (code === 212) { singleReplace(this.getEditor('showAnimation', ShowAnimationEditor)); return; }
 
         // Show Balloon Icon (213)
         if (code === 213) { singleReplace(this.getEditor('balloonIcon', ShowBalloonIconEditor)); return; }
@@ -900,7 +882,6 @@ class DatabaseCommonEventEditor {
         if (code === 282) { singleReplace(this.getEditor('changeTileset', ChangeTilesetEditor)); return; }
 
         // Change Battle Background (283)
-        if (code === 283) { singleReplace(this.getEditor('changeBattleBackground', ChangeBattleBackgroundEditor)); return; }
 
         // Change Parallax (284)
         if (code === 284) { singleReplace(this.getEditor('changeParallax', ChangeParallaxEditor)); return; }
@@ -909,7 +890,6 @@ class DatabaseCommonEventEditor {
         if (code === 285) { singleReplace(this.getEditor('getLocationInfo', GetLocationInfoEditor)); return; }
 
         // Battle Processing (301)
-        if (code === 301) { singleReplace(this.getEditor('battleProcessing', BattleProcessingEditor)); return; }
 
         // Shop Processing (302) - multi-command with 605 continuation
         if (code === 302) {
@@ -940,7 +920,6 @@ class DatabaseCommonEventEditor {
         if (code === 312) { singleReplace(this.getEditor('changeMP', ChangeMPEditor)); return; }
 
         // Change State (313)
-        if (code === 313) { singleReplace(this.getEditor('changeState', ChangeStateEditor)); return; }
 
         // Recover All (314)
         if (code === 314) { singleReplace(this.getEditor('recoverAll', RecoverAllEditor)); return; }
@@ -955,7 +934,6 @@ class DatabaseCommonEventEditor {
         if (code === 317) { singleReplace(this.getEditor('changeParameter', ChangeParameterEditor)); return; }
 
         // Change Skill (318)
-        if (code === 318) { singleReplace(this.getEditor('changeSkill', ChangeSkillEditor)); return; }
 
         // Change Equipment (319)
         if (code === 319) { singleReplace(this.getEditor('changeEquipment', ChangeEquipmentEditor)); return; }
@@ -964,7 +942,6 @@ class DatabaseCommonEventEditor {
         if (code === 320) { singleReplace(this.getEditor('changeName', ChangeNameEditor)); return; }
 
         // Change Class (321)
-        if (code === 321) { singleReplace(this.getEditor('changeClass', ChangeClassEditor)); return; }
 
         // Change Actor Images (322)
         if (code === 322) { singleReplace(this.getEditor('changeActorImages', ChangeActorImagesEditor)); return; }
@@ -979,34 +956,24 @@ class DatabaseCommonEventEditor {
         if (code === 325) { singleReplace(this.getEditor('changeProfile', ChangeProfileEditor)); return; }
 
         // Change TP (326)
-        if (code === 326) { singleReplace(this.getEditor('changeTP', ChangeTPEditor)); return; }
 
         // Change Enemy HP (331)
-        if (code === 331) { singleReplace(this.getEditor('changeEnemyHP', ChangeEnemyHPEditor)); return; }
 
         // Change Enemy MP (332)
-        if (code === 332) { singleReplace(this.getEditor('changeEnemyMP', ChangeEnemyMPEditor)); return; }
 
         // Change Enemy State (333)
-        if (code === 333) { singleReplace(this.getEditor('changeEnemyState', ChangeEnemyStateEditor)); return; }
 
         // Enemy Recover All (334)
-        if (code === 334) { singleReplace(this.getEditor('enemyRecoverAll', EnemyRecoverAllEditor)); return; }
 
         // Enemy Appear (335)
-        if (code === 335) { singleReplace(this.getEditor('enemyAppear', EnemyAppearEditor)); return; }
 
         // Enemy Transform (336)
-        if (code === 336) { singleReplace(this.getEditor('enemyTransform', EnemyTransformEditor)); return; }
 
         // Show Battle Animation (337)
-        if (code === 337) { singleReplace(this.getEditor('showBattleAnimation', ShowBattleAnimationEditor)); return; }
 
         // Force Action (339)
-        if (code === 339) { singleReplace(this.getEditor('forceAction', ForceActionEditor)); return; }
 
         // Change Enemy TP (342)
-        if (code === 342) { singleReplace(this.getEditor('changeEnemyTP', ChangeEnemyTPEditor)); return; }
 
         // Script (355) - multi-line with 655 continuation
         if (code === 355) {
@@ -1108,7 +1075,6 @@ class DatabaseCommonEventEditor {
             111: [412],   // Conditional Branch -> End
             112: [413],   // Loop -> Repeat
             102: [404],   // Show Choices -> End
-            301: [604]    // Battle Processing -> End
         };
     }
 
@@ -1383,16 +1349,7 @@ class DatabaseCommonEventEditor {
             250: [{ name: '', volume: 90, pitch: 100, pan: 0 }], // Play SE
             311: [0, 0, 0, 0, 100, false], // Change HP
             312: [0, 0, 0, 0, 100, false], // Change MP
-            313: [0, 0, 0, 1],          // Change State
             314: [0, 0],                // Recover All
-            331: [0, 0, 0, 100],        // Change Enemy HP
-            332: [0, 0, 0, 100],        // Change Enemy MP
-            333: [0, 0, 1],             // Change Enemy State
-            334: [0],                    // Enemy Recover All
-            335: [0],                    // Enemy Appear
-            336: [0, 1],                // Enemy Transform
-            337: [0, 0, 1, false],       // Show Battle Animation
-            339: [0, 0, 1, -1],         // Force Action
             340: [],                     // Abort Battle
             355: [''],                   // Script
         };

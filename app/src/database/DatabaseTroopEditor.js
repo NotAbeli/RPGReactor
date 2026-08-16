@@ -1317,8 +1317,7 @@ class DatabaseTroopEditor {
                 122: ['variables', ControlVariablesEditor],
                 231: ['showPicture', ShowPictureEditor],
                 232: ['movePicture', MovePictureEditor],
-                235: ['erasePicture', ErasePictureEditor],
-                339: ['forceAction', ForceActionEditor]
+                235: ['erasePicture', ErasePictureEditor]
             };
             const editorConfig = editorMap[command.code];
             if (editorConfig) {
@@ -1498,10 +1497,6 @@ class DatabaseTroopEditor {
         }
         if (cmd.code === 235) {
             replaceSingle(this.getCommandEditor('erasePicture', ErasePictureEditor));
-            return;
-        }
-        if (cmd.code === 339) {
-            replaceSingle(this.getCommandEditor('forceAction', ForceActionEditor));
             return;
         }
         if (cmd.code === 355 && ECL.generatedCommand(cmd, 'eventCall')) {

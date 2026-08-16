@@ -122,10 +122,6 @@ class EventCommandList {
             eventEditor.databaseManager,
             eventEditor.projectController
         );
-        this.showAnimationEditor = new ShowAnimationEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
         this.fadeScreenEditor = new FadeScreenEditor(
             eventEditor.databaseManager,
             eventEditor.projectController
@@ -192,18 +188,6 @@ class EventCommandList {
             eventEditor.databaseManager,
             eventEditor.projectController
         );
-        this.changeBattleBGMEditor = new ChangeBattleBGMEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
-        this.changeVictoryMEEditor = new ChangeVictoryMEEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
-        this.changeDefeatMEEditor = new ChangeDefeatMEEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
         this.changeVehicleBGMEditor = new ChangeVehicleBGMEditor(
             eventEditor.databaseManager,
             eventEditor.projectController
@@ -248,10 +232,6 @@ class EventCommandList {
             eventEditor.databaseManager,
             eventEditor.projectController
         );
-        this.changeBattleBackgroundEditor = new ChangeBattleBackgroundEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
         this.changeParallaxEditor = new ChangeParallaxEditor(
             eventEditor.databaseManager,
             eventEditor.projectController
@@ -264,10 +244,6 @@ class EventCommandList {
             eventEditor.databaseManager,
             eventEditor.projectController
         );
-        this.battleProcessingEditor = new BattleProcessingEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
         this.shopProcessingEditor = new ShopProcessingEditor(
             eventEditor.databaseManager,
             eventEditor.projectController
@@ -277,14 +253,6 @@ class EventCommandList {
             eventEditor.projectController
         );
         this.changeMPEditor = new ChangeMPEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
-        this.changeTPEditor = new ChangeTPEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
-        this.changeStateEditor = new ChangeStateEditor(
             eventEditor.databaseManager,
             eventEditor.projectController
         );
@@ -304,19 +272,11 @@ class EventCommandList {
             eventEditor.databaseManager,
             eventEditor.projectController
         );
-        this.changeSkillEditor = new ChangeSkillEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
         this.changeEquipmentEditor = new ChangeEquipmentEditor(
             eventEditor.databaseManager,
             eventEditor.projectController
         );
         this.changeNameEditor = new ChangeNameEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
-        this.changeClassEditor = new ChangeClassEditor(
             eventEditor.databaseManager,
             eventEditor.projectController
         );
@@ -333,42 +293,6 @@ class EventCommandList {
             eventEditor.projectController
         );
         this.changeProfileEditor = new ChangeProfileEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
-        this.changeEnemyHPEditor = new ChangeEnemyHPEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
-        this.changeEnemyMPEditor = new ChangeEnemyMPEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
-        this.changeEnemyTPEditor = new ChangeEnemyTPEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
-        this.changeEnemyStateEditor = new ChangeEnemyStateEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
-        this.enemyRecoverAllEditor = new EnemyRecoverAllEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
-        this.enemyAppearEditor = new EnemyAppearEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
-        this.enemyTransformEditor = new EnemyTransformEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
-        this.showBattleAnimationEditor = new ShowBattleAnimationEditor(
-            eventEditor.databaseManager,
-            eventEditor.projectController
-        );
-        this.forceActionEditor = new ForceActionEditor(
             eventEditor.databaseManager,
             eventEditor.projectController
         );
@@ -3404,17 +3328,6 @@ class EventCommandList {
                 return;
             }
 
-            // For show animation commands, open the editor immediately
-            if (code === 212) {
-                this.showAnimationEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
             // For show balloon icon commands, open the editor immediately
             if (code === 213) {
@@ -3622,29 +3535,7 @@ class EventCommandList {
                 return;
             }
 
-            // Change Battle BGM
-            if (code === 132) {
-                this.changeBattleBGMEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
-            // Change Victory ME
-            if (code === 133) {
-                this.changeVictoryMEEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
             // Change Save Access (toggle)
             if (code === 134) {
@@ -3706,17 +3597,6 @@ class EventCommandList {
                 return;
             }
 
-            // Change Defeat ME
-            if (code === 139) {
-                this.changeDefeatMEEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
             // Change Vehicle BGM
             if (code === 140) {
@@ -3914,17 +3794,6 @@ class EventCommandList {
                 return;
             }
 
-            // Change Battle Background
-            if (code === 283) {
-                this.changeBattleBackgroundEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
             // Change Parallax
             if (code === 284) {
@@ -3950,17 +3819,6 @@ class EventCommandList {
                 return;
             }
 
-            // Battle Processing
-            if (code === 301) {
-                this.battleProcessingEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
             // Shop Processing (multi-command)
             if (code === 302) {
@@ -4013,17 +3871,6 @@ class EventCommandList {
                 return;
             }
 
-            // Change State
-            if (code === 313) {
-                this.changeStateEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
             // Recover All
             if (code === 314) {
@@ -4073,17 +3920,6 @@ class EventCommandList {
                 return;
             }
 
-            // Change Skill
-            if (code === 318) {
-                this.changeSkillEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
             // Change Equipment
             if (code === 319) {
@@ -4109,17 +3945,6 @@ class EventCommandList {
                 return;
             }
 
-            // Change Class
-            if (code === 321) {
-                this.changeClassEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
             // Change Actor Images
             if (code === 322) {
@@ -4169,113 +3994,14 @@ class EventCommandList {
                 return;
             }
 
-            // Change TP
-            if (code === 326) {
-                this.changeTPEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
-            // Change Enemy HP
-            if (code === 331) {
-                this.changeEnemyHPEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
-            // Change Enemy MP
-            if (code === 332) {
-                this.changeEnemyMPEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
-            // Change Enemy State
-            if (code === 333) {
-                this.changeEnemyStateEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
-            // Enemy Recover All
-            if (code === 334) {
-                this.enemyRecoverAllEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
-            // Enemy Appear
-            if (code === 335) {
-                this.enemyAppearEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
-            // Enemy Transform
-            if (code === 336) {
-                this.enemyTransformEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
-            // Show Battle Animation
-            if (code === 337) {
-                this.showBattleAnimationEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
-            // Force Action
-            if (code === 339) {
-                this.forceActionEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
             // Abort Battle (no params)
             if (code === 340) {
@@ -4285,17 +4011,6 @@ class EventCommandList {
                 return;
             }
 
-            // Change Enemy TP
-            if (code === 342) {
-                this.changeEnemyTPEditor.show(null, (command) => {
-                    if (command) {
-                        page.list.splice(insertIndex, 0, this._rebaseInsertIndent([command], baseIndent)[0]);
-                        this.selectedIndices = [insertIndex];
-                        this.refreshCommandList(page, pageIndex);
-                    }
-                });
-                return;
-            }
 
             // Open Menu Screen (no params)
             if (code === 351) {
@@ -4802,16 +4517,6 @@ class EventCommandList {
             return;
         }
 
-        // Show Animation command
-        if (code === 212) {
-            this.showAnimationEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
         // Show Balloon Icon command
         if (code === 213) {
@@ -5041,27 +4746,7 @@ class EventCommandList {
             return;
         }
 
-        // Change Battle BGM command
-        if (code === 132) {
-            this.changeBattleBGMEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
-        // Change Victory ME command
-        if (code === 133) {
-            this.changeVictoryMEEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
         // Change Save Access (toggle)
         if (code === 134) {
@@ -5118,16 +4803,6 @@ class EventCommandList {
             return;
         }
 
-        // Change Defeat ME command
-        if (code === 139) {
-            this.changeDefeatMEEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
         // Change Vehicle BGM command
         if (code === 140) {
@@ -5272,16 +4947,6 @@ class EventCommandList {
             return;
         }
 
-        // Change Battle Background command
-        if (code === 283) {
-            this.changeBattleBackgroundEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
         // Change Parallax command
         if (code === 284) {
@@ -5305,16 +4970,6 @@ class EventCommandList {
             return;
         }
 
-        // Battle Processing command
-        if (code === 301) {
-            this.battleProcessingEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
         // Shop Processing command (multi-command)
         if (code === 302) {
@@ -5372,16 +5027,6 @@ class EventCommandList {
             return;
         }
 
-        // Change State command
-        if (code === 313) {
-            this.changeStateEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
         // Recover All command
         if (code === 314) {
@@ -5427,16 +5072,6 @@ class EventCommandList {
             return;
         }
 
-        // Change Skill command
-        if (code === 318) {
-            this.changeSkillEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
         // Change Equipment command
         if (code === 319) {
@@ -5460,16 +5095,6 @@ class EventCommandList {
             return;
         }
 
-        // Change Class command
-        if (code === 321) {
-            this.changeClassEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
         // Change Actor Images command
         if (code === 322) {
@@ -5515,115 +5140,15 @@ class EventCommandList {
             return;
         }
 
-        // Change TP command
-        if (code === 326) {
-            this.changeTPEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
-        // Change Enemy HP command
-        if (code === 331) {
-            this.changeEnemyHPEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
-        // Change Enemy MP command
-        if (code === 332) {
-            this.changeEnemyMPEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
-        // Change Enemy State command
-        if (code === 333) {
-            this.changeEnemyStateEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
-        // Enemy Recover All command
-        if (code === 334) {
-            this.enemyRecoverAllEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
-        // Enemy Appear command
-        if (code === 335) {
-            this.enemyAppearEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
-        // Enemy Transform command
-        if (code === 336) {
-            this.enemyTransformEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
-        // Show Battle Animation command
-        if (code === 337) {
-            this.showBattleAnimationEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
-        // Force Action command
-        if (code === 339) {
-            this.forceActionEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
-        // Change Enemy TP command
-        if (code === 342) {
-            this.changeEnemyTPEditor.show(command, (editedCommand) => {
-                if (editedCommand) {
-                    replaceSingle(editedCommand);
-                    this.refreshCommandList(page, pageIndex);
-                }
-            });
-            return;
-        }
 
         // For other commands, show placeholder
         const tt = (text) => (typeof window !== 'undefined' && window.I18n) ? window.I18n.tText(text) : text;

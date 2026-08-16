@@ -11552,6 +11552,12 @@ Game_Interpreter.prototype.command726 = function(params) {
     return true;
 };
 
+// No-Battle amputation (S12/S13): battle entry, enemy ops and
+// battle-only system commands are no-ops; see the MV bridge twin.
+[301, 132, 133, 136, 139, 212, 283, 313, 326, 331, 332, 333, 334, 335, 336, 337, 339, 340, 342].forEach(function(code) {
+    Game_Interpreter.prototype["command" + code] = function() { return true; };
+});
+
 // 728: Positional Sound — OcRam_Audio_EX AEX source anchored to an event.
 //      params: [mode(0 bgs loop/1 se/2 stop), anchor(0 this/1 by id),
 //               eventId, bgsFile, seFile, volume, pitch, distance, radius,

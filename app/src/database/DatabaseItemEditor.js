@@ -35,10 +35,6 @@ class DatabaseItemEditor {
         const systemData = this.databaseManager.getSystem();
         const elements = systemData ? systemData.elements || [] : [];
 
-        // Animation picker: -1 = Normal Attack, 0 = None; opens AnimationPickerModal
-        const animations = this.databaseManager.getAnimations ? this.databaseManager.getAnimations() : [];
-        const animationLabel = (current) => AnimationPickerModal.label(animations, current);
-
         // --- General Settings ---
         const generalSection = document.createElement('div');
         generalSection.className = 'database-section';
@@ -138,11 +134,6 @@ class DatabaseItemEditor {
                         <select class="database-field-value" data-field="hitType" data-item-id="${item.id}">
                             ${hitTypeNames.map((name, idx) => `<option value="${idx}" ${item.hitType === idx ? 'selected' : ''}>${name}</option>`).join('')}
                         </select>
-                        <label>${tt('Animation')}</label>
-                        <span style="display: flex; min-width: 0;">
-                            <button type="button" class="database-field-value db-anim-picker" data-target-field="animationId" data-allow-normal-attack="1" data-rr-i18n-skip>${rrEscapeHtml(animationLabel(item.animationId || 0))}</button>
-                            <input type="hidden" value="${rrEscapeHtml(item.animationId || 0)}" data-field="animationId" data-item-id="${item.id}">
-                        </span>
                     </div>
                 </div>
             </div>
@@ -246,7 +237,6 @@ class DatabaseItemEditor {
 
         // Add event listeners for all editable fields
         setTimeout(() => {
-            AnimationPickerModal.bindTriggers(container, this.databaseManager, this.projectManager);
             const editableFields = container.querySelectorAll('[data-item-id]');
             editableFields.forEach(field => {
                 field.addEventListener('change', (e) => {
