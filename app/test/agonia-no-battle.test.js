@@ -92,6 +92,12 @@ test('no-battle: 301 and enemy ops become no-ops, battle entry points blocked', 
         for (const code of [331, 332, 333, 334, 335, 336, 337, 339, 340, 342]) {
             assert.strictEqual(proto['command' + code].call({}), true, 'command' + code + ' no-op');
         }
+        // Battle-only system/actor commands (S13): battle music/ME,
+        // encounters, battle background, animations (stub), states (stub),
+        // TP.
+        for (const code of [132, 133, 136, 139, 212, 283, 313, 326]) {
+            assert.strictEqual(proto['command' + code].call({}), true, 'command' + code + ' no-op');
+        }
         // Battle entry points are blocked.
         assert.strictEqual(sandbox.DataManager.isBattleTest(), false);
         sandbox.BattleManager.setup(1);      // must not throw
