@@ -909,8 +909,6 @@ class ConditionalBranchEditor {
         container.appendChild(this._createSelect(this._tt('Condition:'), [
             { value: 0, label: this._tt('In the Party') },
             { value: 1, label: this._tt('Name') },
-            { value: 2, label: this._tt('Class') },
-            { value: 3, label: this._tt('Skill') },
             { value: 4, label: this._tt('Weapon') },
             { value: 5, label: this._tt('Armor') },
             { value: 6, label: this._tt('State') }
@@ -928,8 +926,6 @@ class ConditionalBranchEditor {
             container.appendChild(this._createRow(this._tt('Name:'), input));
         } else {
             const actorGetters = {
-                2: [this._tt('Class:'), 'getClasses'],
-                3: [this._tt('Skill:'), 'getSkills'],
                 4: [this._tt('Weapon:'), 'getWeapons'],
                 5: [this._tt('Armor:'), 'getArmors'],
                 6: [this._tt('State:'), 'getStates']

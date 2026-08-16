@@ -398,9 +398,9 @@ class DatabaseEditorUI {
                 this.battleEditor.showBattleDetail(detailEl);
                 return;
             }
-            case 'enemies': {
+            case 'enemyAI': {
                 if (!this.enemiesEditor) return;
-                const { detailEl } = this.prepareDatabaseSection('enemies', this._dbTitle('enemies', 'Враги'), { showListPanel: false });
+                const { detailEl } = this.prepareDatabaseSection('enemyAI', this._dbTitle('enemyAI', 'ИИ врагов'), { showListPanel: false });
                 this.enemiesEditor.showEnemiesDetail(detailEl);
                 return;
             }
@@ -1147,15 +1147,10 @@ class DatabaseEditorUI {
             { name: 'Actors', type: 'actors' },
             { name: 'Спрайтер', type: 'spriter' },
             { name: 'Бой', type: 'battle' },
-            { name: 'Враги', type: 'enemies' },
-            { name: 'Classes', type: 'classes' },
-            { name: 'Skills', type: 'skills' },
+            { name: 'ИИ врагов', type: 'enemyAI' },
             { name: 'Items', type: 'items' },
             { name: 'Weapons', type: 'weapons' },
             { name: 'Armors', type: 'armors' },
-            { name: 'Enemies', type: 'enemies' },
-            { name: 'Troops', type: 'troops' },
-            { name: 'States', type: 'states' },
             { name: 'Animations', type: 'animations' },
             { name: 'Tilesets', type: 'tilesets' },
             { name: 'Common Events', type: 'commonEvents' },

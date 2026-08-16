@@ -30,24 +30,6 @@ class PlaytestManager {
         }
     }
 
-    battleTest(projectPath) {
-        if (!projectPath) {
-            console.error('No project loaded');
-            return false;
-        }
-        console.log('Starting battle test for project:', projectPath);
-        if (typeof window !== 'undefined' && window.RPGReactorHost?.mode === 'web') {
-            window.RPGReactorHost.openPlaytest('btest');
-            return true;
-        }
-        if (typeof nw !== 'undefined') {
-            return this.launchPlaytestWindow(projectPath, 'btest');
-        } else {
-            console.error('NW.js not available - cannot launch battle test');
-            return false;
-        }
-    }
-
     async launchPlaytestWindow(projectPath, mode) {
         if (mode === undefined) mode = 'test';
 

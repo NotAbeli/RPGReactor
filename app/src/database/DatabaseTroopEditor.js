@@ -109,19 +109,6 @@ class DatabaseTroopEditor {
         bar.className = 'rr-troop-sidebar';
         bar.style.cssText = 'display:flex;flex-direction:column;gap:8px;min-width:0;';
 
-        // Keep the primary action at the top of the sidebar.
-        const battleTestBtn = document.createElement('button');
-        battleTestBtn.textContent = tt('Battle Test...');
-        battleTestBtn.style.cssText = `
-            padding: 6px 12px; background-color: var(--color-bg-panel); color: var(--color-text-strong); border: 1px solid var(--color-text-dim);
-            border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500;
-            transition: background-color 0.2s, border-color 0.2s;
-        `;
-        battleTestBtn.onmouseenter = () => { battleTestBtn.style.backgroundColor = 'var(--color-accent-tint-35)'; battleTestBtn.style.borderColor = 'var(--color-bg-deep)'; };
-        battleTestBtn.onmouseleave = () => { battleTestBtn.style.backgroundColor = 'var(--color-bg-panel)'; battleTestBtn.style.borderColor = 'var(--color-text-dim)'; };
-        battleTestBtn.onclick = () => this.openBattleTestConfig();
-        bar.appendChild(battleTestBtn);
-
         bar.appendChild(this.createMembersSection());
         bar.appendChild(this.createBattlebackSection());
 
@@ -1978,21 +1965,6 @@ class DatabaseTroopEditor {
         modal.appendChild(dialog);
         modal.onclick = (e) => { if (e.target === modal) document.body.removeChild(modal); };
         document.body.appendChild(modal);
-    }
-
-    // ==========================================
-    // BATTLE TEST
-    // ==========================================
-
-    openBattleTestConfig() {
-        const tt = text => window.I18n ? window.I18n.tText(text) : text;
-        if (typeof BattleTestConfigModal === 'undefined') { alert(tt('Battle test module not loaded')); return; }
-        const project = this.projectManager.getCurrentProject();
-        if (!project) { alert(tt('No project loaded')); return; }
-        const playtestManager = this.parentEditor.playtestManager;
-        if (!playtestManager) { alert(tt('Playtest manager not available')); return; }
-
-        new BattleTestConfigModal(this.databaseManager, project, this.currentTroopId, this.battleback1Name, this.battleback2Name, playtestManager).show();
     }
 
     // ==========================================

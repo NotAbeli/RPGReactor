@@ -71,10 +71,8 @@ class EventCommandPicker {
                                     { name: 'Change EXP', code: 315 },
                                     { name: 'Change Level', code: 316 },
                                     { name: 'Change Parameter', code: 317 },
-                                    { name: 'Change Skill', code: 318 },
                                     { name: 'Change Equipment', code: 319 },
                                     { name: 'Change Name', code: 320 },
-                                    { name: 'Change Class', code: 321 },
                                     { name: 'Change Nickname', code: 324 },
                                     { name: 'Change Profile', code: 325 }
                                 ]
@@ -168,7 +166,6 @@ class EventCommandPicker {
                             {
                                 title: 'Scene Control',
                                 commands: [
-                                    { name: 'Battle Processing', code: 301 },
                                     { name: 'Shop Processing', code: 302 },
                                     { name: 'Name Input Processing', code: 303 },
                                     { name: 'Open Menu Screen', code: 351 },
@@ -205,21 +202,6 @@ class EventCommandPicker {
                                     { name: 'Change Battle Background', code: 283 },
                                     { name: 'Change Parallax', code: 284 },
                                     { name: 'Get Location Info', code: 285 }
-                                ]
-                            },
-                            {
-                                title: 'Battle',
-                                commands: [
-                                    { name: 'Change Enemy HP', code: 331 },
-                                    { name: 'Change Enemy MP', code: 332 },
-                                    { name: 'Change Enemy TP', code: 342 },
-                                    { name: 'Change Enemy State', code: 333 },
-                                    { name: 'Enemy Recover All', code: 334 },
-                                    { name: 'Enemy Appear', code: 335 },
-                                    { name: 'Enemy Transform', code: 336 },
-                                    { name: 'Show Battle Animation', code: 337 },
-                                    { name: 'Force Action', code: 339 },
-                                    { name: 'Abort Battle', code: 340 }
                                 ]
                             },
                             {
