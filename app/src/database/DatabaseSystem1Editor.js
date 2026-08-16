@@ -532,7 +532,43 @@ class DatabaseSystem1Editor {
         const optionsSection = this.createSection(tt('Options'), options);
         column.appendChild(optionsSection);
 
+        // Asset Sizes moved from System 2 (S14): tile/icon/face sizes.
+        column.appendChild(this.createAssetSizesSection(system));
+
         return column;
+    }
+
+    createAssetSizesSection(system) {
+        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const groups = [
+            { title: 'Tile', field: 'tileSize', current: system.tileSize || 48, sizes: [48, 32, 24, 16] },
+            { title: 'Icon', field: 'iconSize', current: system.iconSize || 32, sizes: [32, 24, 16, 12, 8] },
+            { title: 'Face', field: 'faceSize', current: system.faceSize || 144, sizes: [144, 96, 48, 40, 32] }
+        ];
+        let html = '<div style="display: flex; gap: 16px;">';
+        for (const g of groups) {
+            html += `<div style="flex: 1; min-width: 0;">
+                <div style="color: var(--color-text-muted); font-size: 11px; font-weight: 600; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">${tt(g.title)}</div>`;
+            for (const size of g.sizes) {
+                html += `<label style="display: flex; align-items: center; gap: 6px; color: var(--color-text); font-size: 11px; cursor: pointer; margin-bottom: 2px;">
+                    <input type="radio" class="system-radio sys1-asset-size" name="sys1_${g.field}" data-field="${g.field}" value="${size}" ${g.current === size ? 'checked' : ''}>
+                    ${size}x${size}
+                </label>`;
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+        const section = this.createSection(tt('Asset Sizes'), html);
+        setTimeout(() => {
+            section.querySelectorAll('.sys1-asset-size').forEach(radio => {
+                radio.addEventListener('change', () => {
+                    if (radio.checked) {
+                        system[radio.dataset.field] = Number(radio.value);
+                    }
+                });
+            });
+        }, 0);
+        return section;
     }
 
     createColumn3(system) {

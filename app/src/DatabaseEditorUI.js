@@ -57,7 +57,6 @@ class DatabaseEditorUI {
         this.agoniaEditor = typeof DatabaseAgoniaEditor !== 'undefined'
             ? new DatabaseAgoniaEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this)
             : null;
-        this.system2Editor = new DatabaseSystem2Editor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         this.commonEventEditor = new DatabaseCommonEventEditor(databaseManager, eventProjectManager, this.commonUI, this);
 
         if (typeof window !== 'undefined') {
@@ -312,42 +311,6 @@ class DatabaseEditorUI {
         // Get data based on type
         let data, title;
         switch(type) {
-            case 'actors':
-                data = this.databaseManager.getActors();
-                title = this._dbTitle(type, 'Actors');
-                break;
-            case 'classes':
-                data = this.databaseManager.getClasses();
-                title = this._dbTitle(type, 'Classes');
-                break;
-            case 'skills':
-                data = this.databaseManager.getSkills();
-                title = this._dbTitle(type, 'Skills');
-                break;
-            case 'items':
-                data = this.databaseManager.getItems();
-                title = this._dbTitle(type, 'Items');
-                break;
-            case 'weapons':
-                data = this.databaseManager.getWeapons();
-                title = this._dbTitle(type, 'Weapons');
-                break;
-            case 'armors':
-                data = this.databaseManager.getArmors();
-                title = this._dbTitle(type, 'Armors');
-                break;
-            case 'enemies':
-                data = this.databaseManager.getEnemies();
-                title = this._dbTitle(type, 'Enemies');
-                break;
-            case 'troops':
-                data = this.databaseManager.getTroops();
-                title = this._dbTitle(type, 'Troops');
-                break;
-            case 'states':
-                data = this.databaseManager.getStates();
-                title = this._dbTitle(type, 'States');
-                break;
             case 'tilesets':
                 data = this.databaseManager.getTilesets();
                 title = this._dbTitle(type, 'Tilesets');
@@ -366,11 +329,10 @@ class DatabaseEditorUI {
                 this.system1Editor.showSystem1Detail(detailEl);
                 return;
             }
-            case 'system2': {
-                // Show System 2 editor
-                const { detailEl } = this.prepareDatabaseSection('system2', this._dbTitle('system2', 'System 2'), { showListPanel: false });
-
-                this.system2Editor.showSystem2Detail(detailEl);
+            case 'items': {
+                // S14: the merged Inventory tab (items/weapons/armors) with
+                // a sub-mode switcher over the three existing editors.
+                this.showInventoryTab('items');
                 return;
             }
             case 'spriter': {
@@ -397,22 +359,6 @@ class DatabaseEditorUI {
                 this.agoniaEditor.showAgoniaDetail(detailEl);
                 return;
             }
-            case 'types': {
-                this.prepareDatabaseSection('types', this._dbTitle('types', 'Types'), { showListPanel: false });
-                // Types editor uses System.json - delegate to callback
-                if (this.callbacks.showTypesEditor) {
-                    this.callbacks.showTypesEditor();
-                }
-                return;
-            }
-            case 'terms': {
-                this.prepareDatabaseSection('terms', this._dbTitle('terms', 'Terms'), { showListPanel: false });
-                // Terms editor uses System.json - delegate to callback
-                if (this.callbacks.showTermsEditor) {
-                    this.callbacks.showTermsEditor();
-                }
-                return;
-            }
             default:
                 alert(this._t('db.unknownType', { type }));
                 return;
@@ -420,6 +366,57 @@ class DatabaseEditorUI {
 
         // Show database viewer
         this.showDatabaseViewer(title, data, type);
+    }
+
+    /**
+     * S14 merged Inventory tab: items/weapons/armors share one navigation
+     * entry with a sub-mode switcher over the three existing editors.
+     */
+    showInventoryTab(mode) {
+        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const modes = [
+            { key: 'items', label: 'Предметы', title: 'Items' },
+            { key: 'weapons', label: 'Оружие', title: 'Weapons' },
+            { key: 'armors', label: 'Броня', title: 'Armors' }
+        ];
+        const current = modes.find(m => m.key === mode) || modes[0];
+        this._inventoryMode = current.key;
+
+        const data = current.key === 'items' ? this.databaseManager.getItems()
+            : current.key === 'weapons' ? this.databaseManager.getWeapons()
+            : this.databaseManager.getArmors();
+
+        // Render through the standard list/detail flow for the sub-mode,
+        // then re-pin the active nav to the single Inventory entry.
+        this.showInventoryList = current.key;
+        this.showDatabaseViewer(tt('Инвентарь') + ' — ' + tt(current.label), data, current.key);
+        this.setActiveDatabaseNav('items');
+
+        // Sub-mode switcher above the entry list.
+        const listEl = document.getElementById('database-list');
+        const listPanelEl = document.getElementById('database-list-panel');
+        if (!listEl || !listPanelEl || listPanelEl.querySelector('.inventory-mode-switch')) return;
+        const bar = document.createElement('div');
+        bar.className = 'inventory-mode-switch';
+        bar.style.cssText = `
+            display: flex; gap: 6px; padding: 8px 10px;
+            border-bottom: 1px solid var(--color-border);
+            background-color: var(--color-bg-deep);
+        `;
+        for (const m of modes) {
+            const btn = document.createElement('button');
+            btn.textContent = tt(m.label);
+            btn.style.cssText = `
+                flex: 1; padding: 5px 10px; font-size: 12px; cursor: pointer;
+                border: 1px solid var(--color-border); border-radius: 4px;
+                color: var(--color-text-strong); font-weight: 600;
+                background-color: ${m.key === current.key ? 'var(--color-bg-panel)' : 'var(--color-bg-deep)'};
+                border-bottom: ${m.key === current.key ? '2px solid var(--color-accent-border-mid)' : '1px solid var(--color-border)'};
+            `;
+            btn.addEventListener('click', () => this.showInventoryTab(m.key));
+            bar.appendChild(btn);
+        }
+        listPanelEl.insertBefore(bar, listEl);
     }
 
     /**
@@ -1131,19 +1128,13 @@ class DatabaseEditorUI {
         navEl.innerHTML = '';
 
         const categories = [
-            { name: 'Actors', type: 'actors' },
             { name: 'Спрайтер', type: 'spriter' },
             { name: 'Бой', type: 'battle' },
             { name: 'ИИ врагов', type: 'enemyAI' },
-            { name: 'Items', type: 'items' },
-            { name: 'Weapons', type: 'weapons' },
-            { name: 'Armors', type: 'armors' },
-            { name: 'Tilesets', type: 'tilesets' },
-            { name: 'Common Events', type: 'commonEvents' },
+            { name: 'Инвентарь', type: 'items' },
+            { name: 'Тайлсеты', type: 'tilesets' },
+            { name: 'Общие события', type: 'commonEvents' },
             { name: 'System 1', type: 'system1' },
-            { name: 'System 2', type: 'system2' },
-            { name: 'Types', type: 'types' },
-            { name: 'Terms', type: 'terms' },
             { name: 'Agonia Engine', type: 'agonia' }
         ];
 

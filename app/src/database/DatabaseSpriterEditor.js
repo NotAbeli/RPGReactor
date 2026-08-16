@@ -309,6 +309,7 @@ class DatabaseSpriterEditor {
         wrapper.appendChild(content);
 
         const tabs = [
+            { id: '__hero__', label: 'Герой' },
             ...this.collectionKeys.map(c => ({ id: c.key, label: c.label })),
             { id: '__globals__', label: 'Глобальные' }
         ];
@@ -318,6 +319,8 @@ class DatabaseSpriterEditor {
             content.innerHTML = '';
             if (active === '__globals__') {
                 this._renderGlobals(content, spriter);
+            } else if (active === '__hero__') {
+                this._renderHero(content);
             } else {
                 this._renderCollection(content, spriter, active);
             }
@@ -389,6 +392,124 @@ class DatabaseSpriterEditor {
         grid.appendChild(debugPanel);
 
         content.appendChild(grid);
+    }
+
+    // ------------------------------------------------------------------
+    // Hero card (actor #1) - the Actors tab collapsed to the single
+    // playable character (S14).
+    // ------------------------------------------------------------------
+
+    _listImgFolder(sub) {
+        if (typeof RRAssetFiles === 'undefined') return [];
+        try {
+            const proj = this._projectPath();
+            if (!proj) return [];
+            const dir = this._path().join(proj, 'img', sub);
+            return RRAssetFiles.listUnique(dir, ['.png']) || [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    _imgUrlFrom(sub, name) {
+        const proj = this._projectPath();
+        if (!proj || !name || typeof RRAssetFiles === 'undefined') return '';
+        try {
+            return RRAssetFiles.toUrl(this._path().join(proj, 'img', sub, name + '.png'));
+        } catch (e) {
+            return '';
+        }
+    }
+
+    _renderHero(content) {
+        this._playerStop();
+        content.appendChild(this._sectionTitle('Главный герой'));
+        const actors = (this.databaseManager.getActors ? this.databaseManager.getActors() : []) || [];
+        const actor = actors[1];
+        if (!actor) {
+            const empty = document.createElement('div');
+            empty.style.cssText = 'color:var(--color-text-muted);padding:40px 0;text-align:center;font-size:13px;';
+            empty.textContent = this._tt('Актёр #1 не найден в базе');
+            content.appendChild(empty);
+            return;
+        }
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;';
+
+        // Left: fields
+        const left = this._panel();
+        left.style.width = '340px';
+
+        const nameRow = this._fieldLabel('Имя');
+        nameRow.appendChild(this._textField(actor.name, {}, v => { actor.name = v; }));
+        left.appendChild(nameRow);
+
+        const spriteRow = this._fieldLabel('Спрайт (img/characters)');
+        const spriteLine = document.createElement('div');
+        spriteLine.style.cssText = 'display:flex;gap:6px;';
+        spriteLine.appendChild(this._textField(actor.characterName, { placeholder: 'имя файла без .png' }, v => { actor.characterName = v; }));
+        spriteLine.appendChild(this._smallButton('Выбрать…', () => this._showFilePicker(actor.characterName, name => {
+            actor.characterName = name;
+            this._renderHero(content);
+        })));
+        spriteRow.appendChild(spriteLine);
+        left.appendChild(spriteRow);
+
+        const idxRow = this._fieldLabel('Индекс спрайта (0–7)');
+        idxRow.appendChild(this._numberField(actor.characterIndex || 0, { min: 0, max: 7 }, v => { actor.characterIndex = v; }));
+        left.appendChild(idxRow);
+
+        const faceRow = this._fieldLabel('Лицо (img/faces)');
+        const faceLine = document.createElement('div');
+        faceLine.style.cssText = 'display:flex;gap:6px;';
+        faceLine.appendChild(this._textField(actor.faceName, { placeholder: 'имя файла без .png' }, v => { actor.faceName = v; }));
+        faceLine.appendChild(this._smallButton('Выбрать…', () => this._showFilePicker(actor.faceName, name => {
+            actor.faceName = name;
+            this._renderHero(content);
+        }, 'faces')));
+        faceRow.appendChild(faceLine);
+        left.appendChild(faceRow);
+
+        const faceIdxRow = this._fieldLabel('Индекс лица (0–7)');
+        faceIdxRow.appendChild(this._numberField(actor.faceIndex || 0, { min: 0, max: 7 }, v => { actor.faceIndex = v; }));
+        left.appendChild(faceIdxRow);
+
+        const mkArea = (label, key, hint) => {
+            const wrap = this._fieldLabel(label, hint);
+            const area = document.createElement('textarea');
+            area.value = actor[key] || '';
+            area.rows = 3;
+            area.style.cssText = `
+                width:100%;box-sizing:border-box;padding:5px 8px;font-size:12px;resize:vertical;
+                background-color:var(--color-bg-deep);color:var(--color-text-strong);
+                border:1px solid var(--color-border);border-radius:4px;
+            `;
+            area.addEventListener('input', () => { actor[key] = area.value; });
+            wrap.appendChild(area);
+            return wrap;
+        };
+        left.appendChild(mkArea('Профиль', 'profile'));
+        left.appendChild(mkArea('Заметки', 'note', 'Мета-теги плагинов, как в Note событий'));
+        row.appendChild(left);
+
+        // Right: live sprite player + face preview
+        const right = this._panel();
+        right.style.flex = '1';
+        right.style.minWidth = '320px';
+        const pvEntry = { Visuals: { CharacterName: actor.characterName, CharacterIndex: actor.characterIndex || 0, Frames: 3, Directions: 4, FPS: 8, Pattern: 0, Width: 0, Height: 0 } };
+        right.appendChild(this._renderPlayer(pvEntry, 'hero'));
+
+        const faceTitle = this._fieldLabel('Лицо (лист 4×2)');
+        const faceImg = document.createElement('img');
+        faceImg.src = this._imgUrlFrom('faces', actor.faceName);
+        faceImg.style.cssText = 'image-rendering:pixelated;max-width:100%;max-height:220px;border:1px solid var(--color-border);border-radius:4px;background-color:var(--color-bg-deep);';
+        if (!actor.faceName) faceImg.style.display = 'none';
+        faceTitle.appendChild(faceImg);
+        right.appendChild(faceTitle);
+        row.appendChild(right);
+
+        content.appendChild(row);
     }
 
     _renderCollection(content, spriter, kind) {
@@ -841,8 +962,9 @@ class DatabaseSpriterEditor {
     // File picker modal
     // ------------------------------------------------------------------
 
-    _showFilePicker(currentName, onSelect) {
-        const files = this._listCharacterFiles();
+    _showFilePicker(currentName, onSelect, sub) {
+        sub = sub || 'characters';
+        const files = sub === 'characters' ? this._listCharacterFiles() : this._listImgFolder(sub);
         const modal = document.createElement('div');
         modal.style.cssText = `
             position: fixed; inset: 0;
@@ -864,7 +986,7 @@ class DatabaseSpriterEditor {
             border-bottom: 1px solid var(--color-border);
             display: flex; justify-content: space-between; align-items: center;
         `;
-        header.textContent = this._tt('Выбор файла спрайта (img/characters)');
+        header.textContent = this._tt('Выбор файла (img/' + sub + ')');
         header.appendChild(this._smallButton('Закрыть', () => modal.remove()));
         win.appendChild(header);
 
@@ -880,7 +1002,7 @@ class DatabaseSpriterEditor {
                 background-color: var(--color-bg-deep); text-align: center;
             `;
             const thumb = document.createElement('img');
-            thumb.src = this._imgUrl(name);
+            thumb.src = sub === 'characters' ? this._imgUrl(name) : this._imgUrlFrom(sub, name);
             thumb.style.cssText = 'image-rendering: pixelated; max-width: 100%; max-height: 90px;';
             const cap = document.createElement('div');
             cap.style.cssText = 'font-size: 10px; color: var(--color-text); margin-top: 4px; word-break: break-all;';
@@ -897,7 +1019,7 @@ class DatabaseSpriterEditor {
         }
         if (!files.length) {
             grid.innerHTML = '<div style="color:var(--color-text-muted);padding:20px;">' +
-                this._tt('В проекте нет файлов в img/characters') + '</div>';
+                this._tt('В проекте нет файлов в img/' + sub) + '</div>';
         }
         win.appendChild(grid);
         modal.appendChild(win);
