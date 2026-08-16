@@ -1477,7 +1477,7 @@ class DatabaseUIEditor {
         const fields = (DatabaseUIEditor.FIELD_DEFS || {})[sectionKey] || [];
         const groups = new Map();
         for (const f of fields) {
-            const g = String(f.group || '').replace(/[-]{2,}/g, '').replace(/^[-→> ]+|[-< ]+$/g, '').trim() || 'Настройки';
+            const g = (typeof AgoniaLabels !== 'undefined' ? AgoniaLabels.translateGroup(f.group) : f.group) || 'Настройки';
             if (!groups.has(g)) groups.set(g, []);
             groups.get(g).push(f);
         }
@@ -1516,7 +1516,7 @@ class DatabaseUIEditor {
         wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
         const label = document.createElement('label');
         label.style.cssText = 'font-size:11px;color:var(--color-text);font-weight:600;';
-        label.textContent = this._tt(f.key);
+        label.textContent = (typeof AgoniaLabels !== 'undefined' ? AgoniaLabels.translate(f.key) : this._tt(f.key));
         wrap.appendChild(label);
 
         if (f.type === 'bool') {
@@ -1532,7 +1532,7 @@ class DatabaseUIEditor {
         input.type = f.type === 'number' ? 'number' : 'text';
         input.value = section[f.key] === undefined || section[f.key] === null ? '' : section[f.key];
         input.style.cssText = `
-            width:100%;padding:5px 8px;font-size:12px;box-sizing:border-box;
+            width:${f.type === 'number' ? '84px' : '100%'};padding:5px 8px;font-size:12px;box-sizing:border-box;
             background-color:var(--color-bg-deep);color:var(--color-text-strong);
             border:1px solid var(--color-border);border-radius:4px;
         `;
@@ -1629,7 +1629,7 @@ class DatabaseUIEditor {
             wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
             const label = document.createElement('label');
             label.style.cssText = 'font-size:11px;color:var(--color-text);font-weight:600;';
-            label.textContent = this._tt(f.key);
+            label.textContent = (typeof AgoniaLabels !== 'undefined' ? AgoniaLabels.translate(f.key) : this._tt(f.key));
             wrap.appendChild(label);
             const input = document.createElement('input');
             input.type = f.type === 'number' ? 'number' : 'text';

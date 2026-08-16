@@ -297,7 +297,7 @@ class UIManager {
             submenu: editMenu
         }));
 
-        // Database menu (S14 compact navigation: 8 tabs)
+        // Database menu (S17: 11 tabs)
         const databaseMenu = new nw.Menu();
         databaseMenu.append(new nw.MenuItem({
             label: 'Спрайтер',
@@ -312,8 +312,20 @@ class UIManager {
             click: () => this.callbacks.openDatabase('enemyAI')
         }));
         databaseMenu.append(new nw.MenuItem({
-            label: 'Инвентарь',
+            label: 'Предметы',
             click: () => this.callbacks.openDatabase('items')
+        }));
+        databaseMenu.append(new nw.MenuItem({
+            label: 'Инвентарь',
+            click: () => this.callbacks.openDatabase('invSystems')
+        }));
+        databaseMenu.append(new nw.MenuItem({
+            label: 'Мир',
+            click: () => this.callbacks.openDatabase('world')
+        }));
+        databaseMenu.append(new nw.MenuItem({
+            label: 'Интерфейс',
+            click: () => this.callbacks.openDatabase('uiStudio')
         }));
         databaseMenu.append(new nw.MenuItem({ type: 'separator' }));
         databaseMenu.append(new nw.MenuItem({

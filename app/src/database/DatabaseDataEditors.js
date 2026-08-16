@@ -10,6 +10,100 @@
  * MOG_TreasurePopup, one tab) loot(SuperDuperLoot) gifts(SuperDuperGifts).
  */
 
+/**
+ * AgoniaLabels - shared English->Russian label kit for plugin parameter
+ * names. Every editor renders field/group labels through translate() so
+ * the whole database UI speaks one language (S17).
+ */
+class AgoniaLabels {
+    static get TOKENS() {
+        return {
+            rec: 'Запись', play: 'Загрузка', prev: 'Пред. слот', next: 'След. слот',
+            stop: 'Стоп', back: 'Назад', se: 'Звук', vol: 'Громкость', volume: 'Громкость',
+            pitch: 'Темп', pan: 'Панорама', img: 'Картинка', image: 'Картинка',
+            norm: 'обычная', hov: 'при наведении', dis: 'неактивная',
+            x: 'X', y: 'Y', w: 'Ш', h: 'В', duration: 'Длительность', time: 'Время',
+            speed: 'Скорость', color: 'Цвет', width: 'Ширина', height: 'Высота',
+            size: 'Размер', slot: 'Слот', slots: 'Слоты', font: 'Шрифт', bold: 'Жирный',
+            spacing: 'Отступ', text: 'Текст', diary: 'Дневник', cassette: 'Кассета',
+            cover: 'Обложка', clip: 'Клип', snap: 'Скриншот', list: 'Список',
+            scroll: 'Прокрутка', select: 'Выбор', highlight: 'Подсветка',
+            outline: 'Обводка', fade: 'Фейд', in: 'появления', out: 'исчезновения',
+            intro: 'Вступление', background: 'Фон', bgm: 'Музыка', max: 'Макс.',
+            min: 'Мин.', enable: 'Включить', editor: 'редактор', mode: 'Режим',
+            animation: 'Анимация', duration: 'Длительность', visible: 'Видимо',
+            input: 'Ввод', left: 'Влево', right: 'Вправо', fade: 'Фейд',
+            axis: 'Ось', slide: 'Сдвиг', zoom: 'Зум', wave: 'Волна',
+            rotation: 'Вращение', rotationanimation: 'Вращение', cursor: 'Курсор',
+            command: 'Команда', pos: 'Позиция', smart: 'Умный', sprite: 'Спрайт',
+            com: 'Заставка', title: 'Титул', phase: 'Фаза', static: 'Статик',
+            power: 'Питание', off: 'выкл', vignette: 'Виньетка', radius: 'Радиус',
+            softness: 'Мягкость', opacity: 'Прозрачность', sound: 'Звук',
+            file: 'Файл', ok: 'Подтверждение', cancel: 'Отмена', buzzer: 'Ошибка',
+            transition: 'Переход', hold: 'Удержание', shake: 'Тряска',
+            noise: 'Шум', scanline: 'Сканлайн', chroma: 'Цветность', menu: 'Меню',
+            pre: 'Пре-', phase0: 'Фаза 0', delay: 'Задержка', talk: 'Речь',
+            default: 'По умолчанию', skip: 'Пропуск', disable: 'Отключить',
+            move: 'Движение', route: 'Маршрут', ff: 'Быстрый прогон',
+            gradient: 'Градиент', align: 'Выравнивание', solid: 'Плотность',
+            layout: 'Раскладка', frame: 'Рамка', start: 'Начало', end: 'Конец',
+            debug: 'Отладка', equidistant: 'Равномерно', offset: 'Смещение',
+            choice: 'Выбор', choices: 'Выборы', symbol: 'Символ', active: 'Активный',
+            inactive: 'Неактивный', scale: 'Масштаб', shift: 'Сдвиг',
+            audio: 'Звук', wait: 'Пауза', before: 'До', after: 'После',
+            wheel: 'Колесо', cooldown: 'Кулдаун', hint: 'Подсказка',
+            hints: 'Подсказки', preview: 'Превью', format: 'Формат',
+            interact: 'Взаимодействие', global: 'Общий', error: 'Ошибка',
+            craft: 'Крафт', pickup: 'Подбор', open: 'Открытие', close: 'Закрытие',
+            result: 'Результат', spacing: 'Шаг', sensitivity: 'Чувствительность',
+            quality: 'Качество', sensitivity: 'Чувствительность', bold: 'Жирный',
+            enable: 'Вкл', fade: 'Фейд', anim: 'Анимация', frames: 'Кадры',
+            frame: 'Кадр', total: 'Всего', speed: 'Скорость', splash: 'Заставка',
+            logo: 'Логотип', preset: 'Пресет', mouse: 'Мышь', movement: 'Движение',
+            direction: 'Направление', fix: 'Фикс', priority: 'Приоритет',
+            step: 'Шаг', walk: 'Ходьба', dir: 'Напр.', blink: 'Мигание',
+            period: 'Период',             block: 'Блок', stack: 'Стак', threshold: 'Порог',
+            player: 'Игрок', chest: 'Сундук', hotbar: 'Хотбар', custom: 'Своё',
+            bg: 'фон', cols: 'Колонки', rows: 'Ряды', num: 'Номера',
+            count: 'Счётчик', name: 'Имя', index: 'Индекс', icon: 'Иконка',
+            on: 'Вкл', transfer: 'переход', hide: 'Скрыть', centered: 'По центру',
+            typewriter: 'Машинка', appear: 'Появление', disappear: 'Исчезание',
+            random: 'Случайно', movement: 'Движение', gold: 'Золото',
+            treasure: 'Добыча', space: 'Отступ', zoom: 'Зум', effect: 'Эффект',
+            slide: 'Сдвиг', in: 'в', out: 'из', xaxis: 'Ось X', yaxis: 'Ось Y',
+            fadein: 'Фейд-в', fadeout: 'Фейд-аут', checkpoint: 'чекпоинт',
+            drop: 'Дроп', pickup: 'подбора', dumbwaiter: 'Лифт'
+        };
+    }
+
+    /** 'Rec SE Vol' -> 'Запись · звук · громкость'. */
+    static translate(key) {
+        const raw = String(key || '').trim();
+        if (!raw) return '';
+        if (/[а-яё]/i.test(raw)) return raw; // already Russian
+        const words = raw.replace(/_/g, ' ').replace(/-/g, ' ')
+            .split(/(?<=[a-z0-9])(?=[A-Z])|\s+|(?<=\d)(?=[A-Z])/)
+            .map(w => w.trim()).filter(Boolean);
+        const out = words.map((w, i) => {
+            // Rejoin split hyphen compounds: fade+in -> fadein
+            const joined = (w === 'in' || w === 'out') && i > 0 ? words[i - 1].toLowerCase() + w : null;
+            const t = AgoniaLabels.TOKENS[joined || w.toLowerCase().replace(/[^a-z0-9]/gi, '')];
+            if (t) return t;
+            return w;
+        });
+        if (!out.length) return raw;
+        return out.map((w, i) => i === 0 ? w : (/^[A-ZА-ЯЁ]/.test(w) && w.length <= 2 ? w : w.charAt(0).toLowerCase() + w.slice(1))).join(' · ');
+    }
+
+    /** Group headers: strip plugin junk arrows/dashes, translate English. */
+    static translateGroup(group) {
+        let g = String(group || '').replace(/^[-→> ]+|[-< ]+$/g, '').trim();
+        g = g.replace(/---.*$/g, '').replace(/->.*$/g, '').trim();
+        if (!g) return 'Настройки';
+        return AgoniaLabels.translate(g);
+    }
+}
+
 /** Shared card-list plumbing for the S15 editors. */
 class AgoniaCardEditorBase {
     constructor(databaseManager, projectManager, commonUI, parentEditor) {
@@ -21,6 +115,29 @@ class AgoniaCardEditorBase {
 
     _tt(text) {
         return typeof window !== 'undefined' && window.I18n ? window.I18n.tText(text) : text;
+    }
+
+    /** Standard tab banner (S17: one size across every DB tab). */
+    _stdBanner(title, subtitle) {
+        const banner = this._div(`
+            background-color: var(--color-bg-deep);
+            padding: 14px 20px; border-bottom: 2px solid var(--color-accent-border-mid);
+            font-size: 20px; font-weight: 600; color: var(--color-text-strong);
+            display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+        `);
+        banner.textContent = this._tt(title);
+        if (subtitle) {
+            const sub = document.createElement('span');
+            sub.style.cssText = 'font-size:12px;font-weight:400;color:var(--color-text-dim);';
+            sub.textContent = this._tt(subtitle);
+            banner.appendChild(sub);
+        }
+        return banner;
+    }
+
+    /** Field label via the shared RU label kit (S17). */
+    _fmtLabel(key, hint) {
+        return this._fieldLabel(AgoniaLabels.translate(key), hint);
     }
 
     getSection(name) {
@@ -338,27 +455,28 @@ class DatabaseCraftEditor extends AgoniaCardEditorBase {
 
 class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
     showScreenTextDetail(container) {
-        const wrapper = this._div('display:flex;flex-direction:column;height:100%;overflow-y:auto;');
-        const banner = this._div(`
-            background-color: var(--color-bg-deep);
-            padding: 14px 20px; border-bottom: 2px solid var(--color-accent-border-mid);
-            font-size: 20px; font-weight: 600; color: var(--color-text-strong);
-            display: flex; align-items: baseline; gap: 14px;
-        `);
-        banner.textContent = this._tt('Надписи на экране');
-        const sub = document.createElement('span');
-        sub.style.cssText = 'font-size:12px;font-weight:400;color:var(--color-text-dim);';
-        sub.textContent = this._tt('Пресеты хинтов и титулов (нативы 735/737) + попапы добычи (729)');
-        banner.appendChild(sub);
-        wrapper.appendChild(banner);
+        const wrapper = this._div('display:flex;flex-direction:column;height:100%;overflow:hidden;');
+        wrapper.appendChild(this._stdBanner('Надписи на экране', 'Пресеты хинтов и титулов (нативы 735/737) + попапы добычи (729)'));
+        const content = this._div('flex:1;overflow-y:auto;padding:0 16px 16px;');
+        wrapper.appendChild(content);
+        container.appendChild(wrapper);
+        this._renderScreenTextContent(content);
+    }
 
+    /** Content without the banner - reused by the World tab (S17). */
+    _renderScreenTextContent(content) {
         const hints = this.getSection('hints');
         const popup = this.getSection('popup');
+        const notif = this.getSection('notification');
+        content.innerHTML = '';
+        this._renderScreenBlocks(content, hints, popup, notif);
+    }
 
+    _renderScreenBlocks(contentHost, hints, popup, notif) {
         // --- hint presets ---
-        wrapper.appendChild(this._sectionTitle('Пресеты хинтов (натив 735)'));
+        contentHost.appendChild(this._sectionTitle('Пресеты хинтов (натив 735)'));
         const hintHost = this._div('padding:0 16px;');
-        wrapper.appendChild(hintHost);
+        contentHost.appendChild(hintHost);
         this._renderCards(hintHost, hints, 'Presets', {
             countLabel: 'пресетов',
             addLabel: 'Добавить пресет',
@@ -395,9 +513,9 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
         });
 
         // --- title presets ---
-        wrapper.appendChild(this._sectionTitle('Пресеты титулов (натив 737)'));
+        contentHost.appendChild(this._sectionTitle('Пресеты титулов (натив 737)'));
         const titleHost = this._div('padding:0 16px;');
-        wrapper.appendChild(titleHost);
+        contentHost.appendChild(titleHost);
         this._renderCards(titleHost, hints, 'Title Presets', {
             countLabel: 'пресетов',
             addLabel: 'Добавить титул',
@@ -444,7 +562,7 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
         });
 
         // --- treasure popup ---
-        wrapper.appendChild(this._sectionTitle('Попапы добычи (натив 729)'));
+        contentHost.appendChild(this._sectionTitle('Попапы добычи (натив 729)'));
         const popupPanel = this._panel();
         popupPanel.style.margin = '0 16px 16px';
         const popupGrid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;');
@@ -479,13 +597,12 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
         flags.appendChild(gold);
         popupGrid.appendChild(flags);
         popupPanel.appendChild(popupGrid);
-        wrapper.appendChild(popupPanel);
+        contentHost.appendChild(popupPanel);
 
         // --- notifications (S15-B) ---
-        const notif = this.getSection('notification');
-        wrapper.appendChild(this._sectionTitle('Уведомления переменных (SuperDuperNotification)'));
+        contentHost.appendChild(this._sectionTitle('Уведомления переменных (SuperDuperNotification)'));
         const nHost = this._div('padding:0 16px;');
-        wrapper.appendChild(nHost);
+        contentHost.appendChild(nHost);
         this._renderCards(nHost, notif, 'Monitored Variables', {
             countLabel: 'переменных',
             addLabel: 'Добавить переменную',
@@ -528,9 +645,7 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
             nGrid.appendChild(w);
         }
         nPanel.appendChild(nGrid);
-        wrapper.appendChild(nPanel);
-
-        container.appendChild(wrapper);
+        contentHost.appendChild(nPanel);
     }
 }
 
@@ -697,20 +812,14 @@ class DatabaseGiftsEditor extends AgoniaCardEditorBase {
 // ======================================================================
 
 class DatabaseWorldEditor extends AgoniaCardEditorBase {
+    constructor(databaseManager, projectManager, commonUI, parentEditor) {
+        super(databaseManager, projectManager, commonUI, parentEditor);
+        this._screenText = new DatabaseScreenTextEditor(databaseManager, projectManager, commonUI, parentEditor);
+    }
+
     showWorldDetail(container) {
         const wrapper = this._div('display:flex;flex-direction:column;height:100%;overflow:hidden;');
-        const banner = this._div(`
-            background-color: var(--color-bg-deep);
-            padding: 14px 20px; border-bottom: 2px solid var(--color-accent-border-mid);
-            font-size: 20px; font-weight: 600; color: var(--color-text-strong);
-            display: flex; align-items: baseline; gap: 14px;
-        `);
-        banner.textContent = this._tt('Мир');
-        const sub = document.createElement('span');
-        sub.style.cssText = 'font-size:12px;font-weight:400;color:var(--color-text-dim);';
-        sub.textContent = this._tt('Шаги по поверхностям · Реактор переменных · Выпаденные предметы');
-        banner.appendChild(sub);
-        wrapper.appendChild(banner);
+        wrapper.appendChild(this._stdBanner('Мир', 'Шаги · Реактор переменных · Дроп · Надписи на экране'));
 
         const tabsRow = this._div('display:flex;gap:8px;padding:10px 16px 0;border-bottom:1px solid var(--color-border);');
         wrapper.appendChild(tabsRow);
@@ -720,13 +829,15 @@ class DatabaseWorldEditor extends AgoniaCardEditorBase {
         const tabs = [
             { id: 'steps', label: 'Шаги' },
             { id: 'variables', label: 'Переменные' },
-            { id: 'drop', label: 'Дроп' }
+            { id: 'drop', label: 'Дроп' },
+            { id: 'labels', label: 'Надписи' }
         ];
         let active = 'steps';
         const render = () => {
             content.innerHTML = '';
             if (active === 'steps') this._renderSteps(content);
             else if (active === 'variables') this._renderVariables(content);
+            else if (active === 'labels') this._screenText._renderScreenTextContent(content);
             else this._renderDrop(content);
         };
         for (const tab of tabs) {
@@ -1026,6 +1137,7 @@ class DatabaseWorldEditor extends AgoniaCardEditorBase {
 }
 
 if (typeof window !== 'undefined') {
+    window.AgoniaLabels = AgoniaLabels;
     window.AgoniaCardEditorBase = AgoniaCardEditorBase;
     window.DatabaseCraftEditor = DatabaseCraftEditor;
     window.DatabaseScreenTextEditor = DatabaseScreenTextEditor;
@@ -1034,5 +1146,5 @@ if (typeof window !== 'undefined') {
     window.DatabaseWorldEditor = DatabaseWorldEditor;
 }
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { AgoniaCardEditorBase, DatabaseCraftEditor, DatabaseScreenTextEditor, DatabaseLootEditor, DatabaseGiftsEditor, DatabaseWorldEditor };
+    module.exports = { AgoniaLabels, AgoniaCardEditorBase, DatabaseCraftEditor, DatabaseScreenTextEditor, DatabaseLootEditor, DatabaseGiftsEditor, DatabaseWorldEditor };
 }
