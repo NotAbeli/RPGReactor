@@ -281,6 +281,41 @@ class DatabaseManager {
                 'Dash Tracking Variable ID': 0,
                 'Dash Database': '[]'
             },
+            // Craft/hints/popup/loot/gifts keep their collections in MV
+            // plugin format (see spriter); the plugins stay live - the DB
+            // section feeds their parameters through the bridge merge.
+            craft: {
+                'Recipes': '[]'
+            },
+            hints: {
+                'Presets': '[]',
+                'Title Presets': '[]',
+                'Default Animation Speed': 0.1,
+                'Drop Distance': 60,
+                'Hint Z-Index': 140,
+                'Title Z-Index': 150
+            },
+            popup: {
+                'Duration': 15,
+                'Fade Speed': 5,
+                'X - Axis': 0,
+                'Y - Axis': -32,
+                'Random Movement': false,
+                'X Speed': 0,
+                'Y Speed': 1,
+                'Font Size': 16,
+                'Icon Scale': 0.6,
+                'Treasure Space Y-Axis': 20,
+                'Zoom Effect': false,
+                'Gold Popup': true,
+                'Gold Icon Index': 163
+            },
+            loot: {
+                'Categories': '[]'
+            },
+            gifts: {
+                'Characters': '[]'
+            },
             spriter: {
                 'VariableId': 17,
                 'EnablePoses': true,
@@ -429,6 +464,11 @@ class DatabaseManager {
     /** Which engine module feeds which settings section. */
     static get AGONIA_SECTION_PLUGINS() {
         return {
+            craft: 'SimpleCraftSystem',
+            hints: 'SimpleCustomHints',
+            popup: 'MOG_TreasurePopup',
+            loot: 'SuperDuperLoot',
+            gifts: 'SuperDuperGifts',
             battle: 'SuperDuperBattle',
             enemies: 'SuperDuperEnemies',
             dash: 'SuperDuperMovement_Addon',

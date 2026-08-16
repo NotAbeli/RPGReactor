@@ -737,7 +737,7 @@ class AgoniaNativeCommands {
                 section: 'Party',
                 help: 'Gives a gift item to a named actor (SuperDuperGifts).',
                 fields: [
-                    { key: 'actorName', index: 0, type: 'string', label: 'Actor Name', default: '' },
+                    { key: 'actorName', index: 0, type: 'suggestion', label: 'Actor Name', default: '', suggestions: 'giftCharacters' },
                     { key: 'itemId', index: 1, type: 'itemRef', label: 'Item', default: 1 }
                 ]
             }
@@ -821,10 +821,36 @@ class AgoniaNativeCommands {
                     this._collectSuggestionFromCommand(kind, command, values);
                 }
             }
+            // Agonia sidecar sections (data/AgoniaEngine.json is one of the
+            // scanned containers): DB-authored collections suggest too.
+            if (kind === 'lootCategories' && value.loot && typeof value.loot.Categories === 'string') {
+                for (const entry of this._decodeAgoniaCollection(value.loot.Categories)) {
+                    if (entry && entry.Name) values.add(String(entry.Name));
+                }
+            }
+            if (kind === 'giftCharacters' && value.gifts && typeof value.gifts.Characters === 'string') {
+                for (const entry of this._decodeAgoniaCollection(value.gifts.Characters)) {
+                    if (entry && entry.Id) values.add(String(entry.Id));
+                }
+            }
             Object.values(value).forEach(v => { if (v && typeof v === 'object') visit(v); });
         };
         dataContainers.forEach(visit);
         return [...values].sort((a, b) => a.localeCompare(b, 'ru'));
+    }
+
+    /** MV collection string ('["{\"Name\":...}"]') -> plain entries. */
+    static _decodeAgoniaCollection(raw) {
+        try {
+            const arr = JSON.parse(raw);
+            if (!Array.isArray(arr)) return [];
+            return arr.map(item => {
+                try { return typeof item === 'string' ? JSON.parse(item) : item; }
+                catch (e) { return null; }
+            });
+        } catch (e) {
+            return [];
+        }
     }
 
     static _collectSuggestionFromCommand(kind, command, values) {
@@ -864,6 +890,19 @@ class AgoniaNativeCommands {
             } else if (command.code === 356) {
                 const match = /^Title\s+show\s+\S+\s+(.+)$/i.exec(String(params[0] || '').trim());
                 if (match) values.add(match[1]);
+            }
+        } else if (kind === 'lootCategories') {
+            if (command.code === 720) {
+                const name = String(params[0] || '').trim();
+                if (name) values.add(name);
+            } else if (command.code === 724) {
+                const name = String(params[1] || '').trim();
+                if (name) values.add(name);
+            }
+        } else if (kind === 'giftCharacters') {
+            if (command.code === 751) {
+                const name = String(params[0] || '').trim();
+                if (name) values.add(name);
             }
         } else if (kind === 'lightPresets') {
             // Built-in SDLight falloff presets plus everything used in data.

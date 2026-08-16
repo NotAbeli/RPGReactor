@@ -751,12 +751,45 @@ class EventPageEditor {
                     <option value="4" ${page.trigger === 4 ? 'selected' : ''}>${this._t('event.parallel')}</option>
                 </select>
             </div>
+
+            <label class="save-location-row" style="display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11px; color: var(--color-text); cursor: pointer;">
+                <input type="checkbox" class="save-location-checkbox" ${this._hasSaveLocationTag() ? 'checked' : ''}>
+                Сохранять позицию (YEP Save Event Locations)
+            </label>
         `;
 
         // Add event listeners
         this.attachTriggerListeners(section);
 
+        const saveLocationBox = section.querySelector('.save-location-checkbox');
+        saveLocationBox.addEventListener('change', () => {
+            this._setSaveLocationTag(saveLocationBox.checked);
+        });
+
         return section;
+    }
+
+    /** YEP_SaveEventLocations: the <Save Event Location> notetag lives on
+     *  the EVENT (not the page); the checkbox mirrors it. */
+    _hasSaveLocationTag() {
+        const ev = this.parentEditor && this.parentEditor.currentEvent;
+        if (!ev || !ev.note) return false;
+        return /<(?:SAVE EVENT LOCATION|save event locations)>/i.test(String(ev.note));
+    }
+
+    _setSaveLocationTag(enabled) {
+        const ev = this.parentEditor && this.parentEditor.currentEvent;
+        if (!ev) return;
+        let note = String(ev.note || '');
+        const tagRe = /\n?<(?:SAVE EVENT LOCATION|save event locations)>\n?/gi;
+        if (enabled) {
+            if (!tagRe.test(note)) {
+                note = note ? (note.replace(/\s*$/, '') + '\n<Save Event Location>') : '<Save Event Location>';
+            }
+        } else {
+            note = note.replace(tagRe, '\n').replace(/\n{2,}/g, '\n').replace(/^\n+|\n+$/g, '');
+        }
+        ev.note = note;
     }
 
     /**

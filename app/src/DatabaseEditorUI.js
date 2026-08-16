@@ -31,6 +31,18 @@ class DatabaseEditorUI {
         this.enemiesEditor = typeof DatabaseEnemiesEditor !== 'undefined'
             ? new DatabaseEnemiesEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this)
             : null;
+        this.craftEditor = typeof DatabaseCraftEditor !== 'undefined'
+            ? new DatabaseCraftEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this)
+            : null;
+        this.screenTextEditor = typeof DatabaseScreenTextEditor !== 'undefined'
+            ? new DatabaseScreenTextEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this)
+            : null;
+        this.lootEditor = typeof DatabaseLootEditor !== 'undefined'
+            ? new DatabaseLootEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this)
+            : null;
+        this.giftsEditor = typeof DatabaseGiftsEditor !== 'undefined'
+            ? new DatabaseGiftsEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this)
+            : null;
         this.classEditor = new DatabaseClassEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         this.skillEditor = new DatabaseSkillEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         this.itemEditor = new DatabaseItemEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
@@ -353,6 +365,18 @@ class DatabaseEditorUI {
                 this.enemiesEditor.showEnemiesDetail(detailEl);
                 return;
             }
+            case 'craft': {
+                if (!this.craftEditor) return;
+                const { detailEl } = this.prepareDatabaseSection('craft', this._dbTitle('craft', 'Крафт'), { showListPanel: false });
+                this.craftEditor.showCraftDetail(detailEl);
+                return;
+            }
+            case 'screenText': {
+                if (!this.screenTextEditor) return;
+                const { detailEl } = this.prepareDatabaseSection('screenText', this._dbTitle('screenText', 'Надписи на экране'), { showListPanel: false });
+                this.screenTextEditor.showScreenTextDetail(detailEl);
+                return;
+            }
             case 'agonia': {
                 if (!this.agoniaEditor) return;
                 const { detailEl } = this.prepareDatabaseSection('agonia', this._dbTitle('agonia', 'Agonia Engine'), { showListPanel: false });
@@ -377,10 +401,28 @@ class DatabaseEditorUI {
         const modes = [
             { key: 'items', label: 'Предметы', title: 'Items' },
             { key: 'weapons', label: 'Оружие', title: 'Weapons' },
-            { key: 'armors', label: 'Броня', title: 'Armors' }
+            { key: 'armors', label: 'Броня', title: 'Armors' },
+            { key: 'loot', label: 'Лут', title: 'Loot' },
+            { key: 'gifts', label: 'Подарки', title: 'Gifts' }
         ];
         const current = modes.find(m => m.key === mode) || modes[0];
         this._inventoryMode = current.key;
+
+        // Loot/gifts are full-width card editors (S15), not list/detail.
+        if (current.key === 'loot' || current.key === 'gifts') {
+            const { detailEl } = this.prepareDatabaseSection('items', tt('Инвентарь') + ' — ' + tt(current.label), { showListPanel: false });
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'display:flex;flex-direction:column;height:100%;';
+            const bar = this._inventoryModeBar(modes, current.key, m => this.showInventoryTab(m));
+            wrap.appendChild(bar);
+            const body = document.createElement('div');
+            body.style.cssText = 'flex:1;overflow:auto;padding:0 16px 16px;';
+            wrap.appendChild(body);
+            detailEl.appendChild(wrap);
+            if (current.key === 'loot') this.lootEditor.showLootDetail(body);
+            else this.giftsEditor.showGiftsDetail(body);
+            return;
+        }
 
         const data = current.key === 'items' ? this.databaseManager.getItems()
             : current.key === 'weapons' ? this.databaseManager.getWeapons()
@@ -396,6 +438,11 @@ class DatabaseEditorUI {
         const listEl = document.getElementById('database-list');
         const listPanelEl = document.getElementById('database-list-panel');
         if (!listEl || !listPanelEl || listPanelEl.querySelector('.inventory-mode-switch')) return;
+        listPanelEl.insertBefore(this._inventoryModeBar(modes, current.key, m => this.showInventoryTab(m)), listEl);
+    }
+
+    _inventoryModeBar(modes, activeKey, onPick) {
+        const tt = text => window.I18n ? window.I18n.tText(text) : text;
         const bar = document.createElement('div');
         bar.className = 'inventory-mode-switch';
         bar.style.cssText = `
@@ -410,13 +457,13 @@ class DatabaseEditorUI {
                 flex: 1; padding: 5px 10px; font-size: 12px; cursor: pointer;
                 border: 1px solid var(--color-border); border-radius: 4px;
                 color: var(--color-text-strong); font-weight: 600;
-                background-color: ${m.key === current.key ? 'var(--color-bg-panel)' : 'var(--color-bg-deep)'};
-                border-bottom: ${m.key === current.key ? '2px solid var(--color-accent-border-mid)' : '1px solid var(--color-border)'};
+                background-color: ${m.key === activeKey ? 'var(--color-bg-panel)' : 'var(--color-bg-deep)'};
+                border-bottom: ${m.key === activeKey ? '2px solid var(--color-accent-border-mid)' : '1px solid var(--color-border)'};
             `;
-            btn.addEventListener('click', () => this.showInventoryTab(m.key));
+            btn.addEventListener('click', () => onPick(m.key));
             bar.appendChild(btn);
         }
-        listPanelEl.insertBefore(bar, listEl);
+        return bar;
     }
 
     /**
@@ -1133,6 +1180,8 @@ class DatabaseEditorUI {
             { name: 'Бой', type: 'battle' },
             { name: 'ИИ врагов', type: 'enemyAI' },
             { name: 'Инвентарь', type: 'items' },
+            { name: 'Крафт', type: 'craft' },
+            { name: 'Надписи на экране', type: 'screenText' },
             { name: 'Тайлсеты', type: 'tilesets' },
             { name: 'Общие события', type: 'commonEvents' },
             { name: 'System 1', type: 'system1' },

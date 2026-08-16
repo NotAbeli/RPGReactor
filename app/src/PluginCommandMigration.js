@@ -578,6 +578,20 @@ class PluginCommandMigration {
         }
         try {
             const defaults = {
+                craft: { 'Recipes': '[]' },
+                hints: {
+                    'Presets': '[]', 'Title Presets': '[]',
+                    'Default Animation Speed': 0.1, 'Drop Distance': 60,
+                    'Hint Z-Index': 140, 'Title Z-Index': 150
+                },
+                popup: {
+                    'Duration': 15, 'Fade Speed': 5, 'X - Axis': 0, 'Y - Axis': -32,
+                    'Random Movement': false, 'X Speed': 0, 'Y Speed': 1,
+                    'Font Size': 16, 'Icon Scale': 0.6, 'Treasure Space Y-Axis': 20,
+                    'Zoom Effect': false, 'Gold Popup': true, 'Gold Icon Index': 163
+                },
+                loot: { 'Categories': '[]' },
+                gifts: { 'Characters': '[]' },
                 battle: {
                     'Debug Mode': false, 'Disable Mouse Move': false,
                     'Melee List': '[]', 'Projectile List': '[]', 'Tracer List': '[]'
@@ -653,6 +667,11 @@ class PluginCommandMigration {
                 }
             };
             const sectionPlugins = {
+                craft: 'SimpleCraftSystem',
+                hints: 'SimpleCustomHints',
+                popup: 'MOG_TreasurePopup',
+                loot: 'SuperDuperLoot',
+                gifts: 'SuperDuperGifts',
                 battle: 'SuperDuperBattle',
                 enemies: 'SuperDuperEnemies',
                 dash: 'SuperDuperMovement_Addon',
@@ -742,7 +761,11 @@ class PluginCommandMigration {
                         spriter: ['SpriteMappings', 'PoseMappings', 'NPCMappings'],
                         battle: ['Melee List', 'Projectile List', 'Tracer List'],
                         enemies: ['EnemyDatabase'],
-                        dash: ['Dash Database']
+                        dash: ['Dash Database'],
+                        craft: ['Recipes'],
+                        hints: ['Presets', 'Title Presets'],
+                        loot: ['Categories'],
+                        gifts: ['Characters']
                     };
                     const isEmptyPayload = v =>
                         v === undefined || v === null || v === '' ||
