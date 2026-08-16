@@ -145,8 +145,10 @@ class DatabaseBattleEditor {
         wrapper.style.cssText = 'display:flex;flex-direction:column;height:100%;overflow:hidden;';
 
         const banner = document.createElement('div');
-        banner.style.cssText = `
-            background-color: var(--color-bg-deep);
+        banner.style.cssText = `background-color: var(--color-bg-deep);
+            padding: 14px 20px; border-bottom: 2px solid var(--color-accent-border-mid);
+            font-size: 20px; font-weight: 600; color: var(--color-text-strong);
+            display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
             padding: 14px 20px;
             border-bottom: 2px solid var(--color-accent-border-mid);
             font-size: 20px; font-weight: 600;
@@ -361,7 +363,7 @@ class DatabaseBattleEditor {
             if (field.step) input.step = field.step;
         }
         input.value = entry[field.key] !== undefined ? entry[field.key] : '';
-        input.style.cssText = this._inputCss();
+        input.style.cssText = this._inputCss() + (field.type === 'number' ? 'width:84px;' : '');
         input.addEventListener('input', () => {
             if (field.type === 'number') {
                 const n = Number(input.value);

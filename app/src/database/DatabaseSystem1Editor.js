@@ -45,7 +45,7 @@ class DatabaseSystem1Editor {
     }
 
     showSystem1Detail(container) {
-        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const tt = text => { const s = window.I18n ? window.I18n.tText(text) : text; return (typeof AgoniaLabels !== 'undefined' && AgoniaLabels.translate) ? AgoniaLabels.translate(s) : s; };
         const system = this.databaseManager.getSystem();
         if (!system) {
             container.innerHTML = `<p style="color: var(--color-text-muted); text-align: center; margin-top: 100px;">${tt('System data not loaded')}</p>`;
@@ -282,7 +282,7 @@ class DatabaseSystem1Editor {
     }
 
     createColumn1(system) {
-        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const tt = text => { const s = window.I18n ? window.I18n.tText(text) : text; return (typeof AgoniaLabels !== 'undefined' && AgoniaLabels.translate) ? AgoniaLabels.translate(s) : s; };
         const column = document.createElement('div');
         column.style.cssText = 'display: flex; flex-direction: column; gap: 16px;';
 
@@ -422,7 +422,7 @@ class DatabaseSystem1Editor {
     }
 
     showStartLocationPicker(system, ownerKey, container) {
-        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const tt = text => { const s = window.I18n ? window.I18n.tText(text) : text; return (typeof AgoniaLabels !== 'undefined' && AgoniaLabels.translate) ? AgoniaLabels.translate(s) : s; };
         const owner = ownerKey === 'player' ? system : system[ownerKey] || {};
         const labels = {
             player: tt('Player'),
@@ -450,7 +450,7 @@ class DatabaseSystem1Editor {
     }
 
     createColumn2(system) {
-        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const tt = text => { const s = window.I18n ? window.I18n.tText(text) : text; return (typeof AgoniaLabels !== 'undefined' && AgoniaLabels.translate) ? AgoniaLabels.translate(s) : s; };
         const column = document.createElement('div');
         column.style.cssText = 'display: flex; flex-direction: column; gap: 16px;';
 
@@ -539,7 +539,7 @@ class DatabaseSystem1Editor {
     }
 
     createAssetSizesSection(system) {
-        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const tt = text => { const s = window.I18n ? window.I18n.tText(text) : text; return (typeof AgoniaLabels !== 'undefined' && AgoniaLabels.translate) ? AgoniaLabels.translate(s) : s; };
         const groups = [
             { title: 'Tile', field: 'tileSize', current: system.tileSize || 48, sizes: [48, 32, 24, 16] },
             { title: 'Icon', field: 'iconSize', current: system.iconSize || 32, sizes: [32, 24, 16, 12, 8] },
@@ -572,7 +572,7 @@ class DatabaseSystem1Editor {
     }
 
     createColumn3(system) {
-        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const tt = text => { const s = window.I18n ? window.I18n.tText(text) : text; return (typeof AgoniaLabels !== 'undefined' && AgoniaLabels.translate) ? AgoniaLabels.translate(s) : s; };
         const column = document.createElement('div');
         column.style.cssText = 'display: flex; flex-direction: column; gap: 16px;';
 
@@ -716,7 +716,7 @@ class DatabaseSystem1Editor {
     }
 
     showVehicleImagePicker(system, vehicleKey, container) {
-        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const tt = text => { const s = window.I18n ? window.I18n.tText(text) : text; return (typeof AgoniaLabels !== 'undefined' && AgoniaLabels.translate) ? AgoniaLabels.translate(s) : s; };
         const path = require('path');
         const fs = require('fs');
 
@@ -753,7 +753,7 @@ class DatabaseSystem1Editor {
     }
 
     showCommandWindowModal(system, container) {
-        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const tt = text => { const s = window.I18n ? window.I18n.tText(text) : text; return (typeof AgoniaLabels !== 'undefined' && AgoniaLabels.translate) ? AgoniaLabels.translate(s) : s; };
         if (!system.titleCommandWindow) {
             system.titleCommandWindow = { background: 0, offsetX: 0, offsetY: 0 };
         }
@@ -835,7 +835,7 @@ class DatabaseSystem1Editor {
     }
 
     showTitleImagePicker(system) {
-        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const tt = text => { const s = window.I18n ? window.I18n.tText(text) : text; return (typeof AgoniaLabels !== 'undefined' && AgoniaLabels.translate) ? AgoniaLabels.translate(s) : s; };
         const path = require('path');
         const fs = require('fs');
 
@@ -1034,7 +1034,7 @@ class DatabaseSystem1Editor {
     }
 
     showMusicPicker(system, musicType) {
-        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const tt = text => { const s = window.I18n ? window.I18n.tText(text) : text; return (typeof AgoniaLabels !== 'undefined' && AgoniaLabels.translate) ? AgoniaLabels.translate(s) : s; };
         const path = require('path');
         const fs = require('fs');
 
@@ -1062,7 +1062,7 @@ class DatabaseSystem1Editor {
     }
 
     showSoundPicker(system, soundIndex) {
-        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const tt = text => { const s = window.I18n ? window.I18n.tText(text) : text; return (typeof AgoniaLabels !== 'undefined' && AgoniaLabels.translate) ? AgoniaLabels.translate(s) : s; };
         const path = require('path');
         const fs = require('fs');
 
@@ -1085,7 +1085,7 @@ class DatabaseSystem1Editor {
     }
 
     showAudioPickerModal(system, files, audioPath, identifier, audioType, folderName) {
-        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const tt = text => { const s = window.I18n ? window.I18n.tText(text) : text; return (typeof AgoniaLabels !== 'undefined' && AgoniaLabels.translate) ? AgoniaLabels.translate(s) : s; };
         const path = require('path');
 
         // Create modal

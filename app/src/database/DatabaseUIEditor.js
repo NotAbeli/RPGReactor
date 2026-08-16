@@ -1634,7 +1634,7 @@ class DatabaseUIEditor {
             const input = document.createElement('input');
             input.type = f.type === 'number' ? 'number' : 'text';
             input.value = blob[f.key] === undefined ? '' : blob[f.key];
-            input.style.cssText = 'width:100%;padding:5px 8px;font-size:12px;box-sizing:border-box;background-color:var(--color-bg-deep);color:var(--color-text-strong);border:1px solid var(--color-border);border-radius:4px;';
+            input.style.cssText = 'width:' + (f.type === 'number' ? '84px' : '100%') + ';padding:5px 8px;font-size:12px;box-sizing:border-box;background-color:var(--color-bg-deep);color:var(--color-text-strong);border:1px solid var(--color-border);border-radius:4px;';
             input.addEventListener('input', () => {
                 if (f.type === 'number') {
                     const n = Number(input.value);
@@ -1654,7 +1654,7 @@ class DatabaseUIEditor {
         wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
         const label = document.createElement('label');
         label.style.cssText = 'font-size:11px;color:var(--color-text);font-weight:600;';
-        label.textContent = this._tt(key);
+        label.textContent = (typeof AgoniaLabels !== 'undefined' ? AgoniaLabels.translate(key) : this._tt(key));
         wrap.appendChild(label);
         let snd = {};
         try { snd = typeof blob[key] === 'string' && blob[key].startsWith('{') ? JSON.parse(blob[key]) : { Name: blob[key] || '' }; }

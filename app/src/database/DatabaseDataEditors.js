@@ -76,11 +76,40 @@ class AgoniaLabels {
         };
     }
 
+    /** Exact-phrase overrides (System1 section titles and friends). */
+    static get EXACT() {
+        return {
+            'Game Title': 'Название игры',
+            'Starting Party': 'Стартовая партия',
+            'Currency & Display': 'Валюта и отображение',
+            'Vehicle Images': 'Транспорт — картинки',
+            'Starting Positions': 'Стартовые позиции',
+            'Title Screen': 'Титульный экран',
+            'Options': 'Настройки',
+            'Music': 'Музыка',
+            'Sound': 'Звуки',
+            'Asset Sizes': 'Размеры ассетов',
+            'Tile': 'Тайл', 'Icon': 'Иконка', 'Face': 'Лицо',
+            'Draw Game Title': 'Рисовать название игры',
+            'Command Window Settings': 'Окно команд титула',
+            'Type': 'Тип', 'Filename': 'Файл',
+            'Main': 'Основное', 'Cursor': 'Курсор', 'Commands': 'Команды',
+            'Basic Settings': 'Основные настройки',
+            'Audio & Video': 'Аудио и видео', 'Scene Control': 'Управление сценой',
+            'System Settings': 'Системные настройки', 'Timing': 'Тайминг',
+            'Screen': 'Экран', 'Character': 'Персонаж', 'Picture': 'Картинка',
+            'Movement': 'Движение', 'Party': 'Группа', 'Actor': 'Герой',
+            'Map & Screen': 'Карта и экран', 'Battle & System': 'Система',
+            'Advanced': 'Дополнительно'
+        };
+    }
+
     /** 'Rec SE Vol' -> 'Запись · звук · громкость'. */
     static translate(key) {
         const raw = String(key || '').trim();
         if (!raw) return '';
         if (/[а-яё]/i.test(raw)) return raw; // already Russian
+        if (AgoniaLabels.EXACT[raw]) return AgoniaLabels.EXACT[raw];
         const words = raw.replace(/_/g, ' ').replace(/-/g, ' ')
             .split(/(?<=[a-z0-9])(?=[A-Z])|\s+|(?<=\d)(?=[A-Z])/)
             .map(w => w.trim()).filter(Boolean);
@@ -236,7 +265,7 @@ class AgoniaCardEditorBase {
         input.type = type;
         input.value = value === undefined || value === null ? '' : value;
         input.style.cssText = `
-            width:100%;padding:5px 8px;font-size:12px;box-sizing:border-box;
+            width:${type === 'number' ? '84px' : '100%'};padding:5px 8px;font-size:12px;box-sizing:border-box;
             background-color:var(--color-bg-deep);color:var(--color-text-strong);
             border:1px solid var(--color-border);border-radius:4px;
         `;
@@ -376,18 +405,7 @@ class AgoniaCardEditorBase {
 class DatabaseCraftEditor extends AgoniaCardEditorBase {
     showCraftDetail(container) {
         const wrapper = this._div('display:flex;flex-direction:column;height:100%;overflow:hidden;');
-        const banner = this._div(`
-            background-color: var(--color-bg-deep);
-            padding: 14px 20px; border-bottom: 2px solid var(--color-accent-border-mid);
-            font-size: 20px; font-weight: 600; color: var(--color-text-strong);
-            display: flex; align-items: baseline; gap: 14px;
-        `);
-        banner.textContent = this._tt('Крафт');
-        const sub = document.createElement('span');
-        sub.style.cssText = 'font-size:12px;font-weight:400;color:var(--color-text-dim);';
-        sub.textContent = this._tt('Рецепты верстака (SimpleCraftSystem). Открытие меню — натив 734');
-        banner.appendChild(sub);
-        wrapper.appendChild(banner);
+        wrapper.appendChild(this._stdBanner('Крафт', 'Рецепты верстака. Открытие меню — натив 734'));
 
         const content = this._div('flex:1;overflow-y:auto;padding:0 16px 16px;');
         wrapper.appendChild(content);

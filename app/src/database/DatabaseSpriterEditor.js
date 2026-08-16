@@ -285,8 +285,10 @@ class DatabaseSpriterEditor {
         wrapper.style.cssText = 'display:flex;flex-direction:column;height:100%;overflow:hidden;';
 
         const banner = document.createElement('div');
-        banner.style.cssText = `
-            background-color: var(--color-bg-deep);
+        banner.style.cssText = `background-color: var(--color-bg-deep);
+            padding: 14px 20px; border-bottom: 2px solid var(--color-accent-border-mid);
+            font-size: 20px; font-weight: 600; color: var(--color-text-strong);
+            display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
             padding: 14px 20px;
             border-bottom: 2px solid var(--color-accent-border-mid);
             font-size: 20px; font-weight: 600;

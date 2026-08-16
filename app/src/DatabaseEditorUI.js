@@ -347,7 +347,7 @@ class DatabaseEditorUI {
             case 'items': {
                 // S17: the items DB tab (items/weapons/armors) with a
                 // sub-mode switcher over the three existing editors.
-                this.showItemsTab('items');
+                this.showInventoryTab('items');
                 return;
             }
             case 'invSystems': {
