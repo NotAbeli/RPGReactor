@@ -211,6 +211,7 @@ class DatabaseBattleEditor {
     }
 
     _renderCollection(content, section, meta) {
+        content.innerHTML = '';
         const entries = DatabaseBattleEditor.decodeCollection(section[meta.key]);
 
         const header = document.createElement('div');

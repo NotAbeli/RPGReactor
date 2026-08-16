@@ -131,7 +131,7 @@ class DatabaseEditorUI {
         const parent = listEl?.parentNode;
         if (!parent) return;
 
-        parent.querySelectorAll('.database-search-container, .database-button-bar, .database-list-pager, .database-change-max-btn').forEach(el => el.remove());
+        parent.querySelectorAll('.database-search-container, .database-button-bar, .database-list-pager, .database-change-max-btn, .inventory-mode-switch').forEach(el => el.remove());
 
         if (this._listKeyHandler) {
             document.removeEventListener('keydown', this._listKeyHandler);
@@ -459,6 +459,7 @@ class DatabaseEditorUI {
         listEl.parentNode.querySelector('.database-search-container')?.remove();
         listEl.parentNode.querySelector('.database-list-pager')?.remove();
         listEl.parentNode.querySelector('.database-change-max-btn')?.remove();
+        listEl.parentNode.querySelector('.inventory-mode-switch')?.remove();
 
         const searchContainer = document.createElement('div');
         searchContainer.className = 'database-search-container';

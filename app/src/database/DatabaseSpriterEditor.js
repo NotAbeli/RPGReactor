@@ -362,6 +362,7 @@ class DatabaseSpriterEditor {
     }
 
     _renderGlobals(content, spriter) {
+        content.innerHTML = '';
         content.appendChild(this._sectionTitle('Глобальные настройки спрайтера'));
 
         const grid = document.createElement('div');
@@ -423,6 +424,7 @@ class DatabaseSpriterEditor {
 
     _renderHero(content) {
         this._playerStop();
+        content.innerHTML = '';
         content.appendChild(this._sectionTitle('Главный герой'));
         const actors = (this.databaseManager.getActors ? this.databaseManager.getActors() : []) || [];
         const actor = actors[1];
@@ -514,6 +516,7 @@ class DatabaseSpriterEditor {
 
     _renderCollection(content, spriter, kind) {
         this._playerStop();
+        content.innerHTML = '';
         const meta = this.collectionKeys.find(c => c.key === kind);
         const entries = DatabaseSpriterEditor.decodeCollection(spriter[kind]);
 
