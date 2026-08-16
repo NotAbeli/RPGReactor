@@ -14,6 +14,82 @@ class DatabaseItemEditor {
         this.effectEditor = new DatabaseEffectEditor(databaseManager, commonUI);
     }
 
+    // ------------------------------------------------------------------
+    // sptags note-tag plumbing (SuperDuperItemTags)
+    // ------------------------------------------------------------------
+
+    /** Parse '<sptags:a, b>' (may include 'spdisposable') -> [tags]. */
+    static readSptags(note) {
+        const m = String(note || '').match(/<sptags:([^>]*)>/i);
+        if (!m) return [];
+        return m[1].split(',')
+            .map(s => s.trim().toLowerCase())
+            .filter(s => s && s !== 'spdisposable');
+    }
+
+    static readSpDisposable(note) {
+        const n = String(note || '');
+        const inside = ((n.match(/<sptags:([^>]*)>/i) || [])[1] || '')
+            .split(',').map(s => s.trim().toLowerCase()).includes('spdisposable');
+        return inside || /<spdisposable>/i.test(n);
+    }
+
+    /** Rewrite ONLY the <sptags:...> tag in the note (keeps everything else). */
+    static writeSptags(note, rawList) {
+        const tags = String(rawList || '')
+            .split(',').map(s => s.trim().toLowerCase())
+            .filter(s => s && s !== 'spdisposable');
+        let n = String(note || '').replace(/<sptags:[^>]*>\n?/gi, '').replace(/\n{2,}/g, '\n').replace(/^\n+|\n+$/g, '');
+        if (tags.length) {
+            const keepDisposable = DatabaseItemEditor.readSpDisposable(note);
+            const body = keepDisposable ? tags.concat(['spdisposable']).join(', ') : tags.join(', ');
+            n = n ? (n + '\n<sptags:' + body + '>') : ('<sptags:' + body + '>');
+        }
+        return n;
+    }
+
+    static writeSpDisposable(note, enabled) {
+        let n = String(note || '');
+        const has = DatabaseItemEditor.readSpDisposable(n);
+        if (enabled === has) return n;
+        if (enabled) {
+            // Standalone tag next to sptags (the plugin reads both forms).
+            n = n ? (n.replace(/\s*$/, '') + '\n<spdisposable>') : '<spdisposable>';
+        } else {
+            n = n.replace(/\n?<spdisposable>/gi, '');
+            n = n.replace(/<sptags:([^>]*)>/i, (full, body) => {
+                const cleaned = body.split(',').map(s => s.trim()).filter(s => s.toLowerCase() !== 'spdisposable').join(', ');
+                return cleaned ? '<sptags:' + cleaned + '>' : '';
+            });
+        }
+        return n.replace(/\n{2,}/g, '\n').replace(/^\n+|\n+$/g, '');
+    }
+
+    /** All tags used across items/weapons/armors + gift TagSettings. */
+    static collectKnownTags(databaseManager) {
+        const tags = new Set();
+        const tables = ['getItems', 'getWeapons', 'getArmors'];
+        for (const getter of tables) {
+            const list = databaseManager && databaseManager[getter] ? databaseManager[getter]() : [];
+            for (const it of (list || [])) {
+                if (it && it.note) DatabaseItemEditor.readSptags(it.note).forEach(t => tags.add(t));
+            }
+        }
+        try {
+            const agonia = databaseManager && databaseManager.data && databaseManager.data.agonia;
+            if (agonia && agonia.gifts && typeof agonia.gifts.Characters === 'string') {
+                for (const raw of (JSON.parse(agonia.gifts.Characters) || [])) {
+                    const ch = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                    for (const rraw of (JSON.parse(ch.TagSettings || '[]') || [])) {
+                        const rule = typeof rraw === 'string' ? JSON.parse(rraw) : rraw;
+                        if (rule && rule.Tag) tags.add(String(rule.Tag).trim().toLowerCase());
+                    }
+                }
+            }
+        } catch (e) { /* best-effort suggestions */ }
+        return [...tags].sort((a, b) => a.localeCompare(b, 'ru'));
+    }
+
     showItemDetail(container, item) {
         this.currentItem = item;
 
@@ -221,6 +297,34 @@ class DatabaseItemEditor {
             }
         }, 0);
 
+        // --- Tags Section (SuperDuperItemTags) ---
+        // Tags live in the item note: <sptags:a, b> + <spdisposable>; the
+        // plugin parses both at boot. The fields mirror them and rewrite
+        // only these tags, leaving every other note tag untouched.
+        const tags = DatabaseItemEditor.readSptags(item.note);
+        const disposable = DatabaseItemEditor.readSpDisposable(item.note);
+        const knownTags = DatabaseItemEditor.collectKnownTags(this.databaseManager);
+        const tagsSection = document.createElement('div');
+        tagsSection.className = 'database-section';
+        tagsSection.innerHTML = `
+            <div class="database-section-header">${tt('Теги')} (SuperDuperItemTags)</div>
+            <div class="database-section-content" style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 4px;">
+                    <label style="font-size: 11px; color: var(--color-text);">${tt('Теги через запятую')} (${tt('пишется в note как <sptags:…>')})</label>
+                    <input type="text" list="sptags-suggestions-${item.id}" class="database-field-value" value="${rrEscapeHtml(tags.join(', '))}"
+                           data-sptags-input data-item-id="${item.id}" style="width: 100%;">
+                    <datalist id="sptags-suggestions-${item.id}">
+                        ${knownTags.map(tag => `<option value="${rrEscapeHtml(tag)}"></option>`).join('')}
+                    </datalist>
+                </div>
+                <label style="display: flex; align-items: center; gap: 8px; color: var(--color-text); font-size: 12px; cursor: pointer;">
+                    <input type="checkbox" data-spdisposable-input ${disposable ? 'checked' : ''}>
+                    ${tt('Одноразовый')} (spdisposable)
+                </label>
+            </div>
+        `;
+        gridWrapper.appendChild(tagsSection);
+
         // --- Note Section ---
         const noteSection = document.createElement('div');
         noteSection.className = 'database-section';
@@ -237,6 +341,25 @@ class DatabaseItemEditor {
 
         // Add event listeners for all editable fields
         setTimeout(() => {
+            // sptags / spdisposable sync into the note
+            const tagsInput = container.querySelector(`[data-sptags-input][data-item-id="${item.id}"]`);
+            const disposableBox = container.querySelector('[data-spdisposable-input]');
+            const noteArea = container.querySelector(`textarea[data-field="note"][data-item-id="${item.id}"]`);
+            if (tagsInput) {
+                tagsInput.addEventListener('change', () => {
+                    item.note = DatabaseItemEditor.writeSptags(item.note, tagsInput.value);
+                    if (noteArea) noteArea.value = item.note || '';
+                    this.databaseManager.updateItem(item.id, item);
+                });
+            }
+            if (disposableBox) {
+                disposableBox.addEventListener('change', () => {
+                    item.note = DatabaseItemEditor.writeSpDisposable(item.note, disposableBox.checked);
+                    if (noteArea) noteArea.value = item.note || '';
+                    this.databaseManager.updateItem(item.id, item);
+                });
+            }
+
             const editableFields = container.querySelectorAll('[data-item-id]');
             editableFields.forEach(field => {
                 field.addEventListener('change', (e) => {
@@ -482,4 +605,8 @@ class DatabaseItemEditor {
             console.warn('DatabaseItemEditor.refreshItemDetail - Could not find detail panel container!');
         }
     }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = DatabaseItemEditor;
 }

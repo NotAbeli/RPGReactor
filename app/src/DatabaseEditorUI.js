@@ -46,6 +46,9 @@ class DatabaseEditorUI {
         this.worldEditor = typeof DatabaseWorldEditor !== 'undefined'
             ? new DatabaseWorldEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this)
             : null;
+        this.uiEditor = typeof DatabaseUIEditor !== 'undefined'
+            ? new DatabaseUIEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this)
+            : null;
         this.classEditor = new DatabaseClassEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         this.skillEditor = new DatabaseSkillEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         this.itemEditor = new DatabaseItemEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
@@ -384,6 +387,12 @@ class DatabaseEditorUI {
                 if (!this.worldEditor) return;
                 const { detailEl } = this.prepareDatabaseSection('world', this._dbTitle('world', 'Мир'), { showListPanel: false });
                 this.worldEditor.showWorldDetail(detailEl);
+                return;
+            }
+            case 'uiStudio': {
+                if (!this.uiEditor) return;
+                const { detailEl } = this.prepareDatabaseSection('uiStudio', this._dbTitle('uiStudio', 'Интерфейс'), { showListPanel: false });
+                this.uiEditor.showUIDetail(detailEl);
                 return;
             }
             case 'agonia': {
@@ -1192,6 +1201,7 @@ class DatabaseEditorUI {
             { name: 'Крафт', type: 'craft' },
             { name: 'Надписи на экране', type: 'screenText' },
             { name: 'Мир', type: 'world' },
+            { name: 'Интерфейс', type: 'uiStudio' },
             { name: 'Тайлсеты', type: 'tilesets' },
             { name: 'Общие события', type: 'commonEvents' },
             { name: 'System 1', type: 'system1' },
