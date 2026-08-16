@@ -297,74 +297,40 @@ class UIManager {
             submenu: editMenu
         }));
 
-        // Database menu
+        // Database menu (S14 compact navigation: 8 tabs)
         const databaseMenu = new nw.Menu();
         databaseMenu.append(new nw.MenuItem({
-            label: 'Actors',
-            click: () => this.callbacks.openDatabase('actors')
+            label: 'Спрайтер',
+            click: () => this.callbacks.openDatabase('spriter')
         }));
         databaseMenu.append(new nw.MenuItem({
-            label: 'Classes',
-            click: () => this.callbacks.openDatabase('classes')
+            label: 'Бой',
+            click: () => this.callbacks.openDatabase('battle')
         }));
         databaseMenu.append(new nw.MenuItem({
-            label: 'Skills',
-            click: () => this.callbacks.openDatabase('skills')
+            label: 'ИИ врагов',
+            click: () => this.callbacks.openDatabase('enemyAI')
         }));
         databaseMenu.append(new nw.MenuItem({
-            label: 'Items',
+            label: 'Инвентарь',
             click: () => this.callbacks.openDatabase('items')
         }));
-        databaseMenu.append(new nw.MenuItem({
-            label: 'Weapons',
-            click: () => this.callbacks.openDatabase('weapons')
-        }));
-        databaseMenu.append(new nw.MenuItem({
-            label: 'Armors',
-            click: () => this.callbacks.openDatabase('armors')
-        }));
         databaseMenu.append(new nw.MenuItem({ type: 'separator' }));
         databaseMenu.append(new nw.MenuItem({
-            label: 'Enemies',
-            click: () => this.callbacks.openDatabase('enemies')
-        }));
-        databaseMenu.append(new nw.MenuItem({
-            label: 'Troops',
-            click: () => this.callbacks.openDatabase('troops')
-        }));
-        databaseMenu.append(new nw.MenuItem({
-            label: 'States',
-            click: () => this.callbacks.openDatabase('states')
-        }));
-        databaseMenu.append(new nw.MenuItem({ type: 'separator' }));
-        databaseMenu.append(new nw.MenuItem({
-            label: 'Animations',
-            click: () => this.callbacks.openDatabase('animations')
-        }));
-        databaseMenu.append(new nw.MenuItem({
-            label: 'Tilesets',
+            label: 'Тайлсеты',
             click: () => this.callbacks.openDatabase('tilesets')
         }));
         databaseMenu.append(new nw.MenuItem({
-            label: 'Common Events',
+            label: 'Общие события',
             click: () => this.callbacks.openDatabase('commonEvents')
         }));
-        databaseMenu.append(new nw.MenuItem({ type: 'separator' }));
         databaseMenu.append(new nw.MenuItem({
             label: 'System 1',
             click: () => this.callbacks.openDatabase('system1')
         }));
         databaseMenu.append(new nw.MenuItem({
-            label: 'System 2',
-            click: () => this.callbacks.openDatabase('system2')
-        }));
-        databaseMenu.append(new nw.MenuItem({
-            label: 'Types',
-            click: () => this.callbacks.openDatabase('types')
-        }));
-        databaseMenu.append(new nw.MenuItem({
-            label: 'Terms',
-            click: () => this.callbacks.openDatabase('terms')
+            label: 'Agonia Engine',
+            click: () => this.callbacks.openDatabase('agonia')
         }));
 
         menubar.append(new nw.MenuItem({
@@ -984,8 +950,8 @@ class UIManager {
                 this.callbacks.playtest();
                 break;
             case 'open-database':
-                // Open database menu with Actors as default
-                this.callbacks.openDatabase('actors');
+                // Open database with the Spriter tab as default (S14)
+                this.callbacks.openDatabase('spriter');
                 break;
             case 'open-plugins':
                 // Open plugins manager
