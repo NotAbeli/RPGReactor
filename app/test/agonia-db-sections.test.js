@@ -50,11 +50,11 @@ function getReseedDefaults() {
     }
 }
 
-test('agonia defaults cover fifteen sections in both DatabaseManager and reseed (no drift)', () => {
+test('agonia defaults cover nineteen sections in both DatabaseManager and reseed (no drift)', () => {
     const { DatabaseManager } = makeDbManager();
     const defaults = DatabaseManager.agoniaDefaults();
     const sections = Object.keys(defaults).sort();
-    assert.deepEqual(sections, ['audio', 'battle', 'camera', 'craft', 'dash', 'enemies', 'gifts', 'hints', 'inventory', 'lighting', 'loot', 'popup', 'screen', 'spriter', 'stamina']);
+    assert.deepEqual(sections, ['audio', 'battle', 'camera', 'craft', 'dash', 'drop', 'enemies', 'gifts', 'hints', 'inventory', 'lighting', 'loot', 'notification', 'popup', 'screen', 'spriter', 'stamina', 'steps', 'variables']);
 
     const reseed = getReseedDefaults();
     assert.deepEqual(Object.keys(reseed).sort(), sections, 'reseed sections match');
@@ -130,7 +130,7 @@ test('editor SECTIONS render every defaults section with valid field types', () 
     // craft/hints/popup/loot/gifts by the S15 data editors - none of them
     // render through the flat Agonia editor.
     const flatSections = Object.keys(defaults)
-        .filter(s => !['spriter', 'audio', 'battle', 'dash', 'enemies', 'craft', 'hints', 'popup', 'loot', 'gifts'].includes(s));
+        .filter(s => !['spriter', 'audio', 'battle', 'dash', 'enemies', 'craft', 'hints', 'popup', 'loot', 'gifts', 'steps', 'variables', 'drop', 'notification'].includes(s));
     const editorSections = Editor.SECTIONS;
     assert.deepEqual(
         Object.keys(editorSections).sort(),

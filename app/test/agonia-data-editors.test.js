@@ -164,3 +164,82 @@ test('native suggestions collect loot categories and gift characters from the si
     const chars = NC.collectSuggestions('giftCharacters', containers);
     assert.ok(chars.includes('Настя'));
 });
+
+test('world sections merge into the live plugins (steps/variables/drop/notification)', () => {
+    const SNIPPET = ProjectManager.MV_CATALOG_LOADER_SNIPPET;
+    const dir = tempDir();
+    try {
+        fs.mkdirSync(path.join(dir, 'data'), { recursive: true });
+        fs.writeFileSync(path.join(dir, 'project.rpgreactor'), JSON.stringify({ engineModules: [], retiredPlugins: [] }));
+        const terrain = JSON.stringify({
+            'Terrain ID': 1, 'Playback Mode': 'sequential',
+            'Sound Pool': JSON.stringify([JSON.stringify({ Filename: 'Шаг по бетону', Volume: 90, Pitch: 100 })])
+        });
+        const reactor = JSON.stringify({
+            Name: 'Отношения - Леша',
+            Reactions: JSON.stringify([JSON.stringify({ TriggerVarId: 101, Condition: 'equal', Value: 5 })])
+        });
+        fs.writeFileSync(path.join(dir, 'data', 'AgoniaEngine.json'), JSON.stringify({
+            steps: { 'Base Step Interval': 20, 'Terrain Configurations': JSON.stringify([terrain]) },
+            variables: { Hand_MonitorVar: 17, Reactor_Groups: JSON.stringify([reactor]), Decay_Variables: JSON.stringify([JSON.stringify({ VariableID: 69, TickInterval: 12 })]) },
+            drop: { 'Drop Char File': '!Flame', 'Icon Scale': 0.75 },
+            notification: { 'Monitored Variables': '[]', 'Wait Time': 240 }
+        }));
+        const scriptTags = [];
+        const sandbox = {
+            console, $plugins: [], window: null,
+            Game_Interpreter: function () { }, Spriteset_Map: function () { },
+            Sprite: function () { }, Bitmap: function () { },
+            Input: { _currentState: {}, _gamepadStates: [], gamepadMapper: {}, _pollGamepads() { }, _updateGamepadState() { }, isTriggered: () => false, update() { } },
+            TouchInput: { isTriggered: () => false }, Window_TitleCommand: function () { },
+            ImageManager: { loadSystem: () => ({ isReady: () => false }) },
+            Graphics: { width: 816, height: 624 }, $gameTemp: {},
+            navigator: { getGamepads: () => [] },
+            document: {
+                createElement: () => ({ type: '', src: '', async: false, onerror: null, _url: '' }),
+                body: { appendChild: tag => scriptTags.push(tag) },
+            },
+            process: { env: {}, cwd: () => dir },
+            require: n => (n === 'fs' ? fs : n === 'path' ? path : null),
+        };
+        sandbox.window = sandbox;
+        sandbox.PluginManager = {
+            _path: 'js/plugins/', _scripts: [], _parameters: {}, _errorUrls: [],
+            onError() { }, setParameters(n, p) { this._parameters[n.toLowerCase()] = p; },
+            parameters(n) { return this._parameters[n.toLowerCase()] || {}; },
+            loadScript() { },
+            setup(plugins) {
+                plugins.forEach(function (p) {
+                    if (p.status && !this._scripts.includes(p.name)) {
+                        this.setParameters(p.name, p.parameters);
+                        this._scripts.push(p.name);
+                    }
+                }, this);
+            },
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(SNIPPET, sandbox);
+        vm.runInContext(`$plugins = [
+            {name:'SuperDuperSteps',status:true,parameters:{}},
+            {name:'SuperDuperVariables',status:true,parameters:{}},
+            {name:'SuperDuperDrop',status:true,parameters:{}},
+            {name:'SuperDuperNotification',status:true,parameters:{}}
+        ]; PluginManager.setup($plugins);`, sandbox);
+
+        const PM = sandbox.PluginManager;
+        assert.strictEqual(PM.parameters('SuperDuperSteps')['Base Step Interval'], '20');
+        const terr = pluginParseCollection(PM.parameters('SuperDuperSteps')['Terrain Configurations']);
+        assert.strictEqual(terr[0]['Playback Mode'], 'sequential');
+        const pool = JSON.parse(terr[0]['Sound Pool']);
+        assert.ok(/Шаг по бетону/.test(pool[0]));
+        assert.strictEqual(PM.parameters('SuperDuperVariables')['Hand_MonitorVar'], '17');
+        const groups = pluginParseCollection(PM.parameters('SuperDuperVariables')['Reactor_Groups']);
+        assert.strictEqual(groups[0].Name, 'Отношения - Леша');
+        const decay = pluginParseCollection(PM.parameters('SuperDuperVariables')['Decay_Variables']);
+        assert.strictEqual(Number(decay[0].TickInterval), 12);
+        assert.strictEqual(PM.parameters('SuperDuperDrop')['Drop Char File'], '!Flame');
+        assert.strictEqual(PM.parameters('SuperDuperNotification')['Wait Time'], '240');
+    } finally {
+        cleanupTemp(dir);
+    }
+});

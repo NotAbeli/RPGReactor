@@ -481,6 +481,55 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
         popupPanel.appendChild(popupGrid);
         wrapper.appendChild(popupPanel);
 
+        // --- notifications (S15-B) ---
+        const notif = this.getSection('notification');
+        wrapper.appendChild(this._sectionTitle('Уведомления переменных (SuperDuperNotification)'));
+        const nHost = this._div('padding:0 16px;');
+        wrapper.appendChild(nHost);
+        this._renderCards(nHost, notif, 'Monitored Variables', {
+            countLabel: 'переменных',
+            addLabel: 'Добавить переменную',
+            blank: {
+                variableId: 1, variableName: 'Имя', nameColor: '#3498db',
+                displayName: '%name: %val', positiveColor: '#2ecc71', negativeColor: '#e74c3c'
+            },
+            headline: entry => (entry.variableName || '—') + ' (var ' + entry.variableId + ')',
+            summary: entry => entry.displayName || '',
+            renderBody: (card, entry) => {
+                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;');
+                const mk = (label, key, type) => {
+                    const w = this._fieldLabel(label);
+                    w.appendChild(this._input(entry[key], v => { entry[key] = v; }, type));
+                    return w;
+                };
+                grid.appendChild(mk('Переменная', 'variableId', 'number'));
+                grid.appendChild(mk('Имя', 'variableName'));
+                grid.appendChild(mk('Цвет имени', 'nameColor'));
+                grid.appendChild(mk('Шаблон текста', 'displayName'));
+                grid.appendChild(mk('Цвет роста', 'positiveColor'));
+                grid.appendChild(mk('Цвет падения', 'negativeColor'));
+                card.appendChild(grid);
+            }
+        });
+        const nPanel = this._panel();
+        nPanel.style.margin = '8px 16px 16px';
+        const nGrid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;');
+        const nFlat = [
+            ['Default X', 'X'], ['Default Y', 'Y'], ['Spacing Y', 'Отступ Y'],
+            ['Spawn Delay', 'Задержка (f)'], ['Wait Time', 'Пауза (f)'],
+            ['Fade In Speed', 'Фейд-в'], ['Fade Out Speed', 'Фейд-аут'],
+            ['Slide In X', 'Сдвиг в X'], ['Slide In Y', 'Сдвиг в Y'],
+            ['Slide Out X', 'Сдвиг из X'], ['Slide Out Y', 'Сдвиг из Y'],
+            ['Slide Smoothness', 'Плавность']
+        ];
+        for (const [key, label] of nFlat) {
+            const w = this._fieldLabel(label);
+            w.appendChild(this._input(notif[key], v => { notif[key] = v; }, 'number'));
+            nGrid.appendChild(w);
+        }
+        nPanel.appendChild(nGrid);
+        wrapper.appendChild(nPanel);
+
         container.appendChild(wrapper);
     }
 }
@@ -643,13 +692,347 @@ class DatabaseGiftsEditor extends AgoniaCardEditorBase {
     }
 }
 
+// ======================================================================
+// World tab (S15-B): steps / variables / drop
+// ======================================================================
+
+class DatabaseWorldEditor extends AgoniaCardEditorBase {
+    showWorldDetail(container) {
+        const wrapper = this._div('display:flex;flex-direction:column;height:100%;overflow:hidden;');
+        const banner = this._div(`
+            background-color: var(--color-bg-deep);
+            padding: 14px 20px; border-bottom: 2px solid var(--color-accent-border-mid);
+            font-size: 20px; font-weight: 600; color: var(--color-text-strong);
+            display: flex; align-items: baseline; gap: 14px;
+        `);
+        banner.textContent = this._tt('Мир');
+        const sub = document.createElement('span');
+        sub.style.cssText = 'font-size:12px;font-weight:400;color:var(--color-text-dim);';
+        sub.textContent = this._tt('Шаги по поверхностям · Реактор переменных · Выпаденные предметы');
+        banner.appendChild(sub);
+        wrapper.appendChild(banner);
+
+        const tabsRow = this._div('display:flex;gap:8px;padding:10px 16px 0;border-bottom:1px solid var(--color-border);');
+        wrapper.appendChild(tabsRow);
+        const content = this._div('flex:1;overflow-y:auto;padding:0 16px 16px;');
+        wrapper.appendChild(content);
+
+        const tabs = [
+            { id: 'steps', label: 'Шаги' },
+            { id: 'variables', label: 'Переменные' },
+            { id: 'drop', label: 'Дроп' }
+        ];
+        let active = 'steps';
+        const render = () => {
+            content.innerHTML = '';
+            if (active === 'steps') this._renderSteps(content);
+            else if (active === 'variables') this._renderVariables(content);
+            else this._renderDrop(content);
+        };
+        for (const tab of tabs) {
+            const el = this._div(`
+                padding: 8px 18px; font-size: 13px; font-weight: 600;
+                color: var(--color-text); cursor: pointer; user-select: none;
+                border: 1px solid var(--color-border); border-bottom: none;
+                border-radius: 6px 6px 0 0; background-color: var(--color-bg-deep);
+            `);
+            el.textContent = this._tt(tab.label);
+            el.addEventListener('click', () => {
+                active = tab.id;
+                tabsRow.querySelectorAll('div').forEach(t => {
+                    t.style.backgroundColor = 'var(--color-bg-deep)';
+                    t.style.color = 'var(--color-text)';
+                });
+                el.style.backgroundColor = 'var(--color-bg-panel)';
+                el.style.color = 'var(--color-text-strong)';
+                el.style.borderBottom = '2px solid var(--color-accent-border-mid)';
+                render();
+            });
+            if (tab.id === active) setTimeout(() => el.click(), 0);
+            tabsRow.appendChild(el);
+        }
+        container.appendChild(wrapper);
+    }
+
+    // -- Steps ----------------------------------------------------------
+    _renderSteps(content) {
+        const s = this.getSection('steps');
+        content.appendChild(this._sectionTitle('Шаги по поверхностям'));
+        const hint = this._div('font-size:11px;color:var(--color-text-dim);padding-bottom:8px;line-height:1.5;');
+        hint.textContent = this._tt('Террейн-ID карты (RPG Maker тайлсет → Terrain tag) выбирает пул звуков шагов. Playback: sequential по кругу / random случайно.');
+        content.appendChild(hint);
+
+        this._renderCards(content, s, 'Terrain Configurations', {
+            countLabel: 'поверхностей',
+            addLabel: 'Добавить поверхность',
+            blank: { 'Terrain ID': 1, 'Playback Mode': 'random', 'Sound Pool': '[]' },
+            headline: entry => 'Террейн ' + entry['Terrain ID'],
+            summary: entry => (entry['Playback Mode'] === 'sequential' ? 'по кругу' : 'случайно') + ' · ' + AgoniaCardEditorBase.decodeNested(entry['Sound Pool']).length + ' звуков',
+            renderBody: (card, entry) => {
+                const grid = this._div('display:grid;grid-template-columns:120px 160px 1fr;gap:12px;align-items:start;');
+                const tw = this._fieldLabel('Террейн ID');
+                tw.appendChild(this._input(entry['Terrain ID'], v => { entry['Terrain ID'] = v; }, 'number'));
+                grid.appendChild(tw);
+                const mw = this._fieldLabel('Воспроизведение');
+                mw.appendChild(this._select([
+                    { value: 'random', label: 'Случайно' },
+                    { value: 'sequential', label: 'По кругу' }
+                ], entry['Playback Mode'], v => { entry['Playback Mode'] = v; }));
+                grid.appendChild(mw);
+                grid.appendChild(this._renderSoundPool(entry));
+                card.appendChild(grid);
+            }
+        });
+
+        content.appendChild(this._sectionTitle('Настройки шагов'));
+        const panel = this._panel();
+        const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;');
+        const flat = [
+            ['Base Step Interval', 'Интервал шага (f)', 'number'],
+            ['Max Hearing Distance', 'Слышимость (тайлы)', 'number'],
+            ['Min Audible Volume', 'Мин. громкость', 'number'],
+            ['Player Speed Variable', 'Переменная скорости', 'number'],
+            ['Run Interval Mod', 'Бег: интервал', 'number'],
+            ['Run Volume Mod', 'Бег: громкость', 'number'],
+            ['Run Pitch Mod', 'Бег: питч', 'number'],
+            ['Slow Interval Mod', 'Крадусь: интервал', 'number'],
+            ['Slow Volume Mod', 'Крадусь: громкость', 'number'],
+            ['Slow Pitch Mod', 'Крадусь: питч', 'number'],
+            ['Volume Fade Type', 'Кривая затухания', 'text']
+        ];
+        for (const [key, label, type] of flat) {
+            const w = this._fieldLabel(label);
+            w.appendChild(this._input(s[key], v => { s[key] = v; }, type));
+            grid.appendChild(w);
+        }
+        const evw = this._fieldLabel('События тоже шагают');
+        evw.appendChild(this._checkbox(s.Events, v => { s.Events = v; }));
+        grid.appendChild(evw);
+        panel.appendChild(grid);
+        content.appendChild(panel);
+    }
+
+    _renderSoundPool(entry) {
+        const pool = AgoniaCardEditorBase.decodeNested(entry['Sound Pool']);
+        const wrap = this._fieldLabel('Пул звуков', 'Файл (audio/se) · громкость · питч');
+        const host = this._div('display:flex;flex-direction:column;gap:6px;');
+        const rerender = () => {
+            entry['Sound Pool'] = AgoniaCardEditorBase.encodeNested(pool);
+            wrap.replaceWith(this._renderSoundPool.call(this, entry));
+        };
+        pool.forEach((snd, i) => {
+            const row = this._div('display:grid;grid-template-columns:1fr 70px 70px auto;gap:6px;align-items:end;');
+            const fw = this._fieldLabel('Файл');
+            fw.appendChild(this._input(snd.Filename, v => { snd.Filename = v; }));
+            row.appendChild(fw);
+            const vw = this._fieldLabel('Громк.');
+            vw.appendChild(this._input(snd.Volume, v => { snd.Volume = v; }, 'number'));
+            row.appendChild(vw);
+            const pw = this._fieldLabel('Питч');
+            pw.appendChild(this._input(snd.Pitch, v => { snd.Pitch = v; }, 'number'));
+            row.appendChild(pw);
+            row.appendChild(this._button('✕', () => { pool.splice(i, 1); rerender(); }, 'danger'));
+            host.appendChild(row);
+        });
+        host.appendChild(this._button('+ Звук', () => {
+            pool.push({ Filename: '', Volume: 90, Pitch: 100 });
+            entry['Sound Pool'] = AgoniaCardEditorBase.encodeNested(pool);
+            rerender();
+        }));
+        wrap.appendChild(host);
+        return wrap;
+    }
+
+    // -- Variables ------------------------------------------------------
+    _renderVariables(content) {
+        const s = this.getSection('variables');
+        content.appendChild(this._sectionTitle('Реактор переменных (SuperDuperVariables)'));
+        const hint = this._div('font-size:11px;color:var(--color-text-dim);padding-bottom:8px;line-height:1.5;');
+        hint.textContent = this._tt('Reactor-группы следят за переменными и при срабатывании условия меняют свитчи/переменные. Decay гасит переменные со временем; AutoOff выключает свитчи/переменные через N секунд.');
+        content.appendChild(hint);
+
+        const top = this._panel();
+        const grid = this._div('display:grid;grid-template-columns:repeat(3,1fr);gap:10px;');
+        const mv = this._fieldLabel('Переменная «в руке»', 'ItemTags/Спрайтер следят за ней');
+        mv.appendChild(this._input(s.Hand_MonitorVar, v => { s.Hand_MonitorVar = v; }, 'number'));
+        grid.appendChild(mv);
+        const az = this._fieldLabel('Авто-обнуление руки');
+        az.appendChild(this._checkbox(s.Hand_AutoZero, v => { s.Hand_AutoZero = v; }));
+        grid.appendChild(az);
+        const dbg = this._fieldLabel('Режим отладки');
+        dbg.appendChild(this._checkbox(s.Debug_Mode, v => { s.Debug_Mode = v; }));
+        grid.appendChild(dbg);
+        top.appendChild(grid);
+        content.appendChild(top);
+
+        content.appendChild(this._sectionTitle('Reactor-группы'));
+        const rgHost = this._div('');
+        content.appendChild(rgHost);
+        this._renderCards(rgHost, s, 'Reactor_Groups', {
+            countLabel: 'групп',
+            addLabel: 'Добавить группу',
+            blank: { Name: 'Новая группа', Reactions: '[]' },
+            headline: entry => entry.Name || '—',
+            summary: entry => AgoniaCardEditorBase.decodeNested(entry.Reactions).length + ' ' + this._tt('реакций'),
+            renderBody: (card, entry) => {
+                const nameWrap = this._fieldLabel('Имя группы');
+                nameWrap.appendChild(this._input(entry.Name, v => { entry.Name = v; }));
+                card.appendChild(nameWrap);
+                card.appendChild(this._renderReactions(entry));
+            }
+        });
+
+        content.appendChild(this._sectionTitle('Затухание переменных (Decay)'));
+        const decayHost = this._div('');
+        content.appendChild(decayHost);
+        this._renderCards(decayHost, s, 'Decay_Variables', {
+            countLabel: 'переменных',
+            addLabel: 'Добавить',
+            blank: { VariableID: 1, TickInterval: 10 },
+            headline: entry => 'var ' + entry.VariableID,
+            summary: entry => '−1 каждые ' + entry.TickInterval + ' тиков',
+            renderBody: (card, entry) => {
+                const grid = this._div('display:grid;grid-template-columns:1fr 1fr;gap:10px;');
+                const vw = this._fieldLabel('Переменная');
+                vw.appendChild(this._input(entry.VariableID, v => { entry.VariableID = v; }, 'number'));
+                grid.appendChild(vw);
+                const tw = this._fieldLabel('Тик-интервал');
+                tw.appendChild(this._input(entry.TickInterval, v => { entry.TickInterval = v; }, 'number'));
+                grid.appendChild(tw);
+                card.appendChild(grid);
+            }
+        });
+
+        const row = this._div('display:grid;grid-template-columns:1fr 1fr;gap:14px;');
+        const swHost = this._div('');
+        row.appendChild(swHost);
+        const vrHost = this._div('');
+        row.appendChild(vrHost);
+        content.appendChild(this._sectionTitle('Авто-выключение'));
+        content.appendChild(row);
+        this._renderCards(swHost, s, 'AutoOff_Switches', {
+            countLabel: 'свитчей', addLabel: '+ Свитч',
+            blank: { switchId: 1, duration: 1 },
+            headline: entry => 'sw ' + entry.switchId,
+            summary: entry => 'выкл через ' + entry.duration + ' с',
+            renderBody: (card, entry) => {
+                const grid = this._div('display:grid;grid-template-columns:1fr 1fr;gap:10px;');
+                const w1 = this._fieldLabel('Свитч');
+                w1.appendChild(this._input(entry.switchId, v => { entry.switchId = v; }, 'number'));
+                grid.appendChild(w1);
+                const w2 = this._fieldLabel('Секунд');
+                w2.appendChild(this._input(entry.duration, v => { entry.duration = v; }, 'number'));
+                grid.appendChild(w2);
+                card.appendChild(grid);
+            }
+        });
+        this._renderCards(vrHost, s, 'AutoOff_Variables', {
+            countLabel: 'переменных', addLabel: '+ Переменную',
+            blank: { variableId: 1, duration: 1 },
+            headline: entry => 'var ' + entry.variableId,
+            summary: entry => '= 0 через ' + entry.duration + ' с',
+            renderBody: (card, entry) => {
+                const grid = this._div('display:grid;grid-template-columns:1fr 1fr;gap:10px;');
+                const w1 = this._fieldLabel('Переменная');
+                w1.appendChild(this._input(entry.variableId, v => { entry.variableId = v; }, 'number'));
+                grid.appendChild(w1);
+                const w2 = this._fieldLabel('Секунд');
+                w2.appendChild(this._input(entry.duration, v => { entry.duration = v; }, 'number'));
+                grid.appendChild(w2);
+                card.appendChild(grid);
+            }
+        });
+    }
+
+    _renderReactions(entry) {
+        const list = AgoniaCardEditorBase.decodeNested(entry.Reactions);
+        const wrap = this._fieldLabel('Реactions', 'При срабатывании условия меняют свитчи/переменные (ID:значение через запятую)');
+        const host = this._div('display:flex;flex-direction:column;gap:6px;');
+        const rerender = () => {
+            entry.Reactions = AgoniaCardEditorBase.encodeNested(list);
+            wrap.replaceWith(this._renderReactions.call(this, entry));
+        };
+        list.forEach((r, i) => {
+            const row = this._div('display:grid;grid-template-columns:90px 110px 90px 1fr 1fr auto;gap:6px;align-items:end;');
+            const tv = this._fieldLabel('Var');
+            tv.appendChild(this._input(r.TriggerVarId, v => { r.TriggerVarId = v; }, 'number'));
+            row.appendChild(tv);
+            const cw = this._fieldLabel('Условие');
+            cw.appendChild(this._select([
+                { value: 'equal', label: '=' }, { value: 'greater', label: '>' },
+                { value: 'less', label: '<' }, { value: 'notEqual', label: '≠' }
+            ], r.Condition, v => { r.Condition = v; }));
+            row.appendChild(cw);
+            const vw = this._fieldLabel('Знач.');
+            vw.appendChild(this._input(r.Value, v => { r.Value = v; }, 'number'));
+            row.appendChild(vw);
+            const sw = this._fieldLabel('Свитчи');
+            sw.appendChild(this._input(r.SwitchesToChange, v => { r.SwitchesToChange = v; }));
+            row.appendChild(sw);
+            const vrw = this._fieldLabel('Переменные');
+            vrw.appendChild(this._input(r.VariablesToChange, v => { r.VariablesToChange = v; }));
+            row.appendChild(vrw);
+            row.appendChild(this._button('✕', () => { list.splice(i, 1); rerender(); }, 'danger'));
+            host.appendChild(row);
+        });
+        host.appendChild(this._button('+ Реакция', () => {
+            list.push({ TriggerVarId: 1, Condition: 'equal', Value: 0, SwitchesToChange: '', VariablesToChange: '' });
+            entry.Reactions = AgoniaCardEditorBase.encodeNested(list);
+            rerender();
+        }));
+        wrap.appendChild(host);
+        return wrap;
+    }
+
+    // -- Drop -----------------------------------------------------------
+    _renderDrop(content) {
+        const s = this.getSection('drop');
+        content.appendChild(this._sectionTitle('Выпаденные предметы (SuperDuperDrop)'));
+        const panel = this._panel();
+        const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;');
+        const fields = [
+            ['Drop Char File', 'Спрайт предмета', 'text'],
+            ['Drop Char Index', 'Индекс спрайта', 'number'],
+            ['Drop Priority', 'Приоритет', 'number'],
+            ['Drop Radius', 'Радиус подбора', 'number'],
+            ['Icon Scale', 'Масштаб иконки', 'number'],
+            ['Icon Y Offset', 'Иконка: смещение Y', 'number'],
+            ['Icon Blink Min', 'Мигание мин', 'number'],
+            ['Icon Blink Max', 'Мигание макс', 'number'],
+            ['Icon Blink Period', 'Мигание период', 'number'],
+            ['Drop Sound', 'Звук выброса', 'text'],
+            ['Drop Sound Vol', 'Громкость выброса', 'number'],
+            ['Drop Pickup Sound', 'Звук подбора', 'text'],
+            ['Drop Pickup Vol', 'Громкость подбора', 'number'],
+            ['Block Sound', 'Звук блокировки', 'text'],
+            ['Block Sound Vol', 'Громкость блока', 'number'],
+            ['Pickup Delay', 'Задержка подбора (f)', 'number'],
+            ['Stack Pickup Delay', 'Задержка стака (f)', 'number'],
+            ['Error Plugin Command', 'Команда ошибки (переполнение)', 'text']
+        ];
+        for (const [key, label, type] of fields) {
+            const w = this._fieldLabel(label);
+            w.appendChild(this._input(s[key], v => { s[key] = v; }, type));
+            grid.appendChild(w);
+        }
+        for (const [key, label] of [['Drop Step Anime', 'Анимация стоя'], ['Drop Walk Anime', 'Анимация ходьбы'], ['Drop Dir Fix', 'Фикс. направление']]) {
+            const w = this._fieldLabel(label);
+            w.appendChild(this._checkbox(s[key], v => { s[key] = v; }));
+            grid.appendChild(w);
+        }
+        panel.appendChild(grid);
+        content.appendChild(panel);
+    }
+}
+
 if (typeof window !== 'undefined') {
     window.AgoniaCardEditorBase = AgoniaCardEditorBase;
     window.DatabaseCraftEditor = DatabaseCraftEditor;
     window.DatabaseScreenTextEditor = DatabaseScreenTextEditor;
     window.DatabaseLootEditor = DatabaseLootEditor;
     window.DatabaseGiftsEditor = DatabaseGiftsEditor;
+    window.DatabaseWorldEditor = DatabaseWorldEditor;
 }
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { AgoniaCardEditorBase, DatabaseCraftEditor, DatabaseScreenTextEditor, DatabaseLootEditor, DatabaseGiftsEditor };
+    module.exports = { AgoniaCardEditorBase, DatabaseCraftEditor, DatabaseScreenTextEditor, DatabaseLootEditor, DatabaseGiftsEditor, DatabaseWorldEditor };
 }

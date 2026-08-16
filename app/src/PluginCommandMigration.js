@@ -592,6 +592,36 @@ class PluginCommandMigration {
                 },
                 loot: { 'Categories': '[]' },
                 gifts: { 'Characters': '[]' },
+                steps: {
+                    'Base Step Interval': 25, 'Events': true, 'Max Hearing Distance': 8,
+                    'Volume Fade Type': 'linear', 'Min Audible Volume': 20,
+                    'Player Speed Variable': 0, 'Run Interval Mod': -5, 'Run Volume Mod': 20,
+                    'Run Pitch Mod': 10, 'Slow Interval Mod': 10, 'Slow Volume Mod': -20,
+                    'Slow Pitch Mod': -10, 'Terrain Configurations': '[]'
+                },
+                variables: {
+                    'Hand_MonitorVar': 1, 'Hand_AutoZero': true, 'Hand_States': '[]',
+                    'Reactor_Groups': '[]', 'Decay_Variables': '[]',
+                    'AutoOff_Switches': '[]', 'AutoOff_Variables': '[]', 'Debug_Mode': false
+                },
+                drop: {
+                    'Drop Char File': '!Chest', 'Drop Char Index': 0, 'Drop Priority': 0,
+                    'Drop Step Anime': false, 'Drop Walk Anime': false, 'Drop Dir Fix': true,
+                    'Drop Radius': 1, 'Icon Scale': 0.75, 'Icon Y Offset': 0,
+                    'Icon Blink Min': 180, 'Icon Blink Max': 255, 'Icon Blink Period': 1,
+                    'Drop Sound': 'Equip1', 'Drop Sound Vol': 90,
+                    'Drop Pickup Sound': 'Item3', 'Drop Pickup Vol': 90,
+                    'Block Sound': 'Buzzer1', 'Block Sound Vol': 80,
+                    'Pickup Delay': 30, 'Stack Pickup Delay': 0,
+                    'Error Plugin Command': 'Hint show_preset default Инвентарь переполнен!'
+                },
+                notification: {
+                    'Monitored Variables': '[]', 'Default X': 20, 'Default Y': 20,
+                    'Spacing Y': 40, 'Spawn Delay': 20, 'Wait Time': 180,
+                    'Fade In Speed': 10, 'Fade Out Speed': 10,
+                    'Slide In X': -30, 'Slide In Y': 0, 'Slide Out X': 30,
+                    'Slide Out Y': 0, 'Slide Smoothness': 0.15
+                },
                 battle: {
                     'Debug Mode': false, 'Disable Mouse Move': false,
                     'Melee List': '[]', 'Projectile List': '[]', 'Tracer List': '[]'
@@ -672,6 +702,10 @@ class PluginCommandMigration {
                 popup: 'MOG_TreasurePopup',
                 loot: 'SuperDuperLoot',
                 gifts: 'SuperDuperGifts',
+                steps: 'SuperDuperSteps',
+                variables: 'SuperDuperVariables',
+                drop: 'SuperDuperDrop',
+                notification: 'SuperDuperNotification',
                 battle: 'SuperDuperBattle',
                 enemies: 'SuperDuperEnemies',
                 dash: 'SuperDuperMovement_Addon',
@@ -765,7 +799,10 @@ class PluginCommandMigration {
                         craft: ['Recipes'],
                         hints: ['Presets', 'Title Presets'],
                         loot: ['Categories'],
-                        gifts: ['Characters']
+                        gifts: ['Characters'],
+                        steps: ['Terrain Configurations'],
+                        variables: ['Hand_States', 'Reactor_Groups', 'Decay_Variables', 'AutoOff_Switches', 'AutoOff_Variables'],
+                        notification: ['Monitored Variables']
                     };
                     const isEmptyPayload = v =>
                         v === undefined || v === null || v === '' ||
