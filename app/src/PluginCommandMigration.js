@@ -578,6 +578,22 @@ class PluginCommandMigration {
         }
         try {
             const defaults = {
+                battle: {
+                    'Debug Mode': false, 'Disable Mouse Move': false,
+                    'Melee List': '[]', 'Projectile List': '[]', 'Tracer List': '[]'
+                },
+                enemies: {
+                    'Optimization': true, 'TickRate': 4, 'VariableBaseId': 60,
+                    'HearingVariable': 0, 'NoCombatSwitch': 0,
+                    'CombatCountVariable': 0, 'GlobalResetSwitch': 0,
+                    'EnemyDatabase': '[]'
+                },
+                dash: {
+                    'Dash Active Switch': 0, 'Collision Steps': 4,
+                    'Post-Dash Stun': 0, 'Lock Direction': true,
+                    'Dash Tracking Switch ID': 0, 'Dash Tracking Variable ID': 0,
+                    'Dash Database': '[]'
+                },
                 audio: {
                     'BGM Volume': 100, 'BGS Volume': 100,
                     'BGS2 Volume': 90, 'BGS3 Volume': 90,
@@ -637,6 +653,9 @@ class PluginCommandMigration {
                 }
             };
             const sectionPlugins = {
+                battle: 'SuperDuperBattle',
+                enemies: 'SuperDuperEnemies',
+                dash: 'SuperDuperMovement_Addon',
                 spriter: 'SuperDuperSpriter',
                 stamina: 'SuperDuperMovement',
                 lighting: 'SDLight',
@@ -698,6 +717,13 @@ class PluginCommandMigration {
                 }
                 break;
             }
+            // Retired snapshots: the only source for retired plugins' tuning.
+            if (fs.existsSync(metaPath)) {
+                const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8').replace(/^\uFEFF/, ''));
+                for (const rec of (Array.isArray(meta.retiredPlugins) ? meta.retiredPlugins : [])) {
+                    applyEntry(rec, 'retiredPlugins');
+                }
+            }
             const target = path.join(projectPath, 'data', 'AgoniaEngine.json');
             let backup = null;
             if (fs.existsSync(target)) {
@@ -713,7 +739,10 @@ class PluginCommandMigration {
                     const existing = JSON.parse(fs.readFileSync(backup, 'utf8'));
                     const preserve = {
                         audio: ['Map Rules', 'Recent Tracks'],
-                        spriter: ['SpriteMappings', 'PoseMappings', 'NPCMappings']
+                        spriter: ['SpriteMappings', 'PoseMappings', 'NPCMappings'],
+                        battle: ['Melee List', 'Projectile List', 'Tracer List'],
+                        enemies: ['EnemyDatabase'],
+                        dash: ['Dash Database']
                     };
                     const isEmptyPayload = v =>
                         v === undefined || v === null || v === '' ||

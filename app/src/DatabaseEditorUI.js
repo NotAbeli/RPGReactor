@@ -25,6 +25,12 @@ class DatabaseEditorUI {
         this.spriterEditor = typeof DatabaseSpriterEditor !== 'undefined'
             ? new DatabaseSpriterEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this)
             : null;
+        this.battleEditor = typeof DatabaseBattleEditor !== 'undefined'
+            ? new DatabaseBattleEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this)
+            : null;
+        this.enemiesEditor = typeof DatabaseEnemiesEditor !== 'undefined'
+            ? new DatabaseEnemiesEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this)
+            : null;
         this.classEditor = new DatabaseClassEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         this.skillEditor = new DatabaseSkillEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         this.itemEditor = new DatabaseItemEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
@@ -384,6 +390,18 @@ class DatabaseEditorUI {
                 if (!this.spriterEditor) return;
                 const { detailEl } = this.prepareDatabaseSection('spriter', this._dbTitle('spriter', 'Спрайтер'), { showListPanel: false });
                 this.spriterEditor.showSpriterDetail(detailEl);
+                return;
+            }
+            case 'battle': {
+                if (!this.battleEditor) return;
+                const { detailEl } = this.prepareDatabaseSection('battle', this._dbTitle('battle', 'Бой'), { showListPanel: false });
+                this.battleEditor.showBattleDetail(detailEl);
+                return;
+            }
+            case 'enemies': {
+                if (!this.enemiesEditor) return;
+                const { detailEl } = this.prepareDatabaseSection('enemies', this._dbTitle('enemies', 'Враги'), { showListPanel: false });
+                this.enemiesEditor.showEnemiesDetail(detailEl);
                 return;
             }
             case 'agonia': {
@@ -1128,6 +1146,8 @@ class DatabaseEditorUI {
         const categories = [
             { name: 'Actors', type: 'actors' },
             { name: 'Спрайтер', type: 'spriter' },
+            { name: 'Бой', type: 'battle' },
+            { name: 'Враги', type: 'enemies' },
             { name: 'Classes', type: 'classes' },
             { name: 'Skills', type: 'skills' },
             { name: 'Items', type: 'items' },

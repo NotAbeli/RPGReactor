@@ -252,6 +252,35 @@ class DatabaseManager {
             // string): the plugin's safeParseArray expects exactly that, so
             // the editor encodes/decodes on read/write instead of the
             // natural JSON arrays used by the other sections.
+            // Battle/enemies/dash keep their databases in MV plugin format
+            // (arrays of JSON-object strings, serialized as strings) - the
+            // plugins' safeParseArray expects exactly that (see spriter).
+            battle: {
+                'Debug Mode': false,
+                'Disable Mouse Move': false,
+                'Melee List': '[]',
+                'Projectile List': '[]',
+                'Tracer List': '[]'
+            },
+            enemies: {
+                'Optimization': true,
+                'TickRate': 4,
+                'VariableBaseId': 60,
+                'HearingVariable': 0,
+                'NoCombatSwitch': 0,
+                'CombatCountVariable': 0,
+                'GlobalResetSwitch': 0,
+                'EnemyDatabase': '[]'
+            },
+            dash: {
+                'Dash Active Switch': 0,
+                'Collision Steps': 4,
+                'Post-Dash Stun': 0,
+                'Lock Direction': true,
+                'Dash Tracking Switch ID': 0,
+                'Dash Tracking Variable ID': 0,
+                'Dash Database': '[]'
+            },
             spriter: {
                 'VariableId': 17,
                 'EnablePoses': true,
@@ -400,6 +429,9 @@ class DatabaseManager {
     /** Which engine module feeds which settings section. */
     static get AGONIA_SECTION_PLUGINS() {
         return {
+            battle: 'SuperDuperBattle',
+            enemies: 'SuperDuperEnemies',
+            dash: 'SuperDuperMovement_Addon',
             spriter: 'SuperDuperSpriter',
             stamina: 'SuperDuperMovement',
             lighting: 'SDLight',
@@ -438,8 +470,9 @@ class DatabaseManager {
         try {
             // 1. engineModules in project.rpgreactor
             const metaPath = this.path.join(projectPath, 'project.rpgreactor');
+            let meta = null;
             if (this.fs.existsSync(metaPath)) {
-                const meta = JSON.parse(this.fs.readFileSync(metaPath, 'utf8').replace(/^\uFEFF/, ''));
+                meta = JSON.parse(this.fs.readFileSync(metaPath, 'utf8').replace(/^\uFEFF/, ''));
                 for (const module of (Array.isArray(meta.engineModules) ? meta.engineModules : [])) {
                     applyEntry(module);
                 }
@@ -459,6 +492,12 @@ class DatabaseManager {
                 }
                 break;
             }
+            // 3. retired snapshots (retired plugins' live tuning lives ONLY
+            // here - engineModules no longer carry it after retirement).
+            try {
+                const retired = Array.isArray(meta.retiredPlugins) ? meta.retiredPlugins : [];
+                for (const rec of retired) applyEntry(rec);
+            } catch (e) { /* unreadable retired list: defaults stand */ }
         } catch (e) {
             // Unreadable metadata: plain defaults are fine.
         }
