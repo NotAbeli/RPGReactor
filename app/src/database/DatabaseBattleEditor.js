@@ -167,15 +167,20 @@ class DatabaseBattleEditor {
         wrapper.appendChild(tabsRow);
 
         const content = document.createElement('div');
+        content.className = 'agonia-content';
         content.style.cssText = 'flex:1;overflow-y:auto;padding:0 16px 16px;';
         wrapper.appendChild(content);
 
+        const cardsHost = document.createElement('div');
+        cardsHost.className = 'agonia-cards';
+        content.appendChild(cardsHost);
+
         let active = this.collectionKeys[0].kind;
         const render = () => {
-            content.innerHTML = '';
+            cardsHost.innerHTML = '';
             const meta = this.collectionKeys.find(c => c.kind === active);
             const section = this.getSection(meta.section);
-            this._renderCollection(content, section, meta);
+            this._renderCollection(cardsHost, section, meta);
         };
 
         for (const col of this.collectionKeys) {

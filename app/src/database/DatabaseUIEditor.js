@@ -1407,6 +1407,7 @@ class DatabaseUIEditor {
         wrapper.appendChild(tabsRow);
 
         const content = document.createElement('div');
+        content.className = 'agonia-content';
         content.style.cssText = 'flex:1;overflow-y:auto;padding:0 16px 16px;';
         wrapper.appendChild(content);
 

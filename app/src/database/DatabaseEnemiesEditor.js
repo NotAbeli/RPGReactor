@@ -72,6 +72,7 @@ class DatabaseEnemiesEditor {
         const enemies = this.getEnemies();
 
         const wrapper = document.createElement('div');
+        wrapper.className = 'agonia-content';
         wrapper.style.cssText = 'display:flex;flex-direction:column;height:100%;overflow-y:auto;';
 
         const banner = document.createElement('div');
@@ -144,6 +145,7 @@ class DatabaseEnemiesEditor {
         wrapper.appendChild(hint);
 
         const cardsHost = document.createElement('div');
+        cardsHost.className = 'agonia-cards';
         cardsHost.style.cssText = 'padding:0 16px 16px;';
         wrapper.appendChild(cardsHost);
 

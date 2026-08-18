@@ -337,6 +337,11 @@ class AgoniaCardEditorBase {
 
     /** Render a card list with add/reorder/duplicate/delete wiring. */
     _renderCards(host, section, key, opts) {
+        // S17: cap the card column so full-screen doesn't smear one entry
+        // into a ribbon (cards read best <=1160px).
+        if (host.classList && !host.classList.contains('agonia-cards')) {
+            host.classList.add('agonia-cards');
+        }
         host.innerHTML = '';
         const entries = AgoniaCardEditorBase.decodeCollection(section[key]);
 
@@ -408,6 +413,7 @@ class DatabaseCraftEditor extends AgoniaCardEditorBase {
         wrapper.appendChild(this._stdBanner('Крафт', 'Рецепты верстака. Открытие меню — натив 734'));
 
         const content = this._div('flex:1;overflow-y:auto;padding:0 16px 16px;');
+        content.className = 'agonia-content';
         wrapper.appendChild(content);
         container.appendChild(wrapper);
 
@@ -476,6 +482,7 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
         const wrapper = this._div('display:flex;flex-direction:column;height:100%;overflow:hidden;');
         wrapper.appendChild(this._stdBanner('Надписи на экране', 'Пресеты хинтов и титулов (нативы 735/737) + попапы добычи (729)'));
         const content = this._div('flex:1;overflow-y:auto;padding:0 16px 16px;');
+        content.className = 'agonia-content';
         wrapper.appendChild(content);
         container.appendChild(wrapper);
         this._renderScreenTextContent(content);
@@ -506,7 +513,7 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
             headline: entry => entry.Name || '—',
             summary: entry => 'Y=' + entry.Y + (entry['SE Name'] ? ' · SE ' + entry['SE Name'] : ''),
             renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;');
+                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;');
                 const mk = (label, key, type) => {
                     const w = this._fieldLabel(label);
                     w.appendChild(this._input(entry[key], v => { entry[key] = v; }, type));
@@ -547,7 +554,7 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
             headline: entry => entry.Name || '—',
             summary: entry => (entry['Appear Type'] || '') + ' · ' + (entry['Font Size'] || '') + 'px',
             renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;');
+                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;');
                 const mk = (label, key, type) => {
                     const w = this._fieldLabel(label);
                     w.appendChild(this._input(entry[key], v => { entry[key] = v; }, type));
@@ -583,7 +590,7 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
         contentHost.appendChild(this._sectionTitle('Попапы добычи (натив 729)'));
         const popupPanel = this._panel();
         popupPanel.style.margin = '0 16px 16px';
-        const popupGrid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;');
+        const popupGrid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;');
         const popupFields = [
             ['Duration', 'Длительность (f)', 'number'],
             ['Fade Speed', 'Скорость фейда', 'number'],
@@ -842,6 +849,7 @@ class DatabaseWorldEditor extends AgoniaCardEditorBase {
         const tabsRow = this._div('display:flex;gap:8px;padding:10px 16px 0;border-bottom:1px solid var(--color-border);');
         wrapper.appendChild(tabsRow);
         const content = this._div('flex:1;overflow-y:auto;padding:0 16px 16px;');
+        content.className = 'agonia-content';
         wrapper.appendChild(content);
 
         const tabs = [
