@@ -427,7 +427,7 @@ class DatabaseEditorUI {
         const listEl = document.getElementById('database-list');
         const listPanelEl = document.getElementById('database-list-panel');
         if (!listEl || !listPanelEl || listPanelEl.querySelector('.inventory-mode-switch')) return;
-        listPanelEl.insertBefore(this._inventoryModeBar(modes, current.key, m => this.showInventoryTab(m.key)), listEl);
+        listPanelEl.insertBefore(this._inventoryModeBar(modes, current.key, key => this.showInventoryTab(key)), listEl);
     }
 
     /**
@@ -446,7 +446,7 @@ class DatabaseEditorUI {
         const { detailEl } = this.prepareDatabaseSection('invSystems', tt('Инвентарь') + ' — ' + tt(current.label), { showListPanel: false });
         const wrap = document.createElement('div');
         wrap.style.cssText = 'display:flex;flex-direction:column;height:100%;';
-        wrap.appendChild(this._inventoryModeBar(modes, current.key, m => this.showInventorySystemsTab(m.key)));
+        wrap.appendChild(this._inventoryModeBar(modes, current.key, key => this.showInventorySystemsTab(key)));
         const body = document.createElement('div');
         body.style.cssText = 'flex:1;overflow:auto;padding:0 16px 16px;';
         wrap.appendChild(body);

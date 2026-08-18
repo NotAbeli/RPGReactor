@@ -962,9 +962,11 @@
             background-color: var(--color-bg-deep);
         }
 
-        /* S17: centered content column - full-screen database tabs stop smearing */
-.agonia-content { max-width: 1440px; margin: 0 auto; width: 100%; }
-.agonia-cards { max-width: 1160px; margin: 0 auto; width: 100%; }
+        /* S17: left-aligned tiling - cards are ~20% narrower (928px), wrap into a
+   second column when the window has room, flat groups tile on their own. */
+.agonia-content { width: 100%; }
+.agonia-cards { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; width: 100%; }
+.agonia-card { flex: 0 1 928px; min-width: 430px; max-width: 928px; width: auto; }
 
 .database-detail {
             flex: 1;

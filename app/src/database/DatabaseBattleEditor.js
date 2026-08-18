@@ -222,7 +222,7 @@ class DatabaseBattleEditor {
         const entries = DatabaseBattleEditor.decodeCollection(section[meta.key]);
 
         const header = document.createElement('div');
-        header.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px 0 8px;flex-wrap:wrap;';
+        header.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px 0 8px;flex-wrap:wrap;width:100%;';
         const title = document.createElement('div');
         title.style.cssText = 'font-size:15px;font-weight:600;color:var(--color-text-strong);';
         title.textContent = this._tt(meta.label);
@@ -241,7 +241,7 @@ class DatabaseBattleEditor {
 
         if (!entries.length) {
             const empty = document.createElement('div');
-            empty.style.cssText = 'color:var(--color-text-muted);text-align:center;padding:40px 0;font-size:13px;';
+            empty.style.cssText = 'color:var(--color-text-muted);text-align:center;padding:40px 0;font-size:13px;width:100%;';
             empty.textContent = this._tt('Записей нет — нажмите «Добавить»');
             content.appendChild(empty);
             return;
@@ -268,10 +268,11 @@ class DatabaseBattleEditor {
         const kind = meta.kind;
         const entry = entries[idx];
         const card = document.createElement('div');
+        card.classList.add('agonia-card');
         card.style.cssText = `
             background-color: var(--color-bg-panel);
             border: 1px solid var(--color-border); border-radius: 6px;
-            margin-bottom: 12px; display: flex; flex-direction: column;
+            display: flex; flex-direction: column;
         `;
 
         const head = document.createElement('div');

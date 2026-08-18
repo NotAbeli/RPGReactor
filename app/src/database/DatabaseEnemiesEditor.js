@@ -96,7 +96,7 @@ class DatabaseEnemiesEditor {
         // --- Globals ---
         wrapper.appendChild(this._sectionTitle('Глобальные настройки'));
         const globalsGrid = document.createElement('div');
-        globalsGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:14px;padding:4px 16px;';
+        globalsGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;padding:4px 16px;';
         const globalFields = [
             { key: 'TickRate', label: 'Tick Rate', type: 'number', hint: 'Обновление ИИ раз в N кадров' },
             { key: 'VariableBaseId', label: 'Базовая переменная', type: 'number', hint: 'Враги пишут состояние в vars id*100+n' },
@@ -158,7 +158,7 @@ class DatabaseEnemiesEditor {
         host.innerHTML = '';
 
         const header = document.createElement('div');
-        header.style.cssText = 'display:flex;align-items:center;gap:12px;padding-bottom:10px;';
+        header.style.cssText = 'display:flex;align-items:center;gap:12px;padding-bottom:10px;width:100%;';
         const count = document.createElement('span');
         count.style.cssText = 'font-size:12px;color:var(--color-text-dim);';
         count.textContent = entries.length + ' ' + this._tt('записей');
@@ -173,7 +173,7 @@ class DatabaseEnemiesEditor {
 
         if (!entries.length) {
             const empty = document.createElement('div');
-            empty.style.cssText = 'color:var(--color-text-muted);text-align:center;padding:30px 0;font-size:13px;';
+            empty.style.cssText = 'color:var(--color-text-muted);text-align:center;padding:30px 0;font-size:13px;width:100%;';
             empty.textContent = this._tt('Записей нет — нажмите «Добавить»');
             host.appendChild(empty);
             return;
@@ -187,7 +187,7 @@ class DatabaseEnemiesEditor {
     _renderEnemyCard(entries, idx, enemies, host) {
         const entry = entries[idx];
         const card = this._panel();
-        card.style.marginBottom = '12px';
+        card.classList.add('agonia-card');
 
         const head = document.createElement('div');
         head.style.cssText = 'display:flex;align-items:center;gap:10px;';

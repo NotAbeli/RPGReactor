@@ -345,7 +345,7 @@ class AgoniaCardEditorBase {
         host.innerHTML = '';
         const entries = AgoniaCardEditorBase.decodeCollection(section[key]);
 
-        const header = this._div('display:flex;align-items:center;gap:12px;padding-bottom:10px;flex-wrap:wrap;');
+        const header = this._div('display:flex;align-items:center;gap:12px;padding-bottom:10px;flex-wrap:wrap;width:100%;');
         const count = this._div('font-size:12px;color:var(--color-text-dim);');
         count.textContent = entries.length + ' ' + this._tt(opts.countLabel || 'записей');
         header.appendChild(count);
@@ -358,7 +358,7 @@ class AgoniaCardEditorBase {
         host.appendChild(header);
 
         if (!entries.length) {
-            const empty = this._div('color:var(--color-text-muted);text-align:center;padding:30px 0;font-size:13px;');
+            const empty = this._div('color:var(--color-text-muted);text-align:center;padding:30px 0;font-size:13px;width:100%;');
             empty.textContent = this._tt('Записей нет — нажмите «Добавить»');
             host.appendChild(empty);
             return;
@@ -366,7 +366,7 @@ class AgoniaCardEditorBase {
 
         entries.forEach((entry, idx) => {
             const card = this._panel();
-            card.style.marginBottom = '12px';
+            card.classList.add('agonia-card');
             const rerender = () => this._renderCards(host, section, key, opts);
             const actions = [
                 this._button('▲', () => {
@@ -989,7 +989,7 @@ class DatabaseWorldEditor extends AgoniaCardEditorBase {
         content.appendChild(hint);
 
         const top = this._panel();
-        const grid = this._div('display:grid;grid-template-columns:repeat(3,1fr);gap:10px;');
+        const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;');
         const mv = this._fieldLabel('Переменная «в руке»', 'ItemTags/Спрайтер следят за ней');
         mv.appendChild(this._input(s.Hand_MonitorVar, v => { s.Hand_MonitorVar = v; }, 'number'));
         grid.appendChild(mv);

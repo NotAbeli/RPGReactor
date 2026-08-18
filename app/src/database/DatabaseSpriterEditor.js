@@ -369,7 +369,7 @@ class DatabaseSpriterEditor {
         content.appendChild(this._sectionTitle('Глобальные настройки спрайтера'));
 
         const grid = document.createElement('div');
-        grid.style.cssText = 'display:grid;grid-template-columns:repeat(2,1fr);gap:16px;padding:8px 0;';
+        grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;padding:8px 0;';
 
         const mainPanel = this._panel();
         const varRow = this._fieldLabel('Основная переменная состояния', 'Значение этой переменной выбирает активный скин/позу героя (в этом проекте — 17, «что в руке»)');
