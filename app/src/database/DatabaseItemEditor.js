@@ -136,27 +136,8 @@ class DatabaseItemEditor {
                     </div>
                     <div class="db-row-cols">
                         <span class="db-col">
-                            <label>${tt('Item Type')}</label>
-                            <select class="database-field-value" data-field="itypeId" data-item-id="${item.id}">
-                                <option value="1" ${item.itypeId === 1 ? 'selected' : ''}>${tt('Regular Item')}</option>
-                                <option value="2" ${item.itypeId === 2 ? 'selected' : ''}>${tt('Key Item')}</option>
-                            </select>
-                        </span>
-                        <span class="db-col">
                             <label>${tt('Price')}</label>
                             <input type="number" class="database-field-value" value="${rrEscapeHtml(item.price || 0)}" data-field="price" data-item-id="${item.id}">
-                        </span>
-                        <span class="db-col">
-                            <label>${tt('Scope')}</label>
-                            <select class="database-field-value" data-field="scope" data-item-id="${item.id}">
-                                ${scopeNames.map((name, idx) => `<option value="${idx}" ${item.scope === idx ? 'selected' : ''}>${name}</option>`).join('')}
-                            </select>
-                        </span>
-                        <span class="db-col">
-                            <label>${tt('Occasion')}</label>
-                            <select class="database-field-value" data-field="occasion" data-item-id="${item.id}">
-                                ${occasionNames.map((name, idx) => `<option value="${idx}" ${item.occasion === idx ? 'selected' : ''}>${name}</option>`).join('')}
-                            </select>
                         </span>
                     </div>
                     <div class="db-row-cols">
@@ -186,116 +167,34 @@ class DatabaseItemEditor {
         gridWrapper.className = 'database-sections-grid';
         gridWrapper.appendChild(generalSection);
 
-        // --- Invocation Section ---
-        const invocationSection = document.createElement('div');
-        invocationSection.className = 'database-section';
-        invocationSection.innerHTML = `
-            <div class="database-section-header">${tt('Invocation')}</div>
-            <div class="database-section-content">
-                <div class="db-form">
-                    <div class="db-row-pair">
-                        <label>${tt('Speed')}</label>
-                        <input type="number" class="database-field-value" value="${rrEscapeHtml(item.speed || 0)}" data-field="speed" data-item-id="${item.id}">
-                        <label>${tt('Success %')}</label>
-                        <input type="number" class="database-field-value" value="${rrEscapeHtml(item.successRate != null ? item.successRate : 100)}" data-field="successRate" data-item-id="${item.id}">
-                    </div>
-                    <div class="db-row-pair">
-                        <label>${tt('Repeats')}</label>
-                        <input type="number" class="database-field-value" value="${rrEscapeHtml(item.repeats || 1)}" min="1" max="${globalThis.RR_LIMITS?.ACTION_REPEATS || 100}" data-field="repeats" data-item-id="${item.id}">
-                        <label>${tt('TP Gain')}</label>
-                        <input type="number" class="database-field-value" value="${rrEscapeHtml(item.tpGain || 0)}" data-field="tpGain" data-item-id="${item.id}">
-                    </div>
-                    <div class="db-row-pair">
-                        <label>${tt('Hit Type')}</label>
-                        <select class="database-field-value" data-field="hitType" data-item-id="${item.id}">
-                            ${hitTypeNames.map((name, idx) => `<option value="${idx}" ${item.hitType === idx ? 'selected' : ''}>${name}</option>`).join('')}
-                        </select>
-                    </div>
-                </div>
-            </div>
-        `;
-        gridWrapper.appendChild(invocationSection);
-
-        // --- Damage Section ---
-        const damage = item.damage || { type: 0, elementId: -1, formula: '0', variance: 20, critical: false };
-        const damageSection = document.createElement('div');
-        damageSection.className = 'database-section';
-        damageSection.innerHTML = `
-            <div class="database-section-header">${tt('Damage')}</div>
-            <div class="database-section-content">
-                <div class="db-form">
-                    <div class="db-row-cols">
-                        <span class="db-col">
-                            <label>${tt('Formula')}</label>
-                            <input type="text" class="database-field-value" style="font-family: monospace;" value="${rrEscapeHtml(damage.formula || '0')}" data-field="damage.formula" data-item-id="${item.id}">
-                        </span>
-                    </div>
-                    <div class="db-row-cols">
-                        <span class="db-col">
-                            <label>${tt('Type')}</label>
-                            <select class="database-field-value" data-field="damage.type" data-item-id="${item.id}">
-                                ${damageTypeNames.map((name, idx) => `<option value="${idx}" ${damage.type === idx ? 'selected' : ''}>${name}</option>`).join('')}
-                            </select>
-                        </span>
-                        <span class="db-col">
-                            <label>${tt('Element')}</label>
-                            <select class="database-field-value" data-field="damage.elementId" data-item-id="${item.id}">
-                                <option value="-1" ${damage.elementId === -1 ? 'selected' : ''}>${tt('Normal Attack')}</option>
-                                ${elements.map((name, idx) => idx > 0 && name ? `<option value="${idx}" ${damage.elementId === idx ? 'selected' : ''}>${rrEscapeHtml(name)}</option>` : '').join('')}
-                            </select>
-                        </span>
-                        <span class="db-col">
-                            <label>${tt('Variance %')}</label>
-                            <input type="number" class="database-field-value" value="${rrEscapeHtml(damage.variance != null ? damage.variance : 20)}" data-field="damage.variance" data-item-id="${item.id}">
-                        </span>
-                        <span class="db-col">
-                            <label>${tt('Critical')}</label>
-                            <input type="checkbox" class="system-checkbox" ${damage.critical ? 'checked' : ''} data-field="damage.critical" data-item-id="${item.id}">
-                        </span>
-                    </div>
-                </div>
-            </div>
-        `;
-        gridWrapper.appendChild(damageSection);
-
-        // --- Effects Section ---
+        // --- Common Event Effects (S18) ---
+        // Only code 44 (Common Event) is used by this project; battle
+        // effects were amputated with the standard battle (S12/S13) and
+        // stay hidden in the data, untouched.
+        const ceEffects = (item.effects || []).filter(e => e && e.code === 44);
+        const hiddenEffects = (item.effects || []).length - ceEffects.length;
         const effectsSection = document.createElement('div');
         effectsSection.className = 'database-section';
         effectsSection.innerHTML = `
-            <div class="database-section-header">${tt('Effects')}</div>
-            <div class="database-section-content">
-                <table class="traits-table" id="item-effects-table-${item.id}">
-                    <thead>
-                        <tr>
-                            <th style="width: 3px; padding: 0; border: none; background: transparent;"></th>
-                            <th>${tt('Effect')}</th>
-                            <th>${tt('Value')}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${item.effects && item.effects.length > 0 ?
-                            item.effects.map((effect, index) => `
-                                <tr class="effect-row" data-effect-index="${index}">
-                                    <td class="effect-indicator" style="width: 3px; padding: 0; border: none; background: transparent;"></td>
-                                    <td>${rrEscapeHtml(DatabaseEffectEditor.getEffectName(effect.code))}</td>
-                                    <td>${rrEscapeHtml(DatabaseEffectEditor.getEffectValue(effect, this.databaseManager))}</td>
-                                </tr>
-                            `).join('') :
-                            `<tr><td style="width: 3px; padding: 0; border: none; background: transparent;"></td><td colspan="2" style="text-align: center; color: var(--color-text-muted); font-style: italic; padding: 12px;">${tt('No effects')}</td></tr>`}
-                    </tbody>
-                </table>
+            <div class="database-section-header">${tt('Эффект: Общее событие')}</div>
+            <div class="database-section-content" id="item-ce-effects-${item.id}">
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                    ${ceEffects.map((e, index) => `
+                        <div style="display:flex;gap:8px;align-items:center;" data-ce-index="${index}">
+                            <span style="font-size:11px;color:var(--color-text-dim);flex:none;">${tt('Общее событие')}</span>
+                            <input type="number" min="1" style="width:84px;padding:5px 8px;font-size:12px;box-sizing:border-box;background-color:var(--color-bg-deep);color:var(--color-text-strong);border:1px solid var(--color-border);border-radius:4px;"
+                                   value="${rrEscapeHtml(e.dataId || 1)}" data-ce-input data-ce-original-index="${(item.effects || []).indexOf(e)}">
+                            <button type="button" class="agonia-btn danger" data-ce-remove data-ce-original-index="${(item.effects || []).indexOf(e)}">✕</button>
+                        </div>
+                    `).join('')}
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <button type="button" class="agonia-btn" data-ce-add>${tt('+ Общее событие')}</button>
+                        ${hiddenEffects > 0 ? `<span style="font-size:10px;color:var(--color-text-dim);">${hiddenEffects} ${tt('боевых эффекта(ов) скрыто (данные не тронуты)')}</span>` : ''}
+                    </div>
+                </div>
             </div>
         `;
         gridWrapper.appendChild(effectsSection);
-
-        // Setup effect interaction after DOM is ready
-        setTimeout(() => {
-            const effectsTable = document.getElementById(`item-effects-table-${item.id}`);
-            if (effectsTable) {
-                this.setupEffectInteraction(effectsTable, item);
-                this.setupEffectsContextMenu(effectsTable, item);
-            }
-        }, 0);
 
         // --- Tags Section (SuperDuperItemTags) ---
         // Tags live in the item note: <sptags:a, b> + <spdisposable>; the
@@ -341,6 +240,41 @@ class DatabaseItemEditor {
 
         // Add event listeners for all editable fields
         setTimeout(() => {
+            // Common-event effects (S18): edit / remove / add on code 44 only
+            const ceHost = container.querySelector(`#item-ce-effects-${item.id}`) ||
+                document.getElementById(`item-ce-effects-${item.id}`);
+            if (ceHost) {
+                ceHost.querySelectorAll('[data-ce-input]').forEach(input => {
+                    input.addEventListener('change', () => {
+                        const oi = parseInt(input.dataset.ceOriginalIndex, 10);
+                        const n = Number(input.value);
+                        if (!Number.isNaN(n) && item.effects && item.effects[oi]) {
+                            item.effects[oi].dataId = Math.max(1, n);
+                            this.databaseManager.updateItem(item.id, item);
+                        }
+                    });
+                });
+                ceHost.querySelectorAll('[data-ce-remove]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const oi = parseInt(btn.dataset.ceOriginalIndex, 10);
+                        if (item.effects && item.effects[oi]) {
+                            item.effects.splice(oi, 1);
+                            this.databaseManager.updateItem(item.id, item);
+                            this.showItemDetail(container.closest('.database-detail') || container, item);
+                        }
+                    });
+                });
+                const addBtn = ceHost.querySelector('[data-ce-add]');
+                if (addBtn) {
+                    addBtn.addEventListener('click', () => {
+                        item.effects = item.effects || [];
+                        item.effects.push({ code: 44, dataId: 1, value1: 0, value2: 0 });
+                        this.databaseManager.updateItem(item.id, item);
+                        this.showItemDetail(container.closest('.database-detail') || container, item);
+                    });
+                }
+            }
+
             // sptags / spdisposable sync into the note
             const tagsInput = container.querySelector(`[data-sptags-input][data-item-id="${item.id}"]`);
             const disposableBox = container.querySelector('[data-spdisposable-input]');

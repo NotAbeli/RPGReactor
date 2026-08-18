@@ -1,23 +1,13 @@
 /**
- * DatabaseBattleEditor - combat databases tab (below Spriter): melee,
- * projectile and tracer attack lists (SuperDuperBattle) plus the dash
- * skill database (SuperDuperMovement_Addon).
+ * DatabaseBattleEditor - the combat tab (S18 rewrite): master-detail.
  *
- * Data lives in the Agonia sidecar sections `battle` and `dash`
- * (data/AgoniaEngine.json) as MV-format collection strings - arrays of
- * JSON-object strings - matching the plugins' safeParseArray exactly.
- * The bridge merges the sections into the system modules' parameters.
+ * Sub-tabs (Melee / Projectiles / Tracers / Dashes) each render a
+ * MasterDetailShell: the attack list on the left, a single-record form
+ * on the right, in System1-style sections. Data plumbing (MV collection
+ * codec, AgoniaEngine sections battle+dash) is unchanged from S10.
  *
- * Struct fields mirror the plugins' own @param structs:
- *   MeleeAttack:    ID, PID, Name, Source, Target, Shape, Range, Width,
- *                   Duration, Regions, Terrains, AnimID, ActionsEvent,
- *                   ActionsPlayer, ActionsShooter
- *   ProjectileAttack: ID, PID, Source, Target, Graphic, Speed, Distance,
- *                   Hitbox, Z, Regions, Terrains, AnimID, Actions*...
- *   TracerAttack:   ID, PID, Source, Target, MaxRange, Color, Regions,
- *                   Terrains, AnimID, Actions*...
- *   DashSettings:   Name, TargetMode, MaxCharges, SpeedMultiplier,
- *                   Duration, Decay, Cooldown, SE
+ * AnimID is gone from the UI (animations were amputated in S13); the
+ * value survives in the data untouched.
  */
 class DatabaseBattleEditor {
     constructor(databaseManager, projectManager, commonUI, parentEditor) {
@@ -27,81 +17,98 @@ class DatabaseBattleEditor {
         this.parentEditor = parentEditor;
 
         this.collectionKeys = [
-            { section: 'battle', key: 'Melee List', label: 'Ближний бой', kind: 'melee',
-                hint: 'Атаки взмахом (performMelee). Хитбокс: форма, радиус, ширина, длительность.' },
-            { section: 'battle', key: 'Projectile List', label: 'Снаряды', kind: 'projectile',
-                hint: 'Летящие атаки (performProjectile): графика, скорость, дистанция, хитбокс.' },
-            { section: 'battle', key: 'Tracer List', label: 'Трассеры', kind: 'tracer',
-                hint: 'Мгновенные трассирующие выстрелы (performTracer): дальность, цвет.' },
-            { section: 'dash', key: 'Dash Database', label: 'Рывки', kind: 'dash',
-                hint: 'Профили боевых рывков — имена видит натив 726 Dash.' }
+            { section: 'battle', key: 'Melee List', label: 'Ближний бой', kind: 'melee', addLabel: 'Добавить атаку' },
+            { section: 'battle', key: 'Projectile List', label: 'Снаряды', kind: 'projectile', addLabel: 'Добавить снаряд' },
+            { section: 'battle', key: 'Tracer List', label: 'Трассеры', kind: 'tracer', addLabel: 'Добавить трассер' },
+            { section: 'dash', key: 'Dash Database', label: 'Рывки', kind: 'dash', addLabel: 'Добавить рывок' }
         ];
 
         this._fieldDefs = {
-            melee: [
-                { key: 'ID', label: 'ID атаки', type: 'text', hint: 'Ключ для performMelee(id)' },
-                { key: 'PID', label: 'PID', type: 'number' },
-                { key: 'Name', label: 'Название', type: 'text' },
-                { key: 'Source', label: 'Источник', type: 'number', hint: '0 = атакующий' },
-                { key: 'Target', label: 'Цель', type: 'number', hint: 'Куда целиться (0 = мышь/направление)' },
-                { key: 'Shape', label: 'Форма', type: 'select', options: [['arc', 'arc — дуга'], ['circle', 'circle — круг'], ['line', 'line — линия']] },
-                { key: 'Range', label: 'Радиус (тайлы)', type: 'number', step: 0.1 },
-                { key: 'Width', label: 'Ширина (px)', type: 'number' },
-                { key: 'Duration', label: 'Длительность (кадры)', type: 'number' },
-                { key: 'Regions', label: 'Регионы блокировки', type: 'text', hint: 'Через запятую; пусто = везде' },
-                { key: 'Terrains', label: 'Террейны блокировки', type: 'text' },
-                { key: 'AnimID', label: 'ID анимации', type: 'number', hint: '0 = без анимации' },
-                { key: 'ActionsEvent', label: 'Событие при попадании', type: 'number', hint: 'ID общего события' },
-                { key: 'ActionsPlayer', label: 'Событие на игрока', type: 'number' },
-                { key: 'ActionsShooter', label: 'Событие на стрелке', type: 'number' }
-            ],
-            projectile: [
-                { key: 'ID', label: 'ID снаряда', type: 'text' },
-                { key: 'PID', label: 'PID', type: 'number' },
-                { key: 'Source', label: 'Источник', type: 'number' },
-                { key: 'Target', label: 'Цель', type: 'number' },
-                { key: 'Graphic', label: 'Графика (img/animations)', type: 'text' },
-                { key: 'Speed', label: 'Скорость (px/кадр)', type: 'number', step: 0.1 },
-                { key: 'Distance', label: 'Дистанция (тайлы)', type: 'number', step: 0.1 },
-                { key: 'Hitbox', label: 'Хитбокс (px)', type: 'number' },
-                { key: 'Z', label: 'Z-слой', type: 'number' },
-                { key: 'Regions', label: 'Регионы блокировки', type: 'text' },
-                { key: 'Terrains', label: 'Террейны блокировки', type: 'text' },
-                { key: 'AnimID', label: 'ID анимации', type: 'number' },
-                { key: 'ActionsEvent', label: 'Событие при попадании', type: 'number' },
-                { key: 'ActionsPlayer', label: 'Событие на игрока', type: 'number' },
-                { key: 'ActionsShooter', label: 'Событие на стрелке', type: 'number' }
-            ],
-            tracer: [
-                { key: 'ID', label: 'ID трассера', type: 'text' },
-                { key: 'PID', label: 'PID', type: 'number' },
-                { key: 'Source', label: 'Источник', type: 'number' },
-                { key: 'Target', label: 'Цель', type: 'number' },
-                { key: 'MaxRange', label: 'Дальность (тайлы)', type: 'number', step: 0.1 },
-                { key: 'Color', label: 'Цвет линии', type: 'text', hint: '#rrggbb' },
-                { key: 'Regions', label: 'Регионы блокировки', type: 'text' },
-                { key: 'Terrains', label: 'Террейны блокировки', type: 'text' },
-                { key: 'AnimID', label: 'ID анимации', type: 'number' },
-                { key: 'ActionsEvent', label: 'Событие при попадании', type: 'number' },
-                { key: 'ActionsPlayer', label: 'Событие на игрока', type: 'number' },
-                { key: 'ActionsShooter', label: 'Событие на стрелке', type: 'number' }
-            ],
-            dash: [
-                { key: 'Name', label: 'Название (ID)', type: 'text', hint: 'Имя для натива 726 Dash' },
-                { key: 'TargetMode', label: 'Наведение', type: 'select', options: [['0', 'По направлению движения'], ['1', 'За курсором (игрок)'], ['2', 'К игроку (NPC)']] },
-                { key: 'MaxCharges', label: 'Заряды', type: 'number', min: 1 },
-                { key: 'SpeedMultiplier', label: 'Множитель скорости', type: 'number', step: 0.1 },
-                { key: 'Duration', label: 'Длительность (кадры)', type: 'number' },
-                { key: 'Decay', label: 'Затухание', type: 'number', step: 0.1, hint: '1.5 = плавно теряет скорость' },
-                { key: 'Cooldown', label: 'Кулдаун (кадры)', type: 'number' },
-                { key: 'SE', label: 'Звук (audio/se)', type: 'text' }
-            ]
+            melee: {
+                id: [
+                    { key: 'ID', label: 'ID атаки', type: 'text', hint: 'Ключ для performMelee(id)' },
+                    { key: 'PID', label: 'PID', type: 'number' },
+                    { key: 'Name', label: 'Название', type: 'text' }
+                ],
+                geometry: [
+                    { key: 'Shape', label: 'Форма', type: 'select', options: [['arc', 'Дуга'], ['circle', 'Круг'], ['line', 'Линия']], def: 'arc' },
+                    { key: 'Range', label: 'Радиус (тайлы)', type: 'number', step: 0.1 },
+                    { key: 'Width', label: 'Ширина (px)', type: 'number' },
+                    { key: 'Duration', label: 'Длительность (кадры)', type: 'number' }
+                ],
+                limits: [
+                    { key: 'Regions', label: 'Регионы блокировки', type: 'text', hint: 'Через запятую; пусто = везде' },
+                    { key: 'Terrains', label: 'Террейны блокировки', type: 'text' }
+                ],
+                reactions: [
+                    { key: 'ActionsEvent', label: 'Попадание: общее событие №', type: 'number' },
+                    { key: 'ActionsPlayer', label: 'Попадание в игрока: событие №', type: 'number' },
+                    { key: 'ActionsShooter', label: 'По стрелку: событие №', type: 'number' }
+                ]
+            },
+            projectile: {
+                id: [
+                    { key: 'ID', label: 'ID снаряда', type: 'text' },
+                    { key: 'PID', label: 'PID', type: 'number' },
+                    { key: 'Name', label: 'Название', type: 'text' }
+                ],
+                geometry: [
+                    { key: 'Graphic', label: 'Графика (img/pictures)', type: 'text' },
+                    { key: 'Speed', label: 'Скорость (px/кадр)', type: 'number', step: 0.1 },
+                    { key: 'Distance', label: 'Дистанция (тайлы)', type: 'number', step: 0.1 },
+                    { key: 'Hitbox', label: 'Хитбокс (px)', type: 'number' },
+                    { key: 'Z', label: 'Слой (Z)', type: 'number' }
+                ],
+                limits: [
+                    { key: 'Regions', label: 'Регионы блокировки', type: 'text' },
+                    { key: 'Terrains', label: 'Террейны блокировки', type: 'text' }
+                ],
+                reactions: [
+                    { key: 'ActionsEvent', label: 'Попадание: общее событие №', type: 'number' },
+                    { key: 'ActionsPlayer', label: 'Попадание в игрока: событие №', type: 'number' },
+                    { key: 'ActionsShooter', label: 'По стрелку: событие №', type: 'number' }
+                ]
+            },
+            tracer: {
+                id: [
+                    { key: 'ID', label: 'ID трассера', type: 'text' },
+                    { key: 'PID', label: 'PID', type: 'number' },
+                    { key: 'Name', label: 'Название', type: 'text' }
+                ],
+                geometry: [
+                    { key: 'MaxRange', label: 'Дальность (тайлы)', type: 'number', step: 0.1 },
+                    { key: 'Color', label: 'Цвет линии', type: 'text', hint: '#rrggbb' }
+                ],
+                limits: [
+                    { key: 'Regions', label: 'Регионы блокировки', type: 'text' },
+                    { key: 'Terrains', label: 'Террейны блокировки', type: 'text' }
+                ],
+                reactions: [
+                    { key: 'ActionsEvent', label: 'Попадание: общее событие №', type: 'number' },
+                    { key: 'ActionsPlayer', label: 'Попадание в игрока: событие №', type: 'number' },
+                    { key: 'ActionsShooter', label: 'По стрелку: событие №', type: 'number' }
+                ]
+            },
+            dash: {
+                id: [
+                    { key: 'Name', label: 'Название (ID)', type: 'text', hint: 'Имя для натива 726 Dash' }
+                ],
+                geometry: [
+                    { key: 'TargetMode', label: 'Наведение', type: 'select', options: [['0', 'По направлению движения'], ['1', 'За курсором (игрок)'], ['2', 'К игроку (NPC)']], def: '0' },
+                    { key: 'SpeedMultiplier', label: 'Множитель скорости', type: 'number', step: 0.1 },
+                    { key: 'Duration', label: 'Длительность (кадры)', type: 'number' },
+                    { key: 'Decay', label: 'Затухание', type: 'number', step: 0.1, hint: '1.5 = плавно теряет скорость' },
+                    { key: 'Cooldown', label: 'Кулдаун (кадры)', type: 'number' },
+                    { key: 'MaxCharges', label: 'Заряды', type: 'number', min: 1 },
+                    { key: 'SE', label: 'Звук (audio/se)', type: 'text' }
+                ]
+            }
         };
 
-        this._blankEntries = {
+        this._blanks = {
             melee: { ID: '1', PID: 1, Name: 'Новая атака', Source: 0, Target: 0, Shape: 'arc', Range: 1.5, Width: 96, Duration: 8, Regions: '', Terrains: '', AnimID: 0, ActionsEvent: 0, ActionsPlayer: 0, ActionsShooter: 0 },
-            projectile: { ID: '1', PID: 1, Source: 0, Target: 0, Graphic: '', Speed: 8, Distance: 12, Hitbox: 24, Z: 3, Regions: '', Terrains: '', AnimID: 0, ActionsEvent: 0, ActionsPlayer: 0, ActionsShooter: 0 },
-            tracer: { ID: '1', PID: 1, Source: 0, Target: 0, MaxRange: 10, Color: '#ffffff', Regions: '', Terrains: '', AnimID: 0, ActionsEvent: 0, ActionsPlayer: 0, ActionsShooter: 0 },
+            projectile: { ID: '1', PID: 1, Name: 'Новый снаряд', Source: 0, Target: 0, Graphic: '', Speed: 8, Distance: 12, Hitbox: 24, Z: 3, Regions: '', Terrains: '', AnimID: 0, ActionsEvent: 0, ActionsPlayer: 0, ActionsShooter: 0 },
+            tracer: { ID: '1', PID: 1, Name: 'Новый трассер', Source: 0, Target: 0, MaxRange: 10, Color: '#ffffff', Regions: '', Terrains: '', AnimID: 0, ActionsEvent: 0, ActionsPlayer: 0, ActionsShooter: 0 },
             dash: { Name: 'Рывок', TargetMode: '0', MaxCharges: 1, SpeedMultiplier: 3.0, Duration: 15, Decay: 1.5, Cooldown: 20, SE: 'Wind7' }
         };
     }
@@ -118,8 +125,6 @@ class DatabaseBattleEditor {
         return data.agonia[name];
     }
 
-    /** Decode an MV collection string into plain entries (S7 codec rules:
-     *  each item is a JSON-object string; nested structs are flat here). */
     static decodeCollection(raw) {
         let arr = [];
         try {
@@ -137,30 +142,13 @@ class DatabaseBattleEditor {
     }
 
     // ------------------------------------------------------------------
-    // Main view
+    // Tab
     // ------------------------------------------------------------------
 
     showBattleDetail(container) {
         const wrapper = document.createElement('div');
         wrapper.style.cssText = 'display:flex;flex-direction:column;height:100%;overflow:hidden;';
-
-        const banner = document.createElement('div');
-        banner.style.cssText = `background-color: var(--color-bg-deep);
-            padding: 14px 20px; border-bottom: 2px solid var(--color-accent-border-mid);
-            font-size: 20px; font-weight: 600; color: var(--color-text-strong);
-            display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
-            padding: 14px 20px;
-            border-bottom: 2px solid var(--color-accent-border-mid);
-            font-size: 20px; font-weight: 600;
-            color: var(--color-text-strong);
-            display: flex; align-items: baseline; gap: 14px;
-        `;
-        banner.textContent = this._tt('Бой');
-        const sub = document.createElement('span');
-        sub.style.cssText = 'font-size:12px;font-weight:400;color:var(--color-text-dim);';
-        sub.textContent = this._tt('Базы атак (ближний бой / снаряды / трассеры) и профили рывков');
-        banner.appendChild(sub);
-        wrapper.appendChild(banner);
+        wrapper.appendChild(this._stdBanner('Бой', 'Атаки, снаряды, трассеры и профили рывков'));
 
         const tabsRow = document.createElement('div');
         tabsRow.style.cssText = 'display:flex;gap:8px;padding:10px 16px 0;border-bottom:1px solid var(--color-border);';
@@ -168,19 +156,14 @@ class DatabaseBattleEditor {
 
         const content = document.createElement('div');
         content.className = 'agonia-content';
-        content.style.cssText = 'flex:1;overflow-y:auto;padding:0 16px 16px;';
+        content.style.cssText = 'flex:1;overflow:hidden;padding:0 16px 16px;';
         wrapper.appendChild(content);
-
-        const cardsHost = document.createElement('div');
-        cardsHost.className = 'agonia-cards';
-        content.appendChild(cardsHost);
 
         let active = this.collectionKeys[0].kind;
         const render = () => {
-            cardsHost.innerHTML = '';
+            content.innerHTML = '';
             const meta = this.collectionKeys.find(c => c.kind === active);
-            const section = this.getSection(meta.section);
-            this._renderCollection(cardsHost, section, meta);
+            this._renderShell(content, meta);
         };
 
         for (const col of this.collectionKeys) {
@@ -189,15 +172,9 @@ class DatabaseBattleEditor {
                 padding: 8px 18px; font-size: 13px; font-weight: 600;
                 color: var(--color-text); cursor: pointer; user-select: none;
                 border: 1px solid var(--color-border); border-bottom: none;
-                border-radius: 6px 6px 0 0;
-                background-color: var(--color-bg-deep);
+                border-radius: 6px 6px 0 0; background-color: var(--color-bg-deep);
             `;
             el.textContent = this._tt(col.label);
-            if (col.kind === active) {
-                el.style.backgroundColor = 'var(--color-bg-panel)';
-                el.style.color = 'var(--color-text-strong)';
-                el.style.borderBottom = '2px solid var(--color-accent-border-mid)';
-            }
             el.addEventListener('click', () => {
                 active = col.kind;
                 tabsRow.querySelectorAll('div').forEach(t => {
@@ -210,190 +187,90 @@ class DatabaseBattleEditor {
                 el.style.borderBottom = '2px solid var(--color-accent-border-mid)';
                 render();
             });
+            if (col.kind === active) setTimeout(() => el.click(), 0);
             tabsRow.appendChild(el);
         }
 
         container.appendChild(wrapper);
-        render();
     }
 
-    _renderCollection(content, section, meta) {
-        content.innerHTML = '';
-        const entries = DatabaseBattleEditor.decodeCollection(section[meta.key]);
-
-        const header = document.createElement('div');
-        header.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px 0 8px;flex-wrap:wrap;width:100%;';
-        const title = document.createElement('div');
-        title.style.cssText = 'font-size:15px;font-weight:600;color:var(--color-text-strong);';
-        title.textContent = this._tt(meta.label);
-        header.appendChild(title);
-        const count = document.createElement('span');
-        count.style.cssText = 'font-size:11px;color:var(--color-text-dim);';
-        count.textContent = entries.length + ' · ' + this._tt(meta.hint);
-        header.appendChild(count);
-        header.appendChild(this._spacer());
-        header.appendChild(this._button('Добавить', () => {
-            entries.push(JSON.parse(JSON.stringify(this._blankEntries[meta.kind])));
-            section[meta.key] = DatabaseBattleEditor.encodeCollection(entries);
-            this._renderCollection(content, section, meta);
-        }));
-        content.appendChild(header);
-
-        if (!entries.length) {
-            const empty = document.createElement('div');
-            empty.style.cssText = 'color:var(--color-text-muted);text-align:center;padding:40px 0;font-size:13px;width:100%;';
-            empty.textContent = this._tt('Записей нет — нажмите «Добавить»');
-            content.appendChild(empty);
-            return;
-        }
-
-        entries.forEach((entry, idx) => {
-            content.appendChild(this._renderCard(entries, idx, section, meta, content));
-        });
-    }
-
-    _headline(entry, kind) {
-        if (kind === 'dash') return entry.Name || 'Рывок';
-        return (entry.Name || entry.ID || '—') + (entry.ID !== undefined ? ' · id=' + entry.ID : '');
-    }
-
-    _summary(entry, kind) {
-        if (kind === 'melee') return (entry.Shape || 'arc') + ' · R' + entry.Range + ' · ' + entry.Duration + 'f';
-        if (kind === 'projectile') return 'v' + entry.Speed + ' · D' + entry.Distance + ' · hb' + entry.Hitbox;
-        if (kind === 'tracer') return '≤' + entry.MaxRange + ' · ' + entry.Color;
-        return '×' + entry.SpeedMultiplier + ' · ' + entry.Duration + 'f · cd' + entry.Cooldown;
-    }
-
-    _renderCard(entries, idx, section, meta, content) {
-        const kind = meta.kind;
-        const entry = entries[idx];
-        const card = document.createElement('div');
-        card.className = 'agonia-card';
-
-        const head = document.createElement('div');
-        head.className = 'agonia-card-head';
-        const toggle = document.createElement('span');
-        toggle.textContent = '▼';
-        toggle.style.cssText = 'cursor:pointer;font-size:10px;color:var(--color-text-dim);';
-        head.appendChild(toggle);
-        const nameLbl = document.createElement('span');
-        nameLbl.className = 'agonia-card-title';
-        nameLbl.textContent = (idx + 1) + '. ' + this._headline(entry, kind);
-        head.appendChild(nameLbl);
-        const sum = document.createElement('span');
-        sum.className = 'agonia-card-sub';
-        sum.textContent = this._summary(entry, kind);
-        head.appendChild(sum);
-        head.appendChild(this._spacer());
-        head.appendChild(this._button('▲', () => {
-            if (idx === 0) return;
-            entries[idx - 1] = [entries[idx], entries[idx] = entries[idx - 1]][0];
-            section[meta.key] = DatabaseBattleEditor.encodeCollection(entries);
-            this._renderCollection(content, section, meta);
-        }));
-        head.appendChild(this._button('▼', () => {
-            if (idx === entries.length - 1) return;
-            entries[idx + 1] = [entries[idx], entries[idx] = entries[idx + 1]][0];
-            section[meta.key] = DatabaseBattleEditor.encodeCollection(entries);
-            this._renderCollection(content, section, meta);
-        }));
-        head.appendChild(this._button('Копия', () => {
-            entries.splice(idx + 1, 0, JSON.parse(JSON.stringify(entry)));
-            section[meta.key] = DatabaseBattleEditor.encodeCollection(entries);
-            this._renderCollection(content, section, meta);
-        }));
-        head.appendChild(this._button('Удалить', () => {
-            entries.splice(idx, 1);
-            section[meta.key] = DatabaseBattleEditor.encodeCollection(entries);
-            this._renderCollection(content, section, meta);
-        }, 'danger'));
-
-        const body = document.createElement('div');
-        body.className = 'agonia-field-grid';
-        body.style.padding = '12px';
-        toggle.addEventListener('click', () => {
-            const collapsed = body.style.display === 'none';
-            body.style.display = collapsed ? 'grid' : 'none';
-            toggle.textContent = collapsed ? '▼' : '▶';
-        });
-
-        for (const field of this._fieldDefs[kind]) {
-            body.appendChild(this._renderField(entry, field));
-        }
-
-        card.appendChild(head);
-        card.appendChild(body);
-        return card;
-    }
-
-    _renderField(entry, field) {
-        const wrap = document.createElement('div');
-        wrap.className = 'agonia-field';
-        const label = document.createElement('label');
-        label.title = this._tt(field.label);
-        label.textContent = this._tt(field.label);
-        wrap.appendChild(label);
-        if (field.hint) {
-            const h = document.createElement('div');
-            h.className = 'agonia-hint';
-            h.textContent = field.hint;
-            wrap.appendChild(h);
-        }
-
-        if (field.type === 'select') {
-            const sel = document.createElement('select');
-            sel.className = 'agonia-select';
-            for (const [val, lbl] of field.options) {
-                const o = document.createElement('option');
-                o.value = val; o.textContent = this._tt(lbl);
-                sel.appendChild(o);
-            }
-            sel.value = String(entry[field.key] !== undefined ? entry[field.key] : (field.options[0][0]));
-            sel.addEventListener('change', () => { entry[field.key] = sel.value; });
-            wrap.appendChild(sel);
-            return wrap;
-        }
-
-        const input = document.createElement('input');
-        input.type = field.type === 'number' ? 'number' : 'text';
-        if (field.type === 'number') {
-            if (field.min !== undefined) input.min = field.min;
-            if (field.step) input.step = field.step;
-        }
-        input.value = entry[field.key] !== undefined ? entry[field.key] : '';
-        input.className = 'agonia-input';
-        input.addEventListener('input', () => {
-            if (field.type === 'number') {
-                const n = Number(input.value);
-                if (!Number.isNaN(n)) entry[field.key] = n;
-            } else {
-                entry[field.key] = input.value;
-            }
-        });
-        wrap.appendChild(input);
-        return wrap;
-    }
-
-    _inputCss() {
-        return `
-            width:100%;padding:5px 8px;font-size:12px;box-sizing:border-box;
-            background-color:var(--color-bg-deep);color:var(--color-text-strong);
-            border:1px solid var(--color-border);border-radius:4px;
+    _stdBanner(title, subtitle) {
+        const banner = document.createElement('div');
+        banner.style.cssText = `
+            background-color: var(--color-bg-deep);
+            padding: 14px 20px; border-bottom: 2px solid var(--color-accent-border-mid);
+            font-size: 20px; font-weight: 600; color: var(--color-text-strong);
+            display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
         `;
+        banner.textContent = this._tt(title);
+        if (subtitle) {
+            const sub = document.createElement('span');
+            sub.style.cssText = 'font-size:12px;font-weight:400;color:var(--color-text-dim);';
+            sub.textContent = this._tt(subtitle);
+            banner.appendChild(sub);
+        }
+        return banner;
     }
 
-    _spacer() {
-        const el = document.createElement('div');
-        el.style.cssText = 'flex:1;';
-        return el;
+    _renderShell(content, meta) {
+        const section = this.getSection(meta.section);
+        const K = DatabaseBattleEditor;
+        const shell = new MasterDetailShell({
+            items: K.decodeCollection(section[meta.key]),
+            searchText: r => [r.Name, r.ID].join(' '),
+            addLabel: meta.addLabel,
+            blank: () => JSON.parse(JSON.stringify(this._blanks[meta.kind])),
+            onChanged: items => { section[meta.key] = K.encodeCollection(items); },
+            title: (r, i) => meta.kind === 'dash'
+                ? (r.Name || 'Рывок')
+                : (i + 1) + '. ' + (r.Name || r.ID || '—'),
+            summary: r => this._summary(r, meta.kind),
+            renderForm: (formCol, record, idx, api) => this._renderForm(formCol, record, meta, api)
+        });
+        shell.mount(content);
     }
 
-    _button(text, onClick, kind = '') {
-        const btn = document.createElement('button');
-        btn.textContent = this._tt(text);
-        btn.className = 'agonia-btn' + (kind === 'danger' ? ' danger' : '');
-        btn.addEventListener('click', onClick);
-        return btn;
+    _summary(r, kind) {
+        if (kind === 'melee') return (r.Shape || 'arc') + ' · R' + r.Range + ' · ' + r.Duration + 'f';
+        if (kind === 'projectile') return 'v' + r.Speed + ' · D' + r.Distance + ' · hb' + r.Hitbox;
+        if (kind === 'tracer') return '≤' + r.MaxRange + ' · ' + r.Color;
+        return '×' + r.SpeedMultiplier + ' · ' + r.Duration + 'f · cd' + r.Cooldown;
+    }
+
+    _renderForm(formCol, record, meta, api) {
+        const defs = this._fieldDefs[meta.kind];
+        const groups = [
+            ['Идентификация', defs.id],
+            ['Геометрия и попадание', defs.geometry],
+            ['Ограничения', defs.limits],
+            ['Реакции при попадании', defs.reactions]
+        ].filter(([, fields]) => fields);
+
+        for (const [title, fields] of groups) {
+            const sec = ShellKit.section(this._tt(title));
+            const grid = ShellKit.grid();
+            for (const f of fields) {
+                grid.appendChild(this._renderField(record, f, api));
+            }
+            sec.appendChild(grid);
+            formCol.appendChild(sec);
+        }
+    }
+
+    _renderField(record, f, api) {
+        if (f.type === 'select') {
+            const opts = f.options.map(([v, l]) => ({ value: v, label: this._tt(l) }));
+            const cur = record[f.key] !== undefined && record[f.key] !== '' ? String(record[f.key]) : (f.def || f.options[0][0]);
+            return ShellKit.field(f.label,
+                ShellKit.select(opts, cur, v => { record[f.key] = v; api.changed(); }), f.hint);
+        }
+        if (f.type === 'number') {
+            return ShellKit.field(f.label,
+                ShellKit.number(record[f.key], v => { record[f.key] = v; api.changed(); },
+                    { min: f.min, max: f.max, step: f.step }), f.hint);
+        }
+        return ShellKit.field(f.label,
+            ShellKit.text(record[f.key], v => { record[f.key] = v; api.changed(); }), f.hint);
     }
 }
 

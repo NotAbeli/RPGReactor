@@ -1,18 +1,13 @@
 /**
- * DatabaseEnemiesEditor - enemy behaviour database tab: EnemyDatabase
- * cards (match tag, HP, sensors, custom flag rules) plus the flat global
- * settings of SuperDuperEnemies (tick rate, variables, weapon conditions).
+ * DatabaseEnemiesEditor - the enemy AI tab (S18 rewrite): accordions.
  *
- * Data lives in the Agonia sidecar section `enemies` (data/AgoniaEngine.json);
- * EnemyDatabase is an MV-format collection string (array of JSON-object
- * strings) matching the plugin's parser.
+ * Global settings render as a compact panel on top; every enemy is an
+ * accordion row whose head always shows the key metrics (match tag, HP,
+ * attack/hearing radii); the body opens into Base / Sensors / Panic
+ * sections. Custom flag rules nest as accordion rows of their own.
  *
- * Struct fields mirror the plugin's @param structs:
- *   EnemyDef:    id, match, hp, scope, attackRadius, calmRadius, calmTime,
- *                hearingRadius, hearingThreshold, panicContactTime,
- *                panicTotalTime, customRules
- *   CustomFlagRule: flag, conditions, activationDelay, holdTime, moveSpeed,
- *                hpMinPct, hpMaxPct, reqSwitch, reqVarId, reqVarVal
+ * Data plumbing (MV codec, AgoniaEngine section `enemies`) unchanged
+ * from S10; customRules remains a single JSON array of objects.
  */
 class DatabaseEnemiesEditor {
     constructor(databaseManager, projectManager, commonUI, parentEditor) {
@@ -72,324 +67,235 @@ class DatabaseEnemiesEditor {
         const enemies = this.getEnemies();
 
         const wrapper = document.createElement('div');
-        wrapper.className = 'agonia-content';
-        wrapper.style.cssText = 'display:flex;flex-direction:column;height:100%;overflow-y:auto;';
+        wrapper.style.cssText = 'display:flex;flex-direction:column;height:100%;overflow:hidden;';
+        wrapper.appendChild(this._stdBanner('ИИ врагов', 'База поведения: сенсоры, паника, кастомные правила'));
 
+        const content = document.createElement('div');
+        content.className = 'agonia-content';
+        content.style.cssText = 'flex:1;overflow-y:auto;padding:0 16px 16px;';
+        wrapper.appendChild(content);
+        container.appendChild(wrapper);
+
+        // --- Globals ---
+        const globalsSection = ShellKit.section(this._tt('Глобальные настройки'));
+        const gWrap = document.createElement('div');
+        gWrap.style.padding = '0 8px 8px;';
+        globalsSection.appendChild(gWrap);
+        content.appendChild(globalsSection);
+        this._renderGlobals(gWrap, enemies);
+
+        // --- Enemy list ---
+        const enemiesTitle = ShellKit.section(this._tt('Враги (EnemyDatabase)'));
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size:10px;color:var(--color-text-dim);padding:0 8px 4px;line-height:1.4;';
+        hint.textContent = this._tt('match — тег в Note события; сенсоры в тайлах. Клик по строке раскрывает настройку.');
+        enemiesTitle.appendChild(hint);
+        content.appendChild(enemiesTitle);
+
+        const listHost = document.createElement('div');
+        content.appendChild(listHost);
+        this._renderEnemies(listHost, enemies);
+    }
+
+    _stdBanner(title, subtitle) {
         const banner = document.createElement('div');
-        banner.style.cssText = `background-color: var(--color-bg-deep);
+        banner.style.cssText = `
+            background-color: var(--color-bg-deep);
             padding: 14px 20px; border-bottom: 2px solid var(--color-accent-border-mid);
             font-size: 20px; font-weight: 600; color: var(--color-text-strong);
             display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
-            padding: 14px 20px;
-            border-bottom: 2px solid var(--color-accent-border-mid);
-            font-size: 20px; font-weight: 600;
-            color: var(--color-text-strong);
-            display: flex; align-items: baseline; gap: 14px;
         `;
-        banner.textContent = this._tt('Враги');
-        const sub = document.createElement('span');
-        sub.style.cssText = 'font-size:12px;font-weight:400;color:var(--color-text-dim);';
-        sub.textContent = this._tt('База поведения врагов: сенсоры, паника, кастомные правила');
-        banner.appendChild(sub);
-        wrapper.appendChild(banner);
+        banner.textContent = this._tt(title);
+        if (subtitle) {
+            const sub = document.createElement('span');
+            sub.style.cssText = 'font-size:12px;font-weight:400;color:var(--color-text-dim);';
+            sub.textContent = this._tt(subtitle);
+            banner.appendChild(sub);
+        }
+        return banner;
+    }
 
-        // --- Globals ---
-        wrapper.appendChild(this._sectionTitle('Глобальные настройки'));
-        const globalsGrid = document.createElement('div');
-        globalsGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;padding:4px 16px;';
-        const globalFields = [
-            { key: 'TickRate', label: 'Tick Rate', type: 'number', hint: 'Обновление ИИ раз в N кадров' },
-            { key: 'VariableBaseId', label: 'Базовая переменная', type: 'number', hint: 'Враги пишут состояние в vars id*100+n' },
-            { key: 'HearingVariable', label: 'Переменная шума', type: 'number' },
-            { key: 'NoCombatSwitch', label: 'Свитч «без боя»', type: 'number' },
-            { key: 'CombatCountVariable', label: 'Переменная счёта боя', type: 'number' },
-            { key: 'GlobalResetSwitch', label: 'Свитч глобального сброса', type: 'number' }
+    _renderGlobals(host, enemies) {
+        host.innerHTML = '';
+        const grid = ShellKit.grid();
+        const fields = [
+            ['TickRate', 'Обновление ИИ (раз в N кадров)', 'number'],
+            ['VariableBaseId', 'Базовая переменная', 'number', 'Враги пишут состояние в vars id*100+n'],
+            ['HearingVariable', 'Переменная шума', 'number'],
+            ['NoCombatSwitch', 'Свитч «без боя»', 'number'],
+            ['CombatCountVariable', 'Переменная счёта боя', 'number'],
+            ['GlobalResetSwitch', 'Свитч глобального сброса', 'number']
         ];
-        for (const f of globalFields) {
-            globalsGrid.appendChild(this._numField(enemies, f));
+        for (const [key, label, type, hint] of fields) {
+            grid.appendChild(ShellKit.field(this._tt(label),
+                ShellKit.number(enemies[key], v => { enemies[key] = v; }, { min: 0 }), hint));
         }
-        const gun = enemies['GunCondition'];
-        const melee = enemies['MeleeCondition'];
-        const weaponCard = this._panel();
-        const wTitle = document.createElement('div');
-        wTitle.style.cssText = 'font-weight:600;font-size:13px;color:var(--color-text-strong);';
-        wTitle.textContent = this._tt('Условия оружия (Gun/Melee Condition)');
-        weaponCard.appendChild(wTitle);
-        const wHint = document.createElement('div');
-        wHint.style.cssText = 'font-size:10px;color:var(--color-text-dim);line-height:1.4;';
-        wHint.textContent = this._tt('JSON вида {"switchId":0,"variableId":17,"variableValues":"37, 36"} — когда враг может стрелять / бить вблизи');
-        weaponCard.appendChild(wHint);
+        host.appendChild(grid);
+
+        // Weapon conditions (JSON)
+        const wgrid = ShellKit.grid();
         for (const key of ['GunCondition', 'MeleeCondition']) {
-            const wrap = document.createElement('div');
-            wrap.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
-            const l = document.createElement('label');
-            l.style.cssText = 'font-size:11px;font-weight:600;color:var(--color-text);';
-            l.textContent = key === 'GunCondition' ? 'Gun Condition' : 'Melee Condition';
-            wrap.appendChild(l);
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.value = typeof enemies[key] === 'string' ? enemies[key] : JSON.stringify(enemies[key] || {});
-            input.className = 'agonia-input';
-            input.style.fontFamily = 'monospace';
-            input.addEventListener('input', () => { enemies[key] = input.value; });
-            wrap.appendChild(input);
-            weaponCard.appendChild(wrap);
+            const w = ShellKit.field(key === 'GunCondition' ? 'Условие стрельбы' : 'Условие ближнего боя',
+                ShellKit.text(typeof enemies[key] === 'string' ? enemies[key] : JSON.stringify(enemies[key] || {}),
+                    v => { enemies[key] = v; }, { placeholder: '{"switchId":0,"variableId":17,"variableValues":"37, 36"}' }),
+                'JSON: switchId / variableId / variableValues — когда враг может стрелять или бить');
+            wgrid.appendChild(w);
         }
-        globalsGrid.appendChild(weaponCard);
-        wrapper.appendChild(globalsGrid);
-
-        // --- Enemy cards ---
-        wrapper.appendChild(this._sectionTitle('База врагов (EnemyDatabase)'));
-        const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:11px;color:var(--color-text-dim);padding:0 16px 8px;';
-        hint.textContent = this._tt('match — тег в Note события (например <box>); сенсоры в тайлах; custom rules — правила смены флагов по условиям');
-        wrapper.appendChild(hint);
-
-        const cardsHost = document.createElement('div');
-        cardsHost.className = 'agonia-cards';
-        cardsHost.style.cssText = 'padding:0 16px 16px;';
-        wrapper.appendChild(cardsHost);
-
-        this._renderEnemies(cardsHost, enemies);
-        container.appendChild(wrapper);
+        host.appendChild(wgrid);
     }
 
     _renderEnemies(host, enemies) {
-        const entries = DatabaseEnemiesEditor.decodeCollection(enemies['EnemyDatabase']);
+        const K = DatabaseEnemiesEditor;
+        const entries = K.decodeCollection(enemies['EnemyDatabase']);
         host.innerHTML = '';
 
-        const header = document.createElement('div');
-        header.style.cssText = 'display:flex;align-items:center;gap:12px;padding-bottom:10px;width:100%;';
+        const bar = document.createElement('div');
+        bar.style.cssText = 'display:flex;align-items:center;gap:12px;padding-bottom:8px;';
         const count = document.createElement('span');
         count.style.cssText = 'font-size:12px;color:var(--color-text-dim);';
         count.textContent = entries.length + ' ' + this._tt('записей');
-        header.appendChild(count);
-        header.appendChild(this._spacer());
-        header.appendChild(this._button('Добавить', () => {
-            entries.push(DatabaseEnemiesEditor.blankEnemy());
-            enemies['EnemyDatabase'] = DatabaseEnemiesEditor.encodeCollection(entries);
+        bar.appendChild(count);
+        bar.appendChild((() => { const s = document.createElement('div'); s.style.flex = '1'; return s; })());
+        const add = document.createElement('button');
+        add.className = 'agonia-btn';
+        add.textContent = 'Добавить врага';
+        add.addEventListener('click', () => {
+            entries.push(K.blankEnemy());
+            enemies['EnemyDatabase'] = K.encodeCollection(entries);
             this._renderEnemies(host, enemies);
-        }));
-        host.appendChild(header);
-
-        if (!entries.length) {
-            const empty = document.createElement('div');
-            empty.style.cssText = 'color:var(--color-text-muted);text-align:center;padding:30px 0;font-size:13px;width:100%;';
-            empty.textContent = this._tt('Записей нет — нажмите «Добавить»');
-            host.appendChild(empty);
-            return;
-        }
-
-        entries.forEach((entry, idx) => {
-            host.appendChild(this._renderEnemyCard(entries, idx, enemies, host));
         });
+        bar.appendChild(add);
+        host.appendChild(bar);
+
+        const acc = new AccordionList({
+            items: entries,
+            header: (e, i) => '#' + (i + 1) + ' ' + (e.match || '—') + ' · HP ' + (e.hp || '?'),
+            sub: e => 'атака R' + (e.attackRadius || '?') + ' · слух R' + (e.hearingRadius || '?') +
+                ' · правил: ' + (JSON.parse(e.customRules || '[]') || []).length,
+            onRemove: idx => {
+                entries.splice(idx, 1);
+                enemies['EnemyDatabase'] = K.encodeCollection(entries);
+                this._renderEnemies(host, enemies);
+            },
+            onReorder: (from, to) => {
+                const [m] = entries.splice(from, 1);
+                entries.splice(to, 0, m);
+                enemies['EnemyDatabase'] = K.encodeCollection(entries);
+                this._renderEnemies(host, enemies);
+            },
+            renderBody: (body, entry, idx, api) => this._renderEnemyBody(body, entry, api)
+        });
+        acc.mount(host);
     }
 
-    _renderEnemyCard(entries, idx, enemies, host) {
-        const entry = entries[idx];
-        const card = document.createElement('div');
-        card.className = 'agonia-card';
+    _renderEnemyBody(body, entry, api) {
+        // Base
+        const base = ShellKit.section(this._tt('Базовое'));
+        const bgrid = ShellKit.grid();
+        bgrid.appendChild(ShellKit.field('match-тег (Note события)',
+            ShellKit.text(entry.match, v => { entry.match = v; }), 'События с этим тегом получают поведение'));
+        bgrid.appendChild(ShellKit.field('HP', ShellKit.number(entry.hp, v => { entry.hp = v; })));
+        bgrid.appendChild(ShellKit.field('ID', ShellKit.number(entry.id, v => { entry.id = v; })));
+        base.appendChild(bgrid);
+        body.appendChild(base);
 
-        const head = document.createElement('div');
-        head.className = 'agonia-card-head';
-        const name = document.createElement('span');
-        name.className = 'agonia-card-title';
-        name.textContent = (idx + 1) + '. ' + (entry.match || '—') + ' · HP ' + (entry.hp || '?');
-        head.appendChild(name);
-        const sum = document.createElement('span');
-        sum.className = 'agonia-card-sub';
-        sum.textContent = 'atk R' + (entry.attackRadius || '?') + ' · hear R' + (entry.hearingRadius || '?');
-        head.appendChild(sum);
-        head.appendChild(this._spacer());
-        head.appendChild(this._button('▲', () => {
-            if (idx === 0) return;
-            entries[idx - 1] = [entries[idx], entries[idx] = entries[idx - 1]][0];
-            enemies['EnemyDatabase'] = DatabaseEnemiesEditor.encodeCollection(entries);
-            this._renderEnemies(host, enemies);
-        }));
-        head.appendChild(this._button('▼', () => {
-            if (idx === entries.length - 1) return;
-            entries[idx + 1] = [entries[idx], entries[idx] = entries[idx + 1]][0];
-            enemies['EnemyDatabase'] = DatabaseEnemiesEditor.encodeCollection(entries);
-            this._renderEnemies(host, enemies);
-        }));
-        head.appendChild(this._button('Копия', () => {
-            entries.splice(idx + 1, 0, JSON.parse(JSON.stringify(entry)));
-            enemies['EnemyDatabase'] = DatabaseEnemiesEditor.encodeCollection(entries);
-            this._renderEnemies(host, enemies);
-        }));
-        head.appendChild(this._button('Удалить', () => {
-            entries.splice(idx, 1);
-            enemies['EnemyDatabase'] = DatabaseEnemiesEditor.encodeCollection(entries);
-            this._renderEnemies(host, enemies);
-        }, 'danger'));
-        card.appendChild(head);
-
-        const grid = document.createElement('div');
-        grid.className = 'agonia-field-grid';
-        const numFields = [
-            ['id', 'ID'], ['hp', 'HP'],
+        // Sensors
+        const sensors = ShellKit.section(this._tt('Сенсоры'));
+        const sgrid = ShellKit.grid();
+        const sFields = [
             ['attackRadius', 'Радиус атаки'], ['calmRadius', 'Радиус спокойствия'],
-            ['calmTime', 'Время успокоения (f)'], ['hearingRadius', 'Радиус слуха'],
-            ['hearingThreshold', 'Порог шума'], ['panicContactTime', 'Контакт → паника (f)'],
-            ['panicTotalTime', 'Полная паника (f)'], ['scope', 'Область видимости']
+            ['calmTime', 'Успокоение (кадры)'], ['hearingRadius', 'Радиус слуха'],
+            ['hearingThreshold', 'Порог шума'], ['scope', 'Область видимости']
         ];
-        for (const [key, label] of numFields) {
-            grid.appendChild(this._enemyNumField(entry, key, label));
+        for (const [key, label] of sFields) {
+            sgrid.appendChild(ShellKit.field(this._tt(label),
+                ShellKit.number(entry[key], v => { entry[key] = v; })));
         }
-        const matchWrap = document.createElement('div');
-        matchWrap.className = 'agonia-field';
-        const ml = document.createElement('label');
-        ml.textContent = this._tt('match-тег (Note события)');
-        matchWrap.appendChild(ml);
-        const mi = document.createElement('input');
-        mi.type = 'text';
-        mi.value = entry.match || '';
-        mi.className = 'agonia-input';
-        mi.addEventListener('input', () => { entry.match = mi.value; });
-        matchWrap.appendChild(mi);
-        grid.appendChild(matchWrap);
-        card.appendChild(grid);
+        sensors.appendChild(sgrid);
+        body.appendChild(sensors);
 
-        // custom rules
-        card.appendChild(this._renderRules(entry));
-        return card;
+        // Panic
+        const panic = ShellKit.section(this._tt('Паника'));
+        const pgrid = ShellKit.grid();
+        pgrid.appendChild(ShellKit.field('Контакт → паника (кадры)',
+            ShellKit.number(entry.panicContactTime, v => { entry.panicContactTime = v; })));
+        pgrid.appendChild(ShellKit.field('Полная паника (кадры)',
+            ShellKit.number(entry.panicTotalTime, v => { entry.panicTotalTime = v; })));
+        panic.appendChild(pgrid);
+        body.appendChild(panic);
+
+        // Rules
+        body.appendChild(this._renderRules(entry));
     }
 
     _renderRules(entry) {
+        const K = DatabaseEnemiesEditor;
         const wrap = document.createElement('div');
-        wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
-        const titleRow = document.createElement('div');
-        titleRow.style.cssText = 'display:flex;align-items:center;gap:10px;';
-        const t = document.createElement('div');
-        t.style.cssText = 'font-size:12px;font-weight:600;color:var(--color-text);';
-        t.textContent = this._tt('Кастомные правила (флаги поведения)');
-        titleRow.appendChild(t);
-        titleRow.appendChild(this._spacer());
-        titleRow.appendChild(this._button('+ правило', () => {
-            const rules = DatabaseEnemiesEditor.decodeCollection(entry.customRules);
-            rules.push(DatabaseEnemiesEditor.blankRule());
-            entry.customRules = DatabaseEnemiesEditor.encodeCollection(rules);
-            wrap.replaceWith(this._renderRules(entry));
-        }));
-        wrap.appendChild(titleRow);
+        const rules = K.decodeCollection(entry.customRules);
 
-        const rules = DatabaseEnemiesEditor.decodeCollection(entry.customRules);
+        const sec = ShellKit.section(this._tt('Кастомные правила (флаги поведения)'));
+        const bar = document.createElement('div');
+        bar.style.cssText = 'display:flex;gap:8px;align-items:center;padding:0 8px 6px;';
+        const note = document.createElement('span');
+        note.style.cssText = 'font-size:10px;color:var(--color-text-dim);';
+        note.textContent = this._tt('Смена флага при выполнении условия');
+        bar.appendChild(note);
+        bar.appendChild((() => { const s = document.createElement('div'); s.style.flex = '1'; return s; })());
+        const add = document.createElement('button');
+        add.className = 'agonia-btn';
+        add.textContent = '+ Правило';
+        add.addEventListener('click', () => {
+            rules.push(K.blankRule());
+            entry.customRules = K.encodeCollection(rules);
+            wrap.replaceWith(this._renderRules(entry));
+        });
+        bar.appendChild(add);
+        sec.appendChild(bar);
+
+        const host = document.createElement('div');
+        host.style.padding = '0 8px 8px;';
+        sec.appendChild(host);
+
         if (!rules.length) {
             const none = document.createElement('div');
-            none.style.cssText = 'font-size:11px;color:var(--color-text-dim);';
+            none.style.cssText = 'font-size:11px;color:var(--color-text-dim);padding:4px 0;';
             none.textContent = this._tt('Нет правил — только базовые сенсоры');
-            wrap.appendChild(none);
-            return wrap;
+            host.appendChild(none);
+        } else {
+            const acc = new AccordionList({
+                items: rules,
+                header: (r) => 'флаг ' + (r.flag || '?') + ' · ' + (r.conditions || '0') +
+                    (Number(r.reqSwitch) > 0 ? ' · sw' + r.reqSwitch : ''),
+                sub: r => 'hp ' + (r.hpMinPct || 0) + '–' + (r.hpMaxPct || 100) + '% · ск.' + (r.moveSpeed || 3),
+                onRemove: idx => {
+                    rules.splice(idx, 1);
+                    entry.customRules = K.encodeCollection(rules);
+                    wrap.replaceWith(this._renderRules(entry));
+                },
+                renderBody: (body, rule) => {
+                    const grid = ShellKit.grid();
+                    const mk = (label, key, type) => ShellKit.field(this._tt(label),
+                        type === 'number'
+                            ? ShellKit.number(rule[key], v => { rule[key] = v; })
+                            : ShellKit.text(rule[key], v => { rule[key] = v; }));
+                    grid.appendChild(mk('Флаг', 'flag', 'text'));
+                    grid.appendChild(mk('Условие (0 И / 1 ИЛИ)', 'conditions', 'text'));
+                    grid.appendChild(mk('Задержка (кадры)', 'activationDelay', 'number'));
+                    grid.appendChild(mk('Удержание (кадры)', 'holdTime', 'number'));
+                    grid.appendChild(mk('Скорость движения', 'moveSpeed', 'number'));
+                    grid.appendChild(mk('HP мин %', 'hpMinPct', 'number'));
+                    grid.appendChild(mk('HP макс %', 'hpMaxPct', 'number'));
+                    grid.appendChild(mk('Требует свитч', 'reqSwitch', 'number'));
+                    grid.appendChild(mk('Требует переменную', 'reqVarId', 'number'));
+                    grid.appendChild(mk('Значение переменной', 'reqVarVal', 'number'));
+                    body.appendChild(grid);
+                }
+            });
+            acc.mount(host);
         }
 
-        rules.forEach((rule, rIdx) => {
-            const row = document.createElement('div');
-            row.className = 'agonia-row-grid';
-            row.style.cssText = 'grid-template-columns:repeat(auto-fill,minmax(76px,1fr)) 34px;padding:6px;border:1px solid var(--color-border);border-radius:4px;background-color:var(--color-bg-deep);';
-            const mk = (key, label) => {
-                const w = document.createElement('div');
-                w.className = 'agonia-field';
-                const l = document.createElement('label');
-                l.textContent = label;
-                w.appendChild(l);
-                const i = document.createElement('input');
-                i.type = key === 'flag' || key === 'conditions' ? 'text' : 'number';
-                i.value = rule[key] !== undefined ? rule[key] : '';
-                i.className = 'agonia-input';
-                i.style.cssText = 'padding:3px 5px;font-size:11px;';
-                i.addEventListener('input', () => {
-                    if (i.type === 'number') {
-                        const n = Number(i.value);
-                        if (!Number.isNaN(n)) rule[key] = n;
-                    } else rule[key] = i.value;
-                });
-                w.appendChild(i);
-                return w;
-            };
-            row.appendChild(mk('flag', 'флаг'));
-            row.appendChild(mk('conditions', 'условие'));
-            row.appendChild(mk('activationDelay', 'задержка'));
-            row.appendChild(mk('holdTime', 'удержание'));
-            row.appendChild(mk('moveSpeed', 'скорость'));
-            row.appendChild(mk('hpMinPct', 'HP мин %'));
-            row.appendChild(mk('hpMaxPct', 'HP макс %'));
-            row.appendChild(mk('reqSwitch', 'свитч'));
-            row.appendChild(mk('reqVarId', 'var id'));
-            row.appendChild(this._button('✕', () => {
-                rules.splice(rIdx, 1);
-                entry.customRules = DatabaseEnemiesEditor.encodeCollection(rules);
-                wrap.replaceWith(this._renderRules(entry));
-            }, 'danger'));
-            wrap.appendChild(row);
-        });
+        wrap.appendChild(sec);
         return wrap;
-    }
-
-    // -- shared small helpers (same idioms as DatabaseBattleEditor) --
-
-    _sectionTitle(text) {
-        const el = document.createElement('div');
-        el.style.cssText = 'padding:12px 16px 4px;font-size:15px;font-weight:600;color:var(--color-text-strong);';
-        el.textContent = this._tt(text);
-        return el;
-    }
-
-    _panel() {
-        const el = document.createElement('div');
-        el.className = 'agonia-section';
-        return el;
-    }
-
-    _numField(holder, f) {
-        const wrap = document.createElement('div');
-        wrap.className = 'agonia-field';
-        const l = document.createElement('label');
-        l.title = this._tt(f.label);
-        l.textContent = this._tt(f.label);
-        wrap.appendChild(l);
-        if (f.hint) {
-            const h = document.createElement('div');
-            h.className = 'agonia-hint';
-            h.textContent = f.hint;
-            wrap.appendChild(h);
-        }
-        const i = document.createElement('input');
-        i.type = 'number';
-        i.value = holder[f.key] !== undefined ? holder[f.key] : 0;
-        i.className = 'agonia-input';
-        i.addEventListener('input', () => {
-            const n = Number(i.value);
-            if (!Number.isNaN(n)) holder[f.key] = n;
-        });
-        wrap.appendChild(i);
-        return wrap;
-    }
-
-    _enemyNumField(entry, key, label) {
-        return this._numField(entry, { key, label, type: 'number' });
-    }
-
-    _inputCss() {
-        return `
-            width:100%;padding:5px 8px;font-size:12px;box-sizing:border-box;
-            background-color:var(--color-bg-deep);color:var(--color-text-strong);
-            border:1px solid var(--color-border);border-radius:4px;
-        `;
-    }
-
-    _spacer() {
-        const el = document.createElement('div');
-        el.style.cssText = 'flex:1;';
-        return el;
-    }
-
-    _button(text, onClick, kind = '') {
-        const btn = document.createElement('button');
-        btn.textContent = this._tt(text);
-        btn.className = 'agonia-btn' + (kind === 'danger' ? ' danger' : '');
-        btn.addEventListener('click', onClick);
-        return btn;
     }
 }
 

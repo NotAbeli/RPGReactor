@@ -887,58 +887,74 @@ class DatabaseWorldEditor extends AgoniaCardEditorBase {
     }
 
     // -- Steps ----------------------------------------------------------
-    _renderSteps(content) {
+_renderSteps(content) {
         const s = this.getSection('steps');
         content.appendChild(this._sectionTitle('Шаги по поверхностям'));
-        const hint = this._div('font-size:11px;color:var(--color-text-dim);padding-bottom:8px;line-height:1.5;');
-        hint.textContent = this._tt('Террейн-ID карты (RPG Maker тайлсет → Terrain tag) выбирает пул звуков шагов. Playback: sequential по кругу / random случайно.');
+        const hint = this._div('font-size:11px;color:var(--color-text-dim);padding:0 8px 8px;line-height:1.5;');
+        hint.textContent = this._tt('Террейн-ID тайлсета выбирает пул звуков шагов. Клик по строке раскрывает настройку.');
         content.appendChild(hint);
 
-        this._renderCards(content, s, 'Terrain Configurations', {
-            countLabel: 'поверхностей',
-            addLabel: 'Добавить поверхность',
-            blank: { 'Terrain ID': 1, 'Playback Mode': 'random', 'Sound Pool': '[]' },
-            headline: entry => 'Террейн ' + entry['Terrain ID'],
-            summary: entry => (entry['Playback Mode'] === 'sequential' ? 'по кругу' : 'случайно') + ' · ' + AgoniaCardEditorBase.decodeNested(entry['Sound Pool']).length + ' звуков',
-            renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:120px 170px 1fr;gap:10px 12px;align-items:start;');
-                const tw = this._fieldLabel('Террейн ID');
-                tw.appendChild(this._input(entry['Terrain ID'], v => { entry['Terrain ID'] = v; }, 'number'));
-                grid.appendChild(tw);
-                const mw = this._fieldLabel('Воспроизведение');
-                mw.appendChild(this._select([
-                    { value: 'random', label: 'Случайно' },
-                    { value: 'sequential', label: 'По кругу' }
-                ], entry['Playback Mode'], v => { entry['Playback Mode'] = v; }));
-                grid.appendChild(mw);
-                grid.appendChild(this._renderSoundPool(entry));
-                card.appendChild(grid);
+        const K = AgoniaCardEditorBase;
+        const entries = K.decodeCollection(s['Terrain Configurations']);
+        const host = this._div('padding:0 8px;');
+        content.appendChild(host);
+        const rerender = () => this._renderSteps(content);
+
+        const bar = this._div('display:flex;align-items:center;gap:12px;padding-bottom:8px;');
+        const count = this._div('font-size:12px;color:var(--color-text-dim);');
+        count.textContent = entries.length + ' ' + this._tt('поверхностей');
+        bar.appendChild(count);
+        bar.appendChild(this._div('flex:1'));
+        bar.appendChild(this._button('Добавить поверхность', () => {
+            entries.push({ 'Terrain ID': entries.length + 1, 'Playback Mode': 'random', 'Sound Pool': '[]' });
+            s['Terrain Configurations'] = K.encodeCollection(entries);
+            rerender();
+        }));
+        host.appendChild(bar);
+
+        const acc = new AccordionList({
+            items: entries,
+            header: (e) => 'Террейн ' + e['Terrain ID'],
+            sub: (e) => (e['Playback Mode'] === 'sequential' ? 'по кругу' : 'случайно') +
+                ' · звуков: ' + K.decodeNested(e['Sound Pool']).length,
+            onRemove: idx => { entries.splice(idx, 1); s['Terrain Configurations'] = K.encodeCollection(entries); rerender(); },
+            onReorder: (a, b) => { const [m] = entries.splice(a, 1); entries.splice(b, 0, m); s['Terrain Configurations'] = K.encodeCollection(entries); rerender(); },
+            renderBody: (body, entry) => {
+                const grid = ShellKit.grid();
+                grid.appendChild(ShellKit.field('Террейн ID',
+                    ShellKit.number(entry['Terrain ID'], v => { entry['Terrain ID'] = v; })));
+                grid.appendChild(ShellKit.field('Воспроизведение',
+                    ShellKit.select([{ value: 'random', label: 'Случайно' }, { value: 'sequential', label: 'По кругу' }],
+                        entry['Playback Mode'], v => { entry['Playback Mode'] = v; })));
+                body.appendChild(grid);
+                body.appendChild(this._renderSoundPool(entry));
             }
         });
+        acc.mount(host);
 
         content.appendChild(this._sectionTitle('Настройки шагов'));
-        const panel = this._panel();
-        const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px 12px;');
+        const panel = ShellKit.section('');
+        panel.style.padding = '8px';
+        const grid = ShellKit.grid();
         const flat = [
-            ['Base Step Interval', 'Интервал шага (f)', 'number'],
-            ['Max Hearing Distance', 'Слышимость (тайлы)', 'number'],
-            ['Min Audible Volume', 'Мин. громкость', 'number'],
-            ['Player Speed Variable', 'Переменная скорости', 'number'],
-            ['Run Interval Mod', 'Бег: интервал', 'number'],
-            ['Run Volume Mod', 'Бег: громкость', 'number'],
-            ['Run Pitch Mod', 'Бег: питч', 'number'],
-            ['Slow Interval Mod', 'Крадусь: интервал', 'number'],
-            ['Slow Volume Mod', 'Крадусь: громкость', 'number'],
-            ['Slow Pitch Mod', 'Крадусь: питч', 'number'],
-            ['Volume Fade Type', 'Кривая затухания', 'text']
+            ['Base Step Interval', 'Интервал шага (кадры)'],
+            ['Max Hearing Distance', 'Слышимость (тайлы)'],
+            ['Min Audible Volume', 'Мин. громкость'],
+            ['Player Speed Variable', 'Переменная скорости'],
+            ['Run Interval Mod', 'Бег: интервал'],
+            ['Run Volume Mod', 'Бег: громкость'],
+            ['Run Pitch Mod', 'Бег: темп'],
+            ['Slow Interval Mod', 'Крадусь: интервал'],
+            ['Slow Volume Mod', 'Крадусь: громкость'],
+            ['Slow Pitch Mod', 'Крадусь: темп'],
+            ['Volume Fade Type', 'Кривая затухания']
         ];
-        for (const [key, label, type] of flat) {
-            const w = this._fieldLabel(label);
-            w.appendChild(this._input(s[key], v => { s[key] = v; }, type));
-            grid.appendChild(w);
+        for (const [key, label] of flat) {
+            grid.appendChild(ShellKit.field(this._tt(label),
+                ShellKit.number(s[key], v => { s[key] = v; })));
         }
-        const evw = this._fieldLabel('События тоже шагают');
-        evw.appendChild(this._checkbox(s.Events, v => { s.Events = v; }));
+        const evw = ShellKit.field('События тоже шагают');
+        evw.appendChild(ShellKit.checkbox(s.Events, v => { s.Events = v; }));
         grid.appendChild(evw);
         panel.appendChild(grid);
         content.appendChild(panel);
@@ -946,214 +962,251 @@ class DatabaseWorldEditor extends AgoniaCardEditorBase {
 
     _renderSoundPool(entry) {
         const pool = AgoniaCardEditorBase.decodeNested(entry['Sound Pool']);
-        const wrap = this._fieldLabel('Пул звуков', 'Файл (audio/se) · громкость · питч');
-        const host = this._div('display:flex;flex-direction:column;gap:6px;');
-        const rerender = () => {
-            entry['Sound Pool'] = AgoniaCardEditorBase.encodeNested(pool);
-            wrap.replaceWith(this._renderSoundPool.call(this, entry));
-        };
+        const sec = ShellKit.section('Пул звуков');
+        const host = this._div('padding:0 8px 8px;display:flex;flex-direction:column;gap:6px;');
+        sec.appendChild(host);
+
         pool.forEach((snd, i) => {
-            const row = this._div('display:grid;grid-template-columns:1fr 70px 70px auto;gap:6px;align-items:end;');
-            const fw = this._fieldLabel('Файл');
-            fw.appendChild(this._input(snd.Filename, v => { snd.Filename = v; }));
-            row.appendChild(fw);
-            const vw = this._fieldLabel('Громк.');
-            vw.appendChild(this._input(snd.Volume, v => { snd.Volume = v; }, 'number'));
-            row.appendChild(vw);
-            const pw = this._fieldLabel('Питч');
-            pw.appendChild(this._input(snd.Pitch, v => { snd.Pitch = v; }, 'number'));
-            row.appendChild(pw);
-            row.appendChild(this._button('✕', () => { pool.splice(i, 1); rerender(); }, 'danger'));
+            const row = this._div('display:grid;grid-template-columns:1fr 76px 76px 34px;gap:6px;align-items:end;');
+            row.appendChild(ShellKit.field('Файл (audio/se)',
+                ShellKit.text(snd.Filename, v => { snd.Filename = v; })));
+            row.appendChild(ShellKit.field('Громкость',
+                ShellKit.number(snd.Volume, v => { snd.Volume = v; })));
+            row.appendChild(ShellKit.field('Темп',
+                ShellKit.number(snd.Pitch, v => { snd.Pitch = v; })));
+            const del = document.createElement('button');
+            del.className = 'agonia-btn danger';
+            del.textContent = '✕';
+            del.addEventListener('click', () => {
+                pool.splice(i, 1);
+                entry['Sound Pool'] = AgoniaCardEditorBase.encodeNested(pool);
+                sec.replaceWith(this._renderSoundPool(entry));
+            });
+            row.appendChild(del);
             host.appendChild(row);
         });
-        host.appendChild(this._button('+ Звук', () => {
+        const add = document.createElement('button');
+        add.className = 'agonia-btn';
+        add.textContent = '+ Звук';
+        add.addEventListener('click', () => {
             pool.push({ Filename: '', Volume: 90, Pitch: 100 });
             entry['Sound Pool'] = AgoniaCardEditorBase.encodeNested(pool);
-            rerender();
-        }));
-        wrap.appendChild(host);
-        return wrap;
+            sec.replaceWith(this._renderSoundPool(entry));
+        });
+        host.appendChild(add);
+        return sec;
     }
 
-    // -- Variables ------------------------------------------------------
     _renderVariables(content) {
         const s = this.getSection('variables');
         content.appendChild(this._sectionTitle('Реактор переменных (SuperDuperVariables)'));
-        const hint = this._div('font-size:11px;color:var(--color-text-dim);padding-bottom:8px;line-height:1.5;');
-        hint.textContent = this._tt('Reactor-группы следят за переменными и при срабатывании условия меняют свитчи/переменные. Decay гасит переменные со временем; AutoOff выключает свитчи/переменные через N секунд.');
+        const hint = this._div('font-size:11px;color:var(--color-text-dim);padding:0 8px 8px;line-height:1.5;');
+        hint.textContent = this._tt('Группы следят за переменными и меняют свитчи/переменные. Decay гасит переменные, AutoOff выключает свитчи через N секунд. Клик по строке раскрывает настройку.');
         content.appendChild(hint);
 
-        const top = this._panel();
-        const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px 12px;');
-        const mv = this._fieldLabel('Переменная «в руке»', 'ItemTags/Спрайтер следят за ней');
-        mv.appendChild(this._input(s.Hand_MonitorVar, v => { s.Hand_MonitorVar = v; }, 'number'));
-        grid.appendChild(mv);
-        const az = this._fieldLabel('Авто-обнуление руки');
-        az.appendChild(this._checkbox(s.Hand_AutoZero, v => { s.Hand_AutoZero = v; }));
+        // Globals in one compact panel
+        const panel = ShellKit.section('');
+        panel.style.padding = '8px';
+        const grid = ShellKit.grid();
+        grid.appendChild(ShellKit.field('Переменная «в руке»',
+            ShellKit.number(s.Hand_MonitorVar, v => { s.Hand_MonitorVar = v; }), 'ItemTags/Спрайтер следят за ней'));
+        const az = ShellKit.field('Авто-обнуление руки');
+        az.appendChild(ShellKit.checkbox(s.Hand_AutoZero, v => { s.Hand_AutoZero = v; }));
         grid.appendChild(az);
-        const dbg = this._fieldLabel('Режим отладки');
-        dbg.appendChild(this._checkbox(s.Debug_Mode, v => { s.Debug_Mode = v; }));
+        const dbg = ShellKit.field('Режим отладки');
+        dbg.appendChild(ShellKit.checkbox(s.Debug_Mode, v => { s.Debug_Mode = v; }));
         grid.appendChild(dbg);
-        top.appendChild(grid);
-        content.appendChild(top);
+        panel.appendChild(grid);
+        content.appendChild(panel);
 
-        content.appendChild(this._sectionTitle('Reactor-группы'));
-        const rgHost = this._div('');
-        content.appendChild(rgHost);
-        this._renderCards(rgHost, s, 'Reactor_Groups', {
-            countLabel: 'групп',
-            addLabel: 'Добавить группу',
+        const K = AgoniaCardEditorBase;
+        const rerender = () => this._renderVariables(content);
+
+        // Reactor groups
+        content.appendChild(this._sectionTitle('Реактор-группы'));
+        const groups = K.decodeCollection(s['Reactor_Groups']);
+        const gHost = this._div('padding:0 8px;');
+        content.appendChild(gHost);
+        this._renderVarList(gHost, s, 'Reactor_Groups', groups, {
             blank: { Name: 'Новая группа', Reactions: '[]' },
-            headline: entry => entry.Name || '—',
-            summary: entry => AgoniaCardEditorBase.decodeNested(entry.Reactions).length + ' ' + this._tt('реакций'),
-            renderBody: (card, entry) => {
-                const nameWrap = this._fieldLabel('Имя группы');
-                nameWrap.appendChild(this._input(entry.Name, v => { entry.Name = v; }));
-                card.appendChild(nameWrap);
-                card.appendChild(this._renderReactions(entry));
-            }
+            header: (e) => e.Name || '—',
+            sub: (e) => K.decodeNested(e.Reactions).length + ' ' + this._tt('реакций'),
+            body: (body, entry) => {
+                const g = ShellKit.grid();
+                g.appendChild(ShellKit.field('Имя группы', ShellKit.text(entry.Name, v => { entry.Name = v; })));
+                body.appendChild(g);
+                body.appendChild(this._renderReactions(entry));
+            },
+            rerender
         });
 
+        // Decay
         content.appendChild(this._sectionTitle('Затухание переменных (Decay)'));
-        const decayHost = this._div('');
-        content.appendChild(decayHost);
-        this._renderCards(decayHost, s, 'Decay_Variables', {
-            countLabel: 'переменных',
-            addLabel: 'Добавить',
+        const dHost = this._div('padding:0 8px;');
+        content.appendChild(dHost);
+        this._renderVarList(dHost, s, 'Decay_Variables', K.decodeCollection(s['Decay_Variables']), {
             blank: { VariableID: 1, TickInterval: 10 },
-            headline: entry => 'var ' + entry.VariableID,
-            summary: entry => '−1 каждые ' + entry.TickInterval + ' тиков',
-            renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px 12px;');
-                const vw = this._fieldLabel('Переменная');
-                vw.appendChild(this._input(entry.VariableID, v => { entry.VariableID = v; }, 'number'));
-                grid.appendChild(vw);
-                const tw = this._fieldLabel('Тик-интервал');
-                tw.appendChild(this._input(entry.TickInterval, v => { entry.TickInterval = v; }, 'number'));
-                grid.appendChild(tw);
-                card.appendChild(grid);
-            }
+            header: (e) => 'var ' + e.VariableID,
+            sub: (e) => '−1 каждые ' + e.TickInterval + ' тиков',
+            body: (body, entry) => {
+                const g = ShellKit.grid();
+                g.appendChild(ShellKit.field('Переменная', ShellKit.number(entry.VariableID, v => { entry.VariableID = v; })));
+                g.appendChild(ShellKit.field('Тик-интервал', ShellKit.number(entry.TickInterval, v => { entry.TickInterval = v; })));
+                body.appendChild(g);
+            },
+            rerender
         });
 
-        const row = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px 12px;');
+        // AutoOff
+        content.appendChild(this._sectionTitle('Авто-выключение'));
+        const row = this._div('display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 8px;');
+        content.appendChild(row);
         const swHost = this._div('');
         row.appendChild(swHost);
         const vrHost = this._div('');
         row.appendChild(vrHost);
-        content.appendChild(this._sectionTitle('Авто-выключение'));
-        content.appendChild(row);
-        this._renderCards(swHost, s, 'AutoOff_Switches', {
-            countLabel: 'свитчей', addLabel: '+ Свитч',
+        this._renderVarList(swHost, s, 'AutoOff_Switches', K.decodeCollection(s['AutoOff_Switches']), {
             blank: { switchId: 1, duration: 1 },
-            headline: entry => 'sw ' + entry.switchId,
-            summary: entry => 'выкл через ' + entry.duration + ' с',
-            renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px 12px;');
-                const w1 = this._fieldLabel('Свитч');
-                w1.appendChild(this._input(entry.switchId, v => { entry.switchId = v; }, 'number'));
-                grid.appendChild(w1);
-                const w2 = this._fieldLabel('Секунд');
-                w2.appendChild(this._input(entry.duration, v => { entry.duration = v; }, 'number'));
-                grid.appendChild(w2);
-                card.appendChild(grid);
-            }
+            header: (e) => 'sw ' + e.switchId,
+            sub: (e) => 'выкл через ' + e.duration + ' с',
+            body: (body, entry) => {
+                const g = ShellKit.grid();
+                g.appendChild(ShellKit.field('Свитч', ShellKit.number(entry.switchId, v => { entry.switchId = v; })));
+                g.appendChild(ShellKit.field('Секунд', ShellKit.number(entry.duration, v => { entry.duration = v; })));
+                body.appendChild(g);
+            },
+            rerender
         });
-        this._renderCards(vrHost, s, 'AutoOff_Variables', {
-            countLabel: 'переменных', addLabel: '+ Переменную',
+        this._renderVarList(vrHost, s, 'AutoOff_Variables', K.decodeCollection(s['AutoOff_Variables']), {
             blank: { variableId: 1, duration: 1 },
-            headline: entry => 'var ' + entry.variableId,
-            summary: entry => '= 0 через ' + entry.duration + ' с',
-            renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px 12px;');
-                const w1 = this._fieldLabel('Переменная');
-                w1.appendChild(this._input(entry.variableId, v => { entry.variableId = v; }, 'number'));
-                grid.appendChild(w1);
-                const w2 = this._fieldLabel('Секунд');
-                w2.appendChild(this._input(entry.duration, v => { entry.duration = v; }, 'number'));
-                grid.appendChild(w2);
-                card.appendChild(grid);
-            }
+            header: (e) => 'var ' + e.variableId,
+            sub: (e) => '= 0 через ' + e.duration + ' с',
+            body: (body, entry) => {
+                const g = ShellKit.grid();
+                g.appendChild(ShellKit.field('Переменная', ShellKit.number(entry.variableId, v => { entry.variableId = v; })));
+                g.appendChild(ShellKit.field('Секунд', ShellKit.number(entry.duration, v => { entry.duration = v; })));
+                body.appendChild(g);
+            },
+            rerender
         });
     }
 
+    /** Accordion list over an MV collection with add/remove/reorder. */
+    _renderVarList(host, section, key, entries, opts) {
+        const K = AgoniaCardEditorBase;
+        host.innerHTML = '';
+        const bar = this._div('display:flex;align-items:center;gap:10px;padding-bottom:6px;');
+        const count = this._div('font-size:12px;color:var(--color-text-dim);');
+        count.textContent = entries.length + ' ' + this._tt(opts.countLabel || 'записей');
+        bar.appendChild(count);
+        bar.appendChild(this._div('flex:1'));
+        bar.appendChild(this._button(opts.addLabel || 'Добавить', () => {
+            entries.push(JSON.parse(JSON.stringify(opts.blank)));
+            section[key] = K.encodeCollection(entries);
+            opts.rerender();
+        }));
+        host.appendChild(bar);
+
+        const acc = new AccordionList({
+            items: entries,
+            header: opts.header,
+            sub: opts.sub,
+            onRemove: idx => { entries.splice(idx, 1); section[key] = K.encodeCollection(entries); opts.rerender(); },
+            onReorder: (a, b) => { const [m] = entries.splice(a, 1); entries.splice(b, 0, m); section[key] = K.encodeCollection(entries); opts.rerender(); },
+            renderBody: (body, entry) => opts.body(body, entry)
+        });
+        acc.mount(host);
+    }
+
     _renderReactions(entry) {
-        const list = AgoniaCardEditorBase.decodeNested(entry.Reactions);
-        const wrap = this._fieldLabel('Реactions', 'При срабатывании условия меняют свитчи/переменные (ID:значение через запятую)');
-        const host = this._div('display:flex;flex-direction:column;gap:6px;');
-        const rerender = () => {
-            entry.Reactions = AgoniaCardEditorBase.encodeNested(list);
-            wrap.replaceWith(this._renderReactions.call(this, entry));
-        };
+        const K = AgoniaCardEditorBase;
+        const list = K.decodeNested(entry.Reactions);
+        const sec = ShellKit.section('Реакции');
+        const host = this._div('padding:0 8px 8px;display:flex;flex-direction:column;gap:6px;');
+        sec.appendChild(host);
+
         list.forEach((r, i) => {
-            const row = this._div('display:grid;grid-template-columns:90px 110px 90px 1fr 1fr auto;gap:6px;align-items:end;');
-            const tv = this._fieldLabel('Var');
-            tv.appendChild(this._input(r.TriggerVarId, v => { r.TriggerVarId = v; }, 'number'));
-            row.appendChild(tv);
-            const cw = this._fieldLabel('Условие');
-            cw.appendChild(this._select([
-                { value: 'equal', label: '=' }, { value: 'greater', label: '>' },
-                { value: 'less', label: '<' }, { value: 'notEqual', label: '≠' }
-            ], r.Condition, v => { r.Condition = v; }));
-            row.appendChild(cw);
-            const vw = this._fieldLabel('Знач.');
-            vw.appendChild(this._input(r.Value, v => { r.Value = v; }, 'number'));
-            row.appendChild(vw);
-            const sw = this._fieldLabel('Свитчи');
-            sw.appendChild(this._input(r.SwitchesToChange, v => { r.SwitchesToChange = v; }));
-            row.appendChild(sw);
-            const vrw = this._fieldLabel('Переменные');
-            vrw.appendChild(this._input(r.VariablesToChange, v => { r.VariablesToChange = v; }));
-            row.appendChild(vrw);
-            row.appendChild(this._button('✕', () => { list.splice(i, 1); rerender(); }, 'danger'));
+            const row = this._div('display:grid;grid-template-columns:1fr 90px 90px 1fr 1fr 34px;gap:6px;align-items:end;');
+            row.appendChild(ShellKit.field('Переменная', ShellKit.number(r.TriggerVarId, v => { r.TriggerVarId = v; })));
+            row.appendChild(ShellKit.field('Условие',
+                ShellKit.select([{ value: 'equal', label: '=' }, { value: 'greater', label: '>' },
+                    { value: 'less', label: '<' }, { value: 'notEqual', label: '≠' }],
+                    r.Condition, v => { r.Condition = v; })));
+            row.appendChild(ShellKit.field('Значение', ShellKit.number(r.Value, v => { r.Value = v; })));
+            row.appendChild(ShellKit.field('Свитчи (id:знач.)',
+                ShellKit.text(r.SwitchesToChange, v => { r.SwitchesToChange = v; })));
+            row.appendChild(ShellKit.field('Переменные (id:знач.)',
+                ShellKit.text(r.VariablesToChange, v => { r.VariablesToChange = v; })));
+            const del = document.createElement('button');
+            del.className = 'agonia-btn danger';
+            del.textContent = '✕';
+            del.addEventListener('click', () => {
+                list.splice(i, 1);
+                entry.Reactions = K.encodeNested(list);
+                sec.replaceWith(this._renderReactions(entry));
+            });
+            row.appendChild(del);
             host.appendChild(row);
         });
-        host.appendChild(this._button('+ Реакция', () => {
+        const add = document.createElement('button');
+        add.className = 'agonia-btn';
+        add.textContent = '+ Реакция';
+        add.addEventListener('click', () => {
             list.push({ TriggerVarId: 1, Condition: 'equal', Value: 0, SwitchesToChange: '', VariablesToChange: '' });
-            entry.Reactions = AgoniaCardEditorBase.encodeNested(list);
-            rerender();
-        }));
-        wrap.appendChild(host);
-        return wrap;
+            entry.Reactions = K.encodeNested(list);
+            sec.replaceWith(this._renderReactions(entry));
+        });
+        host.appendChild(add);
+        return sec;
     }
 
     // -- Drop -----------------------------------------------------------
     _renderDrop(content) {
         const s = this.getSection('drop');
         content.appendChild(this._sectionTitle('Выпаденные предметы (SuperDuperDrop)'));
-        const panel = this._panel();
-        const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px 12px;');
-        const fields = [
-            ['Drop Char File', 'Спрайт предмета', 'text'],
-            ['Drop Char Index', 'Индекс спрайта', 'number'],
-            ['Drop Priority', 'Приоритет', 'number'],
-            ['Drop Radius', 'Радиус подбора', 'number'],
-            ['Icon Scale', 'Масштаб иконки', 'number'],
-            ['Icon Y Offset', 'Иконка: смещение Y', 'number'],
-            ['Icon Blink Min', 'Мигание мин', 'number'],
-            ['Icon Blink Max', 'Мигание макс', 'number'],
-            ['Icon Blink Period', 'Мигание период', 'number'],
-            ['Drop Sound', 'Звук выброса', 'text'],
-            ['Drop Sound Vol', 'Громкость выброса', 'number'],
-            ['Drop Pickup Sound', 'Звук подбора', 'text'],
-            ['Drop Pickup Vol', 'Громкость подбора', 'number'],
-            ['Block Sound', 'Звук блокировки', 'text'],
-            ['Block Sound Vol', 'Громкость блока', 'number'],
-            ['Pickup Delay', 'Задержка подбора (f)', 'number'],
-            ['Stack Pickup Delay', 'Задержка стака (f)', 'number'],
-            ['Error Plugin Command', 'Команда ошибки (переполнение)', 'text']
+
+        const groups = [
+            ['Вид', [
+                ['Drop Char File', 'Спрайт предмета'],
+                ['Drop Char Index', 'Индекс спрайта'],
+                ['Drop Priority', 'Приоритет'],
+                ['Drop Radius', 'Радиус подбора'],
+                ['Icon Scale', 'Масштаб иконки'],
+                ['Icon Y Offset', 'Иконка: смещение Y'],
+                ['Icon Blink Min', 'Мигание: минимум'],
+                ['Icon Blink Max', 'Мигание: максимум'],
+                ['Icon Blink Period', 'Мигание: период']
+            ], ['Drop Step Anime', 'Анимация стоя'], ['Drop Walk Anime', 'Анимация ходьбы'], ['Drop Dir Fix', 'Фикс. направление']],
+            ['Звуки', [
+                ['Drop Sound', 'Звук выброса'],
+                ['Drop Sound Vol', 'Громкость выброса'],
+                ['Drop Pickup Sound', 'Звук подбора'],
+                ['Drop Pickup Vol', 'Громкость подбора'],
+                ['Block Sound', 'Звук блокировки'],
+                ['Block Sound Vol', 'Громкость блока']
+            ]],
+            ['Поведение подбора', [
+                ['Pickup Delay', 'Задержка подбора (кадры)'],
+                ['Stack Pickup Delay', 'Задержка стака (кадры)'],
+                ['Error Plugin Command', 'Команда при переполнении']
+            ]]
         ];
-        for (const [key, label, type] of fields) {
-            const w = this._fieldLabel(label);
-            w.appendChild(this._input(s[key], v => { s[key] = v; }, type));
-            grid.appendChild(w);
+
+        for (const [title, fields, ...flags] of groups) {
+            const sec = ShellKit.section(this._tt(title));
+            const grid = ShellKit.grid();
+            for (const [key, label] of fields) {
+                grid.appendChild(ShellKit.field(this._tt(label),
+                    ShellKit.text(s[key], v => { s[key] = v; })));
+            }
+            for (const [key, label] of flags) {
+                const f = ShellKit.field(this._tt(label));
+                f.appendChild(ShellKit.checkbox(s[key], v => { s[key] = v; }));
+                grid.appendChild(f);
+            }
+            sec.appendChild(grid);
+            content.appendChild(sec);
         }
-        for (const [key, label] of [['Drop Step Anime', 'Анимация стоя'], ['Drop Walk Anime', 'Анимация ходьбы'], ['Drop Dir Fix', 'Фикс. направление']]) {
-            const w = this._fieldLabel(label);
-            w.appendChild(this._checkbox(s[key], v => { s[key] = v; }));
-            grid.appendChild(w);
-        }
-        panel.appendChild(grid);
-        content.appendChild(panel);
     }
 }
 
