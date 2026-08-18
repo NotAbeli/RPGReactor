@@ -1493,18 +1493,14 @@ class DatabaseUIEditor {
 
     _renderGroup(section, group, fields) {
         const panel = document.createElement('div');
-        panel.style.cssText = `
-            background-color: var(--color-bg-panel);
-            border: 1px solid var(--color-border); border-radius: 6px;
-            padding: 12px; display: flex; flex-direction: column; gap: 8px;
-        `;
+        panel.className = 'agonia-section';
         const head = document.createElement('div');
-        head.style.cssText = 'font-weight:600;font-size:13px;color:var(--color-text-strong);';
+        head.className = 'agonia-section-header';
         head.textContent = this._tt(group);
         panel.appendChild(head);
 
         const inner = document.createElement('div');
-        inner.style.cssText = 'display:grid;grid-template-columns:repeat(2,1fr);gap:8px;';
+        inner.className = 'agonia-field-grid';
         for (const f of fields) {
             inner.appendChild(this._renderField(section, f));
         }
@@ -1514,9 +1510,9 @@ class DatabaseUIEditor {
 
     _renderField(section, f) {
         const wrap = document.createElement('div');
-        wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        wrap.className = 'agonia-field';
         const label = document.createElement('label');
-        label.style.cssText = 'font-size:11px;color:var(--color-text);font-weight:600;';
+        label.title = f.key;
         label.textContent = (typeof AgoniaLabels !== 'undefined' ? AgoniaLabels.translate(f.key) : this._tt(f.key));
         wrap.appendChild(label);
 
@@ -1532,11 +1528,7 @@ class DatabaseUIEditor {
         const input = document.createElement('input');
         input.type = f.type === 'number' ? 'number' : 'text';
         input.value = section[f.key] === undefined || section[f.key] === null ? '' : section[f.key];
-        input.style.cssText = `
-            width:${f.type === 'number' ? '84px' : '100%'};padding:5px 8px;font-size:12px;box-sizing:border-box;
-            background-color:var(--color-bg-deep);color:var(--color-text-strong);
-            border:1px solid var(--color-border);border-radius:4px;
-        `;
+        input.className = 'agonia-input';
         input.addEventListener('input', () => {
             if (f.type === 'number') {
                 const n = Number(input.value);
@@ -1608,17 +1600,13 @@ class DatabaseUIEditor {
 
     _renderBlobGroup(blob, group, fields, commit) {
         const panel = document.createElement('div');
-        panel.style.cssText = `
-            background-color: var(--color-bg-panel);
-            border: 1px solid var(--color-border); border-radius: 6px;
-            padding: 12px; display: flex; flex-direction: column; gap: 8px;
-        `;
+        panel.className = 'agonia-section';
         const head = document.createElement('div');
-        head.style.cssText = 'font-weight:600;font-size:13px;color:var(--color-text-strong);';
+        head.className = 'agonia-section-header';
         head.textContent = this._tt(group);
         panel.appendChild(head);
         const inner = document.createElement('div');
-        inner.style.cssText = 'display:grid;grid-template-columns:repeat(2,1fr);gap:8px;';
+        inner.className = 'agonia-field-grid';
 
         for (const f of fields) {
             if (f.type === 'sound') {

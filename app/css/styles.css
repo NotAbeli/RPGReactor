@@ -964,6 +964,26 @@
 
         /* S17: left-aligned tiling - cards are ~20% narrower (928px), wrap into a
    second column when the window has room, flat groups tile on their own. */
+/* S17-final: unified kit - the System1/Agonia look for every DB tab. */
+.agonia-section { background-color: var(--color-bg-panel); border: 1px solid var(--color-border); border-radius: 4px; padding: 8px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
+.agonia-section-header { background-color: transparent; padding: 4px 8px; font-size: 13px; font-weight: bold; color: var(--color-text-strong); }
+.agonia-section-content { padding: 10px; background-color: var(--color-bg-surface); border-radius: 3px; }
+.agonia-field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px 12px; align-items: start; }
+.agonia-field-grid .agonia-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.agonia-field > label { font-size: 11px; color: var(--color-text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agonia-field > .agonia-hint { font-size: 10px; color: var(--color-text-dim); line-height: 1.35; }
+.agonia-input { width: 100%; padding: 5px 8px; font-size: 12px; box-sizing: border-box; background-color: var(--color-bg-deep); color: var(--color-text-strong); border: 1px solid var(--color-border); border-radius: 4px; }
+.agonia-input[type=number] { width: 84px; }
+.agonia-select { width: 100%; padding: 5px 8px; font-size: 12px; box-sizing: border-box; background-color: var(--color-bg-deep); color: var(--color-text-strong); border: 1px solid var(--color-border); border-radius: 4px; }
+.agonia-card { flex: 0 1 928px; min-width: 430px; max-width: 928px; background-color: var(--color-bg-panel); border: 1px solid var(--color-border); border-radius: 4px; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.agonia-card-head { display: flex; align-items: center; gap: 10px; padding: 6px 8px; background-color: var(--color-bg-surface); border-radius: 3px; flex-wrap: wrap; }
+.agonia-card-title { font-weight: bold; font-size: 13px; color: var(--color-text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agonia-card-sub { font-size: 11px; color: var(--color-text-dim); white-space: nowrap; }
+.agonia-btn { padding: 4px 10px; font-size: 12px; cursor: pointer; background-color: var(--color-bg-deep); color: var(--color-text-strong); border: 1px solid var(--color-border); border-radius: 4px; white-space: nowrap; }
+.agonia-btn.danger { background-color: var(--color-danger, #b33); color: #fff; }
+.agonia-row-grid { display: grid; gap: 6px; align-items: end; }
+.agonia-cards { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; width: 100%; }
+.agonia-cards .agonia-list-head { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 0 8px; flex-wrap: wrap; }
 .agonia-content { width: 100%; }
 .agonia-cards { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; width: 100%; }
 .agonia-card { flex: 0 1 928px; min-width: 430px; max-width: 928px; width: auto; }

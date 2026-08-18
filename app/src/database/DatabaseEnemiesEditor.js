@@ -129,7 +129,8 @@ class DatabaseEnemiesEditor {
             const input = document.createElement('input');
             input.type = 'text';
             input.value = typeof enemies[key] === 'string' ? enemies[key] : JSON.stringify(enemies[key] || {});
-            input.style.cssText = this._inputCss() + 'font-family:monospace;font-size:11px;';
+            input.className = 'agonia-input';
+            input.style.fontFamily = 'monospace';
             input.addEventListener('input', () => { enemies[key] = input.value; });
             wrap.appendChild(input);
             weaponCard.appendChild(wrap);
@@ -186,17 +187,17 @@ class DatabaseEnemiesEditor {
 
     _renderEnemyCard(entries, idx, enemies, host) {
         const entry = entries[idx];
-        const card = this._panel();
-        card.classList.add('agonia-card');
+        const card = document.createElement('div');
+        card.className = 'agonia-card';
 
         const head = document.createElement('div');
-        head.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        head.className = 'agonia-card-head';
         const name = document.createElement('span');
-        name.style.cssText = 'font-weight:600;font-size:13px;color:var(--color-text-strong);';
+        name.className = 'agonia-card-title';
         name.textContent = (idx + 1) + '. ' + (entry.match || '—') + ' · HP ' + (entry.hp || '?');
         head.appendChild(name);
         const sum = document.createElement('span');
-        sum.style.cssText = 'font-size:11px;color:var(--color-text-dim);';
+        sum.className = 'agonia-card-sub';
         sum.textContent = 'atk R' + (entry.attackRadius || '?') + ' · hear R' + (entry.hearingRadius || '?');
         head.appendChild(sum);
         head.appendChild(this._spacer());
@@ -225,7 +226,7 @@ class DatabaseEnemiesEditor {
         card.appendChild(head);
 
         const grid = document.createElement('div');
-        grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;';
+        grid.className = 'agonia-field-grid';
         const numFields = [
             ['id', 'ID'], ['hp', 'HP'],
             ['attackRadius', 'Радиус атаки'], ['calmRadius', 'Радиус спокойствия'],
@@ -237,15 +238,14 @@ class DatabaseEnemiesEditor {
             grid.appendChild(this._enemyNumField(entry, key, label));
         }
         const matchWrap = document.createElement('div');
-        matchWrap.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
+        matchWrap.className = 'agonia-field';
         const ml = document.createElement('label');
-        ml.style.cssText = 'font-size:11px;font-weight:600;color:var(--color-text);';
         ml.textContent = this._tt('match-тег (Note события)');
         matchWrap.appendChild(ml);
         const mi = document.createElement('input');
         mi.type = 'text';
         mi.value = entry.match || '';
-        mi.style.cssText = this._inputCss() + 'width:84px;';
+        mi.className = 'agonia-input';
         mi.addEventListener('input', () => { entry.match = mi.value; });
         matchWrap.appendChild(mi);
         grid.appendChild(matchWrap);
@@ -285,22 +285,19 @@ class DatabaseEnemiesEditor {
 
         rules.forEach((rule, rIdx) => {
             const row = document.createElement('div');
-            row.style.cssText = `
-                display:grid;grid-template-columns:110px 70px 70px 70px 70px 70px 70px 70px 70px auto;
-                gap:6px;align-items:end;padding:6px;border:1px solid var(--color-border);
-                border-radius:4px;background-color:var(--color-bg-deep);
-            `;
+            row.className = 'agonia-row-grid';
+            row.style.cssText = 'grid-template-columns:repeat(auto-fill,minmax(76px,1fr)) 34px;padding:6px;border:1px solid var(--color-border);border-radius:4px;background-color:var(--color-bg-deep);';
             const mk = (key, label) => {
                 const w = document.createElement('div');
-                w.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+                w.className = 'agonia-field';
                 const l = document.createElement('label');
-                l.style.cssText = 'font-size:10px;color:var(--color-text);';
                 l.textContent = label;
                 w.appendChild(l);
                 const i = document.createElement('input');
                 i.type = key === 'flag' || key === 'conditions' ? 'text' : 'number';
                 i.value = rule[key] !== undefined ? rule[key] : '';
-                i.style.cssText = 'width:100%;padding:3px 5px;font-size:11px;box-sizing:border-box;background-color:var(--color-bg-panel);color:var(--color-text-strong);border:1px solid var(--color-border);border-radius:3px;';
+                i.className = 'agonia-input';
+                i.style.cssText = 'padding:3px 5px;font-size:11px;';
                 i.addEventListener('input', () => {
                     if (i.type === 'number') {
                         const n = Number(i.value);
@@ -340,31 +337,27 @@ class DatabaseEnemiesEditor {
 
     _panel() {
         const el = document.createElement('div');
-        el.style.cssText = `
-            background-color: var(--color-bg-panel);
-            border: 1px solid var(--color-border); border-radius: 6px;
-            padding: 12px; display: flex; flex-direction: column; gap: 10px;
-        `;
+        el.className = 'agonia-section';
         return el;
     }
 
     _numField(holder, f) {
         const wrap = document.createElement('div');
-        wrap.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
+        wrap.className = 'agonia-field';
         const l = document.createElement('label');
-        l.style.cssText = 'font-size:11px;font-weight:600;color:var(--color-text);';
+        l.title = this._tt(f.label);
         l.textContent = this._tt(f.label);
         wrap.appendChild(l);
         if (f.hint) {
             const h = document.createElement('div');
-            h.style.cssText = 'font-size:10px;color:var(--color-text-dim);';
+            h.className = 'agonia-hint';
             h.textContent = f.hint;
             wrap.appendChild(h);
         }
         const i = document.createElement('input');
         i.type = 'number';
         i.value = holder[f.key] !== undefined ? holder[f.key] : 0;
-        i.style.cssText = this._inputCss();
+        i.className = 'agonia-input';
         i.addEventListener('input', () => {
             const n = Number(i.value);
             if (!Number.isNaN(n)) holder[f.key] = n;
@@ -394,12 +387,7 @@ class DatabaseEnemiesEditor {
     _button(text, onClick, kind = '') {
         const btn = document.createElement('button');
         btn.textContent = this._tt(text);
-        btn.style.cssText = `
-            padding:4px 12px;font-size:12px;cursor:pointer;
-            background-color:${kind === 'danger' ? 'var(--color-danger, #b33)' : 'var(--color-bg-deep)'};
-            color:var(--color-text-strong);
-            border:1px solid var(--color-border);border-radius:4px;
-        `;
+        btn.className = 'agonia-btn' + (kind === 'danger' ? ' danger' : '');
         btn.addEventListener('click', onClick);
         return btn;
     }

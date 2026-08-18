@@ -268,29 +268,20 @@ class DatabaseBattleEditor {
         const kind = meta.kind;
         const entry = entries[idx];
         const card = document.createElement('div');
-        card.classList.add('agonia-card');
-        card.style.cssText = `
-            background-color: var(--color-bg-panel);
-            border: 1px solid var(--color-border); border-radius: 6px;
-            display: flex; flex-direction: column;
-        `;
+        card.className = 'agonia-card';
 
         const head = document.createElement('div');
-        head.style.cssText = `
-            display:flex;align-items:center;gap:10px;padding:8px 12px;
-            background-color: var(--color-bg-deep);
-            border-radius:6px 6px 0 0;border-bottom:1px solid var(--color-border);
-        `;
+        head.className = 'agonia-card-head';
         const toggle = document.createElement('span');
         toggle.textContent = '▼';
         toggle.style.cssText = 'cursor:pointer;font-size:10px;color:var(--color-text-dim);';
         head.appendChild(toggle);
         const nameLbl = document.createElement('span');
-        nameLbl.style.cssText = 'font-weight:600;font-size:13px;color:var(--color-text-strong);';
+        nameLbl.className = 'agonia-card-title';
         nameLbl.textContent = (idx + 1) + '. ' + this._headline(entry, kind);
         head.appendChild(nameLbl);
         const sum = document.createElement('span');
-        sum.style.cssText = 'font-size:11px;color:var(--color-text-dim);';
+        sum.className = 'agonia-card-sub';
         sum.textContent = this._summary(entry, kind);
         head.appendChild(sum);
         head.appendChild(this._spacer());
@@ -318,7 +309,8 @@ class DatabaseBattleEditor {
         }, 'danger'));
 
         const body = document.createElement('div');
-        body.style.cssText = 'padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;';
+        body.className = 'agonia-field-grid';
+        body.style.padding = '12px';
         toggle.addEventListener('click', () => {
             const collapsed = body.style.display === 'none';
             body.style.display = collapsed ? 'grid' : 'none';
@@ -336,21 +328,21 @@ class DatabaseBattleEditor {
 
     _renderField(entry, field) {
         const wrap = document.createElement('div');
-        wrap.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
+        wrap.className = 'agonia-field';
         const label = document.createElement('label');
-        label.style.cssText = 'font-size:11px;color:var(--color-text);font-weight:600;';
+        label.title = this._tt(field.label);
         label.textContent = this._tt(field.label);
         wrap.appendChild(label);
         if (field.hint) {
             const h = document.createElement('div');
-            h.style.cssText = 'font-size:10px;color:var(--color-text-dim);line-height:1.3;';
+            h.className = 'agonia-hint';
             h.textContent = field.hint;
             wrap.appendChild(h);
         }
 
         if (field.type === 'select') {
             const sel = document.createElement('select');
-            sel.style.cssText = this._inputCss();
+            sel.className = 'agonia-select';
             for (const [val, lbl] of field.options) {
                 const o = document.createElement('option');
                 o.value = val; o.textContent = this._tt(lbl);
@@ -369,7 +361,7 @@ class DatabaseBattleEditor {
             if (field.step) input.step = field.step;
         }
         input.value = entry[field.key] !== undefined ? entry[field.key] : '';
-        input.style.cssText = this._inputCss() + (field.type === 'number' ? 'width:84px;' : '');
+        input.className = 'agonia-input';
         input.addEventListener('input', () => {
             if (field.type === 'number') {
                 const n = Number(input.value);
@@ -399,12 +391,7 @@ class DatabaseBattleEditor {
     _button(text, onClick, kind = '') {
         const btn = document.createElement('button');
         btn.textContent = this._tt(text);
-        btn.style.cssText = `
-            padding:4px 12px;font-size:12px;cursor:pointer;
-            background-color:${kind === 'danger' ? 'var(--color-danger, #b33)' : 'var(--color-bg-deep)'};
-            color:var(--color-text-strong);
-            border:1px solid var(--color-border);border-radius:4px;
-        `;
+        btn.className = 'agonia-btn' + (kind === 'danger' ? ' danger' : '');
         btn.addEventListener('click', onClick);
         return btn;
     }

@@ -233,27 +233,29 @@ class AgoniaCardEditorBase {
     }
 
     _sectionTitle(text) {
-        const el = this._div('padding:12px 0 4px;font-size:15px;font-weight:600;color:var(--color-text-strong);');
+        const el = document.createElement('div');
+        el.className = 'agonia-section-header';
+        el.style.cssText = 'padding:12px 8px 4px;';
         el.textContent = this._tt(text);
         return el;
     }
 
     _panel() {
-        return this._div(`
-            background-color: var(--color-bg-panel);
-            border: 1px solid var(--color-border); border-radius: 6px;
-            padding: 12px; display: flex; flex-direction: column; gap: 10px;
-        `);
+        const el = document.createElement('div');
+        el.className = 'agonia-section';
+        return el;
     }
 
     _fieldLabel(text, hint) {
-        const wrap = this._div('display:flex;flex-direction:column;gap:2px;');
+        const wrap = document.createElement('div');
+        wrap.className = 'agonia-field';
         const label = document.createElement('label');
-        label.style.cssText = 'font-size:11px;color:var(--color-text);font-weight:600;';
+        label.title = this._tt(text);
         label.textContent = this._tt(text);
         wrap.appendChild(label);
         if (hint) {
-            const h = this._div('font-size:10px;color:var(--color-text-dim);line-height:1.4;');
+            const h = document.createElement('div');
+            h.className = 'agonia-hint';
             h.textContent = hint;
             wrap.appendChild(h);
         }
@@ -264,11 +266,7 @@ class AgoniaCardEditorBase {
         const input = document.createElement('input');
         input.type = type;
         input.value = value === undefined || value === null ? '' : value;
-        input.style.cssText = `
-            width:${type === 'number' ? '84px' : '100%'};padding:5px 8px;font-size:12px;box-sizing:border-box;
-            background-color:var(--color-bg-deep);color:var(--color-text-strong);
-            border:1px solid var(--color-border);border-radius:4px;
-        `;
+        input.className = 'agonia-input';
         input.addEventListener('input', () => {
             if (type === 'number') {
                 const n = Number(input.value);
@@ -282,11 +280,7 @@ class AgoniaCardEditorBase {
 
     _select(options, value, onChange) {
         const sel = document.createElement('select');
-        sel.style.cssText = `
-            padding:4px 6px;font-size:12px;max-width:100%;
-            background-color:var(--color-bg-deep);color:var(--color-text-strong);
-            border:1px solid var(--color-border);border-radius:4px;
-        `;
+        sel.className = 'agonia-select';
         for (const o of options) {
             const opt = document.createElement('option');
             opt.value = o.value;
@@ -310,27 +304,27 @@ class AgoniaCardEditorBase {
     _button(text, onClick, kind = '') {
         const btn = document.createElement('button');
         btn.textContent = this._tt(text);
-        btn.style.cssText = `
-            padding:4px 12px;font-size:12px;cursor:pointer;
-            background-color:${kind === 'danger' ? 'var(--color-danger, #b33)' : 'var(--color-bg-deep)'};
-            color:var(--color-text-strong);
-            border:1px solid var(--color-border);border-radius:4px;
-        `;
+        btn.className = 'agonia-btn' + (kind === 'danger' ? ' danger' : '');
         btn.addEventListener('click', onClick);
         return btn;
     }
 
     _cardHead(title, summary, actions) {
-        const head = this._div('display:flex;align-items:center;gap:10px;flex-wrap:wrap;');
-        const name = this._div('font-weight:600;font-size:13px;color:var(--color-text-strong);');
+        const head = document.createElement('div');
+        head.className = 'agonia-card-head';
+        const name = document.createElement('div');
+        name.className = 'agonia-card-title';
         name.textContent = title;
         head.appendChild(name);
         if (summary) {
-            const s = this._div('font-size:11px;color:var(--color-text-dim);');
+            const s = document.createElement('div');
+            s.className = 'agonia-card-sub';
             s.textContent = summary;
             head.appendChild(s);
         }
-        head.appendChild(this._div('flex:1'));
+        const spacer = document.createElement('div');
+        spacer.style.flex = '1';
+        head.appendChild(spacer);
         for (const a of (actions || [])) head.appendChild(a);
         return head;
     }
@@ -345,7 +339,8 @@ class AgoniaCardEditorBase {
         host.innerHTML = '';
         const entries = AgoniaCardEditorBase.decodeCollection(section[key]);
 
-        const header = this._div('display:flex;align-items:center;gap:12px;padding-bottom:10px;flex-wrap:wrap;width:100%;');
+        const header = document.createElement('div');
+        header.className = 'agonia-list-head';
         const count = this._div('font-size:12px;color:var(--color-text-dim);');
         count.textContent = entries.length + ' ' + this._tt(opts.countLabel || 'записей');
         header.appendChild(count);
@@ -365,8 +360,8 @@ class AgoniaCardEditorBase {
         }
 
         entries.forEach((entry, idx) => {
-            const card = this._panel();
-            card.classList.add('agonia-card');
+            const card = document.createElement('div');
+            card.className = 'agonia-card';
             const rerender = () => this._renderCards(host, section, key, opts);
             const actions = [
                 this._button('▲', () => {
@@ -428,7 +423,7 @@ class DatabaseCraftEditor extends AgoniaCardEditorBase {
                 return ings.length + ' ' + this._tt('ингредиентов');
             },
             renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:1fr 2fr;gap:14px;');
+                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px 12px;');
                 const resultWrap = this._fieldLabel('Результат', 'Предмет, создаваемый рецептом');
                 resultWrap.appendChild(this._select(this.itemOptions('item'), entry.ResultItemID, v => { entry.ResultItemID = v; }));
                 grid.appendChild(resultWrap);
@@ -513,7 +508,7 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
             headline: entry => entry.Name || '—',
             summary: entry => 'Y=' + entry.Y + (entry['SE Name'] ? ' · SE ' + entry['SE Name'] : ''),
             renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;');
+                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px 12px;');
                 const mk = (label, key, type) => {
                     const w = this._fieldLabel(label);
                     w.appendChild(this._input(entry[key], v => { entry[key] = v; }, type));
@@ -554,7 +549,7 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
             headline: entry => entry.Name || '—',
             summary: entry => (entry['Appear Type'] || '') + ' · ' + (entry['Font Size'] || '') + 'px',
             renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;');
+                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px 12px;');
                 const mk = (label, key, type) => {
                     const w = this._fieldLabel(label);
                     w.appendChild(this._input(entry[key], v => { entry[key] = v; }, type));
@@ -590,7 +585,7 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
         contentHost.appendChild(this._sectionTitle('Попапы добычи (натив 729)'));
         const popupPanel = this._panel();
         popupPanel.style.margin = '0 16px 16px';
-        const popupGrid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;');
+        const popupGrid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px 12px;');
         const popupFields = [
             ['Duration', 'Длительность (f)', 'number'],
             ['Fade Speed', 'Скорость фейда', 'number'],
@@ -638,7 +633,7 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
             headline: entry => (entry.variableName || '—') + ' (var ' + entry.variableId + ')',
             summary: entry => entry.displayName || '',
             renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;');
+                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px 12px;');
                 const mk = (label, key, type) => {
                     const w = this._fieldLabel(label);
                     w.appendChild(this._input(entry[key], v => { entry[key] = v; }, type));
@@ -655,7 +650,7 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
         });
         const nPanel = this._panel();
         nPanel.style.margin = '8px 16px 16px';
-        const nGrid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;');
+        const nGrid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px 12px;');
         const nFlat = [
             ['Default X', 'X'], ['Default Y', 'Y'], ['Spacing Y', 'Отступ Y'],
             ['Spawn Delay', 'Задержка (f)'], ['Wait Time', 'Пауза (f)'],
@@ -753,7 +748,7 @@ class DatabaseGiftsEditor extends AgoniaCardEditorBase {
             headline: entry => entry.Id || '—',
             summary: entry => 'var ' + entry.VariableId + ' · ' + (entry.DefaultPoints || 0) + ' ' + this._tt('очков по умолчанию'),
             renderBody: (card, entry) => {
-                const top = this._div('display:grid;grid-template-columns:1fr 120px 140px;gap:10px;');
+                const top = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px 12px;');
                 const idw = this._fieldLabel('Имя персонажа (ID)');
                 idw.appendChild(this._input(entry.Id, v => { entry.Id = v; }));
                 top.appendChild(idw);
@@ -813,7 +808,7 @@ class DatabaseGiftsEditor extends AgoniaCardEditorBase {
     }
 
     _renderIdTags(entry) {
-        const wrap = this._div('display:grid;grid-template-columns:1fr 1fr;gap:10px;');
+        const wrap = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px 12px;');
         const items = AgoniaCardEditorBase.decodeNested(entry.DisallowedItems);
         const tags = AgoniaCardEditorBase.decodeNested(entry.DisallowedTags);
         const iw = this._fieldLabel('Запрещённые предметы (ID)', 'Через запятую — подарок не понравится');
@@ -906,7 +901,7 @@ class DatabaseWorldEditor extends AgoniaCardEditorBase {
             headline: entry => 'Террейн ' + entry['Terrain ID'],
             summary: entry => (entry['Playback Mode'] === 'sequential' ? 'по кругу' : 'случайно') + ' · ' + AgoniaCardEditorBase.decodeNested(entry['Sound Pool']).length + ' звуков',
             renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:120px 160px 1fr;gap:12px;align-items:start;');
+                const grid = this._div('display:grid;grid-template-columns:120px 170px 1fr;gap:10px 12px;align-items:start;');
                 const tw = this._fieldLabel('Террейн ID');
                 tw.appendChild(this._input(entry['Terrain ID'], v => { entry['Terrain ID'] = v; }, 'number'));
                 grid.appendChild(tw);
@@ -923,7 +918,7 @@ class DatabaseWorldEditor extends AgoniaCardEditorBase {
 
         content.appendChild(this._sectionTitle('Настройки шагов'));
         const panel = this._panel();
-        const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;');
+        const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px 12px;');
         const flat = [
             ['Base Step Interval', 'Интервал шага (f)', 'number'],
             ['Max Hearing Distance', 'Слышимость (тайлы)', 'number'],
@@ -989,7 +984,7 @@ class DatabaseWorldEditor extends AgoniaCardEditorBase {
         content.appendChild(hint);
 
         const top = this._panel();
-        const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;');
+        const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px 12px;');
         const mv = this._fieldLabel('Переменная «в руке»', 'ItemTags/Спрайтер следят за ней');
         mv.appendChild(this._input(s.Hand_MonitorVar, v => { s.Hand_MonitorVar = v; }, 'number'));
         grid.appendChild(mv);
@@ -1029,7 +1024,7 @@ class DatabaseWorldEditor extends AgoniaCardEditorBase {
             headline: entry => 'var ' + entry.VariableID,
             summary: entry => '−1 каждые ' + entry.TickInterval + ' тиков',
             renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:1fr 1fr;gap:10px;');
+                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px 12px;');
                 const vw = this._fieldLabel('Переменная');
                 vw.appendChild(this._input(entry.VariableID, v => { entry.VariableID = v; }, 'number'));
                 grid.appendChild(vw);
@@ -1040,7 +1035,7 @@ class DatabaseWorldEditor extends AgoniaCardEditorBase {
             }
         });
 
-        const row = this._div('display:grid;grid-template-columns:1fr 1fr;gap:14px;');
+        const row = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px 12px;');
         const swHost = this._div('');
         row.appendChild(swHost);
         const vrHost = this._div('');
@@ -1053,7 +1048,7 @@ class DatabaseWorldEditor extends AgoniaCardEditorBase {
             headline: entry => 'sw ' + entry.switchId,
             summary: entry => 'выкл через ' + entry.duration + ' с',
             renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:1fr 1fr;gap:10px;');
+                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px 12px;');
                 const w1 = this._fieldLabel('Свитч');
                 w1.appendChild(this._input(entry.switchId, v => { entry.switchId = v; }, 'number'));
                 grid.appendChild(w1);
@@ -1069,7 +1064,7 @@ class DatabaseWorldEditor extends AgoniaCardEditorBase {
             headline: entry => 'var ' + entry.variableId,
             summary: entry => '= 0 через ' + entry.duration + ' с',
             renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:1fr 1fr;gap:10px;');
+                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px 12px;');
                 const w1 = this._fieldLabel('Переменная');
                 w1.appendChild(this._input(entry.variableId, v => { entry.variableId = v; }, 'number'));
                 grid.appendChild(w1);
@@ -1126,7 +1121,7 @@ class DatabaseWorldEditor extends AgoniaCardEditorBase {
         const s = this.getSection('drop');
         content.appendChild(this._sectionTitle('Выпаденные предметы (SuperDuperDrop)'));
         const panel = this._panel();
-        const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;');
+        const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px 12px;');
         const fields = [
             ['Drop Char File', 'Спрайт предмета', 'text'],
             ['Drop Char Index', 'Индекс спрайта', 'number'],

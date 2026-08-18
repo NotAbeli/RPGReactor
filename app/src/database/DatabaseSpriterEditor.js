@@ -156,33 +156,28 @@ class DatabaseSpriterEditor {
 
     _sectionTitle(text) {
         const el = document.createElement('div');
-        el.style.cssText = 'padding:12px 16px 4px;font-size:15px;font-weight:600;color:var(--color-text-strong);';
+        el.className = 'agonia-section-header';
+        el.style.cssText = 'padding:12px 8px 4px;';
         el.textContent = this._tt(text);
         return el;
     }
 
     _panel() {
         const el = document.createElement('div');
-        el.style.cssText = `
-            background-color: var(--color-bg-panel);
-            border: 1px solid var(--color-border);
-            border-radius: 6px;
-            padding: 12px;
-            display: flex; flex-direction: column; gap: 10px;
-        `;
+        el.className = 'agonia-section';
         return el;
     }
 
     _fieldLabel(text, hint) {
         const wrap = document.createElement('div');
-        wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        wrap.className = 'agonia-field';
         const label = document.createElement('label');
-        label.style.cssText = 'font-size:11px;color:var(--color-text);font-weight:600;';
+        label.title = this._tt(text);
         label.textContent = this._tt(text);
         wrap.appendChild(label);
         if (hint) {
             const h = document.createElement('div');
-            h.style.cssText = 'font-size:10px;color:var(--color-text-dim);line-height:1.4;';
+            h.className = 'agonia-hint';
             h.textContent = hint;
             wrap.appendChild(h);
         }
@@ -196,13 +191,7 @@ class DatabaseSpriterEditor {
         if (opts.min !== undefined) input.min = opts.min;
         if (opts.max !== undefined) input.max = opts.max;
         if (opts.step !== undefined) input.step = opts.step;
-        input.style.cssText = `
-            width: ${opts.width || '100%'}; padding: 5px 8px;
-            background-color: var(--color-bg-deep);
-            border: 1px solid var(--color-border);
-            border-radius: 4px; color: var(--color-text-strong);
-            font-size: 12px;
-        `;
+        input.className = 'agonia-input';
         input.addEventListener('input', () => {
             const n = Number(input.value);
             if (!Number.isNaN(n)) onChange(n);
@@ -215,26 +204,14 @@ class DatabaseSpriterEditor {
         input.type = 'text';
         input.value = value === undefined || value === null ? '' : String(value);
         if (opts.placeholder) input.placeholder = opts.placeholder;
-        input.style.cssText = `
-            width: ${opts.width || '100%'}; padding: 5px 8px;
-            background-color: var(--color-bg-deep);
-            border: 1px solid var(--color-border);
-            border-radius: 4px; color: var(--color-text-strong);
-            font-size: 12px;
-        `;
+        input.className = 'agonia-input';
         input.addEventListener('input', () => onChange(input.value));
         return input;
     }
 
     _selectField(value, options, onChange) {
         const select = document.createElement('select');
-        select.style.cssText = `
-            width: 100%; padding: 5px 8px;
-            background-color: var(--color-bg-deep);
-            border: 1px solid var(--color-border);
-            border-radius: 4px; color: var(--color-text-strong);
-            font-size: 12px;
-        `;
+        select.className = 'agonia-select';
         for (const opt of options) {
             const o = document.createElement('option');
             o.value = opt.value;
@@ -261,13 +238,7 @@ class DatabaseSpriterEditor {
     _smallButton(text, onClick, kind = '') {
         const btn = document.createElement('button');
         btn.textContent = this._tt(text);
-        btn.style.cssText = `
-            padding: 4px 12px; font-size: 12px;
-            background-color: ${kind === 'danger' ? 'var(--color-danger, #b33)' : 'var(--color-bg-deep)'};
-            color: var(--color-text-strong);
-            border: 1px solid var(--color-border);
-            border-radius: 4px; cursor: pointer;
-        `;
+        btn.className = 'agonia-btn' + (kind === 'danger' ? ' danger' : '');
         btn.addEventListener('click', onClick);
         return btn;
     }
