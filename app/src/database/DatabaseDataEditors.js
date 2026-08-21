@@ -404,33 +404,29 @@ class AgoniaCardEditorBase {
 
 class DatabaseCraftEditor extends AgoniaCardEditorBase {
     showCraftDetail(container) {
-        const wrapper = this._div('display:flex;flex-direction:column;height:100%;overflow:hidden;');
-        wrapper.appendChild(this._stdBanner('Крафт', 'Рецепты верстака. Открытие меню — натив 734'));
-
-        const content = this._div('flex:1;overflow-y:auto;padding:0 16px 16px;');
-        content.className = 'agonia-content';
-        wrapper.appendChild(content);
-        container.appendChild(wrapper);
-
         const section = this.getSection('craft');
-        this._renderCards(content, section, 'Recipes', {
-            countLabel: 'рецептов',
+        const entries = AgoniaCardEditorBase.decodeCollection(section['Recipes']);
+        const persist = () => { section['Recipes'] = AgoniaCardEditorBase.encodeCollection(entries); };
+
+        new MasterDetailShell({
+            items: entries,
+            searchText: r => [this._itemName(r.ResultItemID), r.ResultItemID].join(' '),
             addLabel: 'Добавить рецепт',
-            blank: { ResultItemID: '1', Ingredients: '[]' },
-            headline: entry => this._itemName(entry.ResultItemID),
-            summary: entry => {
-                const ings = AgoniaCardEditorBase.decodeNested(entry.Ingredients);
-                return ings.length + ' ' + this._tt('ингредиентов');
-            },
-            renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px 12px;');
-                const resultWrap = this._fieldLabel('Результат', 'Предмет, создаваемый рецептом');
-                resultWrap.appendChild(this._select(this.itemOptions('item'), entry.ResultItemID, v => { entry.ResultItemID = v; }));
-                grid.appendChild(resultWrap);
-                grid.appendChild(this._renderIngredients(entry));
-                card.appendChild(grid);
+            blank: () => ({ ResultItemID: '1', Ingredients: '[]' }),
+            onChanged: persist,
+            title: (r, i) => (i + 1) + '. ' + this._itemName(r.ResultItemID),
+            summary: r => AgoniaCardEditorBase.decodeNested(r.Ingredients).length + ' ' + this._tt('ингредиентов'),
+            renderForm: (formCol, entry, idx, api) => {
+                const f = new InspectorForm();
+                f.head((idx + 1) + '. ' + this._itemName(entry.ResultItemID),
+                    AgoniaCardEditorBase.decodeNested(entry.Ingredients).length + ' ингредиентов');
+                f.row(this._tt('Результат'),
+                    this._select(this.itemOptions('item'), entry.ResultItemID, v => { entry.ResultItemID = v; api.changed(); }),
+                    this._tt('Предмет, создаваемый рецептом'));
+                f.mount(formCol);
+                formCol.appendChild(this._ingredientsTable(entry));
             }
-        });
+        }).mount(container);
     }
 
     _itemName(id) {
@@ -439,31 +435,26 @@ class DatabaseCraftEditor extends AgoniaCardEditorBase {
         return it && it.name ? it.name : ('#' + (id || '?'));
     }
 
-    _renderIngredients(entry) {
-        const wrap = this._fieldLabel('Ингредиенты', 'ID предметов, из которых собирается крафт');
-        const list = AgoniaCardEditorBase.decodeNested(entry.Ingredients);
-        const host = this._div('display:flex;flex-direction:column;gap:6px;');
-        const rerender = () => {
-            entry.Ingredients = AgoniaCardEditorBase.encodeNested(list);
-            host.replaceWith(this._renderIngredients.call(this, entry));
-        };
-        list.forEach((id, i) => {
-            const row = this._div('display:flex;gap:6px;align-items:center;');
-            row.appendChild(this._select(this.itemOptions('item'), id, v => {
-                if (v) list[i] = v; else list.splice(i, 1);
-                entry.Ingredients = AgoniaCardEditorBase.encodeNested(list);
-            }));
-            row.appendChild(this._button('✕', () => { list.splice(i, 1); rerender(); }, 'danger'));
-            host.appendChild(row);
-        });
-        const addRow = this._div('display:flex;gap:6px;');
-        addRow.appendChild(this._button('+ Ингредиент', () => {
-            list.push('1');
-            entry.Ingredients = AgoniaCardEditorBase.encodeNested(list);
-            host.replaceWith(this._renderIngredients.call(this, entry));
-        }));
-        host.appendChild(addRow);
-        wrap.appendChild(host);
+    _ingredientsTable(entry) {
+        const K = AgoniaCardEditorBase;
+        const list = K.decodeNested(entry.Ingredients);
+        const persist = () => { entry.Ingredients = K.encodeNested(list); };
+        const wrap = this._div('padding:4px 0 0;');
+
+        const cap = this._sectionTitle('Ингредиенты');
+        wrap.appendChild(cap);
+        new DataTable({
+            items: list,
+            countLabel: 'позиций',
+            columns: [
+                { label: 'Предмет', key: 'ItemId', type: 'select' },
+                { label: 'Кол-во', key: 'Count', type: 'number', align: 'right', width: '100px' }
+            ],
+            onAdd: () => { list.push({ ItemId: '1', Count: 1 }); persist(); wrap.replaceWith(this._ingredientsTable(entry)); },
+            addLabel: '+ Ингредиент',
+            onRemove: idx => { list.splice(idx, 1); persist(); wrap.replaceWith(this._ingredientsTable(entry)); },
+            onChanged: persist
+        }).mount(wrap);
         return wrap;
     }
 }
@@ -668,54 +659,49 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
 class DatabaseLootEditor extends AgoniaCardEditorBase {
     showLootDetail(container) {
         const section = this.getSection('loot');
-        const hint = this._div('font-size:11px;color:var(--color-text-dim);padding:0 0 10px;line-height:1.5;');
-        hint.textContent = this._tt('Категории лута для нативов 720 (выдать) и 724 (наполнить сундук): имя + пул предметов с весом (Price) и размером (Size).');
-        container.appendChild(hint);
-        this._renderCards(container, section, 'Categories', {
-            countLabel: 'категорий',
+        const entries = AgoniaCardEditorBase.decodeCollection(section['Categories']);
+        const persist = () => { section['Categories'] = AgoniaCardEditorBase.encodeCollection(entries); };
+
+        new MasterDetailShell({
+            items: entries,
+            searchText: r => [r.Name].join(' '),
             addLabel: 'Добавить категорию',
-            blank: { Name: 'Новая', Items: '[]' },
-            headline: entry => entry.Name || '—',
-            summary: entry => AgoniaCardEditorBase.decodeNested(entry.Items).length + ' ' + this._tt('предметов'),
-            renderBody: (card, entry) => {
-                const items = AgoniaCardEditorBase.decodeNested(entry.Items);
-                const host = this._div('display:flex;flex-direction:column;gap:6px;');
-                const rerender = () => {
-                    entry.Items = AgoniaCardEditorBase.encodeNested(items);
-                    const fresh = this._renderLootItems(entry, items);
-                    host.replaceWith(fresh);
-                };
-                const rendered = this._renderLootItems(entry, items, rerender);
-                host.appendChild(rendered);
-                card.appendChild(host);
+            blank: () => ({ Name: 'Новая', Items: '[]' }),
+            onChanged: persist,
+            title: (r, i) => (i + 1) + '. ' + (r.Name || '—'),
+            summary: r => AgoniaCardEditorBase.decodeNested(r.Items).length + ' ' + this._tt('предметов'),
+            renderForm: (formCol, entry, idx, api) => {
+                const f = new InspectorForm();
+                f.head((idx + 1) + '. ' + (entry.Name || '—'),
+                    AgoniaCardEditorBase.decodeNested(entry.Items).length + ' предметов в пуле');
+                f.field({ key: 'Name', label: 'Имя категории', type: 'text', hint: 'Нативы 720 (выдать) и 724 (наполнить сундук) выбирают категорию по нему' }, entry, () => api.changed());
+                f.mount(formCol);
+                formCol.appendChild(this._lootItemsTable(entry));
             }
-        });
+        }).mount(container);
     }
 
-    _renderLootItems(entry, items, rerender) {
-        const wrap = this._div('display:flex;flex-direction:column;gap:6px;');
-        const label = this._fieldLabel('Предметы пула', 'ItemId · вес (шанс) · размер (кол-во)');
-        wrap.appendChild(label);
-        items.forEach((it, i) => {
-            const row = this._div('display:grid;grid-template-columns:2fr 80px 80px auto;gap:6px;align-items:end;');
-            row.appendChild(this._select(this.itemOptions('item'), it.ItemId, v => {
-                if (v) it.ItemId = v; else items.splice(i, 1);
-                entry.Items = AgoniaCardEditorBase.encodeNested(items);
-            }));
-            const pw = this._fieldLabel('Вес');
-            pw.appendChild(this._input(it.Price, v => { it.Price = v; }, 'number'));
-            row.appendChild(pw);
-            const sw = this._fieldLabel('Размер');
-            sw.appendChild(this._input(it.Size, v => { it.Size = v; }, 'number'));
-            row.appendChild(sw);
-            row.appendChild(this._button('✕', () => { items.splice(i, 1); rerender(); }, 'danger'));
-            wrap.appendChild(row);
-        });
-        wrap.appendChild(this._button('+ Предмет', () => {
-            items.push({ ItemId: '1', Price: 1, Size: 1 });
-            entry.Items = AgoniaCardEditorBase.encodeNested(items);
-            rerender();
-        }));
+    _lootItemsTable(entry) {
+        const K = AgoniaCardEditorBase;
+        const items = K.decodeNested(entry.Items);
+        const persist = () => { entry.Items = K.encodeNested(items); };
+        const wrap = this._div('padding:4px 0 0;');
+
+        wrap.appendChild(this._sectionTitle('Предметы пула'));
+        const opts = this.itemOptions('item');
+        new DataTable({
+            items,
+            countLabel: 'предметов',
+            columns: [
+                { label: 'Предмет', key: 'ItemId', type: 'select' },
+                { label: 'Вес (шанс)', key: 'Price', type: 'number', align: 'right', width: '110px' },
+                { label: 'Размер (кол-во)', key: 'Size', type: 'number', align: 'right', width: '120px' }
+            ],
+            onAdd: () => { items.push({ ItemId: '1', Price: 1, Size: 1 }); persist(); wrap.replaceWith(this._lootItemsTable(entry)); },
+            addLabel: '+ Предмет',
+            onRemove: idx => { items.splice(idx, 1); persist(); wrap.replaceWith(this._lootItemsTable(entry)); },
+            onChanged: persist
+        }).mount(wrap);
         return wrap;
     }
 }
@@ -727,94 +713,110 @@ class DatabaseLootEditor extends AgoniaCardEditorBase {
 class DatabaseGiftsEditor extends AgoniaCardEditorBase {
     showGiftsDetail(container) {
         const section = this.getSection('gifts');
-        const hint = this._div('font-size:11px;color:var(--color-text-dim);padding:0 0 10px;line-height:1.5;');
-        hint.textContent = this._tt('Персонажи и их предпочтения для натива 751: кому что нравится (очки за предмет), множители по тегам, запрещённое. Имена персонажей увидит диалог 751.');
-        container.appendChild(hint);
-        this._renderCards(container, section, 'Characters', {
-            countLabel: 'персонажей',
+        const entries = AgoniaCardEditorBase.decodeCollection(section['Characters']);
+        const persist = () => { section['Characters'] = AgoniaCardEditorBase.encodeCollection(entries); };
+
+        new MasterDetailShell({
+            items: entries,
+            searchText: r => [r.Id, r.VariableId].join(' '),
             addLabel: 'Добавить персонажа',
-            blank: {
+            blank: () => ({
                 Id: 'Новый', VariableId: 0, SpecificItems: '[]', TagSettings: '[]',
                 DisallowedItems: '[]', DisallowedTags: '[]', DefaultPoints: 1
-            },
-            headline: entry => entry.Id || '—',
-            summary: entry => 'var ' + entry.VariableId + ' · ' + (entry.DefaultPoints || 0) + ' ' + this._tt('очков по умолчанию'),
-            renderBody: (card, entry) => {
-                const top = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px 12px;');
-                const idw = this._fieldLabel('Имя персонажа (ID)');
-                idw.appendChild(this._input(entry.Id, v => { entry.Id = v; }));
-                top.appendChild(idw);
-                const vw = this._fieldLabel('Переменная');
-                vw.appendChild(this._input(entry.VariableId, v => { entry.VariableId = v; }, 'number'));
-                top.appendChild(vw);
-                const dw = this._fieldLabel('Очки по умолчанию');
-                dw.appendChild(this._input(entry.DefaultPoints, v => { entry.DefaultPoints = v; }, 'number'));
-                top.appendChild(dw);
-                card.appendChild(top);
+            }),
+            onChanged: persist,
+            title: (r, i) => (i + 1) + '. ' + (r.Id || '—'),
+            summary: r => 'var ' + r.VariableId + ' · ' + (r.DefaultPoints || 0) + ' ' + this._tt('очков'),
+            renderForm: (formCol, entry, idx, api) => {
+                const changed = () => api.changed();
+                const f = new InspectorForm();
+                f.head((idx + 1) + '. ' + (entry.Id || '—'), 'var ' + entry.VariableId + ' · натив 751');
+                f.section(this._tt('Персонаж'));
+                f.field({ key: 'Id', label: 'Имя персонажа (ID)', type: 'text' }, entry, changed);
+                f.field({ key: 'VariableId', label: 'Переменная', type: 'number' }, entry, changed);
+                f.field({ key: 'DefaultPoints', label: 'Очки по умолчанию', type: 'number' }, entry, changed);
+                f.mount(formCol);
 
-                card.appendChild(this._renderPointList(entry, 'SpecificItems', 'Любимые предметы (очки)',
-                    'Сколько очков даёт предмет', () => ({ ItemId: '1', Points: 10 }), true));
-                card.appendChild(this._renderPointList(entry, 'TagSettings', 'Множители тегов',
-                    'Тег предмета → множитель очков', () => ({ Tag: '', Multiplier: 2 }), false));
-                card.appendChild(this._renderIdTags(entry));
+                formCol.appendChild(this._giftItemsTable(entry, changed));
+                formCol.appendChild(this._giftTagsTable(entry, changed));
+                formCol.appendChild(this._giftDisallowed(entry));
             }
-        });
+        }).mount(container);
     }
 
-    _renderPointList(entry, key, label, hint, blank, isItem) {
-        const wrap = this._div('display:flex;flex-direction:column;gap:6px;');
-        const head = this._fieldLabel(label, hint);
-        wrap.appendChild(head);
-        const list = AgoniaCardEditorBase.decodeNested(entry[key]);
-        const rerender = () => {
-            entry[key] = AgoniaCardEditorBase.encodeNested(list);
-            wrap.replaceWith(this._renderPointList.call(this, entry, key, label, hint, blank, isItem));
-        };
-        list.forEach((it, i) => {
-            const row = this._div('display:grid;grid-template-columns:2fr 120px auto;gap:6px;align-items:end;');
-            if (isItem) {
-                row.appendChild(this._select(this.itemOptions('item'), it.ItemId, v => {
-                    if (v) it.ItemId = v; else list.splice(i, 1);
-                    entry[key] = AgoniaCardEditorBase.encodeNested(list);
-                }));
-                const pw = this._fieldLabel('Очки');
-                pw.appendChild(this._input(it.Points, v => { it.Points = v; }, 'number'));
-                row.appendChild(pw);
-            } else {
-                const tw = this._fieldLabel('Тег');
-                tw.appendChild(this._input(it.Tag, v => { it.Tag = v; }));
-                row.appendChild(tw);
-                const mw = this._fieldLabel('Множитель');
-                mw.appendChild(this._input(it.Multiplier, v => { it.Multiplier = v; }, 'number'));
-                row.appendChild(mw);
-            }
-            row.appendChild(this._button('✕', () => { list.splice(i, 1); rerender(); }, 'danger'));
-            wrap.appendChild(row);
-        });
-        wrap.appendChild(this._button('+', () => {
-            list.push(JSON.parse(JSON.stringify(blank)));
-            entry[key] = AgoniaCardEditorBase.encodeNested(list);
-            rerender();
-        }));
+    _giftItemsTable(entry, changed) {
+        const K = AgoniaCardEditorBase;
+        const list = K.decodeNested(entry.SpecificItems);
+        const persist = () => { entry.SpecificItems = K.encodeNested(list); changed(); };
+        const wrap = this._div('padding:4px 0 0;');
+        wrap.appendChild(this._sectionTitle('Любимые предметы (очки)'));
+        new DataTable({
+            items: list,
+            countLabel: 'предметов',
+            columns: [
+                { label: 'Предмет', key: 'ItemId', type: 'select' },
+                { label: 'Очки', key: 'Points', type: 'number', align: 'right', width: '100px' }
+            ],
+            onAdd: () => { list.push({ ItemId: '1', Points: 10 }); persist(); wrap.replaceWith(this._giftItemsTable(entry, changed)); },
+            addLabel: '+ Предмет',
+            onRemove: idx => { list.splice(idx, 1); persist(); wrap.replaceWith(this._giftItemsTable(entry, changed)); },
+            onChanged: persist
+        }).mount(wrap);
         return wrap;
     }
 
-    _renderIdTags(entry) {
-        const wrap = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px 12px;');
-        const items = AgoniaCardEditorBase.decodeNested(entry.DisallowedItems);
-        const tags = AgoniaCardEditorBase.decodeNested(entry.DisallowedTags);
-        const iw = this._fieldLabel('Запрещённые предметы (ID)', 'Через запятую — подарок не понравится');
-        iw.appendChild(this._input(items.join(', '), v => {
-            entry.DisallowedItems = AgoniaCardEditorBase.encodeNested(
-                v.split(',').map(s => s.trim()).filter(Boolean));
-        }));
-        wrap.appendChild(iw);
-        const tw = this._fieldLabel('Запрещённые теги', 'Через запятую');
-        tw.appendChild(this._input(tags.join(', '), v => {
-            entry.DisallowedTags = AgoniaCardEditorBase.encodeNested(
-                v.split(',').map(s => s.trim()).filter(Boolean));
-        }));
-        wrap.appendChild(tw);
+    _giftTagsTable(entry, changed) {
+        const K = AgoniaCardEditorBase;
+        const list = K.decodeNested(entry.TagSettings);
+        const persist = () => { entry.TagSettings = K.encodeNested(list); changed(); };
+        const wrap = this._div('padding:4px 0 0;');
+        wrap.appendChild(this._sectionTitle('Множители тегов'));
+        new DataTable({
+            items: list,
+            countLabel: 'тегов',
+            columns: [
+                { label: 'Тег', key: 'Tag', type: 'text' },
+                { label: 'Множитель', key: 'Multiplier', type: 'number', align: 'right', width: '110px' }
+            ],
+            onAdd: () => { list.push({ Tag: '', Multiplier: 2 }); persist(); wrap.replaceWith(this._giftTagsTable(entry, changed)); },
+            addLabel: '+ Тег',
+            onRemove: idx => { list.splice(idx, 1); persist(); wrap.replaceWith(this._giftTagsTable(entry, changed)); },
+            onChanged: persist
+        }).mount(wrap);
+        return wrap;
+    }
+
+    _giftDisallowed(entry) {
+        const K = AgoniaCardEditorBase;
+        const f = new InspectorForm();
+        f.section('Запрещённое');
+        const items = K.decodeNested(entry.DisallowedItems);
+        const tags = K.decodeNested(entry.DisallowedTags);
+        f.field({
+            key: '__disItems', label: 'Запрещённые предметы (ID)', type: 'text',
+            hint: 'Через запятую — подарок не понравится'
+        }, {
+            __disItems: items.join(', ')
+        }, () => {});
+        f.field({
+            key: '__disTags', label: 'Запрещённые теги', type: 'text', hint: 'Через запятую'
+        }, {
+            __disTags: tags.join(', ')
+        }, () => {});
+        const wrap = this._div('padding:4px 0 0;');
+        f.mount(wrap);
+        // Wire the two text inputs to encode back (field() wrote static records).
+        const inputs = wrap.querySelectorAll ? wrap.querySelectorAll('input[type=text]') : [];
+        if (inputs && inputs.length === 2) {
+            inputs[0].addEventListener('input', () => {
+                entry.DisallowedItems = K.encodeNested(
+                    inputs[0].value.split(',').map(s => s.trim()).filter(Boolean));
+            });
+            inputs[1].addEventListener('input', () => {
+                entry.DisallowedTags = K.encodeNested(
+                    inputs[1].value.split(',').map(s => s.trim()).filter(Boolean));
+            });
+        }
         return wrap;
     }
 }

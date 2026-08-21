@@ -27,6 +27,7 @@ class MasterDetailShell {
      * opts.renderForm   - (container, record, index, api) => void
      * opts.searchText   - (record) => searchable text (optional)
      * opts.addLabel     - button caption (default 'Добавить')
+     * opts.thumb        - (record) => {url, letter} mini-thumb for list rows (optional)
      */
     constructor(opts) {
         this.o = Object.assign({ addLabel: 'Добавить' }, opts);
@@ -95,19 +96,38 @@ class MasterDetailShell {
             row.className = 'agonia-md-item' + (idx === this.selectedIdx ? ' active' : '');
             row.style.cssText = `
                 padding: 6px 8px; border-radius: 3px; cursor: pointer;
+                display: flex; align-items: center; gap: 8px;
                 border: 1px solid ${idx === this.selectedIdx ? 'var(--color-accent-border-mid)' : 'transparent'};
                 background-color: ${idx === this.selectedIdx ? 'var(--color-bg-deep)' : 'transparent'};
             `;
+            if (o.thumb) {
+                const th = document.createElement('div');
+                const t = o.thumb(item, idx) || {};
+                if (t.url) {
+                    th.style.cssText = 'flex:none;width:36px;height:44px;background-color:var(--color-bg-deep);border:1px solid var(--color-border);border-radius:3px;overflow:hidden;display:flex;align-items:center;justify-content:center;';
+                    const img = document.createElement('img');
+                    img.src = t.url;
+                    img.style.cssText = 'max-width:100%;max-height:100%;image-rendering:pixelated;';
+                    th.appendChild(img);
+                } else {
+                    th.style.cssText = 'flex:none;width:36px;height:44px;background-color:var(--color-bg-surface);border:1px solid var(--color-border);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--color-text-dim);';
+                    th.textContent = t.letter || '·';
+                }
+                row.appendChild(th);
+            }
+            const texts = document.createElement('div');
+            texts.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;';
             const name = document.createElement('div');
             name.style.cssText = 'font-size:12px;font-weight:600;color:var(--color-text-strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
             name.textContent = o.title(item, idx);
-            row.appendChild(name);
+            texts.appendChild(name);
             if (o.summary) {
                 const sub = document.createElement('div');
                 sub.style.cssText = 'font-size:10px;color:var(--color-text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
                 sub.textContent = String(o.summary(item, idx) || '');
-                row.appendChild(sub);
+                texts.appendChild(sub);
             }
+            row.appendChild(texts);
             row.addEventListener('click', () => {
                 this.selectedIdx = idx;
                 this._renderList();
