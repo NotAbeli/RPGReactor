@@ -254,36 +254,187 @@ class DatabaseSpriterEditor {
     // 5-button mode bar (Герой/Скины/Позы/NPC/Глобальные).
     // ------------------------------------------------------------------
 
-    classicApi(kind) {
-        const spriter = this.getSpriter();
+    /**
+     * S30: the collection view - a grid of live animated preview cards
+     * (mini players) with the selected entry's form on the right. Order
+     * matters (conditions match top-down), so the form head carries
+     * ▲▼ reorder buttons plus ⧉ duplicate and ✕ delete.
+     */
+    renderCollectionGrid(host, kind) {
         const K = DatabaseSpriterEditor;
-        const meta = this.collectionKeys.find(c => c.key === kind) || this.collectionKeys[0];
-        return {
-            entries: () => K.decodeCollection(spriter[kind]),
-            persist: list => { spriter[kind] = K.encodeCollection(list); },
-            blank: () => K.blankEntry(kind),
-            label: (e, i) => (i + 1) + '. ' + this._entryHeadline(e, kind),
-            search: e => [e.Name, e.IdName, e.Priority].join(' '),
-            renderDetail: (wrapper, entry, idx, commit) =>
-                this._renderEntryDetail(wrapper, entry, idx, kind, commit)
+        const spriter = this.getSpriter();
+        let entries = K.decodeCollection(spriter[kind]);
+        let selected = entries.length ? 0 : -1;
+        const persist = () => { spriter[kind] = K.encodeCollection(entries); };
+
+        host.innerHTML = '';
+        const root = document.createElement('div');
+        root.style.cssText = 'display:flex;gap:0;height:100%;min-height:0;align-items:stretch;';
+        host.appendChild(root);
+
+        // --- Left: toolbar + live card grid ---
+        const left = document.createElement('div');
+        left.style.cssText = 'flex:1 1 auto;min-width:0;display:flex;flex-direction:column;';
+        root.appendChild(left);
+
+        const bar = document.createElement('div');
+        bar.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--color-border);';
+        const count = document.createElement('span');
+        count.style.cssText = 'font-size:12px;color:var(--color-text-dim);';
+        bar.appendChild(count);
+        bar.appendChild((() => { const s = document.createElement('div'); s.style.flex = '1'; return s; })());
+        const add = document.createElement('button');
+        add.className = 'agonia-btn';
+        add.textContent = this._tt('+ Новый');
+        add.addEventListener('click', () => {
+            entries.push(K.blankEntry(kind));
+            persist();
+            selected = entries.length - 1;
+            rebuild();
+        });
+        bar.appendChild(add);
+        left.appendChild(bar);
+
+        const gridScroll = document.createElement('div');
+        gridScroll.style.cssText = 'flex:1;overflow-y:auto;padding:12px;';
+        left.appendChild(gridScroll);
+
+        // --- Right: the selected entry form ---
+        const right = document.createElement('div');
+        right.style.cssText = 'flex:0 0 460px;border-left:1px solid var(--color-border);display:flex;flex-direction:column;min-height:0;';
+        root.appendChild(right);
+
+        const renderForm = () => {
+            // Kill only the previous FORM players; grid cards keep living.
+            this._players = (this._players || []).filter(p => p._tag !== 'spriterForm');
+            right.innerHTML = '';
+            const entry = entries[selected];
+            if (!entry) {
+                const ph = document.createElement('div');
+                ph.style.cssText = 'color:var(--color-text-muted);text-align:center;padding:60px 12px;font-size:12px;';
+                ph.textContent = this._tt('Выберите карточку слева');
+                right.appendChild(ph);
+                return;
+            }
+            const headRow = document.createElement('div');
+            headRow.style.cssText = `
+                display:flex;align-items:center;gap:8px;padding:10px 12px;
+                border-bottom:1px solid var(--color-border);flex-wrap:wrap;
+            `;
+            const name = document.createElement('span');
+            name.style.cssText = 'font-weight:700;font-size:14px;color:var(--color-text-strong);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+            name.textContent = (selected + 1) + '. ' + this._entryHeadline(entry, kind);
+            headRow.appendChild(name);
+            const mkBtn = (lbl, title, fn, danger) => {
+                const b = document.createElement('button');
+                b.className = 'agonia-btn' + (danger ? ' danger' : '');
+                b.textContent = lbl;
+                b.title = title;
+                b.addEventListener('click', fn);
+                headRow.appendChild(b);
+            };
+            mkBtn('▲', 'Выше', () => {
+                if (selected <= 0) return;
+                [entries[selected - 1], entries[selected]] = [entries[selected], entries[selected - 1]];
+                selected--;
+                persist();
+                rebuild();
+            });
+            mkBtn('▼', 'Ниже', () => {
+                if (selected >= entries.length - 1) return;
+                [entries[selected + 1], entries[selected]] = [entries[selected], entries[selected + 1]];
+                selected++;
+                persist();
+                rebuild();
+            });
+            mkBtn('⧉', 'Дублировать', () => {
+                entries.splice(selected + 1, 0, JSON.parse(JSON.stringify(entry)));
+                selected++;
+                persist();
+                rebuild();
+            });
+            mkBtn('✕', 'Удалить', () => {
+                if (!confirm(this._tt('Удалить запись?') + ' ' + this._entryHeadline(entry, kind))) return;
+                entries.splice(selected, 1);
+                selected = Math.min(selected, entries.length - 1);
+                persist();
+                rebuild();
+            }, true);
+            right.appendChild(headRow);
+
+            const formScroll = document.createElement('div');
+            formScroll.style.cssText = 'flex:1;overflow-y:auto;padding:12px;';
+            right.appendChild(formScroll);
+            try {
+                this._renderEntryDetail(formScroll, entry, selected, kind, persist);
+            } catch (e) {
+                formScroll.appendChild(this._errorBanner(e));
+            }
         };
+
+        const rebuild = () => {
+            // Full rebuild: stops every player, grid re-registers theirs,
+            // then the form adds its own (tagged) one.
+            this._playerStop();
+            count.textContent = entries.length + ' ' + this._tt(this._kindCountLabel(kind));
+            gridScroll.innerHTML = '';
+            if (!entries.length) {
+                const empty = document.createElement('div');
+                empty.style.cssText = 'color:var(--color-text-muted);text-align:center;padding:40px 0;font-size:12px;';
+                empty.textContent = this._tt('Записей нет — нажмите «+ Новый»');
+                gridScroll.appendChild(empty);
+            }
+            const grid = document.createElement('div');
+            grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;';
+            entries.forEach((entry, idx) => {
+                const card = document.createElement('div');
+                card.style.cssText = `
+                    border:2px solid ${idx === selected ? 'var(--color-accent-border-mid)' : 'var(--color-border)'};
+                    border-radius:6px;padding:8px;cursor:pointer;text-align:center;
+                    background-color:var(--color-bg-panel);
+                    display:flex;flex-direction:column;gap:6px;
+                `;
+                try {
+                    card.appendChild(this._renderPlayer(entry, kind, { mini: true }));
+                } catch (e) { /* card stays without preview */ }
+                const nm = document.createElement('div');
+                nm.style.cssText = 'font-size:12px;font-weight:600;color:var(--color-text-strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+                nm.textContent = (idx + 1) + '. ' + this._entryHeadline(entry, kind);
+                card.appendChild(nm);
+                const sub = document.createElement('div');
+                sub.style.cssText = 'font-size:10px;color:var(--color-text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+                sub.textContent = kind === 'NPCMappings'
+                    ? ('<sds:' + (entry.IdName || '') + '>')
+                    : this._condSummary(entry);
+                card.appendChild(sub);
+                card.addEventListener('click', () => {
+                    if (selected === idx) return;
+                    selected = idx;
+                    // refresh card borders without re-creating players
+                    grid.querySelectorAll(':scope > div').forEach((c, i) => {
+                        c.style.borderColor = i === selected ? 'var(--color-accent-border-mid)' : 'var(--color-border)';
+                    });
+                    renderForm();
+                });
+                grid.appendChild(card);
+            });
+            gridScroll.appendChild(grid);
+            renderForm();
+        };
+
+        rebuild();
     }
 
-    /** Sprite mini-thumb for list rows (S29): first frame by file+index. */
-    _rowIcon(entry, kind) {
-        const vis = entry && entry.Visuals;
-        if (!vis || !vis.CharacterName) return null;
-        const url = this._imgUrl(vis.CharacterName);
-        if (!url) return null;
-        const img = document.createElement('img');
-        img.src = url;
-        img.style.cssText = 'width:28px;height:36px;object-fit:contain;image-rendering:pixelated;';
-        return img;
+    _kindCountLabel(kind) {
+        if (kind === 'PoseMappings') return 'поз';
+        if (kind === 'NPCMappings') return 'NPC';
+        return 'скинов';
     }
 
-    /** One-entry detail form (classic panel): Запись → Условия → Визуал. */
+    /** One-entry detail form (grid mode): Запись → Условия → Визуал.
+     *  Player lifecycle is owned by the CALLER (S30: grid mini-players
+     *  keep animating while this form re-renders). */
     _renderEntryDetail(wrapper, entry, idx, kind, commit) {
-        this._playerStop();
         const changed = () => commit();
 
         if (kind === 'NPCMappings') {
@@ -395,11 +546,6 @@ class DatabaseSpriterEditor {
         content.appendChild(hint);
     }
 
-    // ------------------------------------------------------------------
-    // Hero card (actor #1) - the Actors tab collapsed to the single
-    // playable character (S14).
-    // ------------------------------------------------------------------
-
     _listImgFolder(sub) {
         if (typeof RRAssetFiles === 'undefined') return [];
         try {
@@ -420,55 +566,6 @@ class DatabaseSpriterEditor {
         } catch (e) {
             return '';
         }
-    }
-
-    _renderHero(host) {
-        this._playerStop();
-        host.innerHTML = '';
-        host.appendChild(this._sectionTitle('Главный герой'));
-        const actors = (this.databaseManager.getActors ? this.databaseManager.getActors() : []) || [];
-        const actor = actors[1];
-        if (!actor) {
-            const empty = document.createElement('div');
-            empty.style.cssText = 'color:var(--color-text-muted);padding:40px 0;text-align:center;font-size:13px;';
-            empty.textContent = this._tt('Актёр #1 не найден в базе');
-            host.appendChild(empty);
-            return;
-        }
-
-        const row = document.createElement('div');
-        row.style.cssText = 'display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;justify-content:center;';
-
-        // Left: the simple card - name + sprite file (S24: face, profile
-        // and note are cut from the UI; the data in Actors.json stays).
-        const left = this._panel();
-        left.style.width = '340px';
-
-        const nameRow = this._fieldLabel('Имя');
-        nameRow.appendChild(this._textField(actor.name, {}, v => { actor.name = v; }));
-        left.appendChild(nameRow);
-
-        const spriteRow = this._fieldLabel('Спрайт (img/characters)', '«Выбрать…» — файл и персонажа на листе');
-        const spriteLine = document.createElement('div');
-        spriteLine.style.cssText = 'display:flex;gap:6px;';
-        spriteLine.appendChild(this._textField(actor.characterName, { placeholder: 'имя файла без .png' }, v => { actor.characterName = v; }));
-        spriteLine.appendChild(this._smallButton('Выбрать…', () => this._showFilePicker(actor.characterName, (name, index) => {
-            actor.characterName = name;
-            if (index !== undefined) actor.characterIndex = index;
-            this._renderHero(host);
-        }, 'characters', { pickCharacterIndex: true })));
-        spriteRow.appendChild(spriteLine);
-        left.appendChild(spriteRow);
-        row.appendChild(left);
-
-        // Right: compact live player (S24b: fixed 340px, no full-tab stretch).
-        const right = this._panel();
-        right.style.flex = '0 0 340px';
-        const pvEntry = { Visuals: { CharacterName: actor.characterName, CharacterIndex: actor.characterIndex || 0, Frames: 3, Directions: 4, FPS: 8, Pattern: 0, Width: 0, Height: 0 } };
-        right.appendChild(this._renderPlayer(pvEntry, 'hero'));
-        row.appendChild(right);
-
-        host.appendChild(row);
     }
 
     _opLabel(op) {
@@ -892,7 +989,8 @@ class DatabaseSpriterEditor {
         }
     }
 
-    _registerPlayer(player) {
+    _registerPlayer(player, tag) {
+        if (tag) player._tag = tag;
         this._players = this._players || [];
         this._players.push(player);
         if (!this._masterTimer) {
@@ -910,50 +1008,64 @@ class DatabaseSpriterEditor {
         }
     }
 
-    _renderPlayer(entry, kind) {
-        const wrap = this._panel();
-        wrap.style.cssText = 'padding:8px;max-width:360px;';
+    /** opts.mini: grid-card mode - no controls, small canvas (S30). */
+    _renderPlayer(entry, kind, opts) {
+        const mini = !!(opts && opts.mini);
+        const wrap = mini ? document.createElement('div') : this._panel();
+        wrap.style.cssText = mini
+            ? 'display:flex;align-items:center;justify-content:center;'
+            : 'padding:8px;max-width:360px;';
 
-        const headRow = document.createElement('div');
-        headRow.style.cssText = 'display:flex;align-items:center;gap:10px;';
-        const title = document.createElement('span');
-        title.style.cssText = 'font-weight:600;font-size:12px;color:var(--color-text-strong);';
-        title.textContent = this._tt('Живое превью');
-        headRow.appendChild(title);
+        let state = { playing: true, frame: 0, tick: 0, img: null, url: '' };
+        if (!mini) {
+            const headRow = document.createElement('div');
+            headRow.style.cssText = 'display:flex;align-items:center;gap:10px;';
+            const title = document.createElement('span');
+            title.style.cssText = 'font-weight:600;font-size:12px;color:var(--color-text-strong);';
+            title.textContent = this._tt('Живое превью');
+            headRow.appendChild(title);
 
-        const state = { playing: true, frame: 0, tick: 0, img: null, url: '' };
-        const playBtn = this._smallButton('⏸', () => {
-            state.playing = !state.playing;
-            playBtn.textContent = state.playing ? '⏸' : '▶';
-        });
-        headRow.appendChild(playBtn);
+            const playBtn = this._smallButton('⏸', () => {
+                state.playing = !state.playing;
+                playBtn.textContent = state.playing ? '⏸' : '▶';
+            });
+            headRow.appendChild(playBtn);
 
-        let direction = 0;
-        const dirSel = document.createElement('select');
-        dirSel.style.cssText = 'padding:3px 6px;font-size:11px;background-color:var(--color-bg-deep);border:1px solid var(--color-border);border-radius:4px;color:var(--color-text-strong);';
-        for (const [lbl, val] of [['Вниз', 0], ['Влево', 1], ['Вправо', 2], ['Вверх', 3]]) {
-            const o = document.createElement('option');
-            o.value = val; o.textContent = this._tt(lbl);
-            dirSel.appendChild(o);
+            let direction = 0;
+            const dirSel = document.createElement('select');
+            dirSel.style.cssText = 'padding:3px 6px;font-size:11px;background-color:var(--color-bg-deep);border:1px solid var(--color-border);border-radius:4px;color:var(--color-text-strong);';
+            for (const [lbl, val] of [['Вниз', 0], ['Влево', 1], ['Вправо', 2], ['Вверх', 3]]) {
+                const o = document.createElement('option');
+                o.value = val; o.textContent = this._tt(lbl);
+                dirSel.appendChild(o);
+            }
+            dirSel.addEventListener('change', () => { direction = Number(dirSel.value); draw(); });
+            headRow.appendChild(dirSel);
+            headRow.appendChild(document.createElement('div')).style.cssText = 'flex:1;';
+
+            const frameLbl = document.createElement('span');
+            frameLbl.style.cssText = 'font-size:11px;color:var(--color-text-dim);';
+            headRow.appendChild(frameLbl);
+            wrap._frameLbl = frameLbl;
+            wrap.appendChild(headRow);
+            wrap._direction = () => direction;
         }
-        dirSel.addEventListener('change', () => { direction = Number(dirSel.value); draw(); });
-        headRow.appendChild(dirSel);
-        headRow.appendChild(document.createElement('div')).style.cssText = 'flex:1;';
-
-        const frameLbl = document.createElement('span');
-        frameLbl.style.cssText = 'font-size:11px;color:var(--color-text-dim);';
-        headRow.appendChild(frameLbl);
-        wrap.appendChild(headRow);
+        const dirOf = () => (wrap._direction ? wrap._direction() : 0);
 
         const stage = document.createElement('div');
-        stage.style.cssText = `
+        stage.style.cssText = mini
+            ? `display:flex;align-items:center;justify-content:center;height:78px;width:100%;
+               background-color:var(--color-bg-deep);border:1px solid var(--color-border);border-radius:4px;`
+            : `
             display: flex; align-items: center; justify-content: center;
             height: 140px; background-color: var(--color-bg-deep);
             border: 1px solid var(--color-border); border-radius: 4px;
         `;
         const canvas = document.createElement('canvas');
         canvas.width = 96; canvas.height = 128;
-        canvas.style.cssText = 'image-rendering: pixelated; height: 128px;';
+        canvas.style.cssText = mini
+            ? 'image-rendering:pixelated;height:72px;'
+            : 'image-rendering: pixelated; height: 128px;';
         stage.appendChild(canvas);
         wrap.appendChild(stage);
 
@@ -991,7 +1103,7 @@ class DatabaseSpriterEditor {
 
         const draw = () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            frameLbl.textContent = '';
+            if (wrap._frameLbl) wrap._frameLbl.textContent = '';
             if (!state.img) {
                 ctx.fillStyle = 'rgba(128,128,128,0.8)';
                 ctx.font = '10px sans-serif';
@@ -1031,7 +1143,7 @@ class DatabaseSpriterEditor {
                 rowBase = Math.floor(index / 4) * 4;
             }
             const sx = (colBase + Math.min(frame, gridCols - 1)) * cellW;
-            const sy = (rowBase + direction) * cellH;
+            const sy = (rowBase + dirOf()) * cellH;
 
             // Fit the cell into the canvas, keep aspect.
             const scale = Math.min(canvas.width / cellW, canvas.height / cellH);
@@ -1040,14 +1152,14 @@ class DatabaseSpriterEditor {
             const dx = Math.round((canvas.width - dw) / 2);
             const dy = Math.round((canvas.height - dh) / 2);
             ctx.drawImage(img, sx, sy, cellW, cellH, dx, dy, dw, dh);
-            frameLbl.textContent = this._tt('кадр') + ' ' + frame + '/' + frames;
+            if (wrap._frameLbl) wrap._frameLbl.textContent = this._tt('кадр') + ' ' + frame + '/' + frames;
         };
 
         const fps = Math.max(1, Number(vis.FPS) || 8);
         const delay = Math.max(1, Math.round(60 / fps));
         let lastSnapshot = JSON.stringify(entry);
 
-        this._registerPlayer({
+        const player = {
             reload,
             tick: () => {
                 // Fields changed elsewhere in the card (file/index/size):
@@ -1066,7 +1178,12 @@ class DatabaseSpriterEditor {
                     draw();
                 }
             }
-        });
+        };
+        // Mini players (grid cards) live until a full rebuild; regular
+        // players are tagged 'spriterForm' so re-rendering the form kills
+        // only the previous form player.
+        if (mini) this._registerPlayer(player);
+        else this._registerPlayer(player, 'spriterForm');
 
         reload();
         return wrap;

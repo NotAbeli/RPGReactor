@@ -362,7 +362,7 @@ class DatabaseEditorUI {
             case 'spriter': {
                 // S29: the Спрайтер tab on the shared pattern - mode bar +
                 // classic list panel / centered forms.
-                this.showSpriterTab('hero');
+                this.showSpriterTab('SpriteMappings');
                 return;
             }
             case 'battle': {
@@ -449,15 +449,13 @@ class DatabaseEditorUI {
     }
 
     /**
-     * S29: the Спрайтер tab in the shared pattern - a 5-button mode bar
-     * (Герой/Скины/Позы/NPC/Глобальные) above the classic containers;
-     * collections go through _renderClassicCollectionTab with sprite
-     * mini-thumbs in the rows, hero/globals render centered forms.
+     * S30: the Спрайтер tab - a 4-button mode bar (Скины/Позы/NPC/Глобальные;
+     * Герой cut: the base look is just the MainValue=-1 skin) over the
+     * live-card grid + form split (renderCollectionGrid).
      */
     showSpriterTab(mode) {
         const tt = text => window.I18n ? window.I18n.tText(text) : text;
         const modes = [
-            { key: 'hero', label: 'Герой' },
             { key: 'SpriteMappings', label: 'Скины' },
             { key: 'PoseMappings', label: 'Позы' },
             { key: 'NPCMappings', label: 'NPC' },
@@ -465,15 +463,14 @@ class DatabaseEditorUI {
         ];
         const current = modes.find(m => m.key === mode) || modes[0];
 
-        if (current.key === 'hero' || current.key === 'globals') {
+        if (current.key === 'globals') {
             const { detailEl } = this.prepareDatabaseSection('spriter', tt('Спрайтер'), { showListPanel: false });
             const host = document.createElement('div');
             host.className = 'agn-detail-col';
             host.style.padding = '16px';
             detailEl.appendChild(host);
             try {
-                if (current.key === 'hero') this.spriterEditor._renderHero(host);
-                else this.spriterEditor._renderGlobals(host, this.spriterEditor.getSpriter());
+                this.spriterEditor._renderGlobals(host, this.spriterEditor.getSpriter());
             } catch (e) {
                 const box = document.createElement('div');
                 box.style.cssText = 'margin:12px;padding:10px 14px;border:1px solid var(--color-danger,#b33);border-radius:4px;background:rgba(179,51,51,.12);font-size:12px;';
@@ -481,13 +478,15 @@ class DatabaseEditorUI {
                 host.appendChild(box);
             }
         } else {
-            this._renderClassicCollectionTab({
-                navType: 'spriter',
-                title: tt(current.label),
-                noSearch: true,
-                api: this.spriterEditor.classicApi(current.key),
-                rowIcon: (entry) => this.spriterEditor._rowIcon(entry, current.key)
-            });
+            const { detailEl } = this.prepareDatabaseSection('spriter', tt('Спрайтер'), { showListPanel: false });
+            try {
+                this.spriterEditor.renderCollectionGrid(detailEl, current.key);
+            } catch (e) {
+                const box = document.createElement('div');
+                box.style.cssText = 'margin:12px;padding:10px 14px;border:1px solid var(--color-danger,#b33);border-radius:4px;background:rgba(179,51,51,.12);font-size:12px;';
+                box.textContent = String((e && e.stack) || e).split('\n')[0];
+                detailEl.appendChild(box);
+            }
         }
 
         this._mountTopModeBar(modes, current.key, key => this.showSpriterTab(key));
