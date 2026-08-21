@@ -426,97 +426,27 @@ class DatabaseSpriterEditor {
         nameRow.appendChild(this._textField(actor.name, {}, v => { actor.name = v; }));
         left.appendChild(nameRow);
 
-        const spriteRow = this._fieldLabel('Спрайт (img/characters)');
+        const spriteRow = this._fieldLabel('Спрайт (img/characters)', '«Выбрать…» — файл и персонажа на листе');
         const spriteLine = document.createElement('div');
         spriteLine.style.cssText = 'display:flex;gap:6px;';
         spriteLine.appendChild(this._textField(actor.characterName, { placeholder: 'имя файла без .png' }, v => { actor.characterName = v; }));
-        spriteLine.appendChild(this._smallButton('Выбрать…', () => this._showFilePicker(actor.characterName, name => {
+        spriteLine.appendChild(this._smallButton('Выбрать…', () => this._showFilePicker(actor.characterName, (name, index) => {
             actor.characterName = name;
+            if (index !== undefined) actor.characterIndex = index;
             this._renderHero(content);
-        })));
+        }, 'characters', { pickCharacterIndex: true })));
         spriteRow.appendChild(spriteLine);
         left.appendChild(spriteRow);
         row.appendChild(left);
 
-        // Right: live player + clickable character sheet (click = index).
+        // Right: compact live player (S24b: fixed 340px, no full-tab stretch).
         const right = this._panel();
-        right.style.flex = '1';
-        right.style.minWidth = '320px';
+        right.style.flex = '0 0 340px';
         const pvEntry = { Visuals: { CharacterName: actor.characterName, CharacterIndex: actor.characterIndex || 0, Frames: 3, Directions: 4, FPS: 8, Pattern: 0, Width: 0, Height: 0 } };
         right.appendChild(this._renderPlayer(pvEntry, 'hero'));
-        right.appendChild(this._renderHeroSheet(actor, content));
         row.appendChild(right);
 
         content.appendChild(row);
-    }
-
-    /** Clickable character sheet: 8 cells (4x2), click = CharacterIndex.
-     *  $-big sheets are a single cell. (S24) */
-    _renderHeroSheet(actor, content) {
-        const wrap = this._fieldLabel('Индекс персонажа — клик по ячейке листа');
-        const box = document.createElement('div');
-        box.style.cssText = `
-            border: 1px solid var(--color-border); border-radius: 4px;
-            background-color: var(--color-bg-deep);
-            padding: 8px; overflow: auto; max-height: 320px;
-        `;
-        const file = actor.characterName;
-        const big = (typeof RRAssetFiles !== 'undefined')
-            ? RRAssetFiles.isBigCharacter(String(file || ''))
-            : String(file || '').startsWith('$');
-
-        const img = document.createElement('img');
-        img.src = file ? this._imgUrl(file) : '';
-        img.style.cssText = 'image-rendering: pixelated; max-width: 100%; display: block; cursor: pointer;';
-        if (!file) {
-            img.alt = this._tt('Выберите файл спрайта');
-            img.style.minHeight = '60px';
-        }
-
-        const selBox = document.createElement('div');
-        selBox.style.cssText = `
-            position: absolute;
-            border: 2px solid var(--color-accent-text, #7ab0ff);
-            box-shadow: 0 0 0 1000px rgba(0,0,0,0.45);
-            pointer-events: none;
-        `;
-        const holder = document.createElement('div');
-        holder.style.cssText = 'position:relative;display:inline-block;';
-        holder.appendChild(img);
-        holder.appendChild(selBox);
-        box.appendChild(holder);
-
-        const overlay = () => {
-            selBox.parentNode && selBox.parentNode.removeChild(selBox);
-            if (!img.naturalWidth || !file) return;
-            const cellW = big ? img.naturalWidth : img.naturalWidth / 4;
-            const cellH = big ? img.naturalHeight : img.naturalHeight / 2;
-            const idx = big ? 0 : Math.min(7, Math.max(0, Number(actor.characterIndex) || 0));
-            const col = big ? 0 : idx % 4;
-            const rowI = big ? 0 : Math.floor(idx / 4);
-            selBox.style.left = (img.offsetLeft + col * cellW) + 'px';
-            selBox.style.top = (img.offsetTop + rowI * cellH) + 'px';
-            selBox.style.width = cellW + 'px';
-            selBox.style.height = cellH + 'px';
-            img.parentNode.appendChild(selBox);
-        };
-        img.addEventListener('load', overlay);
-        setTimeout(overlay, 60);
-
-        img.addEventListener('click', e => {
-            if (!img.naturalWidth || !file) return;
-            if (big) return; // single character, nothing to pick
-            const rect = img.getBoundingClientRect();
-            const cellW = img.naturalWidth / 4;
-            const cellH = img.naturalHeight / 2;
-            const col = Math.max(0, Math.min(3, Math.floor((e.clientX - rect.left) / (rect.width / 4))));
-            const rowI = Math.max(0, Math.min(1, Math.floor((e.clientY - rect.top) / (rect.height / 2))));
-            actor.characterIndex = rowI * 4 + col;
-            this._renderHero(content); // re-render: player + sheet frame
-        });
-
-        wrap.appendChild(box);
-        return wrap;
     }
 
     _renderCollection(content, spriter, kind) {
@@ -990,8 +920,16 @@ class DatabaseSpriterEditor {
     // File picker modal
     // ------------------------------------------------------------------
 
-    _showFilePicker(currentName, onSelect, sub) {
+    /**
+     * File picker modal. opts.pickCharacterIndex (S24b): two-step flow for
+     * the hero - step 1 picks the sheet file, step 2 opens that sheet split
+     * into 8 character cells (4x2; $-big sheets = one cell); clicking a cell
+     * finishes with onSelect(name, index). Without the option a file click
+     * finishes with onSelect(name) as before.
+     */
+    _showFilePicker(currentName, onSelect, sub, opts) {
         sub = sub || 'characters';
+        const pickIndex = !!(opts && opts.pickCharacterIndex);
         const files = sub === 'characters' ? this._listCharacterFiles() : this._listImgFolder(sub);
         const modal = document.createElement('div');
         modal.style.cssText = `
@@ -1012,47 +950,125 @@ class DatabaseSpriterEditor {
             padding: 10px 16px; font-weight: 600; font-size: 14px;
             color: var(--color-text-strong);
             border-bottom: 1px solid var(--color-border);
-            display: flex; justify-content: space-between; align-items: center;
+            display: flex; justify-content: space-between; align-items: center; gap: 10px;
         `;
-        header.textContent = this._tt('Выбор файла (img/' + sub + ')');
+        const headLbl = document.createElement('span');
+        header.appendChild(headLbl);
         header.appendChild(this._smallButton('Закрыть', () => modal.remove()));
         win.appendChild(header);
 
-        const grid = document.createElement('div');
-        grid.style.cssText = 'flex:1;overflow-y:auto;padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;';
-
-        for (const record of files) {
-            const name = record.name; // extensionless, subfolder-aware
-            const cell = document.createElement('div');
-            cell.style.cssText = `
-                border: 1px solid ${name === currentName ? 'var(--color-accent-text, #7ab0ff)' : 'var(--color-border)'};
-                border-radius: 6px; padding: 6px; cursor: pointer;
-                background-color: var(--color-bg-deep); text-align: center;
-            `;
-            const thumb = document.createElement('img');
-            thumb.src = sub === 'characters' ? this._imgUrl(name) : this._imgUrlFrom(sub, name);
-            thumb.style.cssText = 'image-rendering: pixelated; max-width: 100%; max-height: 90px;';
-            const cap = document.createElement('div');
-            cap.style.cssText = 'font-size: 10px; color: var(--color-text); margin-top: 4px; word-break: break-all;';
-            cap.textContent = (typeof RRAssetFiles !== 'undefined' && RRAssetFiles.basename)
-                ? RRAssetFiles.basename(name) : name;
-            cap.title = name;
-            cell.appendChild(thumb);
-            cell.appendChild(cap);
-            cell.addEventListener('click', () => {
-                onSelect(name);
-                modal.remove();
-            });
-            grid.appendChild(cell);
-        }
-        if (!files.length) {
-            grid.innerHTML = '<div style="color:var(--color-text-muted);padding:20px;">' +
-                this._tt('В проекте нет файлов в img/' + sub) + '</div>';
-        }
-        win.appendChild(grid);
+        const body = document.createElement('div');
+        body.style.cssText = 'flex:1;overflow-y:auto;min-height:0;';
+        win.appendChild(body);
         modal.appendChild(win);
         modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
         document.body.appendChild(modal);
+
+        const setTitle = (text) => { headLbl.textContent = this._tt(text); };
+
+        // --- Step 2: the chosen sheet, split into character cells ---
+        const showSheet = (name) => {
+            body.innerHTML = '';
+            setTitle('Выбор персонажа — ' + name);
+            body.appendChild(this._smallButton('‹ Назад к файлам', () => showFiles()));
+
+            const big = (typeof RRAssetFiles !== 'undefined')
+                ? RRAssetFiles.isBigCharacter(String(name || ''))
+                : String(name || '').startsWith('$');
+
+            const box = document.createElement('div');
+            box.style.cssText = 'margin:12px;padding:8px;border:1px solid var(--color-border);border-radius:4px;background-color:var(--color-bg-deep);overflow:auto;';
+            const img = document.createElement('img');
+            img.src = this._imgUrl(name);
+            img.style.cssText = 'image-rendering:pixelated;max-width:100%;display:block;cursor:pointer;';
+            const selBox = document.createElement('div');
+            selBox.style.cssText = `
+                position: absolute;
+                border: 2px solid var(--color-accent-text, #7ab0ff);
+                box-shadow: 0 0 0 1000px rgba(0,0,0,0.45);
+                pointer-events: none;
+            `;
+            const holder = document.createElement('div');
+            holder.style.cssText = 'position:relative;display:inline-block;';
+            holder.appendChild(img);
+            holder.appendChild(selBox);
+            box.appendChild(holder);
+            body.appendChild(box);
+
+            const drawFrame = () => {
+                selBox.parentNode && selBox.parentNode.removeChild(selBox);
+                if (!img.naturalWidth) return;
+                const cellW = big ? img.naturalWidth : img.naturalWidth / 4;
+                const cellH = big ? img.naturalHeight : img.naturalHeight / 2;
+                selBox.style.left = (img.offsetLeft) + 'px';
+                selBox.style.top = (img.offsetTop) + 'px';
+                selBox.style.width = cellW + 'px';
+                selBox.style.height = cellH + 'px';
+                img.parentNode.appendChild(selBox);
+            };
+            img.addEventListener('load', drawFrame);
+            setTimeout(drawFrame, 60);
+
+            if (big) {
+                // Single character - one click picks it.
+                img.addEventListener('click', () => {
+                    onSelect(name, 0);
+                    modal.remove();
+                });
+                return;
+            }
+            img.addEventListener('click', e => {
+                if (!img.naturalWidth) return;
+                const rect = img.getBoundingClientRect();
+                const col = Math.max(0, Math.min(3, Math.floor((e.clientX - rect.left) / (rect.width / 4))));
+                const rowI = Math.max(0, Math.min(1, Math.floor((e.clientY - rect.top) / (rect.height / 2))));
+                onSelect(name, rowI * 4 + col);
+                modal.remove();
+            });
+        };
+
+        // --- Step 1: the file grid (as before) ---
+        const showFiles = () => {
+            body.innerHTML = '';
+            setTitle('Выбор файла (img/' + sub + ')');
+            const grid = document.createElement('div');
+            grid.style.cssText = 'padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;';
+
+            for (const record of files) {
+                const name = record.name; // extensionless, subfolder-aware
+                const cell = document.createElement('div');
+                cell.style.cssText = `
+                    border: 1px solid ${name === currentName ? 'var(--color-accent-text, #7ab0ff)' : 'var(--color-border)'};
+                    border-radius: 6px; padding: 6px; cursor: pointer;
+                    background-color: var(--color-bg-deep); text-align: center;
+                `;
+                const thumb = document.createElement('img');
+                thumb.src = sub === 'characters' ? this._imgUrl(name) : this._imgUrlFrom(sub, name);
+                thumb.style.cssText = 'image-rendering: pixelated; max-width: 100%; max-height: 90px;';
+                const cap = document.createElement('div');
+                cap.style.cssText = 'font-size: 10px; color: var(--color-text); margin-top: 4px; word-break: break-all;';
+                cap.textContent = (typeof RRAssetFiles !== 'undefined' && RRAssetFiles.basename)
+                    ? RRAssetFiles.basename(name) : name;
+                cap.title = name;
+                cell.appendChild(thumb);
+                cell.appendChild(cap);
+                cell.addEventListener('click', () => {
+                    if (pickIndex) showSheet(name); // stay in the modal
+                    else {
+                        onSelect(name);
+                        modal.remove();
+                    }
+                });
+                grid.appendChild(cell);
+            }
+            if (!files.length) {
+                grid.innerHTML = '<div style="color:var(--color-text-muted);padding:20px;">' +
+                    this._tt('В проекте нет файлов в img/' + sub) + '</div>';
+            }
+            body.appendChild(grid);
+        };
+
+        showFiles();
     }
 
     // ------------------------------------------------------------------
@@ -1090,7 +1106,7 @@ class DatabaseSpriterEditor {
 
     _renderPlayer(entry, kind) {
         const wrap = this._panel();
-        wrap.style.padding = '8px';
+        wrap.style.cssText = 'padding:8px;max-width:360px;';
 
         const headRow = document.createElement('div');
         headRow.style.cssText = 'display:flex;align-items:center;gap:10px;';
