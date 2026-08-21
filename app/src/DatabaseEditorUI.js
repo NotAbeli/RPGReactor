@@ -360,9 +360,9 @@ class DatabaseEditorUI {
                 return;
             }
             case 'spriter': {
-                if (!this.spriterEditor) return;
-                const { detailEl } = this.prepareDatabaseSection('spriter', this._dbTitle('spriter', 'Спрайтер'), { showListPanel: false });
-                this.spriterEditor.showSpriterDetail(detailEl);
+                // S29: the Спрайтер tab on the shared pattern - mode bar +
+                // classic list panel / centered forms.
+                this.showSpriterTab('hero');
                 return;
             }
             case 'battle': {
@@ -446,6 +446,51 @@ class DatabaseEditorUI {
             bar.style.flex = '0 0 auto';
             main.insertBefore(bar, entries);
         }
+    }
+
+    /**
+     * S29: the Спрайтер tab in the shared pattern - a 5-button mode bar
+     * (Герой/Скины/Позы/NPC/Глобальные) above the classic containers;
+     * collections go through _renderClassicCollectionTab with sprite
+     * mini-thumbs in the rows, hero/globals render centered forms.
+     */
+    showSpriterTab(mode) {
+        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const modes = [
+            { key: 'hero', label: 'Герой' },
+            { key: 'SpriteMappings', label: 'Скины' },
+            { key: 'PoseMappings', label: 'Позы' },
+            { key: 'NPCMappings', label: 'NPC' },
+            { key: 'globals', label: 'Глобальные' }
+        ];
+        const current = modes.find(m => m.key === mode) || modes[0];
+
+        if (current.key === 'hero' || current.key === 'globals') {
+            const { detailEl } = this.prepareDatabaseSection('spriter', tt('Спрайтер'), { showListPanel: false });
+            const host = document.createElement('div');
+            host.className = 'agn-detail-col';
+            host.style.padding = '16px';
+            detailEl.appendChild(host);
+            try {
+                if (current.key === 'hero') this.spriterEditor._renderHero(host);
+                else this.spriterEditor._renderGlobals(host, this.spriterEditor.getSpriter());
+            } catch (e) {
+                const box = document.createElement('div');
+                box.style.cssText = 'margin:12px;padding:10px 14px;border:1px solid var(--color-danger,#b33);border-radius:4px;background:rgba(179,51,51,.12);font-size:12px;';
+                box.textContent = String((e && e.stack) || e).split('\n')[0];
+                host.appendChild(box);
+            }
+        } else {
+            this._renderClassicCollectionTab({
+                navType: 'spriter',
+                title: tt(current.label),
+                noSearch: true,
+                api: this.spriterEditor.classicApi(current.key),
+                rowIcon: (entry) => this.spriterEditor._rowIcon(entry, current.key)
+            });
+        }
+
+        this._mountTopModeBar(modes, current.key, key => this.showSpriterTab(key));
     }
 
     /**
@@ -624,8 +669,16 @@ class DatabaseEditorUI {
             for (const [entry, idx] of visible) {
                 const item = document.createElement('div');
                 item.className = 'database-list-item' + (idx === selectedIdx ? ' selected' : '');
+                if (opts.rowIcon) {
+                    const icon = document.createElement('span');
+                    icon.className = 'database-list-icon';
+                    const node = opts.rowIcon(entry, idx);
+                    if (node) icon.appendChild(node);
+                    item.appendChild(icon);
+                }
                 const nameSpan = document.createElement('span');
                 nameSpan.className = 'database-list-name';
+                nameSpan.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
                 nameSpan.textContent = api.label(entry, idx);
                 const idSpan = document.createElement('span');
                 idSpan.className = 'database-list-id';

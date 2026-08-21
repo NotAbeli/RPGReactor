@@ -247,130 +247,152 @@ class DatabaseSpriterEditor {
     // Main view
     // ------------------------------------------------------------------
 
-    showSpriterDetail(container) {
-        this._playerStop();
+    // ------------------------------------------------------------------
+    // S29: the Спрайтер tab drives the classic list panel itself; this
+    // editor exposes hero/globals renderers plus a classicApi() per
+    // collection. showSpriterTab(mode) in DatabaseEditorUI owns the
+    // 5-button mode bar (Герой/Скины/Позы/NPC/Глобальные).
+    // ------------------------------------------------------------------
 
+    classicApi(kind) {
         const spriter = this.getSpriter();
-
-        const wrapper = document.createElement('div');
-        wrapper.style.cssText = 'display:flex;flex-direction:column;height:100%;overflow:hidden;';
-
-        const banner = document.createElement('div');
-        banner.style.cssText = `background-color: var(--color-bg-deep);
-            padding: 14px 20px; border-bottom: 2px solid var(--color-accent-border-mid);
-            font-size: 20px; font-weight: 600; color: var(--color-text-strong);
-            display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
-            padding: 14px 20px;
-            border-bottom: 2px solid var(--color-accent-border-mid);
-            font-size: 20px; font-weight: 600;
-            color: var(--color-text-strong);
-            display: flex; align-items: baseline; gap: 14px;
-        `;
-        banner.textContent = this._tt('Спрайтер');
-        const sub = document.createElement('span');
-        sub.style.cssText = 'font-size:12px;font-weight:400;color:var(--color-text-dim);';
-        sub.textContent = this._tt('Комбайн спрайтов: скины, позы и библиотека NPC главного движка');
-        banner.appendChild(sub);
-        wrapper.appendChild(banner);
-
-        const tabsRow = document.createElement('div');
-        tabsRow.style.cssText = 'display:flex;gap:8px;padding:10px 16px 0;border-bottom:1px solid var(--color-border);';
-        wrapper.appendChild(tabsRow);
-
-        const content = document.createElement('div');
-        content.className = 'agonia-content';
-        content.style.cssText = 'flex:1;overflow-y:auto;padding:0 16px 16px;';
-        wrapper.appendChild(content);
-
-        const tabs = [
-            { id: '__hero__', label: 'Герой' },
-            ...this.collectionKeys.map(c => ({ id: c.key, label: c.label })),
-            { id: '__globals__', label: 'Глобальные' }
-        ];
-        let active = tabs[0].id;
-
-        const render = () => {
-            content.innerHTML = '';
-            try {
-                if (active === '__globals__') {
-                    this._renderGlobals(content, spriter);
-                } else if (active === '__hero__') {
-                    this._renderHero(content);
-                } else {
-                    this._renderCollection(content, spriter, active);
-                }
-            } catch (e) {
-                content.appendChild(this._errorBanner(e));
-            }
+        const K = DatabaseSpriterEditor;
+        const meta = this.collectionKeys.find(c => c.key === kind) || this.collectionKeys[0];
+        return {
+            entries: () => K.decodeCollection(spriter[kind]),
+            persist: list => { spriter[kind] = K.encodeCollection(list); },
+            blank: () => K.blankEntry(kind),
+            label: (e, i) => (i + 1) + '. ' + this._entryHeadline(e, kind),
+            search: e => [e.Name, e.IdName, e.Priority].join(' '),
+            renderDetail: (wrapper, entry, idx, commit) =>
+                this._renderEntryDetail(wrapper, entry, idx, kind, commit)
         };
+    }
 
-        for (const tab of tabs) {
-            const el = document.createElement('div');
-            el.style.cssText = `
-                padding: 8px 18px; font-size: 13px; font-weight: 600;
-                color: var(--color-text); cursor: pointer;
-                border: 1px solid var(--color-border); border-bottom: none;
-                border-radius: 6px 6px 0 0;
-                background-color: var(--color-bg-deep);
-                user-select: none;
-            `;
-            el.textContent = this._tt(tab.label);
-            if (tab.id === active) {
-                el.style.backgroundColor = 'var(--color-bg-panel)';
-                el.style.color = 'var(--color-text-strong)';
-                el.style.borderBottom = '2px solid var(--color-accent-border-mid)';
-            }
-            el.addEventListener('click', () => {
-                active = tab.id;
-                tabsRow.querySelectorAll('div').forEach(t => {
-                    t.style.backgroundColor = 'var(--color-bg-deep)';
-                    t.style.color = 'var(--color-text)';
-                    t.style.borderBottom = '1px solid var(--color-border)';
-                });
-                el.style.backgroundColor = 'var(--color-bg-panel)';
-                el.style.color = 'var(--color-text-strong)';
-                el.style.borderBottom = '2px solid var(--color-accent-border-mid)';
-                render();
-            });
-            tabsRow.appendChild(el);
+    /** Sprite mini-thumb for list rows (S29): first frame by file+index. */
+    _rowIcon(entry, kind) {
+        const vis = entry && entry.Visuals;
+        if (!vis || !vis.CharacterName) return null;
+        const url = this._imgUrl(vis.CharacterName);
+        if (!url) return null;
+        const img = document.createElement('img');
+        img.src = url;
+        img.style.cssText = 'width:28px;height:36px;object-fit:contain;image-rendering:pixelated;';
+        return img;
+    }
+
+    /** One-entry detail form (classic panel): Запись → Условия → Визуал. */
+    _renderEntryDetail(wrapper, entry, idx, kind, commit) {
+        this._playerStop();
+        const changed = () => commit();
+
+        if (kind === 'NPCMappings') {
+            const f = new InspectorForm();
+            f.head((idx + 1) + '. ' + (entry.IdName || 'NPC'), 'Библиотека NPC — тег <sds:…>');
+            f.section(this._tt('NPC'));
+            f.row(this._tt('ID Название (тег)'), this._npcTagLine(entry, changed), this._tt('Писать в Note события: <sds:ЭтоИмя>'));
+            f.mount(wrapper);
+            const vf = new InspectorForm();
+            vf.section(this._tt('Визуал'));
+            vf.mount(wrapper);
+            this._renderSpriteVisuals(wrapper, entry, kind, changed);
+            return;
         }
 
-        container.appendChild(wrapper);
-        render();
+        const f = new InspectorForm();
+        f.head((idx + 1) + '. ' + this._entryHeadline(entry, kind), this._condSummary(entry));
+        f.section(this._tt('Запись'));
+        f.row(this._tt('Название'), this._textField(entry.Name, {}, v => { entry.Name = v; changed(); }));
+        f.row(this._tt('Приоритет'),
+            this._numberField(entry.Priority, { min: 0 }, v => { entry.Priority = v; changed(); }),
+            this._tt('При равных условиях побеждает запись с большим приоритетом'));
+        f.mount(wrapper);
+
+        const cond = this._ensure(entry, 'Conditions', {});
+        const cf = new InspectorForm();
+        cf.section(this._tt('Условия'));
+        cf.row(this._tt('Значение основной переменной'),
+            this._numberField(cond.MainValue, { min: -1 }, v => { cond.MainValue = v; changed(); }),
+            this._tt('−1 = базовый скин/поза для всех неперехваченных значений'));
+        cf.row(this._tt('Свитч 1 (ВКЛ)'), this._numberField(cond.SwitchId1, { min: 0 }, v => { cond.SwitchId1 = v; changed(); }));
+        cf.row(this._tt('Свитч 2 (ВКЛ)'), this._numberField(cond.SwitchId2, { min: 0 }, v => { cond.SwitchId2 = v; changed(); }));
+        cf.row(this._tt('Свитч 3 (доигрывание)'), this._numberField(cond.SwitchId3, { min: 0 }, v => { cond.SwitchId3 = v; changed(); }),
+            this._tt('Пока ВКЛ — поза удерживается даже после смены значения переменной'));
+        const extLine = document.createElement('div');
+        extLine.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;';
+        extLine.appendChild(this._numberField(cond.ExtVarId, { min: 0 }, v => { cond.ExtVarId = v; changed(); }));
+        extLine.appendChild(this._selectField(cond.ExtVarOp || 'equal', [
+            { value: 'equal', label: '=' }, { value: 'greater', label: '>' },
+            { value: 'less', label: '<' }, { value: 'notEqual', label: '≠' }
+        ], v => { cond.ExtVarOp = v; changed(); }));
+        const evv = this._numberField(cond.ExtVarVal, { min: 0 }, v => { cond.ExtVarVal = v; changed(); });
+        evv.style.width = '84px';
+        extLine.appendChild(evv);
+        cf.row(this._tt('Доп. переменная'), extLine, this._tt('var id · операция · значение'));
+        cf.mount(wrapper);
+
+        const vf = new InspectorForm();
+        vf.section(kind === 'PoseMappings' ? this._tt('Визуал позы') : this._tt('Визуал скина'));
+        vf.mount(wrapper);
+        if (kind === 'PoseMappings') {
+            this._renderPoseVisuals(wrapper, entry, changed);
+        } else {
+            this._renderSpriteVisuals(wrapper, entry, kind, changed);
+        }
+    }
+
+    _condSummary(entry) {
+        const cond = entry.Conditions;
+        if (!cond) return '';
+        const parts = [];
+        parts.push(cond.MainValue === -1 ? 'базовый (−1)' : 'var=' + cond.MainValue);
+        for (const sw of [cond.SwitchId1, cond.SwitchId2]) if (Number(sw) > 0) parts.push('sw' + sw);
+        if (Number(cond.ExtVarId) > 0) parts.push('доп.var' + cond.ExtVarId + this._opLabel(cond.ExtVarOp) + cond.ExtVarVal);
+        return parts.join(' · ');
+    }
+
+    _entryHeadline(entry, kind) {
+        if (kind === 'NPCMappings') return entry.IdName || 'NPC';
+        return entry.Name || (kind === 'PoseMappings' ? 'Поза' : 'Скин');
+    }
+
+    /** Red error banner instead of a silently empty tab. */
+    _errorBanner(e) {
+        const box = document.createElement('div');
+        box.style.cssText = 'margin:12px 0;padding:10px 14px;border:1px solid var(--color-danger,#b33);border-radius:4px;color:var(--color-text-strong);background:rgba(179,51,51,.12);font-size:12px;line-height:1.5;';
+        const t = document.createElement('div');
+        t.style.fontWeight = '700';
+        t.textContent = this._tt('Ошибка отрисовки вкладки:');
+        box.appendChild(t);
+        const d = document.createElement('div');
+        d.style.cssText = 'font-family:var(--font-mono,monospace);white-space:pre-wrap;color:var(--color-text-dim);';
+        d.textContent = (e && e.stack || String(e)).split('\n').slice(0, 4).join('\n');
+        box.appendChild(d);
+        return box;
     }
 
     _renderGlobals(content, spriter) {
         content.innerHTML = '';
-        content.appendChild(this._sectionTitle('Глобальные настройки спрайтера'));
+        const f = new InspectorForm();
+        f.section(this._tt('Основное'));
+        f.row(this._tt('Основная переменная состояния'),
+            this._numberField(spriter.VariableId, { min: 1 }, v => { spriter.VariableId = v; }),
+            this._tt('Значение этой переменной выбирает активный скин/позу героя (в этом проекте — 17, «что в руке»)'));
+        f.row(this._tt('Включить систему поз'),
+            this._checkboxField(spriter.EnablePoses, v => { spriter.EnablePoses = v; }),
+            this._tt('Если выключено — настройки поз полностью игнорируются (удобно, пока рисуются спрайты)'));
+        f.row(this._tt('Обновлять лидера'),
+            this._checkboxField(spriter.ApplyToActor, v => { spriter.ApplyToActor = v; }),
+            this._tt('Менять иконку персонажа в меню вместе со скином'));
+        f.row(this._tt('Debug Console'),
+            this._checkboxField(spriter.Debug, v => { spriter.Debug = v; }),
+            this._tt('Подробное логирование в консоль игры (F8)'));
+        f.mount(content);
 
-        const grid = document.createElement('div');
-        grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;padding:8px 0;';
-
-        const mainPanel = this._panel();
-        const varRow = this._fieldLabel('Основная переменная состояния', 'Значение этой переменной выбирает активный скин/позу героя (в этом проекте — 17, «что в руке»)');
-        varRow.appendChild(this._numberField(spriter.VariableId, { min: 1 }, v => { spriter.VariableId = v; }));
-        mainPanel.appendChild(varRow);
-
-        const poseRow = this._fieldLabel('Включить систему поз', 'Если выключено — настройки поз полностью игнорируются (удобно, пока рисуются спрайты)');
-        poseRow.appendChild(this._checkboxField(spriter.EnablePoses, v => { spriter.EnablePoses = v; }));
-        mainPanel.appendChild(poseRow);
-
-        const actorRow = this._fieldLabel('Обновлять лидера', 'Менять иконку персонажа в меню вместе со скином');
-        actorRow.appendChild(this._checkboxField(spriter.ApplyToActor, v => { spriter.ApplyToActor = v; }));
-        mainPanel.appendChild(actorRow);
-        grid.appendChild(mainPanel);
-
-        const debugPanel = this._panel();
-        const dbgRow = this._fieldLabel('Debug Console', 'Подробное логирование в консоль игры (F8)');
-        dbgRow.appendChild(this._checkboxField(spriter.Debug, v => { spriter.Debug = v; }));
-        debugPanel.appendChild(dbgRow);
         const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:11px;color:var(--color-text-dim);line-height:1.5;';
+        hint.style.cssText = 'font-size:11px;color:var(--color-text-dim);line-height:1.5;padding:8px 2px;';
         hint.textContent = this._tt('Скины и позы героя подхватываются по значению основной переменной. Записи ниже в списках имеют меньший приоритет; условия проверяются от верхней записи вниз.');
-        debugPanel.appendChild(hint);
-        grid.appendChild(debugPanel);
-
-        content.appendChild(grid);
+        content.appendChild(hint);
     }
 
     // ------------------------------------------------------------------
@@ -400,22 +422,22 @@ class DatabaseSpriterEditor {
         }
     }
 
-    _renderHero(content) {
+    _renderHero(host) {
         this._playerStop();
-        content.innerHTML = '';
-        content.appendChild(this._sectionTitle('Главный герой'));
+        host.innerHTML = '';
+        host.appendChild(this._sectionTitle('Главный герой'));
         const actors = (this.databaseManager.getActors ? this.databaseManager.getActors() : []) || [];
         const actor = actors[1];
         if (!actor) {
             const empty = document.createElement('div');
             empty.style.cssText = 'color:var(--color-text-muted);padding:40px 0;text-align:center;font-size:13px;';
             empty.textContent = this._tt('Актёр #1 не найден в базе');
-            content.appendChild(empty);
+            host.appendChild(empty);
             return;
         }
 
         const row = document.createElement('div');
-        row.style.cssText = 'display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;';
+        row.style.cssText = 'display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;justify-content:center;';
 
         // Left: the simple card - name + sprite file (S24: face, profile
         // and note are cut from the UI; the data in Actors.json stays).
@@ -433,7 +455,7 @@ class DatabaseSpriterEditor {
         spriteLine.appendChild(this._smallButton('Выбрать…', () => this._showFilePicker(actor.characterName, (name, index) => {
             actor.characterName = name;
             if (index !== undefined) actor.characterIndex = index;
-            this._renderHero(content);
+            this._renderHero(host);
         }, 'characters', { pickCharacterIndex: true })));
         spriteRow.appendChild(spriteLine);
         left.appendChild(spriteRow);
@@ -446,154 +468,7 @@ class DatabaseSpriterEditor {
         right.appendChild(this._renderPlayer(pvEntry, 'hero'));
         row.appendChild(right);
 
-        content.appendChild(row);
-    }
-
-    _renderCollection(content, spriter, kind) {
-        this._playerStop();
-        content.innerHTML = '';
-        const meta = this.collectionKeys.find(c => c.key === kind);
-        const entries = DatabaseSpriterEditor.decodeCollection(spriter[kind]);
-
-        const header = document.createElement('div');
-        header.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px 0 8px;';
-        const title = document.createElement('div');
-        title.style.cssText = 'font-size:15px;font-weight:600;color:var(--color-text-strong);';
-        title.textContent = this._tt(meta.label);
-        header.appendChild(title);
-        const count = document.createElement('span');
-        count.style.cssText = 'font-size:11px;color:var(--color-text-dim);';
-        count.textContent = this._tt(meta.hint);
-        header.appendChild(count);
-        header.appendChild(document.createElement('div')).style.cssText = 'flex:1;';
-        header.appendChild(this._smallButton('Добавить', () => {
-            entries.push(DatabaseSpriterEditor.blankEntry(kind));
-            spriter[kind] = DatabaseSpriterEditor.encodeCollection(entries);
-            this._renderCollection(content, spriter, kind);
-        }));
-        content.appendChild(header);
-
-        if (!entries.length) {
-            const empty = document.createElement('div');
-            empty.style.cssText = `
-                color: var(--color-text-muted); text-align: center;
-                padding: 40px 0; font-size: 13px;
-            `;
-            empty.textContent = this._tt('Записей нет — нажмите «Добавить»');
-            content.appendChild(empty);
-            return;
-        }
-
-        // S22: cap the card column - full-screen used to smear a single
-        // entry into a wide ribbon (users read cards best <=1100px).
-        const cardHost = document.createElement('div');
-        cardHost.style.cssText = 'max-width:1100px;';
-        content.appendChild(cardHost);
-        entries.forEach((entry, idx) => {
-            const card = this._renderEntryCard(entry, idx, kind, entries, spriter, cardHost);
-            cardHost.appendChild(card);
-        });
-    }
-
-    /** Red error banner instead of a silently empty tab (S21). */
-    _errorBanner(e) {
-        const box = document.createElement('div');
-        box.style.cssText = 'margin:12px 0;padding:10px 14px;border:1px solid var(--color-danger,#b33);border-radius:4px;color:var(--color-text-strong);background:rgba(179,51,51,.12);font-size:12px;line-height:1.5;';
-        const t = document.createElement('div');
-        t.style.fontWeight = '700';
-        t.textContent = this._tt('Ошибка отрисовки вкладки:');
-        box.appendChild(t);
-        const d = document.createElement('div');
-        d.style.cssText = 'font-family:var(--font-mono,monospace);white-space:pre-wrap;color:var(--color-text-dim);';
-        d.textContent = (e && e.stack || String(e)).split('\n').slice(0, 4).join('\n');
-        box.appendChild(d);
-        return box;
-    }
-
-    _entryHeadline(entry, kind) {
-        if (kind === 'NPCMappings') return entry.IdName || 'NPC';
-        return entry.Name || (kind === 'PoseMappings' ? 'Поза' : 'Скин');
-    }
-
-    _renderEntryCard(entry, idx, kind, entries, spriter, content) {
-        const self = this;
-        const card = document.createElement('div');
-        card.style.cssText = `
-            background-color: var(--color-bg-panel);
-            border: 1px solid var(--color-border);
-            border-radius: 6px;
-            margin-bottom: 12px;
-            display: flex; flex-direction: column;
-        `;
-
-        const head = document.createElement('div');
-        head.style.cssText = `
-            display: flex; align-items: center; gap: 10px;
-            padding: 8px 12px;
-            background-color: var(--color-bg-deep);
-            border-radius: 6px 6px 0 0;
-            border-bottom: 1px solid var(--color-border);
-        `;
-        const toggle = document.createElement('span');
-        toggle.textContent = '▼';
-        toggle.style.cssText = 'cursor:pointer;font-size:10px;color:var(--color-text-dim);';
-        head.appendChild(toggle);
-
-        const nameLbl = document.createElement('span');
-        nameLbl.style.cssText = 'font-weight:600;font-size:13px;color:var(--color-text-strong);';
-        nameLbl.textContent = (idx + 1) + '. ' + this._entryHeadline(entry, kind);
-        head.appendChild(nameLbl);
-
-        const condLbl = document.createElement('span');
-        condLbl.style.cssText = 'font-size:11px;color:var(--color-text-dim);';
-        const cond = entry.Conditions;
-        if (cond) {
-            let parts = [];
-            parts.push(cond.MainValue === -1 ? 'базовый (−1)' : 'var=' + cond.MainValue);
-            for (const sw of [cond.SwitchId1, cond.SwitchId2]) if (Number(sw) > 0) parts.push('sw' + sw);
-            if (Number(cond.ExtVarId) > 0) parts.push('доп.var' + cond.ExtVarId + this._opLabel(cond.ExtVarOp) + cond.ExtVarVal);
-            condLbl.textContent = parts.join(' · ');
-        }
-        head.appendChild(condLbl);
-
-        head.appendChild(document.createElement('div')).style.cssText = 'flex:1;';
-
-        head.appendChild(this._smallButton('▲', () => {
-            if (idx === 0) return;
-            const tmp = entries[idx - 1]; entries[idx - 1] = entries[idx]; entries[idx] = tmp;
-            spriter[kind] = DatabaseSpriterEditor.encodeCollection(entries);
-            self._renderCollection(content, spriter, kind);
-        }));
-        head.appendChild(this._smallButton('▼', () => {
-            if (idx === entries.length - 1) return;
-            const tmp = entries[idx + 1]; entries[idx + 1] = entries[idx]; entries[idx] = tmp;
-            spriter[kind] = DatabaseSpriterEditor.encodeCollection(entries);
-            self._renderCollection(content, spriter, kind);
-        }));
-        head.appendChild(this._smallButton('Копия', () => {
-            const clone = JSON.parse(JSON.stringify(entry));
-            entries.splice(idx + 1, 0, clone);
-            spriter[kind] = DatabaseSpriterEditor.encodeCollection(entries);
-            self._renderCollection(content, spriter, kind);
-        }));
-        head.appendChild(this._smallButton('Удалить', () => {
-            entries.splice(idx, 1);
-            spriter[kind] = DatabaseSpriterEditor.encodeCollection(entries);
-            self._renderCollection(content, spriter, kind);
-        }, 'danger'));
-
-        const body = document.createElement('div');
-        body.style.cssText = 'padding:12px;display:flex;gap:16px;flex-wrap:wrap;';
-        toggle.addEventListener('click', () => {
-            const collapsed = body.style.display === 'none';
-            body.style.display = collapsed ? 'flex' : 'none';
-            toggle.textContent = collapsed ? '▼' : '▶';
-        });
-
-        this._renderEntryBody(body, entry, kind);
-        card.appendChild(head);
-        card.appendChild(body);
-        return card;
+        host.appendChild(row);
     }
 
     _opLabel(op) {
@@ -609,97 +484,28 @@ class DatabaseSpriterEditor {
         return entry[key];
     }
 
-    _renderEntryBody(body, entry, kind) {
-        // Left column: identity + conditions
-        const left = this._panel();
-        left.style.width = '300px';
-
-        if (kind === 'NPCMappings') {
-            const nameRow = this._fieldLabel('ID Название (тег)', 'Писать в Note события: <sds:ЭтоИмя>');
-            nameRow.appendChild(this._textField(entry.IdName, {}, v => { entry.IdName = v.trim(); }));
-            left.appendChild(nameRow);
-            const tagRow = this._fieldLabel('Тег для копирования');
-            const tagLine = document.createElement('div');
-            tagLine.style.cssText = 'display:flex;gap:6px;align-items:center;';
-            const tag = document.createElement('code');
-            tag.style.cssText = `
-                font-size: 12px; padding: 4px 8px; flex: 1;
-                background-color: var(--color-bg-deep);
-                border: 1px solid var(--color-border); border-radius: 4px;
-                color: var(--color-accent-text, #7ab0ff);
-            `;
-            tag.textContent = '<sds:' + (entry.IdName || '') + '>';
-            tagLine.appendChild(tag);
-            tagLine.appendChild(this._smallButton('Копировать', () => {
-                navigator.clipboard && navigator.clipboard.writeText(tag.textContent);
-            }));
-            tagRow.appendChild(tagLine);
-            left.appendChild(tagRow);
-        } else {
-            const nameRow = this._fieldLabel('Название');
-            nameRow.appendChild(this._textField(entry.Name, {}, v => { entry.Name = v; }));
-            left.appendChild(nameRow);
-
-            const prioRow = this._fieldLabel('Приоритет', 'При равных условиях побеждает запись с большим приоритетом');
-            prioRow.appendChild(this._numberField(entry.Priority, { min: 0 }, v => { entry.Priority = v; }));
-            left.appendChild(prioRow);
-
-            this._renderConditions(left, entry);
-        }
-
-        // Right column: visuals + preview
-        const right = this._panel();
-        right.style.flex = '1';
-        right.style.minWidth = '420px';
-
-        if (kind === 'PoseMappings') {
-            this._renderPoseVisuals(right, entry);
-        } else {
-            this._renderSpriteVisuals(right, entry, kind);
-        }
-
-        body.appendChild(left);
-        body.appendChild(right);
-    }
-
-    _renderConditions(panel, entry) {
-        const cond = this._ensure(entry, 'Conditions', {});
-        panel.appendChild(this._sectionTitle('Условия')).style.padding = '4px 0 0';
-
-        const main = this._fieldLabel('Значение основной переменной', '−1 = базовый скин/поза для всех неперехваченных значений');
-        main.appendChild(this._numberField(cond.MainValue, { min: -1 }, v => { cond.MainValue = v; }));
-        panel.appendChild(main);
-
-        const swRow = document.createElement('div');
-        swRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;';
-        const sw1 = this._fieldLabel('Свитч 1 (ВКЛ)');
-        sw1.appendChild(this._numberField(cond.SwitchId1, { min: 0 }, v => { cond.SwitchId1 = v; }));
-        swRow.appendChild(sw1);
-        const sw2 = this._fieldLabel('Свитч 2 (ВКЛ)');
-        sw2.appendChild(this._numberField(cond.SwitchId2, { min: 0 }, v => { cond.SwitchId2 = v; }));
-        swRow.appendChild(sw2);
-        panel.appendChild(swRow);
-
-        const sw3 = this._fieldLabel('Свитч 3 (доигрывание)', 'Пока ВКЛ — поза удерживается даже после смены значения переменной');
-        sw3.appendChild(this._numberField(cond.SwitchId3, { min: 0 }, v => { cond.SwitchId3 = v; }));
-        panel.appendChild(sw3);
-
-        const extRow = document.createElement('div');
-        extRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 60px 1fr;gap:6px;align-items:end;';
-        const ev = this._fieldLabel('Доп. переменная');
-        ev.appendChild(this._numberField(cond.ExtVarId, { min: 0 }, v => { cond.ExtVarId = v; }));
-        extRow.appendChild(ev);
-        const op = this._fieldLabel('Операция');
-        op.appendChild(this._selectField(cond.ExtVarOp || 'equal', [
-            { value: 'equal', label: '=' }, { value: 'greater', label: '>' },
-            { value: 'less', label: '<' }, { value: 'notEqual', label: '≠' }
-        ], v => { cond.ExtVarOp = v; }));
-        extRow.appendChild(op);
-        extRow.appendChild(document.createElement('div'));
-        const evv = this._fieldLabel('Значение');
-        evv.appendChild(this._numberField(cond.ExtVarVal, { min: 0 }, v => { cond.ExtVarVal = v; }));
-        extRow.appendChild(evv);
-        panel.appendChild(extRow);
+    /** NPC tag line: name input + <sds:…> code with copy button. */
+    _npcTagLine(entry, changed) {
+        const tagLine = document.createElement('div');
+        tagLine.style.cssText = 'display:flex;gap:6px;align-items:center;flex:1;';
+        const tag = document.createElement('code');
+        tag.style.cssText = `
+            font-size: 12px; padding: 4px 8px; flex: 1;
+            background-color: var(--color-bg-deep);
+            border: 1px solid var(--color-border); border-radius: 4px;
+            color: var(--color-accent-text, #7ab0ff);
+        `;
+        tag.textContent = '<sds:' + (entry.IdName || '') + '>';
+        tagLine.appendChild(tag);
+        tagLine.appendChild(this._smallButton('Копировать', () => {
+            if (navigator.clipboard) navigator.clipboard.writeText(tag.textContent);
+        }));
+        const input = this._textField(entry.IdName, {}, v => { entry.IdName = v.trim(); tag.textContent = '<sds:' + v.trim() + '>'; changed(); });
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;flex:1;';
+        wrap.appendChild(input);
+        wrap.appendChild(tagLine);
+        return wrap;
     }
 
     _req(name) {
@@ -870,7 +676,7 @@ class DatabaseSpriterEditor {
             selBox.style.top = (img.offsetTop + gy * (Number(vis.Height) || 48)) + 'px';
             selBox.style.width = (Number(vis.Width) || 48) + 'px';
             selBox.style.height = (Number(vis.Height) || 48) + 'px';
-            img.parentNode.appendChild(selBox);
+            if (img.parentNode) img.parentNode.appendChild(selBox);
         };
         const selBox = document.createElement('div');
         selBox.style.cssText = `
