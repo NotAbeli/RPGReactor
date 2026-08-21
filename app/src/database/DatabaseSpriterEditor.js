@@ -264,8 +264,17 @@ class DatabaseSpriterEditor {
         const K = DatabaseSpriterEditor;
         const spriter = this.getSpriter();
         let entries = K.decodeCollection(spriter[kind]);
-        let selected = entries.length ? 0 : -1;
         const persist = () => { spriter[kind] = K.encodeCollection(entries); };
+        // S35: per-kind selection memory - reopening the section restores
+        // the last selected card, else the first.
+        this._gridSelMemory = this._gridSelMemory || {};
+        const remember = v => { this._gridSelMemory[kind] = v; };
+        let selected;
+        {
+            const mem = this._gridSelMemory[kind];
+            selected = (Number.isInteger(mem) && mem >= 0 && entries[mem]) ? mem
+                : (entries.length ? 0 : -1);
+        }
 
         host.innerHTML = '';
         const root = document.createElement('div');
@@ -290,6 +299,7 @@ class DatabaseSpriterEditor {
             entries.push(K.blankEntry(kind));
             persist();
             selected = entries.length - 1;
+            remember(selected);
             rebuild();
         });
         bar.appendChild(add);
@@ -337,6 +347,7 @@ class DatabaseSpriterEditor {
                 if (selected <= 0) return;
                 [entries[selected - 1], entries[selected]] = [entries[selected], entries[selected - 1]];
                 selected--;
+                remember(selected);
                 persist();
                 rebuild();
             });
@@ -344,12 +355,14 @@ class DatabaseSpriterEditor {
                 if (selected >= entries.length - 1) return;
                 [entries[selected + 1], entries[selected]] = [entries[selected], entries[selected + 1]];
                 selected++;
+                remember(selected);
                 persist();
                 rebuild();
             });
             mkBtn('⧉', 'Дублировать', () => {
                 entries.splice(selected + 1, 0, JSON.parse(JSON.stringify(entry)));
                 selected++;
+                remember(selected);
                 persist();
                 rebuild();
             });
@@ -357,6 +370,7 @@ class DatabaseSpriterEditor {
                 if (!confirm(this._tt('Удалить запись?') + ' ' + this._entryHeadline(entry, kind))) return;
                 entries.splice(selected, 1);
                 selected = Math.min(selected, entries.length - 1);
+                remember(selected);
                 persist();
                 rebuild();
             }, true);
@@ -412,6 +426,7 @@ class DatabaseSpriterEditor {
                 card.addEventListener('click', () => {
                     if (selected === idx) return;
                     selected = idx;
+                    remember(idx);
                     // refresh card borders without re-creating players
                     grid.querySelectorAll(':scope > div').forEach((c, i) => {
                         c.style.borderColor = i === selected ? 'var(--color-accent-border-mid)' : 'var(--color-border)';

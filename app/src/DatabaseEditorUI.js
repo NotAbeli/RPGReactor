@@ -511,9 +511,9 @@ class DatabaseEditorUI {
 
         // Battle lists are short and hand-written - no search row (S23 ask).
         if (current.key === 'enemies') {
-            this._renderClassicCollectionTab({ navType: 'battle', title: tt(current.label), noSearch: true, api: this.enemiesEditor.classicApi() });
+            this._renderClassicCollectionTab({ navType: 'battle', title: tt(current.label), noSearch: true, memoryKey: 'battle:enemies', api: this.enemiesEditor.classicApi() });
         } else {
-            this._renderClassicCollectionTab({ navType: 'battle', title: tt(current.label), noSearch: true, api: this.battleEditor.classicApi(current.key) });
+            this._renderClassicCollectionTab({ navType: 'battle', title: tt(current.label), noSearch: true, memoryKey: 'battle:' + current.key, api: this.battleEditor.classicApi(current.key) });
         }
 
         this._mountTopModeBar(modes, current.key, key => this.showBattleTab(key));
@@ -527,7 +527,7 @@ class DatabaseEditorUI {
         const tt = text => window.I18n ? window.I18n.tText(text) : text;
         const labels = { craft: 'Крафт', loot: 'Лут', gifts: 'Подарки' };
         const editors = { craft: this.craftEditor, loot: this.lootEditor, gifts: this.giftsEditor };
-        this._renderClassicCollectionTab({ navType: 'inventory', title: tt(labels[mode]), api: editors[mode].classicApi() });
+        this._renderClassicCollectionTab({ navType: 'inventory', title: tt(labels[mode]), memoryKey: 'inventory:' + mode, api: editors[mode].classicApi() });
     }
 
     /**
@@ -547,7 +547,18 @@ class DatabaseEditorUI {
 
         let entries = api.entries();
         const commit = () => api.persist(entries);
-        let selectedIdx = -1; // -2 = the ⚙ globals row (api.globals)
+        // S35: per-mode selection memory - reopening a section restores the
+        // last opened entry (or the globals row), else the first record.
+        this._classicSelMemory = this._classicSelMemory || {};
+        const memKey = opts.memoryKey || (opts.navType + ':' + opts.title);
+        const remember = v => { this._classicSelMemory[memKey] = v; };
+        let selectedIdx;
+        {
+            const mem = this._classicSelMemory[memKey];
+            if (mem === -2 && api.globals) selectedIdx = -2;
+            else if (Number.isInteger(mem) && mem >= 0 && entries[mem]) selectedIdx = mem;
+            else selectedIdx = entries.length ? 0 : -1;
+        }
 
         // Search container - the exact viewer markup.
         let searchInput = null;
@@ -582,6 +593,7 @@ class DatabaseEditorUI {
             entries.push(api.blank());
             commit();
             selectedIdx = entries.length - 1;
+            remember(selectedIdx);
             rebuild();
             renderSelection();
         };
@@ -595,9 +607,11 @@ class DatabaseEditorUI {
             if (!confirm(this._t('db.deleteConfirm', { name }))) return;
             entries.splice(selectedIdx, 1);
             commit();
-            selectedIdx = -1;
+            // S35: fall back to the neighbour, else the first record.
+            selectedIdx = entries.length ? Math.min(selectedIdx, entries.length - 1) : -1;
+            remember(selectedIdx);
             rebuild();
-            detailEl.innerHTML = this._selectEntryMarkup();
+            renderSelection();
         };
         buttonBar.appendChild(addBtn);
         buttonBar.appendChild(deleteBtn);
@@ -650,6 +664,7 @@ class DatabaseEditorUI {
                 grow.appendChild(gid);
                 grow.addEventListener('click', () => {
                     selectedIdx = -2;
+                    remember(-2);
                     rebuild();
                     renderSelection();
                 });
@@ -686,6 +701,7 @@ class DatabaseEditorUI {
                 item.appendChild(idSpan);
                 item.addEventListener('click', () => {
                     selectedIdx = idx;
+                    remember(idx);
                     rebuild();
                     renderSelection();
                 });
@@ -695,14 +711,14 @@ class DatabaseEditorUI {
 
         if (searchInput) {
             searchInput.addEventListener('input', () => {
-                selectedIdx = -1;
+                selectedIdx = -1; // filtering is transient - do not touch the memory
                 rebuild();
                 detailEl.innerHTML = this._selectEntryMarkup();
             });
         }
 
         rebuild();
-        detailEl.innerHTML = this._selectEntryMarkup();
+        renderSelection(); // S35: an entry (or the globals row) is always open
     }
 
     /**
