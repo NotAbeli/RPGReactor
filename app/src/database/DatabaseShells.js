@@ -505,8 +505,23 @@ class InspectorForm {
     constructor() {
         this.root = document.createElement('div');
         this.root.className = 'agn-insp';
+        this._pending = []; // S28: rows buffered per section, flushed 2-col
+    }
+    _flush() {
+        if (!this._pending.length) return;
+        if (this._pending.length >= 4) {
+            // Wide section: flow the rows into 2 columns (shorter scroll).
+            const cols = document.createElement('div');
+            cols.className = 'agn-insp-cols';
+            for (const r of this._pending) cols.appendChild(r);
+            this.root.appendChild(cols);
+        } else {
+            for (const r of this._pending) this.root.appendChild(r);
+        }
+        this._pending = [];
     }
     head(title, sub) {
+        this._flush();
         const h = document.createElement('div');
         h.className = 'agn-insp-head';
         const t = document.createElement('div');
@@ -523,6 +538,7 @@ class InspectorForm {
         return this;
     }
     section(caption) {
+        this._flush();
         const s = document.createElement('div');
         s.className = 'agn-insp-section';
         const c = document.createElement('span');
@@ -550,7 +566,7 @@ class InspectorForm {
         c.className = 'agn-insp-control';
         if (control) c.appendChild(control);
         r.appendChild(c);
-        this.root.appendChild(r);
+        this._pending.push(r);
         return this;
     }
     /** Schema-driven row: def {label,key,type,hint,min,max,step,unit,options,placeholder,textarea} */
@@ -610,6 +626,7 @@ class InspectorForm {
         for (const d of defs) this.field(d, record, opts.commit || (() => {}));
     }
     mount(container) {
+        this._flush();
         container.appendChild(this.root);
         return this;
     }

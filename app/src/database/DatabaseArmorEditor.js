@@ -18,11 +18,8 @@ class DatabaseArmorEditor {
         this.currentArmor = armor;
 
         const wrapper = document.createElement('div');
-        wrapper.style.display = 'flex';
-        wrapper.style.flexDirection = 'column';
-        wrapper.style.height = '100%';
+        wrapper.className = 'agn-detail-col';
         wrapper.style.padding = '16px';
-        wrapper.style.position = 'relative';
 
         const tt = text => window.I18n ? window.I18n.tText(text) : text;
 

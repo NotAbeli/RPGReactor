@@ -1029,6 +1029,12 @@ table.agn-table tr.agn-expand-row > td { background-color: var(--color-bg-panel)
 .agn-table-bar { display: flex; align-items: center; gap: 12px; padding: 0 0 8px; flex-wrap: wrap; }
 .agn-table-count { font-size: 12px; color: var(--color-text-dim); }
 .agn-table-empty { padding: 22px 10px; text-align: center; color: var(--color-text-muted); font-size: 12px; }
+/* S28: centered detail column - forms no longer hug the panel's left edge,
+   empty space splits symmetrically; wide sections flow into 2 columns. */
+.agn-detail-col { width: 100%; max-width: 1100px; margin: 0 auto; box-sizing: border-box; }
+.agn-detail-col > * { max-width: 100%; }
+.agn-insp-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr)); gap: 0 36px; align-items: start; }
+.database-preview { max-width: 320px; }
 
 .database-detail {
             flex: 1;

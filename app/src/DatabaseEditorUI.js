@@ -560,15 +560,12 @@ class DatabaseEditorUI {
         listEl.parentNode.insertBefore(buttonBar, searchContainer || listEl);
 
         const paddedWrapper = () => {
-            // The same padded wrapper the item/weapon/armor editors mount
-            // into - without it the inspector panels hug the panel edges.
+            // S28: the centered detail column (max 1100px, auto-centered) -
+            // forms no longer hug the panel's left edge.
             detailEl.innerHTML = '';
             const wrapper = document.createElement('div');
-            wrapper.style.display = 'flex';
-            wrapper.style.flexDirection = 'column';
-            wrapper.style.height = '100%';
+            wrapper.className = 'agn-detail-col';
             wrapper.style.padding = '16px';
-            wrapper.style.position = 'relative';
             detailEl.appendChild(wrapper);
             return wrapper;
         };

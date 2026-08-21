@@ -18,11 +18,8 @@ class DatabaseWeaponEditor {
         this.currentWeapon = weapon;
 
         const wrapper = document.createElement('div');
-        wrapper.style.display = 'flex';
-        wrapper.style.flexDirection = 'column';
-        wrapper.style.height = '100%';
+        wrapper.className = 'agn-detail-col';
         wrapper.style.padding = '16px';
-        wrapper.style.position = 'relative';
 
         // Get weapon types from system data
         const weaponTypeNames = this.databaseManager.getSystem()?.weaponTypes || [];
