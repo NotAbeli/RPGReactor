@@ -140,6 +140,7 @@ class DatabaseEnemiesEditor {
         const shell = new MasterDetailShell({
             items: entries,
             searchText: r => [r.match, r.id, r.flag].join(' '),
+            noSearch: true,
             addLabel: 'Добавить врага',
             blank: () => K.blankEnemy(),
             onChanged: persist,

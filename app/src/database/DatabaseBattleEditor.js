@@ -228,6 +228,7 @@ class DatabaseBattleEditor {
         const shell = new MasterDetailShell({
             items: K.decodeCollection(section[meta.key]),
             searchText: r => [r.Name, r.ID].join(' '),
+            noSearch: true,
             addLabel: meta.addLabel,
             blank: () => JSON.parse(JSON.stringify(this._blanks[meta.kind])),
             onChanged: items => { section[meta.key] = K.encodeCollection(items); },

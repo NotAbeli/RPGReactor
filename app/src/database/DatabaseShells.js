@@ -28,6 +28,7 @@ class MasterDetailShell {
      * opts.searchText   - (record) => searchable text (optional)
      * opts.addLabel     - button caption (default 'Добавить')
      * opts.thumb        - (record) => {url, letter} mini-thumb for list rows (optional)
+     * opts.noSearch     - hide the search input (short hand-written lists)
      * opts.pinned       - {title, summary, render(formCol, api)} always-first
      *                     fixed list row (e.g. ⚙ globals); selecting it renders
      *                     the pinned form; dup/del act on real records only.
@@ -67,17 +68,19 @@ class MasterDetailShell {
         const o = this.o;
         this.listCol.innerHTML = '';
 
-        const search = document.createElement('input');
-        search.type = 'search';
-        search.placeholder = 'Поиск...';
-        search.className = 'agonia-input';
-        search.value = this.filter;
-        search.addEventListener('input', () => {
-            this.filter = search.value;
-            this._renderList();
-            this._renderSelection();
-        });
-        this.listCol.appendChild(search);
+        if (!o.noSearch) {
+            const search = document.createElement('input');
+            search.type = 'search';
+            search.placeholder = 'Поиск...';
+            search.className = 'agonia-input';
+            search.value = this.filter;
+            search.addEventListener('input', () => {
+                this.filter = search.value;
+                this._renderList();
+                this._renderSelection();
+            });
+            this.listCol.appendChild(search);
+        }
 
         const list = document.createElement('div');
         list.className = 'agonia-md-list';
