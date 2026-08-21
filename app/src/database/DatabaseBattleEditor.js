@@ -1,10 +1,10 @@
 /**
- * DatabaseBattleEditor - the combat tab (S18 rewrite): master-detail.
+ * DatabaseBattleEditor - the combat collections (S27: classic list API).
  *
- * Sub-tabs (Melee / Projectiles / Tracers / Dashes) each render a
- * MasterDetailShell: the attack list on the left, a single-record form
- * on the right, in System1-style sections. Data plumbing (MV collection
- * codec, AgoniaEngine sections battle+dash) is unchanged from S10.
+ * The Бой tab drives the classic list panel itself (DatabaseEditorUI.
+ * _renderClassicCollectionTab); this editor exposes each MV collection
+ * (Melee List / Projectile List / Tracer List / Dash Database) plus the
+ * single-record inspector form via classicApi(kind).
  *
  * AnimID is gone from the UI (animations were amputated in S13); the
  * value survives in the data untouched.
@@ -17,11 +17,10 @@ class DatabaseBattleEditor {
         this.parentEditor = parentEditor;
 
         this.collectionKeys = [
-            { section: 'battle', key: 'Melee List', label: 'Ближний бой', kind: 'melee', addLabel: 'Добавить атаку' },
-            { section: 'battle', key: 'Projectile List', label: 'Снаряды', kind: 'projectile', addLabel: 'Добавить снаряд' },
-            { section: 'battle', key: 'Tracer List', label: 'Трассеры', kind: 'tracer', addLabel: 'Добавить трассер' },
-            { section: 'dash', key: 'Dash Database', label: 'Рывки', kind: 'dash', addLabel: 'Добавить рывок' },
-            { section: 'enemies', key: null, label: 'ИИ Врагов', kind: 'enemies', addLabel: '' }
+            { section: 'battle', key: 'Melee List', kind: 'melee' },
+            { section: 'battle', key: 'Projectile List', kind: 'projectile' },
+            { section: 'battle', key: 'Tracer List', kind: 'tracer' },
+            { section: 'dash', key: 'Dash Database', kind: 'dash' }
         ];
 
         this._fieldDefs = {
@@ -143,102 +142,41 @@ class DatabaseBattleEditor {
     }
 
     // ------------------------------------------------------------------
-    // Tab
+    // Classic list-panel API for one collection kind (S27).
     // ------------------------------------------------------------------
 
-    showBattleDetail(container) {
-        const wrapper = document.createElement('div');
-        wrapper.style.cssText = 'display:flex;flex-direction:column;height:100%;overflow:hidden;';
-        wrapper.appendChild(this._stdBanner('Бой', 'Атаки, снаряды, трассеры, рывки и ИИ врагов'));
-
-        const tabsRow = document.createElement('div');
-        tabsRow.style.cssText = 'display:flex;gap:8px;padding:10px 16px 0;border-bottom:1px solid var(--color-border);';
-        wrapper.appendChild(tabsRow);
-
-        const content = document.createElement('div');
-        content.className = 'agonia-content';
-        content.style.cssText = 'flex:1;overflow:hidden;padding:0 16px 16px;';
-        wrapper.appendChild(content);
-
-        let active = this.collectionKeys[0].kind;
-        const render = () => {
-            content.innerHTML = '';
-            const meta = this.collectionKeys.find(c => c.kind === active);
-            if (meta.kind === 'enemies') {
-                // S21: enemy AI lives here as a sub-tab (was its own DB tab).
-                if (!this._enemiesEditor) {
-                    this._enemiesEditor = new DatabaseEnemiesEditor(
-                        this.databaseManager, this.projectManager, this.commonUI, this.parentEditor);
-                }
-                this._enemiesEditor.renderInto(content);
-                return;
-            }
-            this._renderShell(content, meta);
-        };
-
-        for (const col of this.collectionKeys) {
-            const el = document.createElement('div');
-            el.style.cssText = `
-                padding: 8px 18px; font-size: 13px; font-weight: 600;
-                color: var(--color-text); cursor: pointer; user-select: none;
-                border: 1px solid var(--color-border); border-bottom: none;
-                border-radius: 6px 6px 0 0; background-color: var(--color-bg-deep);
-            `;
-            el.textContent = this._tt(col.label);
-            el.addEventListener('click', () => {
-                active = col.kind;
-                tabsRow.querySelectorAll('div').forEach(t => {
-                    t.style.backgroundColor = 'var(--color-bg-deep)';
-                    t.style.color = 'var(--color-text)';
-                    t.style.borderBottom = '1px solid var(--color-border)';
-                });
-                el.style.backgroundColor = 'var(--color-bg-panel)';
-                el.style.color = 'var(--color-text-strong)';
-                el.style.borderBottom = '2px solid var(--color-accent-border-mid)';
-                render();
-            });
-            if (col.kind === active) setTimeout(() => el.click(), 0);
-            tabsRow.appendChild(el);
-        }
-
-        container.appendChild(wrapper);
-    }
-
-    _stdBanner(title, subtitle) {
-        const banner = document.createElement('div');
-        banner.style.cssText = `
-            background-color: var(--color-bg-deep);
-            padding: 14px 20px; border-bottom: 2px solid var(--color-accent-border-mid);
-            font-size: 20px; font-weight: 600; color: var(--color-text-strong);
-            display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
-        `;
-        banner.textContent = this._tt(title);
-        if (subtitle) {
-            const sub = document.createElement('span');
-            sub.style.cssText = 'font-size:12px;font-weight:400;color:var(--color-text-dim);';
-            sub.textContent = this._tt(subtitle);
-            banner.appendChild(sub);
-        }
-        return banner;
-    }
-
-    _renderShell(content, meta) {
+    classicApi(kind) {
+        const meta = this.collectionKeys.find(c => c.kind === kind) || this.collectionKeys[0];
         const section = this.getSection(meta.section);
         const K = DatabaseBattleEditor;
-        const shell = new MasterDetailShell({
-            items: K.decodeCollection(section[meta.key]),
-            searchText: r => [r.Name, r.ID].join(' '),
-            noSearch: true,
-            addLabel: meta.addLabel,
+        return {
+            entries: () => K.decodeCollection(section[meta.key]),
+            persist: list => { section[meta.key] = K.encodeCollection(list); },
             blank: () => JSON.parse(JSON.stringify(this._blanks[meta.kind])),
-            onChanged: items => { section[meta.key] = K.encodeCollection(items); },
-            title: (r, i) => meta.kind === 'dash'
+            label: (r, i) => meta.kind === 'dash'
                 ? (r.Name || 'Рывок')
                 : (i + 1) + '. ' + (r.Name || r.ID || '—'),
-            summary: r => this._summary(r, meta.kind),
-            renderForm: (formCol, record, idx, api) => this._renderForm(formCol, record, meta, api, idx)
-        });
-        shell.mount(content);
+            search: r => [r.Name, r.ID].join(' '),
+            renderDetail: (wrapper, record, idx, commit) => {
+                const defs = this._fieldDefs[meta.kind];
+                const groups = [
+                    ['Идентификация', defs.id],
+                    ['Геометрия и попадание', defs.geometry],
+                    ['Ограничения', defs.limits],
+                    ['Реакции при попадании', defs.reactions]
+                ].filter(([, fields]) => fields);
+
+                const head = meta.kind === 'dash'
+                    ? (record.Name || 'Рывок')
+                    : ((idx + 1) + '. ' + (record.Name || record.ID || '—'));
+                const form = new InspectorForm();
+                form.head(this._tt(head), this._summary(record, meta.kind));
+                for (const [title, fields] of groups) {
+                    form.fields(fields, record, { section: this._tt(title), commit });
+                }
+                form.mount(wrapper);
+            }
+        };
     }
 
     _summary(r, kind) {
@@ -246,34 +184,6 @@ class DatabaseBattleEditor {
         if (kind === 'projectile') return 'v' + r.Speed + ' · D' + r.Distance + ' · hb' + r.Hitbox;
         if (kind === 'tracer') return '≤' + r.MaxRange + ' · ' + r.Color;
         return '×' + r.SpeedMultiplier + ' · ' + r.Duration + 'f · cd' + r.Cooldown;
-    }
-
-    _renderForm(formCol, record, meta, api, idx) {
-        const defs = this._fieldDefs[meta.kind];
-        const groups = [
-            ['Идентификация', defs.id],
-            ['Геометрия и попадание', defs.geometry],
-            ['Ограничения', defs.limits],
-            ['Реакции при попадании', defs.reactions]
-        ].filter(([, fields]) => fields);
-
-        const head = meta.kind === 'dash'
-            ? (record.Name || 'Рывок')
-            : ((idx + 1) + '. ' + (record.Name || record.ID || '—'));
-        const form = new InspectorForm();
-        form.head(this._tt(head), this._tt(this._summary(record, meta.kind)));
-        for (const [title, fields] of groups) {
-            form.fields(fields, record, { section: this._tt(title), commit: () => api.changed() });
-        }
-        form.mount(formCol);
-    }
-
-    _renderField(record, f, api) {
-        const wrap = document.createElement('div');
-        const single = new InspectorForm();
-        single.field(f, record, () => api.changed());
-        wrap.appendChild(single.root);
-        return wrap;
     }
 }
 

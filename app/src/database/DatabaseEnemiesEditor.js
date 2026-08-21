@@ -63,45 +63,23 @@ class DatabaseEnemiesEditor {
         };
     }
 
-    showEnemiesDetail(container) {
+    /**
+     * Classic list-panel API (S27): the Бой tab's ИИ Врагов section drives
+     * the classic list itself; globals render through the ⚙ list row.
+     */
+    classicApi() {
         const enemies = this.getEnemies();
-
-        const wrapper = document.createElement('div');
-        wrapper.style.cssText = 'display:flex;flex-direction:column;height:100%;overflow:hidden;';
-        wrapper.appendChild(this._stdBanner('ИИ врагов', 'База поведения: сенсоры, паника, кастомные правила'));
-
-        const content = document.createElement('div');
-        content.style.cssText = 'flex:1;overflow-y:auto;padding:0 16px 16px;';
-        wrapper.appendChild(content);
-        container.appendChild(wrapper);
-        this.renderInto(content);
-    }
-
-    /** Content without the banner - embedded as the Battle tab's ИИ Врагов
-     *  sub-tab. Same master-detail layout as the other battle sub-tabs (S23):
-     *  list left, inspector right, globals as the pinned first row. */
-    renderInto(container) {
-        const enemies = this.getEnemies();
-        container.innerHTML = '';
-        this._renderEnemies(container, enemies);
-    }
-
-    _stdBanner(title, subtitle) {
-        const banner = document.createElement('div');
-        banner.style.cssText = `
-            background-color: var(--color-bg-deep);
-            padding: 14px 20px; border-bottom: 2px solid var(--color-accent-border-mid);
-            font-size: 20px; font-weight: 600; color: var(--color-text-strong);
-            display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
-        `;
-        banner.textContent = this._tt(title);
-        if (subtitle) {
-            const sub = document.createElement('span');
-            sub.style.cssText = 'font-size:12px;font-weight:400;color:var(--color-text-dim);';
-            sub.textContent = this._tt(subtitle);
-            banner.appendChild(sub);
-        }
-        return banner;
+        const K = DatabaseEnemiesEditor;
+        return {
+            entries: () => K.decodeCollection(enemies['EnemyDatabase']),
+            persist: list => { enemies['EnemyDatabase'] = K.encodeCollection(list); },
+            blank: () => K.blankEnemy(),
+            label: (r, i) => '#' + (i + 1) + ' ' + (r.match || '—') + ' · HP ' + (r.hp || '?'),
+            search: r => [r.match, r.id, r.flag].join(' '),
+            renderDetail: (wrapper, entry, idx, commit) =>
+                this._renderEnemyInspector(wrapper, entry, idx, { changed: commit }),
+            globals: wrapper => this._renderGlobals(wrapper, enemies)
+        };
     }
 
     _renderGlobals(host, enemies) {
@@ -128,33 +106,6 @@ class DatabaseEnemiesEditor {
             }, enemies, () => {});
         }
         form.mount(host);
-    }
-    _renderEnemies(host, enemies) {
-        const K = DatabaseEnemiesEditor;
-        const entries = K.decodeCollection(enemies['EnemyDatabase']);
-        host.innerHTML = '';
-
-        const persist = () => { enemies['EnemyDatabase'] = K.encodeCollection(entries); };
-        const rerender = () => this._renderEnemies(host, enemies);
-
-        const shell = new MasterDetailShell({
-            items: entries,
-            searchText: r => [r.match, r.id, r.flag].join(' '),
-            noSearch: true,
-            addLabel: 'Добавить врага',
-            blank: () => K.blankEnemy(),
-            onChanged: persist,
-            title: (r, i) => '#' + (i + 1) + ' ' + (r.match || '—') + ' · HP ' + (r.hp || '?'),
-            summary: r => 'атака R' + (r.attackRadius || '?') + ' · слух R' + (r.hearingRadius || '?') +
-                ' · правил: ' + K.decodeCollection(r.customRules).length,
-            renderForm: (formCol, entry, idx, api) => this._renderEnemyInspector(formCol, entry, idx, api),
-            pinned: {
-                title: '⚙ Глобальные настройки',
-                summary: 'Движок ИИ · переменные · условия оружия',
-                render: (formCol) => this._renderGlobals(formCol, enemies)
-            }
-        });
-        shell.mount(host);
     }
 
     _renderEnemyInspector(formCol, entry, idx, api) {

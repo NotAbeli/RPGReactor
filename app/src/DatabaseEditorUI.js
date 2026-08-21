@@ -366,9 +366,8 @@ class DatabaseEditorUI {
                 return;
             }
             case 'battle': {
-                if (!this.battleEditor) return;
-                const { detailEl } = this.prepareDatabaseSection('battle', this._dbTitle('battle', 'Бой'), { showListPanel: false });
-                this.battleEditor.showBattleDetail(detailEl);
+                // S27: the classic-style Бой tab (mode bar + list panel).
+                this.showBattleTab('melee');
                 return;
             }
             // 'enemyAI' lives inside Бой as the ИИ Врагов sub-tab since S21;
@@ -420,7 +419,7 @@ class DatabaseEditorUI {
                 : current.key === 'weapons' ? this.databaseManager.getWeapons()
                 : this.databaseManager.getArmors();
             this.showInventoryList = current.key;
-            this.showDatabaseViewer(tt('Инвентарь') + ' — ' + tt(current.label), data, current.key);
+            this.showDatabaseViewer(tt(current.label), data, current.key);
             this.setActiveDatabaseNav('inventory');
         } else {
             // S26: craft/loot/gifts in the SAME classic list style as
@@ -429,54 +428,102 @@ class DatabaseEditorUI {
             this._renderClassicSystemsTab(current.key);
         }
 
-        // Full-width mode bar above everything. S23-hotfix: it must live in
-        // the COLUMN parent (.database-main-content) as a sibling ABOVE
-        // .database-entries-content - inside the row-flex entries-content
-        // it stretched into a screen-tall third column.
+        this._mountTopModeBar(modes, current.key, key => this.showInventoryUnifiedTab(key));
+    }
+
+    /**
+     * Full-width mode bar above everything (shared by Инвентарь and Бой).
+     * S23-hotfix: it must live in the COLUMN parent (.database-main-content)
+     * as a sibling ABOVE .database-entries-content - inside the row-flex
+     * entries-content it stretched into a screen-tall third column.
+     */
+    _mountTopModeBar(modes, activeKey, onPick) {
         const main = document.querySelector('.database-main-content');
         const entries = document.querySelector('.database-entries-content');
         main?.querySelectorAll(':scope > .inventory-mode-switch').forEach(el => el.remove());
         if (main && entries) {
-            const bar = this._inventoryModeBar(modes, current.key, key => this.showInventoryUnifiedTab(key));
+            const bar = this._inventoryModeBar(modes, activeKey, onPick);
             bar.style.flex = '0 0 auto';
             main.insertBefore(bar, entries);
         }
     }
 
     /**
-     * S26: craft/loot/gifts rendered through the real classic-viewer
-     * containers (#database-list-panel + #database-detail) with the exact
-     * viewer chrome - search input, Новый/Удалить button bar, flat
-     * .database-list-item rows. Editors expose their MV collection and the
-     * single-entry form via classicApi().
+     * S27: the Бой tab in the same classic style as Инвентарь - a 5-button
+     * mode bar (Ближний бой/Снаряды/Трассеры/Рывки/ИИ Врагов) above the
+     * classic list panel; collections come from battleEditor.classicApi(),
+     * enemy AI from enemiesEditor.classicApi() (globals = ⚙ list row).
+     */
+    showBattleTab(kind) {
+        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const modes = [
+            { key: 'melee', label: 'Ближний бой' },
+            { key: 'projectile', label: 'Снаряды' },
+            { key: 'tracer', label: 'Трассеры' },
+            { key: 'dash', label: 'Рывки' },
+            { key: 'enemies', label: 'ИИ Врагов' }
+        ];
+        const current = modes.find(m => m.key === kind) || modes[0];
+
+        // Battle lists are short and hand-written - no search row (S23 ask).
+        if (current.key === 'enemies') {
+            this._renderClassicCollectionTab({ navType: 'battle', title: tt(current.label), noSearch: true, api: this.enemiesEditor.classicApi() });
+        } else {
+            this._renderClassicCollectionTab({ navType: 'battle', title: tt(current.label), noSearch: true, api: this.battleEditor.classicApi(current.key) });
+        }
+
+        this._mountTopModeBar(modes, current.key, key => this.showBattleTab(key));
+    }
+
+    /**
+     * S26: craft/loot/gifts in the classic list style - thin wrapper over
+     * the shared driver (_renderClassicCollectionTab).
      */
     _renderClassicSystemsTab(mode) {
         const tt = text => window.I18n ? window.I18n.tText(text) : text;
         const labels = { craft: 'Крафт', loot: 'Лут', gifts: 'Подарки' };
         const editors = { craft: this.craftEditor, loot: this.lootEditor, gifts: this.giftsEditor };
-        const api = editors[mode].classicApi();
+        this._renderClassicCollectionTab({ navType: 'inventory', title: tt(labels[mode]), api: editors[mode].classicApi() });
+    }
 
-        const { listEl, detailEl } = this.prepareDatabaseSection('inventory', tt('Инвентарь') + ' — ' + tt(labels[mode]));
+    /**
+     * S27: the shared classic-list driver - the real #database-list-panel +
+     * #database-detail with the exact viewer chrome (search, Новый/Удалить,
+     * flat .database-list-item rows). Powers craft/loot/gifts AND all Бой
+     * collections. api: { entries(), persist(list), blank(), label(e,i),
+     * search(e), renderDetail(wrapper, entry, idx, commit), globals?
+     * (wrapper) } - when globals is given, a permanent «⚙ Глобальные
+     * настройки» row leads the list and renders the globals form.
+     * opts.noSearch hides the search input (short hand-written lists).
+     */
+    _renderClassicCollectionTab(opts) {
+        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const api = opts.api;
+        const { listEl, detailEl } = this.prepareDatabaseSection(opts.navType, opts.title);
 
         let entries = api.entries();
         const commit = () => api.persist(entries);
-        let selectedIdx = -1;
+        let selectedIdx = -1; // -2 = the ⚙ globals row (api.globals)
 
         // Search container - the exact viewer markup.
-        const searchContainer = document.createElement('div');
-        searchContainer.className = 'database-search-container';
-        searchContainer.style.cssText = 'padding: 8px; background-color: var(--color-bg-menubar); border-bottom: 1px solid var(--color-border); flex-shrink: 0;';
-        const searchInput = document.createElement('input');
-        searchInput.type = 'text';
-        searchInput.placeholder = this._t('db.search', { title: labels[mode] });
-        searchInput.style.cssText = 'width:100%;padding:6px 10px;background-color:var(--color-bg-panel);border:1px solid var(--color-border-input);border-radius:3px;color:var(--color-text);font-size:12px;box-sizing:border-box;';
-        searchInput.addEventListener('focus', () => {
-            searchInput.style.borderColor = 'var(--color-accent-border-strong)';
-            searchInput.style.outline = 'none';
-        });
-        searchInput.addEventListener('blur', () => { searchInput.style.borderColor = 'var(--color-border-input)'; });
-        searchContainer.appendChild(searchInput);
-        listEl.parentNode.insertBefore(searchContainer, listEl);
+        let searchInput = null;
+        let searchContainer = null;
+        if (!opts.noSearch) {
+            searchContainer = document.createElement('div');
+            searchContainer.className = 'database-search-container';
+            searchContainer.style.cssText = 'padding: 8px; background-color: var(--color-bg-menubar); border-bottom: 1px solid var(--color-border); flex-shrink: 0;';
+            searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.placeholder = this._t('db.search', { title: opts.title });
+            searchInput.style.cssText = 'width:100%;padding:6px 10px;background-color:var(--color-bg-panel);border:1px solid var(--color-border-input);border-radius:3px;color:var(--color-text);font-size:12px;box-sizing:border-box;';
+            searchInput.addEventListener('focus', () => {
+                searchInput.style.borderColor = 'var(--color-accent-border-strong)';
+                searchInput.style.outline = 'none';
+            });
+            searchInput.addEventListener('blur', () => { searchInput.style.borderColor = 'var(--color-border-input)'; });
+            searchContainer.appendChild(searchInput);
+            listEl.parentNode.insertBefore(searchContainer, listEl);
+        }
 
         // Button bar - Новый / Удалить (the exact viewer markup).
         const buttonBar = document.createElement('div');
@@ -499,7 +546,7 @@ class DatabaseEditorUI {
         deleteBtn.textContent = this._t('common.delete');
         deleteBtn.style.cssText = btnStyle;
         deleteBtn.onclick = () => {
-            if (selectedIdx < 0 || !entries[selectedIdx]) { alert(this._t('db.selectEntryToDelete')); return; }
+            if (selectedIdx === -2 || selectedIdx < 0 || !entries[selectedIdx]) { alert(this._t('db.selectEntryToDelete')); return; }
             const name = api.label(entries[selectedIdx], selectedIdx);
             if (!confirm(this._t('db.deleteConfirm', { name }))) return;
             entries.splice(selectedIdx, 1);
@@ -510,13 +557,9 @@ class DatabaseEditorUI {
         };
         buttonBar.appendChild(addBtn);
         buttonBar.appendChild(deleteBtn);
-        listEl.parentNode.insertBefore(buttonBar, searchContainer);
+        listEl.parentNode.insertBefore(buttonBar, searchContainer || listEl);
 
-        const renderSelection = () => {
-            if (selectedIdx < 0 || !entries[selectedIdx]) {
-                detailEl.innerHTML = this._selectEntryMarkup();
-                return;
-            }
+        const paddedWrapper = () => {
             // The same padded wrapper the item/weapon/armor editors mount
             // into - without it the inspector panels hug the panel edges.
             detailEl.innerHTML = '';
@@ -527,19 +570,51 @@ class DatabaseEditorUI {
             wrapper.style.padding = '16px';
             wrapper.style.position = 'relative';
             detailEl.appendChild(wrapper);
-            try {
-                api.renderDetail(wrapper, entries[selectedIdx], selectedIdx, commit);
-            } catch (e) {
-                const box = document.createElement('div');
-                box.style.cssText = 'margin:12px;padding:10px 14px;border:1px solid var(--color-danger,#b33);border-radius:4px;background:rgba(179,51,51,.12);font-size:12px;';
-                box.textContent = String((e && e.stack) || e).split('\n')[0];
-                wrapper.appendChild(box);
+            return wrapper;
+        };
+        const renderSelection = () => {
+            if (selectedIdx === -2 && api.globals) {
+                try { api.globals(paddedWrapper()); } catch (e) { formError(paddedWrapper(), e); }
+                return;
             }
+            if (selectedIdx < 0 || !entries[selectedIdx]) {
+                detailEl.innerHTML = this._selectEntryMarkup();
+                return;
+            }
+            try {
+                api.renderDetail(paddedWrapper(), entries[selectedIdx], selectedIdx, commit);
+            } catch (e) {
+                formError(paddedWrapper(), e);
+            }
+        };
+        const formError = (host, e) => {
+            const box = document.createElement('div');
+            box.style.cssText = 'margin:12px;padding:10px 14px;border:1px solid var(--color-danger,#b33);border-radius:4px;background:rgba(179,51,51,.12);font-size:12px;';
+            box.textContent = String((e && e.stack) || e).split('\n')[0];
+            host.appendChild(box);
         };
 
         const rebuild = () => {
             listEl.innerHTML = '';
-            const q = searchInput.value.trim().toLowerCase();
+            if (api.globals) {
+                const grow = document.createElement('div');
+                grow.className = 'database-list-item' + (selectedIdx === -2 ? ' selected' : '');
+                const gname = document.createElement('span');
+                gname.className = 'database-list-name';
+                gname.textContent = tt('⚙ Глобальные настройки');
+                const gid = document.createElement('span');
+                gid.className = 'database-list-id';
+                gid.textContent = '—';
+                grow.appendChild(gname);
+                grow.appendChild(gid);
+                grow.addEventListener('click', () => {
+                    selectedIdx = -2;
+                    rebuild();
+                    renderSelection();
+                });
+                listEl.appendChild(grow);
+            }
+            const q = searchInput ? searchInput.value.trim().toLowerCase() : '';
             const visible = entries.map((e, i) => [e, i])
                 .filter(([e, i]) => !q || (String(api.label(e, i) || '') + ' ' + String(api.search(e) || '')).toLowerCase().includes(q));
             if (!visible.length) {
@@ -569,11 +644,13 @@ class DatabaseEditorUI {
             }
         };
 
-        searchInput.addEventListener('input', () => {
-            selectedIdx = -1;
-            rebuild();
-            detailEl.innerHTML = this._selectEntryMarkup();
-        });
+        if (searchInput) {
+            searchInput.addEventListener('input', () => {
+                selectedIdx = -1;
+                rebuild();
+                detailEl.innerHTML = this._selectEntryMarkup();
+            });
+        }
 
         rebuild();
         detailEl.innerHTML = this._selectEntryMarkup();
@@ -687,6 +764,9 @@ class DatabaseEditorUI {
         listEl.parentNode.querySelector('.database-list-pager')?.remove();
         listEl.parentNode.querySelector('.database-change-max-btn')?.remove();
         listEl.parentNode.querySelector('.inventory-mode-switch')?.remove();
+        // S27: full-width mode bars (Инвентарь/Бой) must not linger when a
+        // plain viewer tab (Тайлсеты etc.) opens.
+        document.querySelectorAll('.database-main-content > .inventory-mode-switch').forEach(el => el.remove());
 
         const searchContainer = document.createElement('div');
         searchContainer.className = 'database-search-container';
