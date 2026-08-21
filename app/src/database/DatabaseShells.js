@@ -533,6 +533,7 @@ class InspectorForm {
             const s = document.createElement('div');
             s.className = 'agn-insp-sub';
             s.textContent = sub;
+            this._headSubEl = s;
             h.appendChild(s);
         }
         this.root.appendChild(h);

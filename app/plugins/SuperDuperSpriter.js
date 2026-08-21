@@ -159,6 +159,12 @@
  * @desc Значение для срабатывания. Укажите -1, чтобы сделать этот спрайт "базовым" (для всех остальных значений).
  * @default 0
  *
+ * @param Checks
+ * @text Проверки (JSON)
+ * @desc Массив проверок, все должны выполняться (И): [{"type":"switch","id":3},{"type":"var","id":20,"op":"greater","val":10}]
+ * @type string
+ * @default []
+ *
  * @param SwitchId1
  * @text Свитч 1 (ВКЛ)
  * @type switch
@@ -433,6 +439,50 @@
         return matches ? matches.map(Number) : [];
     }
 
+    /**
+     * S32: normalize conditions into a flat checks list. New format:
+     *   cond.Checks = [{type:'switch',id} | {type:'var',id,op,val}, ...]
+     * (all must pass - AND). Legacy fields (SwitchId1..3, ExtVarId/Op/Val)
+     * are appended so old data keeps working unchanged.
+     */
+    function normalizeChecks(cond) {
+        var checks = [];
+        try {
+            var raw = cond.Checks;
+            var arr = null;
+            if (typeof raw === 'string') {
+                arr = JSON.parse(raw || '[]');
+            } else if (raw && typeof raw === 'object' && Array.isArray(raw)) {
+                arr = raw;
+            } else if (raw && typeof raw === 'object') {
+                // Decoded struct<string> from the MV bridge: Checks holds a
+                // JSON string; also tolerate {list:[...]}.
+                var inner = raw.list !== undefined ? raw.list : raw;
+                arr = (typeof inner === 'string') ? JSON.parse(inner || '[]') : inner;
+            }
+            if (Array.isArray(arr)) {
+                for (var i = 0; i < arr.length; i++) {
+                    var c = arr[i] || {};
+                    if (c.type === 'switch' && Number(c.id) > 0) {
+                        checks.push({ type: 'switch', id: Number(c.id) });
+                    } else if (c.type === 'var' && Number(c.id) > 0) {
+                        checks.push({ type: 'var', id: Number(c.id), op: String(c.op || 'equal'), val: Number(c.val || 0) });
+                    }
+                }
+            }
+        } catch (e) { /* malformed Checks fall back to legacy fields */ }
+        // Legacy single extra variable and switch slots append as checks.
+        var extVId = Number(cond.ExtVarId || 0);
+        if (extVId > 0) {
+            checks.push({ type: 'var', id: extVId, op: String(cond.ExtVarOp || 'equal'), val: Number(cond.ExtVarVal || 0) });
+        }
+        for (var s = 1; s <= 3; s++) {
+            var swId = Number(cond['SwitchId' + s] || 0);
+            if (swId > 0) checks.push({ type: 'switch', id: swId });
+        }
+        return checks;
+    }
+
     var params = resolvePluginParams();
     var mainVarId = Number(params['VariableId'] || 1);
     var applyToActor = String(params['ApplyToActor'] || 'true') === 'true';
@@ -459,16 +509,17 @@
         if (extVId > 0 && watchedVars.indexOf(extVId) === -1) {
             watchedVars.push(extVId);
         }
+        var checks = normalizeChecks(cond);
+        for (var ci = 0; ci < checks.length; ci++) {
+            if (checks[ci].type === 'var' && watchedVars.indexOf(checks[ci].id) === -1) {
+                watchedVars.push(checks[ci].id);
+            }
+        }
 
         return {
             priority: Number(obj.Priority || 0),
             mainVal: Number(cond.MainValue !== undefined ? cond.MainValue : (obj.Value || 0)),
-            sw1: Number(cond.SwitchId1 || obj.SwitchId1 || 0),
-            sw2: Number(cond.SwitchId2 || obj.SwitchId2 || 0),
-            sw3: Number(cond.SwitchId3 || obj.SwitchId3 || 0),
-            extVarId: extVId,
-            extVarOp: String(cond.ExtVarOp || 'equal'),
-            extVarVal: Number(cond.ExtVarVal || 0),
+            checks: checks,
             name: String(vis.CharacterName || obj.CharacterName || '').trim(),
             index: Number(vis.CharacterIndex || obj.CharacterIndex || 0),
             sdsFrames: gFrames,
@@ -496,16 +547,17 @@
         if (extVId > 0 && watchedVars.indexOf(extVId) === -1) {
             watchedVars.push(extVId);
         }
+        var checks = normalizeChecks(cond);
+        for (var ci = 0; ci < checks.length; ci++) {
+            if (checks[ci].type === 'var' && watchedVars.indexOf(checks[ci].id) === -1) {
+                watchedVars.push(checks[ci].id);
+            }
+        }
 
         return {
             priority: Number(obj.Priority || 0),
             mainVal: Number(cond.MainValue !== undefined ? cond.MainValue : (obj.Value || 0)),
-            sw1: Number(cond.SwitchId1 || obj.SwitchId1 || 0),
-            sw2: Number(cond.SwitchId2 || obj.SwitchId2 || 0),
-            sw3: Number(cond.SwitchId3 || obj.SwitchId3 || 0),
-            extVarId: extVId,
-            extVarOp: String(cond.ExtVarOp || 'equal'),
-            extVarVal: Number(cond.ExtVarVal || 0),
+            checks: checks,
             name: String(vis.CharacterName || '').trim(),
             gridX: Number(vis.GridX || 0),
             gridY: Number(vis.GridY || 0),
@@ -550,15 +602,25 @@
         if (op === 'notEqual') return cur !== targetVal;
         return true;
     }
+    /** S32: every check in the list must pass (AND). */
+    function checkAll(checks) {
+        if (!checks || !checks.length) return true;
+        for (var i = 0; i < checks.length; i++) {
+            var c = checks[i];
+            if (c.type === 'switch') {
+                if (!checkSwitch(c.id)) return false;
+            } else if (c.type === 'var') {
+                if (!checkExtraVar(c.id, c.op, c.val)) return false;
+            }
+        }
+        return true;
+    }
 
     function findBestMatch(list) {
         var val = $gameVariables.value(mainVarId);
         var candidates = list.filter(function(m) {
             if (m.mainVal !== val && m.mainVal !== -1) return false;
-            if (!checkSwitch(m.sw1)) return false;
-            if (!checkSwitch(m.sw2)) return false;
-            if (!checkSwitch(m.sw3)) return false;
-            if (!checkExtraVar(m.extVarId, m.extVarOp, m.extVarVal)) return false;
+            if (!checkAll(m.checks)) return false;
             return true;
         });
         
@@ -1044,5 +1106,12 @@
         _Scene_Map_start.call(this);
         reevaluate();
     };
+
+    // Test seam (S32): expose the pure matching core for unit tests.
+    try {
+        var _export = { findBestMatch: findBestMatch, pickMapping: pickMapping, pickPose: pickPose, watchedVars: watchedVars, normalizeChecks: normalizeChecks };
+        if (typeof module !== 'undefined' && module.exports) module.exports = _export;
+        if (typeof window !== 'undefined' && !window.__SDS_TEST) window.__SDS_TEST = _export;
+    } catch (e) { /* runtime never lands here */ }
 
 })();

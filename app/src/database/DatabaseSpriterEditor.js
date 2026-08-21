@@ -433,73 +433,146 @@ class DatabaseSpriterEditor {
         return 'скинов';
     }
 
-    /** One-entry detail form (grid mode, S31): Визуал → Условия → Запись.
-     *  The player leads the Визуал section (live for skins/NPC, the static
-     *  cell for poses). onMeta() fires when the entry name changes so the
-     *  hosting header can update. Player lifecycle is owned by the CALLER. */
+    /** One-entry detail form (S32): превью → Название+Приоритет → файл →
+     *  детали анимации → Условия (конструктор проверок). Head shows only
+     *  the number + live condition summary - never the name (no doubles).
+     *  onMeta() re-renders the hosting grid card/header. */
     _renderEntryDetail(wrapper, entry, idx, kind, commit, onMeta) {
         const changed = () => commit();
         const retune = () => { if (onMeta) onMeta(); };
 
-        // --- Визуал first: section header + preview, then file/sheet ---
+        // --- Head: number + condition summary (S32: no name double) ---
         const vf = new InspectorForm();
-        vf.head((idx + 1) + '. ' + this._entryHeadline(entry, kind),
+        vf.head('#' + (idx + 1),
             kind === 'NPCMappings' ? 'Библиотека NPC — тег <sds:…>' : this._condSummary(entry));
-        vf.section(kind === 'PoseMappings' ? this._tt('Визуал позы')
-            : kind === 'NPCMappings' ? this._tt('Визуал') : this._tt('Визуал скина'));
         vf.mount(wrapper);
+
+        // --- Preview ---
         try {
             wrapper.appendChild(this._renderPlayer(entry, kind)); // static cell for poses
         } catch (e) { /* preview is optional */ }
+
+        // --- Название + Приоритет right under the graphics (S32) ---
+        const nf = new InspectorForm();
+        if (kind === 'NPCMappings') {
+            nf.row(this._tt('ID Название (тег)'), this._npcTagLine(entry, () => { changed(); retune(); }), this._tt('Писать в Note события: <sds:ЭтоИмя>'));
+        } else {
+            nf.row(this._tt('Название'), this._textField(entry.Name, {}, v => { entry.Name = v; changed(); retune(); }));
+            nf.row(this._tt('Приоритет'),
+                this._numberField(entry.Priority, { min: 0 }, v => { entry.Priority = v; changed(); }),
+                this._tt('При равных условиях побеждает запись с большим приоритетом'));
+        }
+        nf.mount(wrapper);
+
+        // --- File / sheet (the only visible "визуал" input) ---
         if (kind === 'PoseMappings') {
             this._renderPoseVisuals(wrapper, entry, changed);
         } else {
             this._renderSpriteVisuals(wrapper, entry, kind, changed);
         }
 
-        // --- Условия (skins/poses) ---
+        // --- Условия: MainValue + checks constructor (skins/poses) ---
         if (kind !== 'NPCMappings') {
             const cond = this._ensure(entry, 'Conditions', {});
+            const refreshHead = () => vf.setTitle('#' + (idx + 1));
+            const refreshSub = () => {
+                if (vf._headSubEl) vf._headSubEl.textContent = this._condSummary(entry);
+                retune();
+            };
             const cf = new InspectorForm();
             cf.section(this._tt('Условия'));
             cf.row(this._tt('Значение основной переменной'),
-                this._numberField(cond.MainValue, { min: -1 }, v => { cond.MainValue = v; changed(); }),
+                this._numberField(cond.MainValue, { min: -1 }, v => { cond.MainValue = v; changed(); refreshSub(); }),
                 this._tt('−1 = базовый скин/поза для всех неперехваченных значений'));
-            cf.row(this._tt('Свитч 1 (ВКЛ)'), this._numberField(cond.SwitchId1, { min: 0 }, v => { cond.SwitchId1 = v; changed(); }));
-            cf.row(this._tt('Свитч 2 (ВКЛ)'), this._numberField(cond.SwitchId2, { min: 0 }, v => { cond.SwitchId2 = v; changed(); }));
-            cf.row(this._tt('Свитч 3 (доигрывание)'), this._numberField(cond.SwitchId3, { min: 0 }, v => { cond.SwitchId3 = v; changed(); }),
-                this._tt('Пока ВКЛ — поза удерживается даже после смены значения переменной'));
-            const extLine = document.createElement('div');
-            extLine.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;';
-            extLine.appendChild(this._numberField(cond.ExtVarId, { min: 0 }, v => { cond.ExtVarId = v; changed(); }));
-            extLine.appendChild(this._selectField(cond.ExtVarOp || 'equal', [
-                { value: 'equal', label: '=' }, { value: 'greater', label: '>' },
-                { value: 'less', label: '<' }, { value: 'notEqual', label: '≠' }
-            ], v => { cond.ExtVarOp = v; changed(); }));
-            const evv = this._numberField(cond.ExtVarVal, { min: 0 }, v => { cond.ExtVarVal = v; changed(); });
-            evv.style.width = '84px';
-            extLine.appendChild(evv);
-            cf.row(this._tt('Доп. переменная'), extLine, this._tt('var id · операция · значение'));
             cf.mount(wrapper);
+            wrapper.appendChild(this._checksConstructor(cond, () => { changed(); refreshSub(); }));
         }
+    }
 
-        // --- Запись (metadata last) ---
-        const f = new InspectorForm();
-        f.section(kind === 'NPCMappings' ? this._tt('NPC') : this._tt('Запись'));
-        if (kind === 'NPCMappings') {
-            f.row(this._tt('ID Название (тег)'), this._npcTagLine(entry, () => { changed(); retune(); }), this._tt('Писать в Note события: <sds:ЭтоИмя>'));
-        } else {
-            f.row(this._tt('Название'), this._textField(entry.Name, {}, v => {
-                entry.Name = v;
-                changed();
-                vf.setTitle((idx + 1) + '. ' + this._entryHeadline(entry, kind));
-                retune();
-            }));
-            f.row(this._tt('Приоритет'),
-                this._numberField(entry.Priority, { min: 0 }, v => { entry.Priority = v; changed(); }),
-                this._tt('При равных условиях побеждает запись с большим приоритетом'));
+    /** S32: uniform checks list - [{type:'switch',id} | {type:'var',id,op,val}]
+     *  Legacy SwitchId1..3/ExtVarId fields migrate in on read. */
+    _condChecks(cond) {
+        let checks = [];
+        if (Array.isArray(cond.Checks)) {
+            checks = cond.Checks.filter(c => c && (c.type === 'switch' || c.type === 'var'));
+        } else if (typeof cond.Checks === 'string' && cond.Checks.trim()) {
+            try { checks = (JSON.parse(cond.Checks) || []).filter(c => c && (c.type === 'switch' || c.type === 'var')); }
+            catch (e) { checks = []; }
         }
-        f.mount(wrapper);
+        // legacy migrate (once the editor writes Checks, legacy slots clear)
+        for (let s = 1; s <= 3; s++) {
+            const id = Number(cond['SwitchId' + s] || 0);
+            if (id > 0) { checks.push({ type: 'switch', id }); delete cond['SwitchId' + s]; }
+        }
+        const ev = Number(cond.ExtVarId || 0);
+        if (ev > 0) {
+            checks.push({ type: 'var', id: ev, op: String(cond.ExtVarOp || 'equal'), val: Number(cond.ExtVarVal || 0) });
+            delete cond.ExtVarId; delete cond.ExtVarOp; delete cond.ExtVarVal;
+        }
+        cond.Checks = checks;
+        return checks;
+    }
+
+    /** Rows of checks + "+ Условие". Every row: type · id · op · val · ✕. */
+    _checksConstructor(cond, onChange) {
+        const K = this;
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'margin:2px 0 8px;';
+
+        const rebuild = () => {
+            wrap.innerHTML = '';
+            const checks = K._condChecks(cond);
+            for (const c of checks) {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;gap:6px;align-items:center;padding:4px 0;';
+                const typeSel = K._selectField(c.type, [
+                    { value: 'switch', label: 'Свитч ВКЛ' },
+                    { value: 'var', label: 'Переменная' }
+                ], v => { c.type = v; if (v === 'switch') delete c.op; else { c.op = c.op || 'equal'; c.val = c.val || 0; } cond.Checks = checks; onChange(); rebuild(); });
+                typeSel.style.flex = '0 0 130px';
+                row.appendChild(typeSel);
+                const idInp = K._numberField(c.id, { min: 1 }, v => { c.id = v; cond.Checks = checks; onChange(); });
+                idInp.style.flex = '0 0 76px';
+                row.appendChild(idInp);
+                if (c.type === 'var') {
+                    const opSel = K._selectField(c.op || 'equal', [
+                        { value: 'equal', label: '=' }, { value: 'greater', label: '>' },
+                        { value: 'less', label: '<' }, { value: 'notEqual', label: '≠' }
+                    ], v => { c.op = v; cond.Checks = checks; onChange(); });
+                    opSel.style.flex = '0 0 60px';
+                    row.appendChild(opSel);
+                    const valInp = K._numberField(c.val, {}, v => { c.val = v; cond.Checks = checks; onChange(); });
+                    valInp.style.flex = '0 0 84px';
+                    row.appendChild(valInp);
+                }
+                const del = document.createElement('button');
+                del.className = 'agonia-btn danger';
+                del.textContent = '✕';
+                del.title = 'Удалить условие';
+                del.addEventListener('click', () => {
+                    const i = checks.indexOf(c);
+                    if (i >= 0) checks.splice(i, 1);
+                    cond.Checks = checks;
+                    onChange();
+                    rebuild();
+                });
+                row.appendChild(del);
+                wrap.appendChild(row);
+            }
+            const add = document.createElement('button');
+            add.className = 'agonia-btn';
+            add.textContent = K._tt('+ Условие');
+            add.title = 'Новая проверка (И)';
+            add.addEventListener('click', () => {
+                checks.push({ type: 'switch', id: 1 });
+                cond.Checks = checks;
+                onChange();
+                rebuild();
+            });
+            wrap.appendChild(add);
+        };
+        rebuild();
+        return wrap;
     }
 
     _condSummary(entry) {
@@ -507,8 +580,11 @@ class DatabaseSpriterEditor {
         if (!cond) return '';
         const parts = [];
         parts.push(cond.MainValue === -1 ? 'базовый (−1)' : 'var=' + cond.MainValue);
-        for (const sw of [cond.SwitchId1, cond.SwitchId2]) if (Number(sw) > 0) parts.push('sw' + sw);
-        if (Number(cond.ExtVarId) > 0) parts.push('доп.var' + cond.ExtVarId + this._opLabel(cond.ExtVarOp) + cond.ExtVarVal);
+        const checks = this._condChecks ? this._condChecks(cond) : (cond.Checks || []);
+        for (const c of checks) {
+            if (c.type === 'switch') parts.push('sw' + c.id);
+            else parts.push('var' + c.id + this._opLabel(c.op) + c.val);
+        }
         return parts.join(' · ');
     }
 
@@ -659,25 +735,23 @@ class DatabaseSpriterEditor {
         const vis = this._ensure(entry, 'Visuals', {});
         const isNPC = kind === 'NPCMappings';
 
-        const fileRow = this._fieldLabel('Файл спрайта', 'img/characters/');
+        const fileRow = this._fieldLabel(isNPC ? 'Файл спрайта' : 'Файл и персонаж спрайта',
+            isNPC ? 'img/characters/' : '«Выбрать…» — файл и ячейку персонажа на листе');
         const line = document.createElement('div');
         line.style.cssText = 'display:flex;gap:6px;';
         const fileInput = this._textField(vis.CharacterName, { placeholder: 'имя файла без .png' }, v => { vis.CharacterName = v; });
         line.appendChild(fileInput);
-        const pickBtn = this._smallButton('Выбрать…', () => this._showFilePicker(vis.CharacterName, name => {
+        // S32: skins pick file AND character cell in the same two-step modal
+        // (pickCharacterIndex); NPC picks the file only. No index field.
+        const pickOpts = isNPC ? {} : { pickCharacterIndex: true };
+        line.appendChild(this._smallButton('Выбрать…', () => this._showFilePicker(vis.CharacterName, (name, index) => {
             vis.CharacterName = name;
+            if (!isNPC && index !== undefined) vis.CharacterIndex = index;
             fileInput.value = name;
             this._refreshPreview();
-        }));
-        line.appendChild(pickBtn);
+        }, 'characters', pickOpts)));
         fileRow.appendChild(line);
         panel.appendChild(fileRow);
-
-        if (!isNPC) {
-            const idxRow = this._fieldLabel('Индекс персонажа (0–7)', 'Клик по ячейке в превью листа');
-            idxRow.appendChild(this._numberField(vis.CharacterIndex, { min: 0, max: 7 }, v => { vis.CharacterIndex = v; this._refreshPreview(); }));
-            panel.appendChild(idxRow);
-        }
 
         // S31: fine animation tuning collapsed by default - most skins run
         // on sheet defaults (0 = авто). The player above shows the result.
