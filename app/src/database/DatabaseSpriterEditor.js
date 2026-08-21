@@ -433,15 +433,15 @@ class DatabaseSpriterEditor {
         return 'скинов';
     }
 
-    /** One-entry detail form (S33): превью → файл → Название+Приоритет →
+    /** One-entry detail form (S34): превью → файл → Название+Приоритет →
      *  ▸ Продвинутая анимация → ▸ Условия. Nothing renders above the
-     *  preview; the conditions summary lives in the collapsed details
-     *  caption. onMeta() re-renders the hosting grid card/header. */
+     *  preview; the preview panel is as wide as every other block.
+     *  onMeta() re-renders the hosting grid card/header. */
     _renderEntryDetail(wrapper, entry, idx, kind, commit, onMeta) {
         const changed = () => commit();
         const retune = () => { if (onMeta) onMeta(); };
 
-        // --- Preview (always a framed 360px panel; static cell for poses) ---
+        // --- Preview (framed panel, full column width like every block) ---
         try {
             wrapper.appendChild(this._renderPlayer(entry, kind));
         } catch (e) { /* preview is optional */ }
@@ -464,6 +464,11 @@ class DatabaseSpriterEditor {
                 this._tt('При равных условиях побеждает запись с большим приоритетом'));
         }
         nf.mount(wrapper);
+
+        // --- ▸ Продвинутая анимация (skins/NPC; poses have none) ---
+        if (kind !== 'PoseMappings') {
+            wrapper.appendChild(this._renderAdvancedAnimation(entry, kind));
+        }
 
         // --- ▸ Условия (collapsed, live summary in the caption) ---
         if (kind !== 'NPCMappings') {
@@ -739,23 +744,31 @@ class DatabaseSpriterEditor {
         const vis = this._ensure(entry, 'Visuals', {});
         const isNPC = kind === 'NPCMappings';
 
-        const fileRow = this._fieldLabel(isNPC ? 'Файл спрайта' : 'Файл и персонаж спрайта',
-            isNPC ? 'img/characters/' : '«Выбрать…» — файл и ячейку персонажа на листе');
+        // S34: bare file line right under the preview - no caption noise,
+        // the picker button is just «…» (title carries the explanation).
         const line = document.createElement('div');
         line.style.cssText = 'display:flex;gap:6px;';
         const fileInput = this._textField(vis.CharacterName, { placeholder: 'имя файла без .png' }, v => { vis.CharacterName = v; });
+        fileInput.style.flex = '1';
         line.appendChild(fileInput);
         // S32: skins pick file AND character cell in the same two-step modal
         // (pickCharacterIndex); NPC picks the file only. No index field.
         const pickOpts = isNPC ? {} : { pickCharacterIndex: true };
-        line.appendChild(this._smallButton('Выбрать…', () => this._showFilePicker(vis.CharacterName, (name, index) => {
+        const pickBtn = this._smallButton('…', () => this._showFilePicker(vis.CharacterName, (name, index) => {
             vis.CharacterName = name;
             if (!isNPC && index !== undefined) vis.CharacterIndex = index;
             fileInput.value = name;
             this._refreshPreview();
-        }, 'characters', pickOpts)));
-        fileRow.appendChild(line);
-        panel.appendChild(fileRow);
+        }));
+        pickBtn.title = isNPC ? this._tt('Выбрать файл спрайта') : this._tt('Выбрать файл и персонажа на листе');
+        line.appendChild(pickBtn);
+        panel.appendChild(line);
+    }
+
+    /** S34: the collapsed fine-tuning block, rendered AFTER Название/Приоритет. */
+    _renderAdvancedAnimation(entry, kind) {
+        const vis = this._ensure(entry, 'Visuals', {});
+        const isNPC = kind === 'NPCMappings';
 
         // S31: fine animation tuning collapsed by default - most skins run
         // on sheet defaults (0 = авто). The player above shows the result.
@@ -807,23 +820,25 @@ class DatabaseSpriterEditor {
             animRow.appendChild(this._textField(vis.AnimationIndices, { placeholder: 'например: 0,1,2,1' }, v => { vis.AnimationIndices = v; }));
             det.appendChild(animRow);
         }
-        panel.appendChild(det);
+        return det;
     }
 
     _renderPoseVisuals(panel, entry) {
         const vis = this._ensure(entry, 'Visuals', { GridX: 0, GridY: 0, Width: 48, Height: 48 });
 
-        const fileRow = this._fieldLabel('Файл спрайта', 'Пусто = вырезать позу из текущей графики героя');
+        // S34: bare file line - no caption noise, «…» button.
         const line = document.createElement('div');
         line.style.cssText = 'display:flex;gap:6px;';
-        const fileInput = this._textField(vis.CharacterName, { placeholder: 'имя файла без .png' }, v => { vis.CharacterName = v; });
+        const fileInput = this._textField(vis.CharacterName, { placeholder: 'имя файла (пусто = поза из графики героя)' }, v => { vis.CharacterName = v; });
+        fileInput.style.flex = '1';
         line.appendChild(fileInput);
-        line.appendChild(this._smallButton('Выбрать…', () => this._showFilePicker(vis.CharacterName, name => {
+        const pickBtn = this._smallButton('…', () => this._showFilePicker(vis.CharacterName, name => {
             vis.CharacterName = name;
             fileInput.value = name;
-        })));
-        fileRow.appendChild(line);
-        panel.appendChild(fileRow);
+        }));
+        pickBtn.title = this._tt('Выбрать файл спрайта');
+        line.appendChild(pickBtn);
+        panel.appendChild(line);
 
         const grid = document.createElement('div');
         grid.style.cssText = 'display:grid;grid-template-columns:repeat(4,1fr);gap:8px;';
@@ -1114,12 +1129,12 @@ class DatabaseSpriterEditor {
         const still = !!(entry && entry.Visuals && entry.Visuals.GridX !== undefined);
         // S33: grid cards stay bare (the card IS the frame); every form
         // preview - animated or static pose - renders in the SAME framed
-        // fixed-360px panel.
+        // panel. S34: full column width, identical to the other blocks.
         const wrap = mini ? document.createElement('div') : this._panel();
         if (mini) {
             wrap.style.cssText = 'display:flex;align-items:center;justify-content:center;';
         } else {
-            wrap.style.cssText = 'width:360px;box-sizing:border-box;padding:8px;';
+            wrap.style.cssText = 'width:100%;box-sizing:border-box;padding:8px;';
         }
 
         let state = { playing: true, frame: 0, tick: 0, img: null, url: '' };
