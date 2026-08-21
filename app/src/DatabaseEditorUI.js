@@ -423,10 +423,10 @@ class DatabaseEditorUI {
             this.showDatabaseViewer(tt('Инвентарь') + ' — ' + tt(current.label), data, current.key);
             this.setActiveDatabaseNav('inventory');
         } else {
-            const { detailEl } = this.prepareDatabaseSection('inventory', tt('Инвентарь') + ' — ' + tt(current.label), { showListPanel: false });
-            if (current.key === 'craft') this.craftEditor.showCraftDetail(detailEl);
-            else if (current.key === 'loot') this.lootEditor.showLootDetail(detailEl);
-            else this.giftsEditor.showGiftsDetail(detailEl);
+            // S26: craft/loot/gifts in the SAME classic list style as
+            // items/weapons/armors - the real #database-list-panel with the
+            // viewer chrome (search, Новый/Удалить, flat rows).
+            this._renderClassicSystemsTab(current.key);
         }
 
         // Full-width mode bar above everything. S23-hotfix: it must live in
@@ -441,6 +441,133 @@ class DatabaseEditorUI {
             bar.style.flex = '0 0 auto';
             main.insertBefore(bar, entries);
         }
+    }
+
+    /**
+     * S26: craft/loot/gifts rendered through the real classic-viewer
+     * containers (#database-list-panel + #database-detail) with the exact
+     * viewer chrome - search input, Новый/Удалить button bar, flat
+     * .database-list-item rows. Editors expose their MV collection and the
+     * single-entry form via classicApi().
+     */
+    _renderClassicSystemsTab(mode) {
+        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const labels = { craft: 'Крафт', loot: 'Лут', gifts: 'Подарки' };
+        const editors = { craft: this.craftEditor, loot: this.lootEditor, gifts: this.giftsEditor };
+        const api = editors[mode].classicApi();
+
+        const { listEl, detailEl } = this.prepareDatabaseSection('inventory', tt('Инвентарь') + ' — ' + tt(labels[mode]));
+
+        let entries = api.entries();
+        const commit = () => api.persist(entries);
+        let selectedIdx = -1;
+
+        // Search container - the exact viewer markup.
+        const searchContainer = document.createElement('div');
+        searchContainer.className = 'database-search-container';
+        searchContainer.style.cssText = 'padding: 8px; background-color: var(--color-bg-menubar); border-bottom: 1px solid var(--color-border); flex-shrink: 0;';
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.placeholder = this._t('db.search', { title: labels[mode] });
+        searchInput.style.cssText = 'width:100%;padding:6px 10px;background-color:var(--color-bg-panel);border:1px solid var(--color-border-input);border-radius:3px;color:var(--color-text);font-size:12px;box-sizing:border-box;';
+        searchInput.addEventListener('focus', () => {
+            searchInput.style.borderColor = 'var(--color-accent-border-strong)';
+            searchInput.style.outline = 'none';
+        });
+        searchInput.addEventListener('blur', () => { searchInput.style.borderColor = 'var(--color-border-input)'; });
+        searchContainer.appendChild(searchInput);
+        listEl.parentNode.insertBefore(searchContainer, listEl);
+
+        // Button bar - Новый / Удалить (the exact viewer markup).
+        const buttonBar = document.createElement('div');
+        buttonBar.className = 'database-button-bar';
+        buttonBar.style.cssText = 'display:flex;gap:4px;padding:6px 8px;background-color:var(--color-bg-menubar);border-bottom:1px solid var(--color-border);flex-shrink:0;';
+        const btnStyle = 'flex:1;padding:4px 8px;background-color:var(--color-bg-panel);color:var(--color-text);border:1px solid var(--color-border-input);border-radius:3px;cursor:pointer;font-size:11px;';
+        const addBtn = document.createElement('button');
+        addBtn.className = 'database-add-btn';
+        addBtn.textContent = this._t('common.new');
+        addBtn.style.cssText = btnStyle;
+        addBtn.onclick = () => {
+            entries.push(api.blank());
+            commit();
+            selectedIdx = entries.length - 1;
+            rebuild();
+            renderSelection();
+        };
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'database-delete-btn';
+        deleteBtn.textContent = this._t('common.delete');
+        deleteBtn.style.cssText = btnStyle;
+        deleteBtn.onclick = () => {
+            if (selectedIdx < 0 || !entries[selectedIdx]) { alert(this._t('db.selectEntryToDelete')); return; }
+            const name = api.label(entries[selectedIdx], selectedIdx);
+            if (!confirm(this._t('db.deleteConfirm', { name }))) return;
+            entries.splice(selectedIdx, 1);
+            commit();
+            selectedIdx = -1;
+            rebuild();
+            detailEl.innerHTML = this._selectEntryMarkup();
+        };
+        buttonBar.appendChild(addBtn);
+        buttonBar.appendChild(deleteBtn);
+        listEl.parentNode.insertBefore(buttonBar, searchContainer);
+
+        const renderSelection = () => {
+            if (selectedIdx < 0 || !entries[selectedIdx]) {
+                detailEl.innerHTML = this._selectEntryMarkup();
+                return;
+            }
+            try {
+                api.renderDetail(detailEl, entries[selectedIdx], selectedIdx, commit);
+            } catch (e) {
+                const box = document.createElement('div');
+                box.style.cssText = 'margin:12px;padding:10px 14px;border:1px solid var(--color-danger,#b33);border-radius:4px;background:rgba(179,51,51,.12);font-size:12px;';
+                box.textContent = String((e && e.stack) || e).split('\n')[0];
+                detailEl.innerHTML = '';
+                detailEl.appendChild(box);
+            }
+        };
+
+        const rebuild = () => {
+            listEl.innerHTML = '';
+            const q = searchInput.value.trim().toLowerCase();
+            const visible = entries.map((e, i) => [e, i])
+                .filter(([e, i]) => !q || (String(api.label(e, i) || '') + ' ' + String(api.search(e) || '')).toLowerCase().includes(q));
+            if (!visible.length) {
+                const empty = document.createElement('div');
+                empty.style.cssText = 'color:var(--color-text-muted);text-align:center;padding:24px 0;font-size:12px;';
+                empty.textContent = q ? tt('Ничего не найдено') : tt('Записей нет — нажмите «Новый»');
+                listEl.appendChild(empty);
+                return;
+            }
+            for (const [entry, idx] of visible) {
+                const item = document.createElement('div');
+                item.className = 'database-list-item' + (idx === selectedIdx ? ' selected' : '');
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'database-list-name';
+                nameSpan.textContent = api.label(entry, idx);
+                const idSpan = document.createElement('span');
+                idSpan.className = 'database-list-id';
+                idSpan.textContent = '#' + (idx + 1);
+                item.appendChild(nameSpan);
+                item.appendChild(idSpan);
+                item.addEventListener('click', () => {
+                    selectedIdx = idx;
+                    rebuild();
+                    renderSelection();
+                });
+                listEl.appendChild(item);
+            }
+        };
+
+        searchInput.addEventListener('input', () => {
+            selectedIdx = -1;
+            rebuild();
+            detailEl.innerHTML = this._selectEntryMarkup();
+        });
+
+        rebuild();
+        detailEl.innerHTML = this._selectEntryMarkup();
     }
 
     /**

@@ -403,30 +403,30 @@ class AgoniaCardEditorBase {
 // ======================================================================
 
 class DatabaseCraftEditor extends AgoniaCardEditorBase {
-    showCraftDetail(container) {
+    /**
+     * S26: the Инвентарь tab drives the classic list panel itself; the
+     * editor only exposes the MV collection plus the single-entry form.
+     */
+    classicApi() {
         const section = this.getSection('craft');
-        const entries = AgoniaCardEditorBase.decodeCollection(section['Recipes']);
-        const persist = () => { section['Recipes'] = AgoniaCardEditorBase.encodeCollection(entries); };
-
-        new MasterDetailShell({
-            items: entries,
-            searchText: r => [this._itemName(r.ResultItemID), r.ResultItemID].join(' '),
-            addLabel: 'Добавить рецепт',
+        const K = AgoniaCardEditorBase;
+        return {
+            entries: () => K.decodeCollection(section['Recipes']),
+            persist: list => { section['Recipes'] = K.encodeCollection(list); },
             blank: () => ({ ResultItemID: '1', Ingredients: '[]' }),
-            onChanged: persist,
-            title: (r, i) => (i + 1) + '. ' + this._itemName(r.ResultItemID),
-            summary: r => AgoniaCardEditorBase.decodeNested(r.Ingredients).length + ' ' + this._tt('ингредиентов'),
-            renderForm: (formCol, entry, idx, api) => {
+            label: e => this._itemName(e.ResultItemID),
+            search: e => [this._itemName(e.ResultItemID), e.ResultItemID].join(' '),
+            renderDetail: (detailEl, entry, idx, commit) => {
                 const f = new InspectorForm();
                 f.head((idx + 1) + '. ' + this._itemName(entry.ResultItemID),
-                    AgoniaCardEditorBase.decodeNested(entry.Ingredients).length + ' ингредиентов');
+                    K.decodeNested(entry.Ingredients).length + ' ' + this._tt('ингредиентов'));
                 f.row(this._tt('Результат'),
-                    this._select(this.itemOptions('item'), entry.ResultItemID, v => { entry.ResultItemID = v; api.changed(); }),
+                    this._select(this.itemOptions('item'), entry.ResultItemID, v => { entry.ResultItemID = v; commit(); }),
                     this._tt('Предмет, создаваемый рецептом'));
-                f.mount(formCol);
-                formCol.appendChild(this._ingredientsTable(entry));
+                f.mount(detailEl);
+                detailEl.appendChild(this._ingredientsTable(entry, commit));
             }
-        }).mount(container);
+        };
     }
 
     _itemName(id) {
@@ -435,10 +435,10 @@ class DatabaseCraftEditor extends AgoniaCardEditorBase {
         return it && it.name ? it.name : ('#' + (id || '?'));
     }
 
-    _ingredientsTable(entry) {
+    _ingredientsTable(entry, commit) {
         const K = AgoniaCardEditorBase;
         const list = K.decodeNested(entry.Ingredients); // string item IDs, NOT objects
-        const persist = () => { entry.Ingredients = K.encodeNested(list); };
+        const persist = () => { entry.Ingredients = K.encodeNested(list); if (commit) commit(); };
         const wrap = this._div('padding:4px 0 0;');
 
         wrap.appendChild(this._sectionTitle('Ингредиенты'));
@@ -456,9 +456,9 @@ class DatabaseCraftEditor extends AgoniaCardEditorBase {
                     this._tt('ID предмета, из которого собирается крафт'));
                 f.mount(box);
             },
-            onAdd: () => { list.push('1'); persist(); wrap.replaceWith(this._ingredientsTable(entry)); },
+            onAdd: () => { list.push('1'); persist(); wrap.replaceWith(this._ingredientsTable(entry, commit)); },
             addLabel: '+ Ингредиент',
-            onRemove: idx => { list.splice(idx, 1); persist(); wrap.replaceWith(this._ingredientsTable(entry)); },
+            onRemove: idx => { list.splice(idx, 1); persist(); wrap.replaceWith(this._ingredientsTable(entry, commit)); },
             onChanged: persist
         }).mount(wrap);
         return wrap;
@@ -663,34 +663,31 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
 // ======================================================================
 
 class DatabaseLootEditor extends AgoniaCardEditorBase {
-    showLootDetail(container) {
+    /** S26: classic list panel API (see DatabaseCraftEditor.classicApi). */
+    classicApi() {
         const section = this.getSection('loot');
-        const entries = AgoniaCardEditorBase.decodeCollection(section['Categories']);
-        const persist = () => { section['Categories'] = AgoniaCardEditorBase.encodeCollection(entries); };
-
-        new MasterDetailShell({
-            items: entries,
-            searchText: r => [r.Name].join(' '),
-            addLabel: 'Добавить категорию',
+        const K = AgoniaCardEditorBase;
+        return {
+            entries: () => K.decodeCollection(section['Categories']),
+            persist: list => { section['Categories'] = K.encodeCollection(list); },
             blank: () => ({ Name: 'Новая', Items: '[]' }),
-            onChanged: persist,
-            title: (r, i) => (i + 1) + '. ' + (r.Name || '—'),
-            summary: r => AgoniaCardEditorBase.decodeNested(r.Items).length + ' ' + this._tt('предметов'),
-            renderForm: (formCol, entry, idx, api) => {
+            label: e => e.Name || '—',
+            search: e => [e.Name].join(' '),
+            renderDetail: (detailEl, entry, idx, commit) => {
                 const f = new InspectorForm();
                 f.head((idx + 1) + '. ' + (entry.Name || '—'),
-                    AgoniaCardEditorBase.decodeNested(entry.Items).length + ' предметов в пуле');
-                f.field({ key: 'Name', label: 'Имя категории', type: 'text', hint: 'Нативы 720 (выдать) и 724 (наполнить сундук) выбирают категорию по нему' }, entry, () => api.changed());
-                f.mount(formCol);
-                formCol.appendChild(this._lootItemsTable(entry));
+                    K.decodeNested(entry.Items).length + ' ' + this._tt('предметов в пуле'));
+                f.field({ key: 'Name', label: 'Имя категории', type: 'text', hint: 'Нативы 720 (выдать) и 724 (наполнить сундук) выбирают категорию по нему' }, entry, commit);
+                f.mount(detailEl);
+                detailEl.appendChild(this._lootItemsTable(entry, commit));
             }
-        }).mount(container);
+        };
     }
 
-    _lootItemsTable(entry) {
+    _lootItemsTable(entry, commit) {
         const K = AgoniaCardEditorBase;
         const items = K.decodeNested(entry.Items);
-        const persist = () => { entry.Items = K.encodeNested(items); };
+        const persist = () => { entry.Items = K.encodeNested(items); if (commit) commit(); };
         const wrap = this._div('padding:4px 0 0;');
 
         wrap.appendChild(this._sectionTitle('Предметы пула'));
@@ -703,9 +700,9 @@ class DatabaseLootEditor extends AgoniaCardEditorBase {
                 { label: 'Вес (шанс)', key: 'Price', type: 'number', align: 'right', width: '110px' },
                 { label: 'Размер (кол-во)', key: 'Size', type: 'number', align: 'right', width: '120px' }
             ],
-            onAdd: () => { items.push({ ItemId: '1', Price: 1, Size: 1 }); persist(); wrap.replaceWith(this._lootItemsTable(entry)); },
+            onAdd: () => { items.push({ ItemId: '1', Price: 1, Size: 1 }); persist(); wrap.replaceWith(this._lootItemsTable(entry, commit)); },
             addLabel: '+ Предмет',
-            onRemove: idx => { items.splice(idx, 1); persist(); wrap.replaceWith(this._lootItemsTable(entry)); },
+            onRemove: idx => { items.splice(idx, 1); persist(); wrap.replaceWith(this._lootItemsTable(entry, commit)); },
             onChanged: persist
         }).mount(wrap);
         return wrap;
@@ -717,43 +714,39 @@ class DatabaseLootEditor extends AgoniaCardEditorBase {
 // ======================================================================
 
 class DatabaseGiftsEditor extends AgoniaCardEditorBase {
-    showGiftsDetail(container) {
+    /** S26: classic list panel API (see DatabaseCraftEditor.classicApi). */
+    classicApi() {
         const section = this.getSection('gifts');
-        const entries = AgoniaCardEditorBase.decodeCollection(section['Characters']);
-        const persist = () => { section['Characters'] = AgoniaCardEditorBase.encodeCollection(entries); };
-
-        new MasterDetailShell({
-            items: entries,
-            searchText: r => [r.Id, r.VariableId].join(' '),
-            addLabel: 'Добавить персонажа',
+        const K = AgoniaCardEditorBase;
+        return {
+            entries: () => K.decodeCollection(section['Characters']),
+            persist: list => { section['Characters'] = K.encodeCollection(list); },
             blank: () => ({
                 Id: 'Новый', VariableId: 0, SpecificItems: '[]', TagSettings: '[]',
                 DisallowedItems: '[]', DisallowedTags: '[]', DefaultPoints: 1
             }),
-            onChanged: persist,
-            title: (r, i) => (i + 1) + '. ' + (r.Id || '—'),
-            summary: r => 'var ' + r.VariableId + ' · ' + (r.DefaultPoints || 0) + ' ' + this._tt('очков'),
-            renderForm: (formCol, entry, idx, api) => {
-                const changed = () => api.changed();
+            label: e => e.Id || '—',
+            search: e => [e.Id, e.VariableId].join(' '),
+            renderDetail: (detailEl, entry, idx, commit) => {
                 const f = new InspectorForm();
                 f.head((idx + 1) + '. ' + (entry.Id || '—'), 'var ' + entry.VariableId + ' · натив 751');
                 f.section(this._tt('Персонаж'));
-                f.field({ key: 'Id', label: 'Имя персонажа (ID)', type: 'text' }, entry, changed);
-                f.field({ key: 'VariableId', label: 'Переменная', type: 'number' }, entry, changed);
-                f.field({ key: 'DefaultPoints', label: 'Очки по умолчанию', type: 'number' }, entry, changed);
-                f.mount(formCol);
+                f.field({ key: 'Id', label: 'Имя персонажа (ID)', type: 'text' }, entry, commit);
+                f.field({ key: 'VariableId', label: 'Переменная', type: 'number' }, entry, commit);
+                f.field({ key: 'DefaultPoints', label: 'Очки по умолчанию', type: 'number' }, entry, commit);
+                f.mount(detailEl);
 
-                formCol.appendChild(this._giftItemsTable(entry, changed));
-                formCol.appendChild(this._giftTagsTable(entry, changed));
-                formCol.appendChild(this._giftDisallowed(entry));
+                detailEl.appendChild(this._giftItemsTable(entry, commit));
+                detailEl.appendChild(this._giftTagsTable(entry, commit));
+                detailEl.appendChild(this._giftDisallowed(entry, commit));
             }
-        }).mount(container);
+        };
     }
 
-    _giftItemsTable(entry, changed) {
+    _giftItemsTable(entry, commit) {
         const K = AgoniaCardEditorBase;
         const list = K.decodeNested(entry.SpecificItems);
-        const persist = () => { entry.SpecificItems = K.encodeNested(list); changed(); };
+        const persist = () => { entry.SpecificItems = K.encodeNested(list); if (commit) commit(); };
         const wrap = this._div('padding:4px 0 0;');
         wrap.appendChild(this._sectionTitle('Любимые предметы (очки)'));
         const itemOpts = this.itemOptions('item').map(o => [o.value, o.label]);
@@ -764,18 +757,18 @@ class DatabaseGiftsEditor extends AgoniaCardEditorBase {
                 { label: 'Предмет', key: 'ItemId', type: 'select', options: itemOpts },
                 { label: 'Очки', key: 'Points', type: 'number', align: 'right', width: '100px' }
             ],
-            onAdd: () => { list.push({ ItemId: '1', Points: 10 }); persist(); wrap.replaceWith(this._giftItemsTable(entry, changed)); },
+            onAdd: () => { list.push({ ItemId: '1', Points: 10 }); persist(); wrap.replaceWith(this._giftItemsTable(entry, commit)); },
             addLabel: '+ Предмет',
-            onRemove: idx => { list.splice(idx, 1); persist(); wrap.replaceWith(this._giftItemsTable(entry, changed)); },
+            onRemove: idx => { list.splice(idx, 1); persist(); wrap.replaceWith(this._giftItemsTable(entry, commit)); },
             onChanged: persist
         }).mount(wrap);
         return wrap;
     }
 
-    _giftTagsTable(entry, changed) {
+    _giftTagsTable(entry, commit) {
         const K = AgoniaCardEditorBase;
         const list = K.decodeNested(entry.TagSettings);
-        const persist = () => { entry.TagSettings = K.encodeNested(list); changed(); };
+        const persist = () => { entry.TagSettings = K.encodeNested(list); if (commit) commit(); };
         const wrap = this._div('padding:4px 0 0;');
         wrap.appendChild(this._sectionTitle('Множители тегов'));
         new DataTable({
@@ -785,15 +778,15 @@ class DatabaseGiftsEditor extends AgoniaCardEditorBase {
                 { label: 'Тег', key: 'Tag', type: 'text' },
                 { label: 'Множитель', key: 'Multiplier', type: 'number', align: 'right', width: '110px' }
             ],
-            onAdd: () => { list.push({ Tag: '', Multiplier: 2 }); persist(); wrap.replaceWith(this._giftTagsTable(entry, changed)); },
+            onAdd: () => { list.push({ Tag: '', Multiplier: 2 }); persist(); wrap.replaceWith(this._giftTagsTable(entry, commit)); },
             addLabel: '+ Тег',
-            onRemove: idx => { list.splice(idx, 1); persist(); wrap.replaceWith(this._giftTagsTable(entry, changed)); },
+            onRemove: idx => { list.splice(idx, 1); persist(); wrap.replaceWith(this._giftTagsTable(entry, commit)); },
             onChanged: persist
         }).mount(wrap);
         return wrap;
     }
 
-    _giftDisallowed(entry) {
+    _giftDisallowed(entry, commit) {
         const K = AgoniaCardEditorBase;
         const f = new InspectorForm();
         f.section('Запрещённое');
@@ -818,10 +811,12 @@ class DatabaseGiftsEditor extends AgoniaCardEditorBase {
             inputs[0].addEventListener('input', () => {
                 entry.DisallowedItems = K.encodeNested(
                     inputs[0].value.split(',').map(s => s.trim()).filter(Boolean));
+                if (commit) commit();
             });
             inputs[1].addEventListener('input', () => {
                 entry.DisallowedTags = K.encodeNested(
                     inputs[1].value.split(',').map(s => s.trim()).filter(Boolean));
+                if (commit) commit();
             });
         }
         return wrap;
