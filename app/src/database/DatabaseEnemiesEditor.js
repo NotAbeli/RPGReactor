@@ -77,47 +77,13 @@ class DatabaseEnemiesEditor {
         this.renderInto(content);
     }
 
-    /** Content without the banner - embedded as the Battle tab's Враги (S21). */
+    /** Content without the banner - embedded as the Battle tab's ИИ Врагов
+     *  sub-tab. Same master-detail layout as the other battle sub-tabs (S23):
+     *  list left, inspector right, globals as the pinned first row. */
     renderInto(container) {
         const enemies = this.getEnemies();
         container.innerHTML = '';
-
-        // S20: two columns - enemy master-detail left, globals right (sticky).
-        const layout = document.createElement('div');
-        layout.style.cssText = 'display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;padding-top:8px;';
-        container.appendChild(layout);
-
-        const left = document.createElement('div');
-        left.style.cssText = 'flex:1 1 560px;min-width:0;';
-        layout.appendChild(left);
-
-        const right = document.createElement('div');
-        right.style.cssText = 'flex:0 0 360px;position:sticky;top:8px;';
-        layout.appendChild(right);
-
-        // --- Enemies (master-detail, left) ---
-        const eTitle = document.createElement('div');
-        eTitle.className = 'agonia-section-header';
-        eTitle.style.cssText = 'padding:8px 0 2px;';
-        eTitle.textContent = this._tt('Враги (EnemyDatabase)');
-        left.appendChild(eTitle);
-        const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:11px;color:var(--color-text-dim);padding:0 0 8px;line-height:1.4;';
-        hint.textContent = this._tt('match — тег в Note события; сенсоры в тайлах.');
-        left.appendChild(hint);
-
-        const host = document.createElement('div');
-        host.style.cssText = 'height:640px;';
-        left.appendChild(host);
-        this._renderEnemies(host, enemies);
-
-        // --- Globals (inspector, right) ---
-        const gTitle = document.createElement('div');
-        gTitle.className = 'agonia-section-header';
-        gTitle.style.cssText = 'padding:8px 0 2px;';
-        gTitle.textContent = this._tt('Глобальные настройки');
-        right.appendChild(gTitle);
-        this._renderGlobals(right, enemies);
+        this._renderEnemies(container, enemies);
     }
 
     _stdBanner(title, subtitle) {
@@ -140,6 +106,8 @@ class DatabaseEnemiesEditor {
 
     _renderGlobals(host, enemies) {
         const form = new InspectorForm();
+        form.head(this._tt('Глобальные настройки'), this._tt('Общий движок ИИ всех врагов'));
+        form.section(this._tt('Движок ИИ'));
         const engine = [
             ['TickRate', 'Обновление ИИ (раз в N кадров)', 'number'],
             ['VariableBaseId', 'Базовая переменная', 'number'],
@@ -178,7 +146,12 @@ class DatabaseEnemiesEditor {
             title: (r, i) => '#' + (i + 1) + ' ' + (r.match || '—') + ' · HP ' + (r.hp || '?'),
             summary: r => 'атака R' + (r.attackRadius || '?') + ' · слух R' + (r.hearingRadius || '?') +
                 ' · правил: ' + K.decodeCollection(r.customRules).length,
-            renderForm: (formCol, entry, idx, api) => this._renderEnemyInspector(formCol, entry, idx, api)
+            renderForm: (formCol, entry, idx, api) => this._renderEnemyInspector(formCol, entry, idx, api),
+            pinned: {
+                title: '⚙ Глобальные настройки',
+                summary: 'Движок ИИ · переменные · условия оружия',
+                render: (formCol) => this._renderGlobals(formCol, enemies)
+            }
         });
         shell.mount(host);
     }

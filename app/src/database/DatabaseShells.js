@@ -28,6 +28,9 @@ class MasterDetailShell {
      * opts.searchText   - (record) => searchable text (optional)
      * opts.addLabel     - button caption (default 'Добавить')
      * opts.thumb        - (record) => {url, letter} mini-thumb for list rows (optional)
+     * opts.pinned       - {title, summary, render(formCol, api)} always-first
+     *                     fixed list row (e.g. ⚙ globals); selecting it renders
+     *                     the pinned form; dup/del act on real records only.
      */
     constructor(opts) {
         this.o = Object.assign({ addLabel: 'Добавить' }, opts);
@@ -84,11 +87,38 @@ class MasterDetailShell {
             border-radius: 4px; padding: 6px; min-height: 0;
         `;
         const visible = this.visibleItems;
+        const noneLabel = visible.length === o.items.length && o.items.length
+            ? 'Ничего не найдено' : 'Записей нет';
+        if (o.pinned) {
+            const prow = document.createElement('div');
+            prow.className = 'agonia-md-item' + (this.selectedIdx === -1 ? ' active' : '');
+            prow.style.cssText = `
+                padding: 6px 8px; border-radius: 3px; cursor: pointer;
+                border: 1px solid ${this.selectedIdx === -1 ? 'var(--color-accent-border-mid)' : 'var(--color-border)'};
+                background-color: ${this.selectedIdx === -1 ? 'var(--color-bg-deep)' : 'var(--color-bg-panel)'};
+                margin-bottom: 6px;
+            `;
+            const pt = document.createElement('div');
+            pt.style.cssText = 'font-size:12px;font-weight:600;color:var(--color-text-strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+            pt.textContent = o.pinned.title || '⚙';
+            prow.appendChild(pt);
+            if (o.pinned.summary) {
+                const ps = document.createElement('div');
+                ps.style.cssText = 'font-size:10px;color:var(--color-text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+                ps.textContent = String(o.pinned.summary || '');
+                prow.appendChild(ps);
+            }
+            prow.addEventListener('click', () => {
+                this.selectedIdx = -1;
+                this._renderList();
+                this._renderSelection();
+            });
+            list.appendChild(prow);
+        }
         if (!visible.length) {
             const empty = document.createElement('div');
             empty.style.cssText = 'color:var(--color-text-muted);text-align:center;padding:18px 4px;font-size:12px;';
-            empty.textContent = visible.length === o.items.length && o.items.length
-                ? 'Ничего не найдено' : 'Записей нет';
+            empty.textContent = o.pinned ? 'Записей нет' : noneLabel;
             list.appendChild(empty);
         }
         for (const [item, idx] of visible) {
@@ -158,7 +188,7 @@ class MasterDetailShell {
         dup.title = 'Дублировать';
         dup.textContent = '⧉';
         dup.addEventListener('click', () => {
-            if (!o.items.length) return;
+            if (this.selectedIdx === -1 || !o.items.length) return;
             const rec = JSON.parse(JSON.stringify(o.items[this.selectedIdx]));
             o.items.splice(this.selectedIdx + 1, 0, rec);
             this.selectedIdx++;
@@ -173,7 +203,7 @@ class MasterDetailShell {
         del.title = 'Удалить';
         del.textContent = '−';
         del.addEventListener('click', () => {
-            if (!o.items.length) return;
+            if (this.selectedIdx === -1 || !o.items.length) return;
             o.items.splice(this.selectedIdx, 1);
             this.selectedIdx = Math.max(0, this.selectedIdx - 1);
             o.onChanged(o.items);
@@ -187,7 +217,24 @@ class MasterDetailShell {
     _renderSelection() {
         this.formCol.innerHTML = '';
         const o = this.o;
+        if (this.selectedIdx === -1 && o.pinned) {
+            try {
+                o.pinned.render(this.formCol, {
+                    refreshList: () => this._renderList(),
+                    changed: () => {}
+                });
+            } catch (e) {
+                this._formError(e);
+            }
+            return;
+        }
         if (!o.items.length) {
+            if (o.pinned) {
+                // keep the globals form visible when the list is empty
+                this.selectedIdx = -1;
+                this._renderList();
+                return this._renderSelection();
+            }
             const empty = document.createElement('div');
             empty.style.cssText = 'color:var(--color-text-muted);text-align:center;padding:60px 0;font-size:13px;';
             empty.textContent = 'Выберите запись слева или добавьте новую';
@@ -202,18 +249,22 @@ class MasterDetailShell {
                 changed: () => o.onChanged(o.items)
             });
         } catch (e) {
-            const box = document.createElement('div');
-            box.style.cssText = 'margin:12px 0;padding:10px 14px;border:1px solid var(--color-danger,#b33);border-radius:4px;background:rgba(179,51,51,.12);font-size:12px;line-height:1.5;';
-            const t = document.createElement('div');
-            t.style.fontWeight = '700';
-            t.textContent = 'Ошибка отрисовки формы:';
-            box.appendChild(t);
-            const d = document.createElement('div');
-            d.style.cssText = 'font-family:var(--font-mono,monospace);white-space:pre-wrap;color:var(--color-text-dim);';
-            d.textContent = String((e && e.stack) || e).split('\n').slice(0, 4).join('\n');
-            box.appendChild(d);
-            this.formCol.appendChild(box);
+            this._formError(e);
         }
+    }
+
+    _formError(e) {
+        const box = document.createElement('div');
+        box.style.cssText = 'margin:12px 0;padding:10px 14px;border:1px solid var(--color-danger,#b33);border-radius:4px;background:rgba(179,51,51,.12);font-size:12px;line-height:1.5;';
+        const t = document.createElement('div');
+        t.style.fontWeight = '700';
+        t.textContent = 'Ошибка отрисовки формы:';
+        box.appendChild(t);
+        const d = document.createElement('div');
+        d.style.cssText = 'font-family:var(--font-mono,monospace);white-space:pre-wrap;color:var(--color-text-dim);';
+        d.textContent = String((e && e.stack) || e).split('\n').slice(0, 4).join('\n');
+        box.appendChild(d);
+        this.formCol.appendChild(box);
     }
 }
 

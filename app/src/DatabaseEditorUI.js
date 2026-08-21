@@ -144,9 +144,10 @@ class DatabaseEditorUI {
     cleanupDatabaseListChrome() {
         const listEl = document.getElementById('database-list');
         const parent = listEl?.parentNode;
-        if (!parent) return;
 
-        parent.querySelectorAll('.database-search-container, .database-button-bar, .database-list-pager, .database-change-max-btn, .inventory-mode-switch').forEach(el => el.remove());
+        parent?.querySelectorAll('.database-search-container, .database-button-bar, .database-list-pager, .database-change-max-btn, .inventory-mode-switch').forEach(el => el.remove());
+        // S23: the unified Инвентарь top bar lives above the entries content.
+        document.querySelectorAll('.database-entries-content > .inventory-mode-switch').forEach(el => el.remove());
 
         if (this._listKeyHandler) {
             document.removeEventListener('keydown', this._listKeyHandler);
@@ -345,15 +346,16 @@ class DatabaseEditorUI {
                 return;
             }
             case 'items': {
-                // S17: the items DB tab (items/weapons/armors) with a
-                // sub-mode switcher over the three existing editors.
-                this.showInventoryTab('items');
+                // S23: merged into the unified Инвентарь tab.
+                this.showInventoryUnifiedTab('items');
                 return;
             }
             case 'invSystems': {
-                // S17: the in-game inventory SYSTEMS tab: craft + loot +
-                // gifts as sub-tabs over the S15 card editors.
-                this.showInventorySystemsTab('craft');
+                this.showInventoryUnifiedTab('craft');
+                return;
+            }
+            case 'inventory': {
+                this.showInventoryUnifiedTab('items');
                 return;
             }
             case 'spriter': {
@@ -368,7 +370,7 @@ class DatabaseEditorUI {
                 this.battleEditor.showBattleDetail(detailEl);
                 return;
             }
-            // 'enemyAI' lives inside Бой as the Враги (ИИ) sub-tab since S21;
+            // 'enemyAI' lives inside Бой as the ИИ Врагов sub-tab since S21;
             // openDatabase('enemyAI') redirects there for old bookmarks/menus.
             case 'enemyAI': {
                 this.openDatabase('battle');
@@ -396,59 +398,43 @@ class DatabaseEditorUI {
     }
 
     /**
-     * S14 merged Inventory tab: items/weapons/armors share one navigation
-     * entry with a sub-mode switcher over the three existing editors.
+     * S23: the unified «Инвентарь» tab - items/weapons/armors (classic
+     * list+detail editors) AND craft/loot/gifts (master-detail editors)
+     * behind one full-width 6-button mode bar, same look as «Система».
      */
-    showInventoryTab(mode) {
-        // S17: renamed items tab - only the three database editors remain;
-        // loot/gifts moved to the Инвентарь systems tab.
+    showInventoryUnifiedTab(mode) {
         const tt = text => window.I18n ? window.I18n.tText(text) : text;
         const modes = [
             { key: 'items', label: 'Предметы' },
             { key: 'weapons', label: 'Оружие' },
-            { key: 'armors', label: 'Броня' }
-        ];
-        const current = modes.find(m => m.key === mode) || modes[0];
-
-        const data = current.key === 'items' ? this.databaseManager.getItems()
-            : current.key === 'weapons' ? this.databaseManager.getWeapons()
-            : this.databaseManager.getArmors();
-
-        this.showInventoryList = current.key;
-        this.showDatabaseViewer(tt('Предметы') + ' — ' + tt(current.label), data, current.key);
-        this.setActiveDatabaseNav('items');
-
-        const listEl = document.getElementById('database-list');
-        const listPanelEl = document.getElementById('database-list-panel');
-        if (!listEl || !listPanelEl || listPanelEl.querySelector('.inventory-mode-switch')) return;
-        listPanelEl.insertBefore(this._inventoryModeBar(modes, current.key, key => this.showInventoryTab(key)), listEl);
-    }
-
-    /**
-     * S17: the in-game inventory systems tab - craft recipes, loot
-     * categories and gift characters as sub-tabs (S15 card editors).
-     */
-    showInventorySystemsTab(mode) {
-        const tt = text => window.I18n ? window.I18n.tText(text) : text;
-        const modes = [
+            { key: 'armors', label: 'Броня' },
             { key: 'craft', label: 'Крафт' },
             { key: 'loot', label: 'Лут' },
             { key: 'gifts', label: 'Подарки' }
         ];
         const current = modes.find(m => m.key === mode) || modes[0];
 
-        const { detailEl } = this.prepareDatabaseSection('invSystems', tt('Инвентарь') + ' — ' + tt(current.label), { showListPanel: false });
-        const wrap = document.createElement('div');
-        wrap.style.cssText = 'display:flex;flex-direction:column;height:100%;';
-        wrap.appendChild(this._inventoryModeBar(modes, current.key, key => this.showInventorySystemsTab(key)));
-        const body = document.createElement('div');
-        body.style.cssText = 'flex:1;overflow:auto;padding:0 16px 16px;';
-        wrap.appendChild(body);
-        detailEl.appendChild(wrap);
+        if (current.key === 'items' || current.key === 'weapons' || current.key === 'armors') {
+            const data = current.key === 'items' ? this.databaseManager.getItems()
+                : current.key === 'weapons' ? this.databaseManager.getWeapons()
+                : this.databaseManager.getArmors();
+            this.showInventoryList = current.key;
+            this.showDatabaseViewer(tt('Инвентарь') + ' — ' + tt(current.label), data, current.key);
+            this.setActiveDatabaseNav('inventory');
+        } else {
+            const { detailEl } = this.prepareDatabaseSection('inventory', tt('Инвентарь') + ' — ' + tt(current.label), { showListPanel: false });
+            if (current.key === 'craft') this.craftEditor.showCraftDetail(detailEl);
+            else if (current.key === 'loot') this.lootEditor.showLootDetail(detailEl);
+            else this.giftsEditor.showGiftsDetail(detailEl);
+        }
 
-        if (current.key === 'craft') this.craftEditor.showCraftDetail(body);
-        else if (current.key === 'loot') this.lootEditor.showLootDetail(body);
-        else this.giftsEditor.showGiftsDetail(body);
+        // Full-width mode bar above everything (list panel + detail).
+        const entries = document.querySelector('.database-entries-content');
+        entries?.querySelector(':scope > .inventory-mode-switch')?.remove();
+        if (entries) {
+            const bar = this._inventoryModeBar(modes, current.key, key => this.showInventoryUnifiedTab(key));
+            entries.insertBefore(bar, entries.firstChild);
+        }
     }
 
     /**
@@ -1230,8 +1216,7 @@ class DatabaseEditorUI {
         const categories = [
             { name: 'Спрайтер', type: 'spriter' },
             { name: 'Бой', type: 'battle' },
-            { name: 'Предметы', type: 'items' },
-            { name: 'Инвентарь', type: 'invSystems' },
+            { name: 'Инвентарь', type: 'inventory' },
             { name: 'Мир', type: 'world' },
             { name: 'Интерфейс', type: 'uiStudio' },
             { name: 'Тайлсеты', type: 'tilesets' },

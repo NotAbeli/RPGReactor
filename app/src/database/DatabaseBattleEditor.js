@@ -21,7 +21,7 @@ class DatabaseBattleEditor {
             { section: 'battle', key: 'Projectile List', label: 'Снаряды', kind: 'projectile', addLabel: 'Добавить снаряд' },
             { section: 'battle', key: 'Tracer List', label: 'Трассеры', kind: 'tracer', addLabel: 'Добавить трассер' },
             { section: 'dash', key: 'Dash Database', label: 'Рывки', kind: 'dash', addLabel: 'Добавить рывок' },
-            { section: 'enemies', key: null, label: 'Враги (ИИ)', kind: 'enemies', addLabel: '' }
+            { section: 'enemies', key: null, label: 'ИИ Врагов', kind: 'enemies', addLabel: '' }
         ];
 
         this._fieldDefs = {

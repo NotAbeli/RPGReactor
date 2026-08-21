@@ -297,7 +297,7 @@ class UIManager {
             submenu: editMenu
         }));
 
-        // Database menu (S22: 9 tabs - System 1 + Agonia merged into «Система»)
+        // Database menu (S23: 8 tabs - Предметы+Инвентарь merged)
         const databaseMenu = new nw.Menu();
         databaseMenu.append(new nw.MenuItem({
             label: 'Спрайтер',
@@ -308,12 +308,8 @@ class UIManager {
             click: () => this.callbacks.openDatabase('battle')
         }));
         databaseMenu.append(new nw.MenuItem({
-            label: 'Предметы',
-            click: () => this.callbacks.openDatabase('items')
-        }));
-        databaseMenu.append(new nw.MenuItem({
             label: 'Инвентарь',
-            click: () => this.callbacks.openDatabase('invSystems')
+            click: () => this.callbacks.openDatabase('inventory')
         }));
         databaseMenu.append(new nw.MenuItem({
             label: 'Мир',
