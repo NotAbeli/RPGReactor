@@ -75,27 +75,42 @@ class DatabaseEnemiesEditor {
         wrapper.appendChild(content);
         container.appendChild(wrapper);
 
-        // --- Globals (inspector) ---
-        const gTitle = document.createElement('div');
-        gTitle.style.cssText = 'padding:12px 0 2px;font-size:13px;font-weight:700;color:var(--color-text-strong);';
-        gTitle.textContent = this._tt('Глобальные настройки');
-        content.appendChild(gTitle);
-        this._renderGlobals(content, enemies);
+        // S20: two columns - enemy master-detail left, globals right (sticky).
+        const layout = document.createElement('div');
+        layout.style.cssText = 'display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;padding-top:8px;';
+        content.appendChild(layout);
 
-        // --- Enemies (master-detail) ---
+        const left = document.createElement('div');
+        left.style.cssText = 'flex:1 1 560px;min-width:0;';
+        layout.appendChild(left);
+
+        const right = document.createElement('div');
+        right.style.cssText = 'flex:0 0 360px;position:sticky;top:8px;';
+        layout.appendChild(right);
+
+        // --- Enemies (master-detail, left) ---
         const eTitle = document.createElement('div');
-        eTitle.style.cssText = 'padding:16px 0 2px;font-size:13px;font-weight:700;color:var(--color-text-strong);';
+        eTitle.className = 'agonia-section-header';
+        eTitle.style.cssText = 'padding:8px 0 2px;';
         eTitle.textContent = this._tt('Враги (EnemyDatabase)');
-        content.appendChild(eTitle);
+        left.appendChild(eTitle);
         const hint = document.createElement('div');
         hint.style.cssText = 'font-size:11px;color:var(--color-text-dim);padding:0 0 8px;line-height:1.4;';
         hint.textContent = this._tt('match — тег в Note события; сенсоры в тайлах.');
-        content.appendChild(hint);
+        left.appendChild(hint);
 
         const host = document.createElement('div');
-        host.style.cssText = 'height:560px;';
-        content.appendChild(host);
+        host.style.cssText = 'height:640px;';
+        left.appendChild(host);
         this._renderEnemies(host, enemies);
+
+        // --- Globals (inspector, right) ---
+        const gTitle = document.createElement('div');
+        gTitle.className = 'agonia-section-header';
+        gTitle.style.cssText = 'padding:8px 0 2px;';
+        gTitle.textContent = this._tt('Глобальные настройки');
+        right.appendChild(gTitle);
+        this._renderGlobals(right, enemies);
     }
 
     _stdBanner(title, subtitle) {
@@ -118,7 +133,6 @@ class DatabaseEnemiesEditor {
 
     _renderGlobals(host, enemies) {
         const form = new InspectorForm();
-        form.section(this._tt('Движок ИИ'));
         const engine = [
             ['TickRate', 'Обновление ИИ (раз в N кадров)', 'number'],
             ['VariableBaseId', 'Базовая переменная', 'number'],
@@ -140,7 +154,6 @@ class DatabaseEnemiesEditor {
         }
         form.mount(host);
     }
-
     _renderEnemies(host, enemies) {
         const K = DatabaseEnemiesEditor;
         const entries = K.decodeCollection(enemies['EnemyDatabase']);
