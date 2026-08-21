@@ -366,7 +366,9 @@ class DatabaseSpriterEditor {
             formScroll.style.cssText = 'flex:1;overflow-y:auto;padding:12px;';
             right.appendChild(formScroll);
             try {
-                this._renderEntryDetail(formScroll, entry, selected, kind, persist);
+                this._renderEntryDetail(formScroll, entry, selected, kind, persist, () => {
+                    name.textContent = (selected + 1) + '. ' + this._entryHeadline(entry, kind);
+                });
             } catch (e) {
                 formScroll.appendChild(this._errorBanner(e));
             }
@@ -431,65 +433,73 @@ class DatabaseSpriterEditor {
         return 'скинов';
     }
 
-    /** One-entry detail form (grid mode): Запись → Условия → Визуал.
-     *  Player lifecycle is owned by the CALLER (S30: grid mini-players
-     *  keep animating while this form re-renders). */
-    _renderEntryDetail(wrapper, entry, idx, kind, commit) {
+    /** One-entry detail form (grid mode, S31): Визуал → Условия → Запись.
+     *  The player leads the Визуал section (live for skins/NPC, the static
+     *  cell for poses). onMeta() fires when the entry name changes so the
+     *  hosting header can update. Player lifecycle is owned by the CALLER. */
+    _renderEntryDetail(wrapper, entry, idx, kind, commit, onMeta) {
         const changed = () => commit();
+        const retune = () => { if (onMeta) onMeta(); };
 
-        if (kind === 'NPCMappings') {
-            const f = new InspectorForm();
-            f.head((idx + 1) + '. ' + (entry.IdName || 'NPC'), 'Библиотека NPC — тег <sds:…>');
-            f.section(this._tt('NPC'));
-            f.row(this._tt('ID Название (тег)'), this._npcTagLine(entry, changed), this._tt('Писать в Note события: <sds:ЭтоИмя>'));
-            f.mount(wrapper);
-            const vf = new InspectorForm();
-            vf.section(this._tt('Визуал'));
-            vf.mount(wrapper);
-            this._renderSpriteVisuals(wrapper, entry, kind, changed);
-            return;
-        }
-
-        const f = new InspectorForm();
-        f.head((idx + 1) + '. ' + this._entryHeadline(entry, kind), this._condSummary(entry));
-        f.section(this._tt('Запись'));
-        f.row(this._tt('Название'), this._textField(entry.Name, {}, v => { entry.Name = v; changed(); }));
-        f.row(this._tt('Приоритет'),
-            this._numberField(entry.Priority, { min: 0 }, v => { entry.Priority = v; changed(); }),
-            this._tt('При равных условиях побеждает запись с большим приоритетом'));
-        f.mount(wrapper);
-
-        const cond = this._ensure(entry, 'Conditions', {});
-        const cf = new InspectorForm();
-        cf.section(this._tt('Условия'));
-        cf.row(this._tt('Значение основной переменной'),
-            this._numberField(cond.MainValue, { min: -1 }, v => { cond.MainValue = v; changed(); }),
-            this._tt('−1 = базовый скин/поза для всех неперехваченных значений'));
-        cf.row(this._tt('Свитч 1 (ВКЛ)'), this._numberField(cond.SwitchId1, { min: 0 }, v => { cond.SwitchId1 = v; changed(); }));
-        cf.row(this._tt('Свитч 2 (ВКЛ)'), this._numberField(cond.SwitchId2, { min: 0 }, v => { cond.SwitchId2 = v; changed(); }));
-        cf.row(this._tt('Свитч 3 (доигрывание)'), this._numberField(cond.SwitchId3, { min: 0 }, v => { cond.SwitchId3 = v; changed(); }),
-            this._tt('Пока ВКЛ — поза удерживается даже после смены значения переменной'));
-        const extLine = document.createElement('div');
-        extLine.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;';
-        extLine.appendChild(this._numberField(cond.ExtVarId, { min: 0 }, v => { cond.ExtVarId = v; changed(); }));
-        extLine.appendChild(this._selectField(cond.ExtVarOp || 'equal', [
-            { value: 'equal', label: '=' }, { value: 'greater', label: '>' },
-            { value: 'less', label: '<' }, { value: 'notEqual', label: '≠' }
-        ], v => { cond.ExtVarOp = v; changed(); }));
-        const evv = this._numberField(cond.ExtVarVal, { min: 0 }, v => { cond.ExtVarVal = v; changed(); });
-        evv.style.width = '84px';
-        extLine.appendChild(evv);
-        cf.row(this._tt('Доп. переменная'), extLine, this._tt('var id · операция · значение'));
-        cf.mount(wrapper);
-
+        // --- Визуал first: section header + preview, then file/sheet ---
         const vf = new InspectorForm();
-        vf.section(kind === 'PoseMappings' ? this._tt('Визуал позы') : this._tt('Визуал скина'));
+        vf.head((idx + 1) + '. ' + this._entryHeadline(entry, kind),
+            kind === 'NPCMappings' ? 'Библиотека NPC — тег <sds:…>' : this._condSummary(entry));
+        vf.section(kind === 'PoseMappings' ? this._tt('Визуал позы')
+            : kind === 'NPCMappings' ? this._tt('Визуал') : this._tt('Визуал скина'));
         vf.mount(wrapper);
+        try {
+            wrapper.appendChild(this._renderPlayer(entry, kind)); // static cell for poses
+        } catch (e) { /* preview is optional */ }
         if (kind === 'PoseMappings') {
             this._renderPoseVisuals(wrapper, entry, changed);
         } else {
             this._renderSpriteVisuals(wrapper, entry, kind, changed);
         }
+
+        // --- Условия (skins/poses) ---
+        if (kind !== 'NPCMappings') {
+            const cond = this._ensure(entry, 'Conditions', {});
+            const cf = new InspectorForm();
+            cf.section(this._tt('Условия'));
+            cf.row(this._tt('Значение основной переменной'),
+                this._numberField(cond.MainValue, { min: -1 }, v => { cond.MainValue = v; changed(); }),
+                this._tt('−1 = базовый скин/поза для всех неперехваченных значений'));
+            cf.row(this._tt('Свитч 1 (ВКЛ)'), this._numberField(cond.SwitchId1, { min: 0 }, v => { cond.SwitchId1 = v; changed(); }));
+            cf.row(this._tt('Свитч 2 (ВКЛ)'), this._numberField(cond.SwitchId2, { min: 0 }, v => { cond.SwitchId2 = v; changed(); }));
+            cf.row(this._tt('Свитч 3 (доигрывание)'), this._numberField(cond.SwitchId3, { min: 0 }, v => { cond.SwitchId3 = v; changed(); }),
+                this._tt('Пока ВКЛ — поза удерживается даже после смены значения переменной'));
+            const extLine = document.createElement('div');
+            extLine.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;';
+            extLine.appendChild(this._numberField(cond.ExtVarId, { min: 0 }, v => { cond.ExtVarId = v; changed(); }));
+            extLine.appendChild(this._selectField(cond.ExtVarOp || 'equal', [
+                { value: 'equal', label: '=' }, { value: 'greater', label: '>' },
+                { value: 'less', label: '<' }, { value: 'notEqual', label: '≠' }
+            ], v => { cond.ExtVarOp = v; changed(); }));
+            const evv = this._numberField(cond.ExtVarVal, { min: 0 }, v => { cond.ExtVarVal = v; changed(); });
+            evv.style.width = '84px';
+            extLine.appendChild(evv);
+            cf.row(this._tt('Доп. переменная'), extLine, this._tt('var id · операция · значение'));
+            cf.mount(wrapper);
+        }
+
+        // --- Запись (metadata last) ---
+        const f = new InspectorForm();
+        f.section(kind === 'NPCMappings' ? this._tt('NPC') : this._tt('Запись'));
+        if (kind === 'NPCMappings') {
+            f.row(this._tt('ID Название (тег)'), this._npcTagLine(entry, () => { changed(); retune(); }), this._tt('Писать в Note события: <sds:ЭтоИмя>'));
+        } else {
+            f.row(this._tt('Название'), this._textField(entry.Name, {}, v => {
+                entry.Name = v;
+                changed();
+                vf.setTitle((idx + 1) + '. ' + this._entryHeadline(entry, kind));
+                retune();
+            }));
+            f.row(this._tt('Приоритет'),
+                this._numberField(entry.Priority, { min: 0 }, v => { entry.Priority = v; changed(); }),
+                this._tt('При равных условиях побеждает запись с большим приоритетом'));
+        }
+        f.mount(wrapper);
     }
 
     _condSummary(entry) {
@@ -669,9 +679,18 @@ class DatabaseSpriterEditor {
             panel.appendChild(idxRow);
         }
 
-        // Tile settings
+        // S31: fine animation tuning collapsed by default - most skins run
+        // on sheet defaults (0 = авто). The player above shows the result.
+        const det = document.createElement('details');
+        det.style.cssText = 'margin-top:8px;border:1px solid var(--color-border);border-radius:4px;background-color:var(--color-bg-panel);padding:0 10px;';
+        const sum = document.createElement('summary');
+        sum.style.cssText = 'padding:8px 0;font-size:13px;font-weight:bold;color:var(--color-text-strong);cursor:pointer;user-select:none;';
+        sum.textContent = this._tt('▸ Продвинутая анимация');
+        det.appendChild(sum);
+        det.open = false;
+
         const tileRow = document.createElement('div');
-        tileRow.style.cssText = 'display:grid;grid-template-columns:repeat(4,1fr);gap:8px;';
+        tileRow.style.cssText = 'display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:4px 0 8px;';
         const mk = (label, key, opts, hint) => {
             const f = this._fieldLabel(label, hint);
             f.appendChild(this._numberField(vis[key], opts, v => { vis[key] = v; this._refreshPreview(); }));
@@ -685,10 +704,10 @@ class DatabaseSpriterEditor {
         tileRow.appendChild(mk('Idle индекс', 'IdleIndex', { min: -1, max: 7, step: 1 }, '−1 = выкл'));
         tileRow.appendChild(mk('Idle анимация', 'IdleAnimSpeed', { min: -1, step: 1 }, '0 = выкл, −1 = стандарт'));
         tileRow.appendChild(mk('Задержка (тики)', 'AnimationDelay', { min: 1, step: 1 }, 'для ручной смены индексов'));
-        panel.appendChild(tileRow);
+        det.appendChild(tileRow);
 
         const selRow = document.createElement('div');
-        selRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;';
+        selRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 0 8px;';
         const step = this._fieldLabel('Режим покоя');
         step.appendChild(this._selectField(vis.StepMode, [
             { value: 0, label: 'Классика (движение = аним)' },
@@ -702,16 +721,15 @@ class DatabaseSpriterEditor {
             { value: 2, label: 'Ритмичный (0-1-3-2)' }
         ], v => { vis.Pattern = Number(v); }));
         selRow.appendChild(pattern);
-        panel.appendChild(selRow);
+        det.appendChild(selRow);
 
         if (!isNPC) {
             const animRow = this._fieldLabel('Ручная смена индексов', 'Массив индексов графики (0–7), меняются по кругу с задержкой выше');
+            animRow.style.paddingBottom = '8px';
             animRow.appendChild(this._textField(vis.AnimationIndices, { placeholder: 'например: 0,1,2,1' }, v => { vis.AnimationIndices = v; }));
-            panel.appendChild(animRow);
+            det.appendChild(animRow);
         }
-
-        // Live preview player
-        panel.appendChild(this._renderPlayer(entry, kind));
+        panel.appendChild(det);
     }
 
     _renderPoseVisuals(panel, entry) {
@@ -1008,16 +1026,19 @@ class DatabaseSpriterEditor {
         }
     }
 
-    /** opts.mini: grid-card mode - no controls, small canvas (S30). */
+    /** opts.mini: grid-card mode - no controls, small canvas (S30).
+     *  Poses (Visuals.GridX) render ONE static cell and hide the playback
+     *  controls - there is nothing to play (S31). */
     _renderPlayer(entry, kind, opts) {
         const mini = !!(opts && opts.mini);
-        const wrap = mini ? document.createElement('div') : this._panel();
+        const still = !!(entry && entry.Visuals && entry.Visuals.GridX !== undefined);
+        const wrap = (mini || still) ? document.createElement('div') : this._panel();
         wrap.style.cssText = mini
             ? 'display:flex;align-items:center;justify-content:center;'
             : 'padding:8px;max-width:360px;';
 
         let state = { playing: true, frame: 0, tick: 0, img: null, url: '' };
-        if (!mini) {
+        if (!mini && !still) {
             const headRow = document.createElement('div');
             headRow.style.cssText = 'display:flex;align-items:center;gap:10px;';
             const title = document.createElement('span');
@@ -1118,6 +1139,28 @@ class DatabaseSpriterEditor {
             const iw = img.naturalWidth, ih = img.naturalHeight;
             if (!iw || !ih) return;
 
+            // Pose (S31): a pose IS one static cell - draw GridX/GridY only,
+            // never cycle frames.
+            if (vis.GridX !== undefined) {
+                let cellW = Math.max(1, Number(vis.Width) || 48);
+                let cellH = Math.max(1, Number(vis.Height) || 48);
+                const cols = Math.max(1, Math.floor(iw / cellW));
+                const rows = Math.max(1, Math.floor(ih / cellH));
+                const gx = Math.min(Number(vis.GridX) || 0, cols - 1);
+                const gy = Math.min(Number(vis.GridY) || 0, rows - 1);
+                const sx = gx * cellW;
+                const sy = gy * cellH;
+                cellW = Math.min(cellW, iw - sx);
+                cellH = Math.min(cellH, ih - sy);
+                if (cellW <= 0 || cellH <= 0) return;
+                const scale = Math.min(canvas.width / cellW, canvas.height / cellH);
+                const dw = Math.round(cellW * scale);
+                const dh = Math.round(cellH * scale);
+                ctx.drawImage(img, sx, sy, cellW, cellH,
+                    Math.round((canvas.width - dw) / 2), Math.round((canvas.height - dh) / 2), dw, dh);
+                return;
+            }
+
             // Sheet layout: $-sheets are a single character (3 cols x 4
             // rows); standard sheets hold 8 characters (12 cols x 8 rows).
             // Cell size comes from the sheet itself, or the custom
@@ -1159,6 +1202,7 @@ class DatabaseSpriterEditor {
         const delay = Math.max(1, Math.round(60 / fps));
         let lastSnapshot = JSON.stringify(entry);
 
+        const isPose = vis.GridX !== undefined;
         const player = {
             reload,
             tick: () => {
@@ -1170,6 +1214,7 @@ class DatabaseSpriterEditor {
                     reload();
                     return;
                 }
+                if (isPose) return; // static cell - no frame cycling (S31)
                 if (!state.playing || !state.img) return;
                 state.tick++;
                 if (state.tick >= delay) {

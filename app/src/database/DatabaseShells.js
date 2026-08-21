@@ -527,6 +527,7 @@ class InspectorForm {
         const t = document.createElement('div');
         t.className = 'agn-insp-title';
         t.textContent = title;
+        this._headTitleEl = t;
         h.appendChild(t);
         if (sub) {
             const s = document.createElement('div');
@@ -535,6 +536,11 @@ class InspectorForm {
             h.appendChild(s);
         }
         this.root.appendChild(h);
+        return this;
+    }
+    /** Live-update the head title (e.g. the entry name being edited). */
+    setTitle(text) {
+        if (this._headTitleEl) this._headTitleEl.textContent = text;
         return this;
     }
     section(caption) {
