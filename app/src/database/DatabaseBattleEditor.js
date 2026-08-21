@@ -20,7 +20,8 @@ class DatabaseBattleEditor {
             { section: 'battle', key: 'Melee List', label: 'Ближний бой', kind: 'melee', addLabel: 'Добавить атаку' },
             { section: 'battle', key: 'Projectile List', label: 'Снаряды', kind: 'projectile', addLabel: 'Добавить снаряд' },
             { section: 'battle', key: 'Tracer List', label: 'Трассеры', kind: 'tracer', addLabel: 'Добавить трассер' },
-            { section: 'dash', key: 'Dash Database', label: 'Рывки', kind: 'dash', addLabel: 'Добавить рывок' }
+            { section: 'dash', key: 'Dash Database', label: 'Рывки', kind: 'dash', addLabel: 'Добавить рывок' },
+            { section: 'enemies', key: null, label: 'Враги (ИИ)', kind: 'enemies', addLabel: '' }
         ];
 
         this._fieldDefs = {
@@ -148,7 +149,7 @@ class DatabaseBattleEditor {
     showBattleDetail(container) {
         const wrapper = document.createElement('div');
         wrapper.style.cssText = 'display:flex;flex-direction:column;height:100%;overflow:hidden;';
-        wrapper.appendChild(this._stdBanner('Бой', 'Атаки, снаряды, трассеры и профили рывков'));
+        wrapper.appendChild(this._stdBanner('Бой', 'Атаки, снаряды, трассеры, рывки и ИИ врагов'));
 
         const tabsRow = document.createElement('div');
         tabsRow.style.cssText = 'display:flex;gap:8px;padding:10px 16px 0;border-bottom:1px solid var(--color-border);';
@@ -163,6 +164,15 @@ class DatabaseBattleEditor {
         const render = () => {
             content.innerHTML = '';
             const meta = this.collectionKeys.find(c => c.kind === active);
+            if (meta.kind === 'enemies') {
+                // S21: enemy AI lives here as a sub-tab (was its own DB tab).
+                if (!this._enemiesEditor) {
+                    this._enemiesEditor = new DatabaseEnemiesEditor(
+                        this.databaseManager, this.projectManager, this.commonUI, this.parentEditor);
+                }
+                this._enemiesEditor.renderInto(content);
+                return;
+            }
             this._renderShell(content, meta);
         };
 

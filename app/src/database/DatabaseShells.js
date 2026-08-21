@@ -196,10 +196,24 @@ class MasterDetailShell {
         }
         const idx = Math.min(this.selectedIdx, o.items.length - 1);
         this.selectedIdx = idx;
-        o.renderForm(this.formCol, o.items[idx], idx, {
-            refreshList: () => this._renderList(),
-            changed: () => o.onChanged(o.items)
-        });
+        try {
+            o.renderForm(this.formCol, o.items[idx], idx, {
+                refreshList: () => this._renderList(),
+                changed: () => o.onChanged(o.items)
+            });
+        } catch (e) {
+            const box = document.createElement('div');
+            box.style.cssText = 'margin:12px 0;padding:10px 14px;border:1px solid var(--color-danger,#b33);border-radius:4px;background:rgba(179,51,51,.12);font-size:12px;line-height:1.5;';
+            const t = document.createElement('div');
+            t.style.fontWeight = '700';
+            t.textContent = 'Ошибка отрисовки формы:';
+            box.appendChild(t);
+            const d = document.createElement('div');
+            d.style.cssText = 'font-family:var(--font-mono,monospace);white-space:pre-wrap;color:var(--color-text-dim);';
+            d.textContent = String((e && e.stack) || e).split('\n').slice(0, 4).join('\n');
+            box.appendChild(d);
+            this.formCol.appendChild(box);
+        }
     }
 }
 
@@ -592,6 +606,28 @@ class DataTable {
         container.innerHTML = '';
         this.root = document.createElement('div');
         this.root.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+
+        // S21: empty collection - one compact line instead of the table
+        // skeleton (headers + "Записей нет" row made dead weight).
+        if (!this.o.items.length) {
+            const line = document.createElement('div');
+            line.className = 'agn-table-empty';
+            line.style.cssText = 'display:flex;align-items:center;gap:10px;text-align:left;padding:2px 0;';
+            const lbl = document.createElement('span');
+            lbl.textContent = (this.o.countLabel || 'записей') + ' — пусто';
+            line.appendChild(lbl);
+            if (this.o.onAdd) {
+                const add = document.createElement('button');
+                add.className = 'agonia-btn';
+                add.textContent = this.o.addLabel;
+                add.addEventListener('click', () => this.o.onAdd());
+                line.appendChild(add);
+            }
+            this.root.appendChild(line);
+            container.appendChild(this.root);
+            return;
+        }
+
         const bar = document.createElement('div');
         bar.className = 'agn-table-bar';
         const count = document.createElement('div');

@@ -260,11 +260,6 @@ class DatabaseSpriterEditor {
             padding: 14px 20px; border-bottom: 2px solid var(--color-accent-border-mid);
             font-size: 20px; font-weight: 600; color: var(--color-text-strong);
             display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
-            padding: 14px 20px;
-            border-bottom: 2px solid var(--color-accent-border-mid);
-            font-size: 20px; font-weight: 600;
-            color: var(--color-text-strong);
-            display: flex; align-items: baseline; gap: 14px;
         `;
         banner.textContent = this._tt('Спрайтер');
         const sub = document.createElement('span');
@@ -291,12 +286,16 @@ class DatabaseSpriterEditor {
 
         const render = () => {
             content.innerHTML = '';
-            if (active === '__globals__') {
-                this._renderGlobals(content, spriter);
-            } else if (active === '__hero__') {
-                this._renderHero(content);
-            } else {
-                this._renderCollection(content, spriter, active);
+            try {
+                if (active === '__globals__') {
+                    this._renderGlobals(content, spriter);
+                } else if (active === '__hero__') {
+                    this._renderHero(content);
+                } else {
+                    this._renderCollection(content, spriter, active);
+                }
+            } catch (e) {
+                content.appendChild(this._errorBanner(e));
             }
         };
 
@@ -521,6 +520,26 @@ class DatabaseSpriterEditor {
         for (const sw of [cond.SwitchId1, cond.SwitchId2]) if (Number(sw) > 0) parts.push('sw' + sw);
         if (Number(cond.ExtVarId) > 0) parts.push('доп.var' + cond.ExtVarId + this._opLabel(cond.ExtVarOp) + cond.ExtVarVal);
         return parts.join(' · ');
+    }
+
+    /** Red error banner instead of a silently empty tab (S21). */
+    _errorBanner(e) {
+        const box = document.createElement('div');
+        box.style.cssText = 'margin:12px 0;padding:10px 14px;border:1px solid var(--color-danger,#b33);border-radius:4px;color:var(--color-text-strong);background:rgba(179,51,51,.12);font-size:12px;line-height:1.5;';
+        const t = document.createElement('div');
+        t.style.fontWeight = '700';
+        t.textContent = this._tt('Ошибка отрисовки вкладки:');
+        box.appendChild(t);
+        const d = document.createElement('div');
+        d.style.cssText = 'font-family:var(--font-mono,monospace);white-space:pre-wrap;color:var(--color-text-dim);';
+        d.textContent = (e && e.stack || String(e)).split('\n').slice(0, 4).join('\n');
+        box.appendChild(d);
+        return box;
+    }
+
+    _entryHeadline(entry, kind) {
+        if (kind === 'NPCMappings') return entry.IdName || 'NPC';
+        return entry.Name || (kind === 'PoseMappings' ? 'Поза' : 'Скин');
     }
 
     _renderEntryInspector(formCol, entry, kind, api, entries, persist, rerender) {

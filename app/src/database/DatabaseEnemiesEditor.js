@@ -74,11 +74,18 @@ class DatabaseEnemiesEditor {
         content.style.cssText = 'flex:1;overflow-y:auto;padding:0 16px 16px;';
         wrapper.appendChild(content);
         container.appendChild(wrapper);
+        this.renderInto(content);
+    }
+
+    /** Content without the banner - embedded as the Battle tab's Враги (S21). */
+    renderInto(container) {
+        const enemies = this.getEnemies();
+        container.innerHTML = '';
 
         // S20: two columns - enemy master-detail left, globals right (sticky).
         const layout = document.createElement('div');
         layout.style.cssText = 'display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;padding-top:8px;';
-        content.appendChild(layout);
+        container.appendChild(layout);
 
         const left = document.createElement('div');
         left.style.cssText = 'flex:1 1 560px;min-width:0;';

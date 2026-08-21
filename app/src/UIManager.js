@@ -297,7 +297,7 @@ class UIManager {
             submenu: editMenu
         }));
 
-        // Database menu (S17: 11 tabs)
+        // Database menu (S21: 10 tabs - ИИ врагов lives inside Бой)
         const databaseMenu = new nw.Menu();
         databaseMenu.append(new nw.MenuItem({
             label: 'Спрайтер',
@@ -306,10 +306,6 @@ class UIManager {
         databaseMenu.append(new nw.MenuItem({
             label: 'Бой',
             click: () => this.callbacks.openDatabase('battle')
-        }));
-        databaseMenu.append(new nw.MenuItem({
-            label: 'ИИ врагов',
-            click: () => this.callbacks.openDatabase('enemyAI')
         }));
         databaseMenu.append(new nw.MenuItem({
             label: 'Предметы',

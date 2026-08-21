@@ -368,10 +368,10 @@ class DatabaseEditorUI {
                 this.battleEditor.showBattleDetail(detailEl);
                 return;
             }
+            // 'enemyAI' lives inside Бой as the Враги (ИИ) sub-tab since S21;
+            // openDatabase('enemyAI') redirects there for old bookmarks/menus.
             case 'enemyAI': {
-                if (!this.enemiesEditor) return;
-                const { detailEl } = this.prepareDatabaseSection('enemyAI', this._dbTitle('enemyAI', 'ИИ врагов'), { showListPanel: false });
-                this.enemiesEditor.showEnemiesDetail(detailEl);
+                this.openDatabase('battle');
                 return;
             }
             case 'world': {
@@ -1194,7 +1194,6 @@ class DatabaseEditorUI {
         const categories = [
             { name: 'Спрайтер', type: 'spriter' },
             { name: 'Бой', type: 'battle' },
-            { name: 'ИИ врагов', type: 'enemyAI' },
             { name: 'Предметы', type: 'items' },
             { name: 'Инвентарь', type: 'invSystems' },
             { name: 'Мир', type: 'world' },

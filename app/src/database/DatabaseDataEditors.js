@@ -887,7 +887,7 @@ class DatabaseWorldEditor extends AgoniaCardEditorBase {
 
         content.appendChild(this._sectionTitle('Шаги по поверхностям'));
         const hint = this._div('font-size:11px;color:var(--color-text-dim);padding:0 8px 8px;line-height:1.5;');
-        hint.textContent = this._tt('Террейн-ID тайлсета выбирает пул звуков шагов. ▶ раскрывает пул звуков.');
+        hint.textContent = this._tt('Террейн-ID тайлсета выбирает пул звуков шагов.');
         content.appendChild(hint);
 
         const entries = K.decodeCollection(s['Terrain Configurations']);
@@ -983,7 +983,7 @@ class DatabaseWorldEditor extends AgoniaCardEditorBase {
         const s = this.getSection('variables');
         content.appendChild(this._sectionTitle('Реактор переменных (SuperDuperVariables)'));
         const hint = this._div('font-size:11px;color:var(--color-text-dim);padding:0 8px 8px;line-height:1.5;');
-        hint.textContent = this._tt('Группы следят за переменными и меняют свитчи/переменные. Decay гасит переменные, AutoOff выключает свитчи через N секунд.');
+        hint.textContent = this._tt('Группы следят за переменными и меняют свитчи/переменные; Decay гасит переменные; AutoOff выключает через N секунд.');
         content.appendChild(hint);
 
         // Globals (inspector)
