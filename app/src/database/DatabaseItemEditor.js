@@ -101,15 +101,6 @@ class DatabaseItemEditor {
         wrapper.style.position = 'relative';
 
         const tt = text => window.I18n ? window.I18n.tText(text) : text;
-        const scopeNames = ['None', 'One Enemy', 'All Enemies', '3 Random', '4 Random', '2 Random', '1 Random',
-                           'One Ally', 'All Allies', 'One Ally (Dead)', 'All Allies (Dead)', 'User'].map(tt);
-        const occasionNames = ['Always', 'Battle Only', 'Menu Only', 'Never'].map(tt);
-        const hitTypeNames = ['Certain', 'Physical', 'Magical'].map(tt);
-        const damageTypeNames = ['None', 'HP Damage', 'MP Damage', 'HP Recover', 'MP Recover', 'HP Drain', 'MP Drain'].map(tt);
-
-        // Get system elements for the damage element dropdown
-        const systemData = this.databaseManager.getSystem();
-        const elements = systemData ? systemData.elements || [] : [];
 
         // --- General Settings (inspector rows, S19) ---
         const generalSection = document.createElement('div');

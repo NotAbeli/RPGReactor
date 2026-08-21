@@ -657,7 +657,7 @@ class DataTable {
         for (const realIdx of this.order) {
             const item = o.items[realIdx];
             const tr = document.createElement('tr');
-            tr.className = 'agn-data-row';
+            tr.className = 'agn-data-row' + ((tbody.children.length % 2 === 1) ? ' agn-even' : '');
 
             if (o.expandable) {
                 const td = document.createElement('td');

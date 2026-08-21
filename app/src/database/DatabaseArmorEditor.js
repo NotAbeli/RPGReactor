@@ -31,52 +31,35 @@ class DatabaseArmorEditor {
         const equipTypeNames = this.databaseManager.getSystem()?.equipTypes || [];
 
         // General Settings
-        const generalSection = document.createElement('div');
-        generalSection.className = 'database-section';
+                const generalSection = document.createElement('div');
+        generalSection.className = 'agn-insp';
         generalSection.innerHTML = `
-            <div class="database-section-header">${tt('General')}</div>
-            <div class="database-section-content"><div class="db-general-grid">
-                <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
-                    <label style="font-size: 11px; color: var(--color-text-muted); font-weight: 600;">${tt('Icon')}</label>
-                    <div id="armor-icon-container-${armor.id}"></div>
-                </div>
-                <div class="db-form db-fill">
-                    <div class="db-row-cols">
-                        <span class="db-col">
-                            <label>${tt('Name')}</label>
-                            <input type="text" class="database-field-value" value="${rrEscapeHtml(armor.name)}" data-field="name" data-armor-id="${armor.id}">
-                        </span>
-                    </div>
-                    <div class="db-row-cols db-row-grow">
-                        <span class="db-col">
-                            <label>${tt('Description')}</label>
-                            <textarea class="database-field-value" rows="2" data-field="description" data-armor-id="${armor.id}">${rrEscapeHtml(armor.description)}</textarea>
-                        </span>
-                    </div>
-                    <div class="db-row-cols">
-                        <span class="db-col">
-                            <label>${tt('Armor Type')}</label>
-                            <select class="database-field-value" data-field="atypeId" data-armor-id="${armor.id}">
-                                ${armorTypeNames.map((name, idx) => idx > 0 && name ? `<option value="${idx}" ${armor.atypeId === idx ? 'selected' : ''}>${rrEscapeHtml(name)}</option>` : '').join('')}
-                            </select>
-                        </span>
-                        <span class="db-col">
-                            <label>${tt('Equip Type')}</label>
-                            <select class="database-field-value" data-field="etypeId" data-armor-id="${armor.id}">
-                                ${equipTypeNames.map((name, idx) => idx > 0 && name ? `<option value="${idx}" ${armor.etypeId === idx ? 'selected' : ''}>${rrEscapeHtml(name)}</option>` : '').join('')}
-                            </select>
-                        </span>
-                        <span class="db-col">
-                            <label>${tt('Price')}</label>
-                            <input type="number" class="database-field-value" value="${rrEscapeHtml(armor.price || 0)}" data-field="price" data-armor-id="${armor.id}">
-                        </span>
-                    </div>
-                </div></div>
+            <div class="agn-insp-section"><span class="agn-insp-caption">${tt('Общее')}</span></div>
+            <div class="agn-insp-row">
+                <div class="agn-insp-label">${tt('Иконка')}</div>
+                <div class="agn-insp-control" id="armor-icon-container-${armor.id}"></div>
+            </div>
+            <div class="agn-insp-row">
+                <div class="agn-insp-label">${tt('Название')}</div>
+                <div class="agn-insp-control"><input type="text" class="agonia-input" value="${rrEscapeHtml(armor.name)}" data-field="name" data-armor-id="${armor.id}"></div>
+            </div>
+            <div class="agn-insp-row">
+                <div class="agn-insp-label">${tt('Описание')}</div>
+                <div class="agn-insp-control"><textarea class="agonia-input" rows="2" style="flex:1 1 100%;min-height:52px;resize:vertical;" data-field="description" data-armor-id="${armor.id}">${rrEscapeHtml(armor.description)}</textarea></div>
+            </div>
+            <div class="agn-insp-row">
+                <div class="agn-insp-label">${tt('Тип брони')}</div>
+                <div class="agn-insp-control"><select class="agonia-select" style="flex:0 1 320px;" data-field="atypeId" data-armor-id="${armor.id}">
+                    ${armorTypeNames.map((name, idx) => idx > 0 && name ? `<option value="${idx}" ${armor.atypeId === idx ? 'selected' : ''}>${rrEscapeHtml(name)}</option>` : '').join('')}
+                </select></div>
+            </div>
+            <div class="agn-insp-row">
+                <div class="agn-insp-label">${tt('Цена')}</div>
+                <div class="agn-insp-control"><input type="number" class="agonia-input" value="${rrEscapeHtml(armor.price || 0)}" data-field="price" data-armor-id="${armor.id}"></div>
             </div>
         `;
-        // General flows into the two-column grid with the other sections
 
-        // Add icon to the designated container after the DOM is ready
+// Add icon to the designated container after the DOM is ready
         setTimeout(() => {
             const iconContainer = document.getElementById(`armor-icon-container-${armor.id}`);
             if (iconContainer) {
@@ -86,42 +69,25 @@ class DatabaseArmorEditor {
 
         // Grid wrapper for sections below general
         const gridWrapper = document.createElement('div');
-        gridWrapper.className = 'database-sections-grid';
+        gridWrapper.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
         gridWrapper.appendChild(generalSection);
 
         // Parameters Section
         const params = armor.params || [0,0,0,0,0,0,0,0];
         const paramNames = ['Max HP', 'Max MP', 'Attack', 'Defense', 'M.Attack', 'M.Defense', 'Agility', 'Luck'].map(name => window.I18n ? window.I18n.tText(name) : name);
         const paramsSection = document.createElement('div');
-        paramsSection.className = 'database-section';
+        paramsSection.className = 'agn-insp';
         paramsSection.innerHTML = `
-            <div class="database-section-header">${tt('Parameters')}</div>
-            <div class="database-section-content">
-                <table class="traits-table">
-                    <thead>
-                        <tr>
-                            <th>${tt('Parameter')}</th>
-                            <th>${tt('Value')}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${paramNames.map((name, idx) => `
-                            <tr>
-                                <td>${name}</td>
-                                <td>
-                                    <input type="number"
-                                           class="database-field-value database-field-value-small"
-                                           value="${rrEscapeHtml(params[idx] || 0)}"
-                                           data-field="params"
-                                           data-param-index="${idx}"
-                                           data-armor-id="${armor.id}"
-                                           style="width: 80px; background: var(--color-bg-panel);">
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
+            <div class="agn-insp-section"><span class="agn-insp-caption">${tt('Параметры')}</span></div>
+            ${paramNames.map((name, idx) => `
+                <div class="agn-insp-row">
+                    <div class="agn-insp-label">${name}</div>
+                    <div class="agn-insp-control">
+                        <input type="number" class="agonia-input" value="${rrEscapeHtml(params[idx] || 0)}"
+                               data-field="params" data-param-index="${idx}" data-armor-id="${armor.id}">
+                    </div>
+                </div>
+            `).join('')}
         `;
         gridWrapper.appendChild(paramsSection);
 
@@ -177,11 +143,12 @@ class DatabaseArmorEditor {
 
         // Note Section
         const noteSection = document.createElement('div');
-        noteSection.className = 'database-section';
+        noteSection.className = 'agn-insp';
         noteSection.innerHTML = `
-            <div class="database-section-header">${tt('Note')}</div>
-            <div class="database-section-content">
-                <textarea class="database-field-value" rows="4" style="width: 100%;" data-field="note" data-armor-id="${armor.id}">${rrEscapeHtml(armor.note)}</textarea>
+            <div class="agn-insp-section"><span class="agn-insp-caption">${tt('Note')}</span></div>
+            <div class="agn-insp-row">
+                <div class="agn-insp-label">${tt('Заметка')}</div>
+                <div class="agn-insp-control"><textarea class="agonia-input" rows="4" style="flex:1 1 100%;min-height:72px;resize:vertical;font-family:var(--font-mono,monospace);" data-field="note" data-armor-id="${armor.id}">${rrEscapeHtml(armor.note)}</textarea></div>
             </div>
         `;
         gridWrapper.appendChild(noteSection);

@@ -1013,7 +1013,7 @@ table.agn-table th { position: sticky; top: 0; z-index: 1; background-color: var
 table.agn-table th.agn-sortable { cursor: pointer; user-select: none; }
 table.agn-table th.agn-sortable:hover { color: var(--color-text-strong); }
 table.agn-table td { padding: 6px 10px; border-bottom: 1px solid var(--color-border-subtle, rgba(128,128,128,.15)); color: var(--color-text-strong); vertical-align: middle; }
-table.agn-table tbody tr:nth-child(even of :not(.agn-expand-row)) { background-color: rgba(128,128,128,.04); }
+table.agn-table tbody tr.agn-even { background-color: rgba(128,128,128,.04); }
 table.agn-table tbody tr.agn-data-row:hover { background-color: var(--color-bg-deep); }
 table.agn-table td.agn-num { text-align: right; font-variant-numeric: tabular-nums; }
 table.agn-table td.agn-dim { color: var(--color-text-dim); }
