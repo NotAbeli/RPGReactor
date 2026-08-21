@@ -759,7 +759,7 @@ class DatabaseSpriterEditor {
             if (!isNPC && index !== undefined) vis.CharacterIndex = index;
             fileInput.value = name;
             this._refreshPreview();
-        }));
+        }, 'characters', pickOpts));
         pickBtn.title = isNPC ? this._tt('Выбрать файл спрайта') : this._tt('Выбрать файл и персонажа на листе');
         line.appendChild(pickBtn);
         panel.appendChild(line);
@@ -1018,7 +1018,7 @@ class DatabaseSpriterEditor {
                 selBox.style.top = (img.offsetTop) + 'px';
                 selBox.style.width = cellW + 'px';
                 selBox.style.height = cellH + 'px';
-                img.parentNode.appendChild(selBox);
+                if (img.parentNode) img.parentNode.appendChild(selBox);
             };
             img.addEventListener('load', drawFrame);
             setTimeout(drawFrame, 60);
