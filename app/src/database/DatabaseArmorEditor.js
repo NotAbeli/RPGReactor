@@ -16,6 +16,7 @@ class DatabaseArmorEditor {
 
     showArmorDetail(container, armor) {
         this.currentArmor = armor;
+        this._hostContainer = container; // S25: refresh must not wipe the shell list
 
         const wrapper = document.createElement('div');
         wrapper.style.display = 'flex';
@@ -496,17 +497,16 @@ class DatabaseArmorEditor {
     }
 
     refreshArmorDetail(armor) {
-        console.log('DatabaseArmorEditor.refreshArmorDetail - Refreshing armor:', armor.id);
-        console.log('DatabaseArmorEditor.refreshArmorDetail - Armor traits:', armor.traits);
-
-        const container = document.getElementById('database-detail');
+        // S25: prefer the remembered host (the shell form column) - wiping
+        // #database-detail would destroy the master-detail list beside it.
+        const container = (this._hostContainer && this._hostContainer.isConnected)
+            ? this._hostContainer
+            : document.getElementById('database-detail');
         if (container) {
-            console.log('DatabaseArmorEditor.refreshArmorDetail - Found container, clearing and rebuilding');
             container.innerHTML = '';
             this.showArmorDetail(container, armor);
-            console.log('DatabaseArmorEditor.refreshArmorDetail - Detail rebuilt');
         } else {
-            console.warn('DatabaseArmorEditor.refreshArmorDetail - Could not find detail panel container!');
+            console.warn('DatabaseArmorEditor.refreshArmorDetail - no container');
         }
     }
 }

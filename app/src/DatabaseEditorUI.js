@@ -416,12 +416,7 @@ class DatabaseEditorUI {
         const current = modes.find(m => m.key === mode) || modes[0];
 
         if (current.key === 'items' || current.key === 'weapons' || current.key === 'armors') {
-            const data = current.key === 'items' ? this.databaseManager.getItems()
-                : current.key === 'weapons' ? this.databaseManager.getWeapons()
-                : this.databaseManager.getArmors();
-            this.showInventoryList = current.key;
-            this.showDatabaseViewer(tt('Инвентарь') + ' — ' + tt(current.label), data, current.key);
-            this.setActiveDatabaseNav('inventory');
+            this._renderItemsShell(current.key);
         } else {
             const { detailEl } = this.prepareDatabaseSection('inventory', tt('Инвентарь') + ' — ' + tt(current.label), { showListPanel: false });
             if (current.key === 'craft') this.craftEditor.showCraftDetail(detailEl);
@@ -441,6 +436,85 @@ class DatabaseEditorUI {
             bar.style.flex = '0 0 auto';
             main.insertBefore(bar, entries);
         }
+    }
+
+    /**
+     * S25: items/weapons/armors on the same MasterDetailShell as craft/
+     * loot/gifts - one list pattern for all six Инвентарь modes. The classic
+     * viewer (multi-select, row copy/paste, undo) is superseded here; the
+     * «Максимум» footer keeps MV table resizing available.
+     */
+    _renderItemsShell(mode) {
+        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const labels = { items: 'Предметы', weapons: 'Оружие', armors: 'Броня' };
+        const getter = { items: 'getItems', weapons: 'getWeapons', armors: 'getArmors' }[mode];
+        const editor = { items: this.itemEditor, weapons: this.weaponEditor, armors: this.armorEditor }[mode];
+        const form = { items: 'showItemDetail', weapons: 'showWeaponDetail', armors: 'showArmorDetail' }[mode];
+
+        const { detailEl } = this.prepareDatabaseSection('inventory', tt('Инвентарь') + ' — ' + tt(labels[mode]), { showListPanel: false });
+        const remount = () => this.showInventoryUnifiedTab(mode);
+
+        const entries = (this.databaseManager[getter]() || []).filter(Boolean);
+
+        const maxBtn = document.createElement('button');
+        maxBtn.className = 'agonia-btn';
+        maxBtn.style.cssText = 'width:100%;margin-top:6px;';
+        const updateMaxLbl = () => {
+            maxBtn.textContent = tt('Максимум') + ': ' + this.getDatabaseMaximum(mode);
+        };
+        updateMaxLbl();
+        maxBtn.addEventListener('click', () => {
+            this.showChangeMaximumModal(labels[mode], mode, this.databaseManager.getMaxEntries(mode), () => {
+                this._markDatabaseMutation();
+                remount();
+            });
+        });
+
+        new MasterDetailShell({
+            items: entries,
+            searchText: r => [r.name, r.id].join(' '),
+            addLabel: 'Добавить',
+            thumb: r => {
+                const iconSpan = document.createElement('span');
+                iconSpan.className = 'database-list-icon';
+                this.applyListIcon(iconSpan, r, mode);
+                return { el: iconSpan };
+            },
+            title: r => (r.name || tt('Без имени')) + '  #' + r.id,
+            summary: r => '',
+            renderForm: (formCol, entry) => {
+                editor[form](formCol, entry);
+            },
+            onAdd: () => {
+                if (this.databaseManager.getMaxEntries(mode) >= this.getDatabaseMaximum(mode)) {
+                    alert(tt('Достигнут максимум записей — увеличьте «Максимум»'));
+                    return;
+                }
+                this._markDatabaseMutation();
+                this.addDatabaseEntry(mode);
+                remount();
+            },
+            onDuplicate: idx => {
+                if (this.databaseManager.getMaxEntries(mode) >= this.getDatabaseMaximum(mode)) {
+                    alert(tt('Достигнут максимум записей — увеличьте «Максимум»'));
+                    return;
+                }
+                const clone = JSON.parse(JSON.stringify(entries[idx]));
+                delete clone.id;
+                this._markDatabaseMutation();
+                this.databaseManager.addEntry(mode, clone);
+                remount();
+            },
+            onRemove: idx => {
+                const entry = entries[idx];
+                if (!entry) return;
+                if (!confirm(tt('Удалить запись?') + ' ' + (entry.name || '#' + entry.id))) return;
+                this._markDatabaseMutation();
+                this.clearDatabaseEntry(mode, entry.id);
+                remount();
+            },
+            footer: maxBtn
+        }).mount(detailEl);
     }
 
     /**

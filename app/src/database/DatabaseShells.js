@@ -29,6 +29,10 @@ class MasterDetailShell {
      * opts.addLabel     - button caption (default 'Добавить')
      * opts.thumb        - (record) => {url, letter} mini-thumb for list rows (optional)
      * opts.noSearch     - hide the search input (short hand-written lists)
+     * opts.onAdd        - () => void external add (owns the rerender) (optional)
+     * opts.onRemove     - (idx) => void external remove (owns the rerender) (optional)
+     * opts.onDuplicate  - (idx) => void external duplicate (owns the rerender) (optional)
+     * opts.footer       - an extra node under the buttons (e.g. «Максимум») (optional)
      * opts.pinned       - {title, summary, render(formCol, api)} always-first
      *                     fixed list row (e.g. ⚙ globals); selecting it renders
      *                     the pinned form; dup/del act on real records only.
@@ -136,7 +140,11 @@ class MasterDetailShell {
             if (o.thumb) {
                 const th = document.createElement('div');
                 const t = o.thumb(item, idx) || {};
-                if (t.url) {
+                if (t.el) {
+                    // arbitrary node (item icon span etc.)
+                    th.style.cssText = 'flex:none;width:36px;height:44px;display:flex;align-items:center;justify-content:center;overflow:hidden;';
+                    th.appendChild(t.el);
+                } else if (t.url) {
                     th.style.cssText = 'flex:none;width:36px;height:44px;background-color:var(--color-bg-deep);border:1px solid var(--color-border);border-radius:3px;overflow:hidden;display:flex;align-items:center;justify-content:center;';
                     const img = document.createElement('img');
                     img.src = t.url;
@@ -177,7 +185,9 @@ class MasterDetailShell {
         add.style.flex = '1';
         add.textContent = typeof window !== 'undefined' && window.I18n ? window.I18n.tText(o.addLabel) : o.addLabel;
         add.addEventListener('click', () => {
+            if (o.onAdd) { o.onAdd(); return; } // external mutation owns the rerender
             const rec = o.blank();
+            if (rec === null) return; // blank() may decline (e.g. at max)
             o.items.push(rec);
             this.selectedIdx = o.items.length - 1;
             o.onChanged(o.items);
@@ -192,6 +202,7 @@ class MasterDetailShell {
         dup.textContent = '⧉';
         dup.addEventListener('click', () => {
             if (this.selectedIdx === -1 || !o.items.length) return;
+            if (o.onDuplicate) { o.onDuplicate(this.selectedIdx); return; }
             const rec = JSON.parse(JSON.stringify(o.items[this.selectedIdx]));
             o.items.splice(this.selectedIdx + 1, 0, rec);
             this.selectedIdx++;
@@ -207,6 +218,7 @@ class MasterDetailShell {
         del.textContent = '−';
         del.addEventListener('click', () => {
             if (this.selectedIdx === -1 || !o.items.length) return;
+            if (o.onRemove) { o.onRemove(this.selectedIdx); return; }
             o.items.splice(this.selectedIdx, 1);
             this.selectedIdx = Math.max(0, this.selectedIdx - 1);
             o.onChanged(o.items);
@@ -215,6 +227,11 @@ class MasterDetailShell {
         });
         btns.appendChild(del);
         this.listCol.appendChild(btns);
+
+        // Optional footer button (e.g. «Максимум: N» for MV tables). (S25)
+        if (o.footer) {
+            this.listCol.appendChild(o.footer);
+        }
     }
 
     _renderSelection() {
