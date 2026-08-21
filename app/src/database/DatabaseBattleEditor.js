@@ -32,9 +32,9 @@ class DatabaseBattleEditor {
                 ],
                 geometry: [
                     { key: 'Shape', label: 'Форма', type: 'select', options: [['arc', 'Дуга'], ['circle', 'Круг'], ['line', 'Линия']], def: 'arc' },
-                    { key: 'Range', label: 'Радиус (тайлы)', type: 'number', step: 0.1 },
-                    { key: 'Width', label: 'Ширина (px)', type: 'number' },
-                    { key: 'Duration', label: 'Длительность (кадры)', type: 'number' }
+                    { key: 'Range', label: 'Радиус (тайлы)', type: 'slider', min: 0, max: 6, step: 0.1, unit: 'т' },
+                    { key: 'Width', label: 'Ширина (px)', type: 'slider', min: 0, max: 300, step: 4, unit: 'px' },
+                    { key: 'Duration', label: 'Длительность (кадры)', type: 'slider', min: 1, max: 60, step: 1, unit: 'f' }
                 ],
                 limits: [
                     { key: 'Regions', label: 'Регионы блокировки', type: 'text', hint: 'Через запятую; пусто = везде' },
@@ -54,9 +54,9 @@ class DatabaseBattleEditor {
                 ],
                 geometry: [
                     { key: 'Graphic', label: 'Графика (img/pictures)', type: 'text' },
-                    { key: 'Speed', label: 'Скорость (px/кадр)', type: 'number', step: 0.1 },
-                    { key: 'Distance', label: 'Дистанция (тайлы)', type: 'number', step: 0.1 },
-                    { key: 'Hitbox', label: 'Хитбокс (px)', type: 'number' },
+                    { key: 'Speed', label: 'Скорость (px/кадр)', type: 'slider', min: 0, max: 20, step: 0.1, unit: 'px/f' },
+                    { key: 'Distance', label: 'Дистанция (тайлы)', type: 'slider', min: 0, max: 30, step: 0.5, unit: 'т' },
+                    { key: 'Hitbox', label: 'Хитбокс (px)', type: 'slider', min: 4, max: 96, step: 2, unit: 'px' },
                     { key: 'Z', label: 'Слой (Z)', type: 'number' }
                 ],
                 limits: [
@@ -76,7 +76,7 @@ class DatabaseBattleEditor {
                     { key: 'Name', label: 'Название', type: 'text' }
                 ],
                 geometry: [
-                    { key: 'MaxRange', label: 'Дальность (тайлы)', type: 'number', step: 0.1 },
+                    { key: 'MaxRange', label: 'Дальность (тайлы)', type: 'slider', min: 0, max: 30, step: 0.5, unit: 'т' },
                     { key: 'Color', label: 'Цвет линии', type: 'text', hint: '#rrggbb' }
                 ],
                 limits: [
@@ -95,11 +95,11 @@ class DatabaseBattleEditor {
                 ],
                 geometry: [
                     { key: 'TargetMode', label: 'Наведение', type: 'select', options: [['0', 'По направлению движения'], ['1', 'За курсором (игрок)'], ['2', 'К игроку (NPC)']], def: '0' },
-                    { key: 'SpeedMultiplier', label: 'Множитель скорости', type: 'number', step: 0.1 },
-                    { key: 'Duration', label: 'Длительность (кадры)', type: 'number' },
-                    { key: 'Decay', label: 'Затухание', type: 'number', step: 0.1, hint: '1.5 = плавно теряет скорость' },
-                    { key: 'Cooldown', label: 'Кулдаун (кадры)', type: 'number' },
-                    { key: 'MaxCharges', label: 'Заряды', type: 'number', min: 1 },
+                    { key: 'SpeedMultiplier', label: 'Множитель скорости', type: 'slider', min: 0, max: 10, step: 0.1, unit: '×' },
+                    { key: 'Duration', label: 'Длительность (кадры)', type: 'slider', min: 1, max: 60, step: 1, unit: 'f' },
+                    { key: 'Decay', label: 'Затухание', type: 'slider', min: 0, max: 5, step: 0.1, hint: '1.5 = плавно теряет скорость' },
+                    { key: 'Cooldown', label: 'Кулдаун (кадры)', type: 'slider', min: 0, max: 300, step: 5, unit: 'f' },
+                    { key: 'MaxCharges', label: 'Заряды', type: 'slider', min: 1, max: 10, step: 1 },
                     { key: 'SE', label: 'Звук (audio/se)', type: 'text' }
                 ]
             }
@@ -225,7 +225,7 @@ class DatabaseBattleEditor {
                 ? (r.Name || 'Рывок')
                 : (i + 1) + '. ' + (r.Name || r.ID || '—'),
             summary: r => this._summary(r, meta.kind),
-            renderForm: (formCol, record, idx, api) => this._renderForm(formCol, record, meta, api)
+            renderForm: (formCol, record, idx, api) => this._renderForm(formCol, record, meta, api, idx)
         });
         shell.mount(content);
     }
@@ -237,7 +237,7 @@ class DatabaseBattleEditor {
         return '×' + r.SpeedMultiplier + ' · ' + r.Duration + 'f · cd' + r.Cooldown;
     }
 
-    _renderForm(formCol, record, meta, api) {
+    _renderForm(formCol, record, meta, api, idx) {
         const defs = this._fieldDefs[meta.kind];
         const groups = [
             ['Идентификация', defs.id],
@@ -246,31 +246,23 @@ class DatabaseBattleEditor {
             ['Реакции при попадании', defs.reactions]
         ].filter(([, fields]) => fields);
 
+        const head = meta.kind === 'dash'
+            ? (record.Name || 'Рывок')
+            : ((idx + 1) + '. ' + (record.Name || record.ID || '—'));
+        const form = new InspectorForm();
+        form.head(this._tt(head), this._tt(this._summary(record, meta.kind)));
         for (const [title, fields] of groups) {
-            const sec = ShellKit.section(this._tt(title));
-            const grid = ShellKit.grid();
-            for (const f of fields) {
-                grid.appendChild(this._renderField(record, f, api));
-            }
-            sec.appendChild(grid);
-            formCol.appendChild(sec);
+            form.fields(fields, record, { section: this._tt(title), commit: () => api.changed() });
         }
+        form.mount(formCol);
     }
 
     _renderField(record, f, api) {
-        if (f.type === 'select') {
-            const opts = f.options.map(([v, l]) => ({ value: v, label: this._tt(l) }));
-            const cur = record[f.key] !== undefined && record[f.key] !== '' ? String(record[f.key]) : (f.def || f.options[0][0]);
-            return ShellKit.field(f.label,
-                ShellKit.select(opts, cur, v => { record[f.key] = v; api.changed(); }), f.hint);
-        }
-        if (f.type === 'number') {
-            return ShellKit.field(f.label,
-                ShellKit.number(record[f.key], v => { record[f.key] = v; api.changed(); },
-                    { min: f.min, max: f.max, step: f.step }), f.hint);
-        }
-        return ShellKit.field(f.label,
-            ShellKit.text(record[f.key], v => { record[f.key] = v; api.changed(); }), f.hint);
+        const wrap = document.createElement('div');
+        const single = new InspectorForm();
+        single.field(f, record, () => api.changed());
+        wrap.appendChild(single.root);
+        return wrap;
     }
 }
 

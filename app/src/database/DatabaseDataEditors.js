@@ -493,11 +493,28 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
     }
 
     _renderScreenBlocks(contentHost, hints, popup, notif) {
+        const K = AgoniaCardEditorBase;
+        const mkTable = (host, section, key, opts) => {
+            const entries = K.decodeCollection(section[key]);
+            const persist = () => { section[key] = K.encodeCollection(entries); };
+            new DataTable({
+                items: entries,
+                countLabel: opts.countLabel,
+                columns: opts.columns,
+                expandable: opts.expandable,
+                onAdd: () => { entries.push(JSON.parse(JSON.stringify(opts.blank))); persist(); opts.rerender(host); },
+                addLabel: opts.addLabel,
+                onRemove: idx => { entries.splice(idx, 1); persist(); opts.rerender(host); },
+                onReorder: (a, b) => { const [m] = entries.splice(a, 1); entries.splice(b, 0, m); persist(); opts.rerender(host); },
+                onChanged: persist
+            }).mount(host);
+        };
+
         // --- hint presets ---
         contentHost.appendChild(this._sectionTitle('Пресеты хинтов (натив 735)'));
-        const hintHost = this._div('padding:0 16px;');
+        const hintHost = this._div('padding:0 16px 12px;');
         contentHost.appendChild(hintHost);
-        this._renderCards(hintHost, hints, 'Presets', {
+        mkTable(hintHost, hints, 'Presets', {
             countLabel: 'пресетов',
             addLabel: 'Добавить пресет',
             blank: {
@@ -505,38 +522,36 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
                 Centered: 'true', X: 0, Y: 610, Duration: 350,
                 'Hide on Transfer': 'true', 'SE Name': '', 'SE Volume': 90, 'SE Pitch': 100
             },
-            headline: entry => entry.Name || '—',
-            summary: entry => 'Y=' + entry.Y + (entry['SE Name'] ? ' · SE ' + entry['SE Name'] : ''),
-            renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px 12px;');
-                const mk = (label, key, type) => {
-                    const w = this._fieldLabel(label);
-                    w.appendChild(this._input(entry[key], v => { entry[key] = v; }, type));
-                    return w;
-                };
-                grid.appendChild(mk('Имя', 'Name'));
-                grid.appendChild(mk('Иконка', 'Icon Index', 'number'));
-                grid.appendChild(mk('Шрифт', 'Font Size', 'number'));
-                grid.appendChild(mk('Размер иконки', 'Icon Size', 'number'));
-                grid.appendChild(mk('X', 'X', 'number'));
-                grid.appendChild(mk('Y', 'Y', 'number'));
-                grid.appendChild(mk('Длительность (f)', 'Duration', 'number'));
-                grid.appendChild(mk('SE', 'SE Name'));
-                const centered = this._fieldLabel('По центру');
-                centered.appendChild(this._checkbox(entry.Centered, v => { entry.Centered = String(v); }));
-                grid.appendChild(centered);
-                const hide = this._fieldLabel('Скрыть при переходе');
-                hide.appendChild(this._checkbox(entry['Hide on Transfer'], v => { entry['Hide on Transfer'] = String(v); }));
-                grid.appendChild(hide);
-                card.appendChild(grid);
-            }
+            columns: [
+                { label: 'Имя', key: 'Name', type: 'text' },
+                { label: 'Y', key: 'Y', type: 'number', align: 'right', width: '80px' },
+                { label: 'Длительность', key: 'Duration', type: 'number', align: 'right', width: '110px' },
+                { label: 'SE', key: 'SE Name', type: 'text', width: '18%', dim: true }
+            ],
+            expandable: (box, entry) => {
+                const f = new InspectorForm();
+                f.fields([
+                    { key: 'Name', label: 'Имя', type: 'text' },
+                    { key: 'Icon Index', label: 'Иконка', type: 'number' },
+                    { key: 'Font Size', label: 'Шрифт', type: 'slider', min: 8, max: 64 },
+                    { key: 'Icon Size', label: 'Размер иконки', type: 'slider', min: 8, max: 96 },
+                    { key: 'X', label: 'X', type: 'number' },
+                    { key: 'Y', label: 'Y', type: 'slider', min: 0, max: 720, step: 5 },
+                    { key: 'Duration', label: 'Длительность (f)', type: 'slider', min: 0, max: 1200, step: 10 },
+                    { key: 'SE Name', label: 'SE', type: 'text' },
+                    { key: 'Centered', label: 'По центру', type: 'check' },
+                    { key: 'Hide on Transfer', label: 'Скрыть при переходе', type: 'check' }
+                ], entry, { commit: () => {} });
+                f.mount(box);
+            },
+            rerender: () => this._renderScreenTextContent(contentHost)
         });
 
         // --- title presets ---
         contentHost.appendChild(this._sectionTitle('Пресеты титулов (натив 737)'));
-        const titleHost = this._div('padding:0 16px;');
+        const titleHost = this._div('padding:0 16px 12px;');
         contentHost.appendChild(titleHost);
-        this._renderCards(titleHost, hints, 'Title Presets', {
+        mkTable(titleHost, hints, 'Title Presets', {
             countLabel: 'пресетов',
             addLabel: 'Добавить титул',
             blank: {
@@ -546,46 +561,35 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
                 'Disappear Type': 'Fade', 'Typewriter Delay': 3,
                 'Fade In Time': 60, 'Hold Time': 180, 'Fade Out Time': 60
             },
-            headline: entry => entry.Name || '—',
-            summary: entry => (entry['Appear Type'] || '') + ' · ' + (entry['Font Size'] || '') + 'px',
-            renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px 12px;');
-                const mk = (label, key, type) => {
-                    const w = this._fieldLabel(label);
-                    w.appendChild(this._input(entry[key], v => { entry[key] = v; }, type));
-                    return w;
-                };
-                grid.appendChild(mk('Имя', 'Name'));
-                grid.appendChild(mk('Шрифт', 'Font Size', 'number'));
-                grid.appendChild(mk('Обводка', 'Outline Width', 'number'));
-                grid.appendChild(mk('Смещение X', 'X Offset', 'number'));
-                grid.appendChild(mk('Смещение Y', 'Y Offset', 'number'));
-                const types = [
-                    { value: 'Typewriter', label: 'Печатная машинка' },
-                    { value: 'Fade', label: 'Проявление' },
-                    { value: 'Slide', label: 'Сдвиг' }
-                ];
-                const appear = this._fieldLabel('Появление');
-                appear.appendChild(this._select(types, entry['Appear Type'], v => { entry['Appear Type'] = v; }));
-                grid.appendChild(appear);
-                const disappear = this._fieldLabel('Исчезновение');
-                disappear.appendChild(this._select(types, entry['Disappear Type'], v => { entry['Disappear Type'] = v; }));
-                grid.appendChild(disappear);
-                const cx = this._fieldLabel('Центр X');
-                cx.appendChild(this._checkbox(entry['Centered X'], v => { entry['Centered X'] = String(v); }));
-                grid.appendChild(cx);
-                const cy = this._fieldLabel('Центр Y');
-                cy.appendChild(this._checkbox(entry['Centered Y'], v => { entry['Centered Y'] = String(v); }));
-                grid.appendChild(cy);
-                card.appendChild(grid);
-            }
+            columns: [
+                { label: 'Имя', key: 'Name', type: 'text' },
+                { label: 'Появление', key: 'Appear Type', type: 'select', width: '160px',
+                    options: [['Typewriter', 'Печатная машинка'], ['Fade', 'Проявление'], ['Slide', 'Сдвиг']] },
+                { label: 'Шрифт', key: 'Font Size', type: 'number', align: 'right', width: '90px' }
+            ],
+            expandable: (box, entry) => {
+                const f = new InspectorForm();
+                f.fields([
+                    { key: 'Name', label: 'Имя', type: 'text' },
+                    { key: 'Font Size', label: 'Шрифт', type: 'slider', min: 16, max: 144, step: 2 },
+                    { key: 'Outline Width', label: 'Обводка', type: 'slider', min: 0, max: 24 },
+                    { key: 'X Offset', label: 'Смещение X', type: 'number' },
+                    { key: 'Y Offset', label: 'Смещение Y', type: 'number' },
+                    { key: 'Appear Type', label: 'Появление', type: 'select',
+                        options: [['Typewriter', 'Печатная машинка'], ['Fade', 'Проявление'], ['Slide', 'Сдвиг']] },
+                    { key: 'Disappear Type', label: 'Исчезновение', type: 'select',
+                        options: [['Typewriter', 'Печатная машинка'], ['Fade', 'Проявление'], ['Slide', 'Сдвиг']] },
+                    { key: 'Centered X', label: 'Центр X', type: 'check' },
+                    { key: 'Centered Y', label: 'Центр Y', type: 'check' }
+                ], entry, { commit: () => {} });
+                f.mount(box);
+            },
+            rerender: () => this._renderScreenTextContent(contentHost)
         });
 
-        // --- treasure popup ---
+        // --- treasure popup (flat inspector) ---
         contentHost.appendChild(this._sectionTitle('Попапы добычи (натив 729)'));
-        const popupPanel = this._panel();
-        popupPanel.style.margin = '0 16px 16px';
-        const popupGrid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px 12px;');
+        const popupForm = new InspectorForm();
         const popupFields = [
             ['Duration', 'Длительность (f)', 'number'],
             ['Fade Speed', 'Скорость фейда', 'number'],
@@ -595,62 +599,51 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
             ['Y Speed', 'Скорость Y', 'number'],
             ['Font Size', 'Шрифт', 'number'],
             ['Treasure Space Y-Axis', 'Отступ между', 'number'],
-            ['Gold Icon Index', 'Иконка золота', 'number']
+            ['Gold Icon Index', 'Иконка золота', 'number'],
+            ['Icon Scale', 'Масштаб иконки', 'number'],
+            ['Random Movement', 'Случайное движение', 'check'],
+            ['Zoom Effect', 'Зум-эффект', 'check'],
+            ['Gold Popup', 'Попап золота', 'check']
         ];
         for (const [key, label, type] of popupFields) {
-            const w = this._fieldLabel(label);
-            w.appendChild(this._input(popup[key], v => { popup[key] = v; }, type));
-            popupGrid.appendChild(w);
+            popupForm.field({ key, label: this._tt(label), type }, popup, () => {});
         }
-        const scaleWrap = this._fieldLabel('Масштаб иконки');
-        scaleWrap.appendChild(this._input(popup['Icon Scale'], v => { popup['Icon Scale'] = v; }, 'number'));
-        popupGrid.appendChild(scaleWrap);
-        const flags = this._div('display:flex;gap:16px;align-items:center;flex-wrap:wrap;');
-        const rm = this._fieldLabel('Случайное движение');
-        rm.appendChild(this._checkbox(popup['Random Movement'], v => { popup['Random Movement'] = v; }));
-        flags.appendChild(rm);
-        const zoom = this._fieldLabel('Зум-эффект');
-        zoom.appendChild(this._checkbox(popup['Zoom Effect'], v => { popup['Zoom Effect'] = v; }));
-        flags.appendChild(zoom);
-        const gold = this._fieldLabel('Попап золота');
-        gold.appendChild(this._checkbox(popup['Gold Popup'], v => { popup['Gold Popup'] = v; }));
-        flags.appendChild(gold);
-        popupGrid.appendChild(flags);
-        popupPanel.appendChild(popupGrid);
-        contentHost.appendChild(popupPanel);
+        const popupHost = this._div('padding:0 16px 12px;');
+        popupForm.mount(popupHost);
+        contentHost.appendChild(popupHost);
 
         // --- notifications (S15-B) ---
         contentHost.appendChild(this._sectionTitle('Уведомления переменных (SuperDuperNotification)'));
-        const nHost = this._div('padding:0 16px;');
+        const nHost = this._div('padding:0 16px 12px;');
         contentHost.appendChild(nHost);
-        this._renderCards(nHost, notif, 'Monitored Variables', {
+        mkTable(nHost, notif, 'Monitored Variables', {
             countLabel: 'переменных',
             addLabel: 'Добавить переменную',
             blank: {
                 variableId: 1, variableName: 'Имя', nameColor: '#3498db',
                 displayName: '%name: %val', positiveColor: '#2ecc71', negativeColor: '#e74c3c'
             },
-            headline: entry => (entry.variableName || '—') + ' (var ' + entry.variableId + ')',
-            summary: entry => entry.displayName || '',
-            renderBody: (card, entry) => {
-                const grid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px 12px;');
-                const mk = (label, key, type) => {
-                    const w = this._fieldLabel(label);
-                    w.appendChild(this._input(entry[key], v => { entry[key] = v; }, type));
-                    return w;
-                };
-                grid.appendChild(mk('Переменная', 'variableId', 'number'));
-                grid.appendChild(mk('Имя', 'variableName'));
-                grid.appendChild(mk('Цвет имени', 'nameColor'));
-                grid.appendChild(mk('Шаблон текста', 'displayName'));
-                grid.appendChild(mk('Цвет роста', 'positiveColor'));
-                grid.appendChild(mk('Цвет падения', 'negativeColor'));
-                card.appendChild(grid);
-            }
+            columns: [
+                { label: 'Var', key: 'variableId', type: 'number', align: 'right', width: '80px' },
+                { label: 'Имя', key: 'variableName', type: 'text', width: '20%' },
+                { label: 'Шаблон', key: 'displayName', type: 'text', dim: true }
+            ],
+            expandable: (box, entry) => {
+                const f = new InspectorForm();
+                f.fields([
+                    { key: 'variableId', label: 'Переменная', type: 'number' },
+                    { key: 'variableName', label: 'Имя', type: 'text' },
+                    { key: 'nameColor', label: 'Цвет имени', type: 'text', hint: '#rrggbb' },
+                    { key: 'displayName', label: 'Шаблон текста', type: 'text', hint: '%name / %val' },
+                    { key: 'positiveColor', label: 'Цвет роста', type: 'text', hint: '#rrggbb' },
+                    { key: 'negativeColor', label: 'Цвет падения', type: 'text', hint: '#rrggbb' }
+                ], entry, { commit: () => {} });
+                f.mount(box);
+            },
+            rerender: () => this._renderScreenTextContent(contentHost)
         });
-        const nPanel = this._panel();
-        nPanel.style.margin = '8px 16px 16px';
-        const nGrid = this._div('display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px 12px;');
+
+        const nForm = new InspectorForm();
         const nFlat = [
             ['Default X', 'X'], ['Default Y', 'Y'], ['Spacing Y', 'Отступ Y'],
             ['Spawn Delay', 'Задержка (f)'], ['Wait Time', 'Пауза (f)'],
@@ -660,11 +653,10 @@ class DatabaseScreenTextEditor extends AgoniaCardEditorBase {
             ['Slide Smoothness', 'Плавность']
         ];
         for (const [key, label] of nFlat) {
-            const w = this._fieldLabel(label);
-            w.appendChild(this._input(notif[key], v => { notif[key] = v; }, 'number'));
-            nGrid.appendChild(w);
+            nForm.field({ key, label: this._tt(label), type: 'number' }, notif, () => {});
         }
-        nPanel.appendChild(nGrid);
+        const nPanel = this._div('padding:0 16px 16px;');
+        nForm.mount(nPanel);
         contentHost.appendChild(nPanel);
     }
 }
@@ -887,55 +879,57 @@ class DatabaseWorldEditor extends AgoniaCardEditorBase {
     }
 
     // -- Steps ----------------------------------------------------------
-_renderSteps(content) {
+    _renderSteps(content) {
         const s = this.getSection('steps');
+        const K = AgoniaCardEditorBase;
+
         content.appendChild(this._sectionTitle('Шаги по поверхностям'));
         const hint = this._div('font-size:11px;color:var(--color-text-dim);padding:0 8px 8px;line-height:1.5;');
-        hint.textContent = this._tt('Террейн-ID тайлсета выбирает пул звуков шагов. Клик по строке раскрывает настройку.');
+        hint.textContent = this._tt('Террейн-ID тайлсета выбирает пул звуков шагов. ▶ раскрывает пул звуков.');
         content.appendChild(hint);
 
-        const K = AgoniaCardEditorBase;
         const entries = K.decodeCollection(s['Terrain Configurations']);
-        const host = this._div('padding:0 8px;');
+        const persist = () => { s['Terrain Configurations'] = K.encodeCollection(entries); };
+        const host = this._div('padding:0 8px 12px;');
         content.appendChild(host);
-        const rerender = () => this._renderSteps(content);
 
-        const bar = this._div('display:flex;align-items:center;gap:12px;padding-bottom:8px;');
-        const count = this._div('font-size:12px;color:var(--color-text-dim);');
-        count.textContent = entries.length + ' ' + this._tt('поверхностей');
-        bar.appendChild(count);
-        bar.appendChild(this._div('flex:1'));
-        bar.appendChild(this._button('Добавить поверхность', () => {
-            entries.push({ 'Terrain ID': entries.length + 1, 'Playback Mode': 'random', 'Sound Pool': '[]' });
-            s['Terrain Configurations'] = K.encodeCollection(entries);
-            rerender();
-        }));
-        host.appendChild(bar);
-
-        const acc = new AccordionList({
+        new DataTable({
             items: entries,
-            header: (e) => 'Террейн ' + e['Terrain ID'],
-            sub: (e) => (e['Playback Mode'] === 'sequential' ? 'по кругу' : 'случайно') +
-                ' · звуков: ' + K.decodeNested(e['Sound Pool']).length,
-            onRemove: idx => { entries.splice(idx, 1); s['Terrain Configurations'] = K.encodeCollection(entries); rerender(); },
-            onReorder: (a, b) => { const [m] = entries.splice(a, 1); entries.splice(b, 0, m); s['Terrain Configurations'] = K.encodeCollection(entries); rerender(); },
-            renderBody: (body, entry) => {
-                const grid = ShellKit.grid();
-                grid.appendChild(ShellKit.field('Террейн ID',
-                    ShellKit.number(entry['Terrain ID'], v => { entry['Terrain ID'] = v; })));
-                grid.appendChild(ShellKit.field('Воспроизведение',
-                    ShellKit.select([{ value: 'random', label: 'Случайно' }, { value: 'sequential', label: 'По кругу' }],
-                        entry['Playback Mode'], v => { entry['Playback Mode'] = v; })));
-                body.appendChild(grid);
-                body.appendChild(this._renderSoundPool(entry));
-            }
-        });
-        acc.mount(host);
+            countLabel: 'поверхностей',
+            columns: [
+                { label: '№', get: (r, i) => i + 1, align: 'right', width: '40px' },
+                { label: 'Террейн ID', key: 'Terrain ID', type: 'number', align: 'right', width: '110px' },
+                { label: 'Воспроизведение', key: 'Playback Mode', type: 'select', width: '150px',
+                    options: [['random', 'Случайно'], ['sequential', 'По кругу']] },
+                { label: 'Звуков', get: e => K.decodeNested(e['Sound Pool']).length, align: 'right', width: '90px' }
+            ],
+            expandable: (box, entry) => {
+                const modeForm = new InspectorForm();
+                modeForm.fields([
+                    { key: 'Terrain ID', label: 'Террейн ID', type: 'number' },
+                    { key: 'Playback Mode', label: 'Воспроизведение', type: 'select',
+                        options: [['random', 'Случайно'], ['sequential', 'По кругу']] }
+                ], entry, { commit: persist });
+                modeForm.mount(box);
+                box.appendChild(this._soundPoolTable(entry));
+            },
+            onAdd: () => {
+                entries.push({ 'Terrain ID': entries.length + 1, 'Playback Mode': 'random', 'Sound Pool': '[]' });
+                persist();
+                this._renderSteps(content);
+            },
+            addLabel: 'Добавить поверхность',
+            onRemove: idx => { entries.splice(idx, 1); persist(); this._renderSteps(content); },
+            onReorder: (a, b) => {
+                const [m] = entries.splice(a, 1);
+                entries.splice(b, 0, m);
+                persist(); this._renderSteps(content);
+            },
+            onChanged: persist
+        }).mount(host);
 
         content.appendChild(this._sectionTitle('Настройки шагов'));
-        const panel = ShellKit.section('');
-        panel.style.padding = '8px';
-        const grid = ShellKit.grid();
+        const form = new InspectorForm();
         const flat = [
             ['Base Step Interval', 'Интервал шага (кадры)'],
             ['Max Hearing Distance', 'Слышимость (тайлы)'],
@@ -950,214 +944,178 @@ _renderSteps(content) {
             ['Volume Fade Type', 'Кривая затухания']
         ];
         for (const [key, label] of flat) {
-            grid.appendChild(ShellKit.field(this._tt(label),
-                ShellKit.number(s[key], v => { s[key] = v; })));
+            form.field({ key, label: this._tt(label), type: 'number' }, s, () => {});
         }
-        const evw = ShellKit.field('События тоже шагают');
-        evw.appendChild(ShellKit.checkbox(s.Events, v => { s.Events = v; }));
-        grid.appendChild(evw);
-        panel.appendChild(grid);
+        form.field({ key: 'Events', label: 'События тоже шагают', type: 'check' }, s, () => {});
+        const panel = this._div('padding:0 8px 8px;');
+        form.mount(panel);
         content.appendChild(panel);
     }
 
-    _renderSoundPool(entry) {
-        const pool = AgoniaCardEditorBase.decodeNested(entry['Sound Pool']);
-        const sec = ShellKit.section('Пул звуков');
-        const host = this._div('padding:0 8px 8px;display:flex;flex-direction:column;gap:6px;');
-        sec.appendChild(host);
+    _soundPoolTable(entry) {
+        const K = AgoniaCardEditorBase;
+        const pool = K.decodeNested(entry['Sound Pool']);
+        const persist = () => { entry['Sound Pool'] = K.encodeNested(pool); };
+        const wrap = this._div('padding:8px 0 0;');
+        const cap = this._div('font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--color-text-dim);margin:8px 0 6px;');
+        cap.textContent = this._tt('Пул звуков');
+        wrap.appendChild(cap);
 
-        pool.forEach((snd, i) => {
-            const row = this._div('display:grid;grid-template-columns:1fr 76px 76px 34px;gap:6px;align-items:end;');
-            row.appendChild(ShellKit.field('Файл (audio/se)',
-                ShellKit.text(snd.Filename, v => { snd.Filename = v; })));
-            row.appendChild(ShellKit.field('Громкость',
-                ShellKit.number(snd.Volume, v => { snd.Volume = v; })));
-            row.appendChild(ShellKit.field('Темп',
-                ShellKit.number(snd.Pitch, v => { snd.Pitch = v; })));
-            const del = document.createElement('button');
-            del.className = 'agonia-btn danger';
-            del.textContent = '✕';
-            del.addEventListener('click', () => {
-                pool.splice(i, 1);
-                entry['Sound Pool'] = AgoniaCardEditorBase.encodeNested(pool);
-                sec.replaceWith(this._renderSoundPool(entry));
-            });
-            row.appendChild(del);
-            host.appendChild(row);
-        });
-        const add = document.createElement('button');
-        add.className = 'agonia-btn';
-        add.textContent = '+ Звук';
-        add.addEventListener('click', () => {
-            pool.push({ Filename: '', Volume: 90, Pitch: 100 });
-            entry['Sound Pool'] = AgoniaCardEditorBase.encodeNested(pool);
-            sec.replaceWith(this._renderSoundPool(entry));
-        });
-        host.appendChild(add);
-        return sec;
+        new DataTable({
+            items: pool,
+            countLabel: 'звуков',
+            columns: [
+                { label: 'Файл (audio/se)', key: 'Filename', type: 'text' },
+                { label: 'Громкость', key: 'Volume', type: 'number', align: 'right', width: '100px' },
+                { label: 'Темп', key: 'Pitch', type: 'number', align: 'right', width: '100px' }
+            ],
+            onAdd: () => { pool.push({ Filename: '', Volume: 90, Pitch: 100 }); persist(); wrap.replaceWith(this._soundPoolTable(entry)); },
+            addLabel: '+ Звук',
+            onRemove: idx => { pool.splice(idx, 1); persist(); wrap.replaceWith(this._soundPoolTable(entry)); },
+            onChanged: persist
+        }).mount(wrap);
+        return wrap;
     }
 
     _renderVariables(content) {
         const s = this.getSection('variables');
         content.appendChild(this._sectionTitle('Реактор переменных (SuperDuperVariables)'));
         const hint = this._div('font-size:11px;color:var(--color-text-dim);padding:0 8px 8px;line-height:1.5;');
-        hint.textContent = this._tt('Группы следят за переменными и меняют свитчи/переменные. Decay гасит переменные, AutoOff выключает свитчи через N секунд. Клик по строке раскрывает настройку.');
+        hint.textContent = this._tt('Группы следят за переменными и меняют свитчи/переменные. Decay гасит переменные, AutoOff выключает свитчи через N секунд.');
         content.appendChild(hint);
 
-        // Globals in one compact panel
-        const panel = ShellKit.section('');
-        panel.style.padding = '8px';
-        const grid = ShellKit.grid();
-        grid.appendChild(ShellKit.field('Переменная «в руке»',
-            ShellKit.number(s.Hand_MonitorVar, v => { s.Hand_MonitorVar = v; }), 'ItemTags/Спрайтер следят за ней'));
-        const az = ShellKit.field('Авто-обнуление руки');
-        az.appendChild(ShellKit.checkbox(s.Hand_AutoZero, v => { s.Hand_AutoZero = v; }));
-        grid.appendChild(az);
-        const dbg = ShellKit.field('Режим отладки');
-        dbg.appendChild(ShellKit.checkbox(s.Debug_Mode, v => { s.Debug_Mode = v; }));
-        grid.appendChild(dbg);
-        panel.appendChild(grid);
-        content.appendChild(panel);
+        // Globals (inspector)
+        const gform = new InspectorForm();
+        gform.field({ key: 'Hand_MonitorVar', label: 'Переменная «в руке»', type: 'number', hint: 'ItemTags/Спрайтер следят за ней' }, s, () => {});
+        gform.field({ key: 'Hand_AutoZero', label: 'Авто-обнуление руки', type: 'check' }, s, () => {});
+        gform.field({ key: 'Debug_Mode', label: 'Режим отладки', type: 'check' }, s, () => {});
+        const gpanel = this._div('padding:0 8px 12px;');
+        gform.mount(gpanel);
+        content.appendChild(gpanel);
 
         const K = AgoniaCardEditorBase;
         const rerender = () => this._renderVariables(content);
 
-        // Reactor groups
+        // Reactor groups (table, ▶ = reactions)
         content.appendChild(this._sectionTitle('Реактор-группы'));
         const groups = K.decodeCollection(s['Reactor_Groups']);
-        const gHost = this._div('padding:0 8px;');
-        content.appendChild(gHost);
-        this._renderVarList(gHost, s, 'Reactor_Groups', groups, {
+        this._varTable(content, s, 'Reactor_Groups', groups, {
+            countLabel: 'групп',
+            addLabel: 'Добавить группу',
             blank: { Name: 'Новая группа', Reactions: '[]' },
-            header: (e) => e.Name || '—',
-            sub: (e) => K.decodeNested(e.Reactions).length + ' ' + this._tt('реакций'),
-            body: (body, entry) => {
-                const g = ShellKit.grid();
-                g.appendChild(ShellKit.field('Имя группы', ShellKit.text(entry.Name, v => { entry.Name = v; })));
-                body.appendChild(g);
-                body.appendChild(this._renderReactions(entry));
+            columns: [
+                { label: 'Имя', key: 'Name', type: 'text' },
+                { label: 'Реакций', get: e => K.decodeNested(e.Reactions).length, align: 'right', width: '90px' }
+            ],
+            expandable: (box, entry, idx, api, persist) => {
+                const f = new InspectorForm();
+                f.field({ key: 'Name', label: 'Имя группы', type: 'text' }, entry,
+                    () => { persist(); api.refresh(); });
+                f.mount(box);
+                box.appendChild(this._reactionsTable(entry));
             },
             rerender
         });
 
-        // Decay
+        // Decay (table)
         content.appendChild(this._sectionTitle('Затухание переменных (Decay)'));
-        const dHost = this._div('padding:0 8px;');
-        content.appendChild(dHost);
-        this._renderVarList(dHost, s, 'Decay_Variables', K.decodeCollection(s['Decay_Variables']), {
+        this._varTable(content, s, 'Decay_Variables', K.decodeCollection(s['Decay_Variables']), {
+            countLabel: 'переменных',
+            addLabel: 'Добавить',
             blank: { VariableID: 1, TickInterval: 10 },
-            header: (e) => 'var ' + e.VariableID,
-            sub: (e) => '−1 каждые ' + e.TickInterval + ' тиков',
-            body: (body, entry) => {
-                const g = ShellKit.grid();
-                g.appendChild(ShellKit.field('Переменная', ShellKit.number(entry.VariableID, v => { entry.VariableID = v; })));
-                g.appendChild(ShellKit.field('Тик-интервал', ShellKit.number(entry.TickInterval, v => { entry.TickInterval = v; })));
-                body.appendChild(g);
-            },
+            columns: [
+                { label: 'Переменная', key: 'VariableID', type: 'number', align: 'right', width: '120px' },
+                { label: 'Тик-интервал', key: 'TickInterval', type: 'number', align: 'right', width: '120px' },
+                { label: 'Эффект', get: e => '−1 каждые ' + e.TickInterval + ' тиков', dim: true }
+            ],
             rerender
         });
 
-        // AutoOff
+        // AutoOff (two tables side by side)
         content.appendChild(this._sectionTitle('Авто-выключение'));
-        const row = this._div('display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 8px;');
+        const row = this._div('display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:0 8px;');
         content.appendChild(row);
         const swHost = this._div('');
         row.appendChild(swHost);
+        this._varTable(swHost, s, 'AutoOff_Switches', K.decodeCollection(s['AutoOff_Switches']), {
+            countLabel: 'свитчей',
+            addLabel: 'Свитч',
+            blank: { switchId: 1, duration: 1 },
+            columns: [
+                { label: 'Свитч', key: 'switchId', type: 'number', align: 'right', width: '90px' },
+                { label: 'Секунд', key: 'duration', type: 'number', align: 'right', width: '90px' }
+            ],
+            rerender
+        });
         const vrHost = this._div('');
         row.appendChild(vrHost);
-        this._renderVarList(swHost, s, 'AutoOff_Switches', K.decodeCollection(s['AutoOff_Switches']), {
-            blank: { switchId: 1, duration: 1 },
-            header: (e) => 'sw ' + e.switchId,
-            sub: (e) => 'выкл через ' + e.duration + ' с',
-            body: (body, entry) => {
-                const g = ShellKit.grid();
-                g.appendChild(ShellKit.field('Свитч', ShellKit.number(entry.switchId, v => { entry.switchId = v; })));
-                g.appendChild(ShellKit.field('Секунд', ShellKit.number(entry.duration, v => { entry.duration = v; })));
-                body.appendChild(g);
-            },
-            rerender
-        });
-        this._renderVarList(vrHost, s, 'AutoOff_Variables', K.decodeCollection(s['AutoOff_Variables']), {
+        this._varTable(vrHost, s, 'AutoOff_Variables', K.decodeCollection(s['AutoOff_Variables']), {
+            countLabel: 'переменных',
+            addLabel: 'Переменную',
             blank: { variableId: 1, duration: 1 },
-            header: (e) => 'var ' + e.variableId,
-            sub: (e) => '= 0 через ' + e.duration + ' с',
-            body: (body, entry) => {
-                const g = ShellKit.grid();
-                g.appendChild(ShellKit.field('Переменная', ShellKit.number(entry.variableId, v => { entry.variableId = v; })));
-                g.appendChild(ShellKit.field('Секунд', ShellKit.number(entry.duration, v => { entry.duration = v; })));
-                body.appendChild(g);
-            },
+            columns: [
+                { label: 'Переменная', key: 'variableId', type: 'number', align: 'right', width: '100px' },
+                { label: 'Секунд', key: 'duration', type: 'number', align: 'right', width: '90px' }
+            ],
             rerender
         });
     }
 
-    /** Accordion list over an MV collection with add/remove/reorder. */
-    _renderVarList(host, section, key, entries, opts) {
+    /** DataTable over an MV collection with add/remove/reorder. */
+    _varTable(host, section, key, entries, opts) {
         const K = AgoniaCardEditorBase;
-        host.innerHTML = '';
-        const bar = this._div('display:flex;align-items:center;gap:10px;padding-bottom:6px;');
-        const count = this._div('font-size:12px;color:var(--color-text-dim);');
-        count.textContent = entries.length + ' ' + this._tt(opts.countLabel || 'записей');
-        bar.appendChild(count);
-        bar.appendChild(this._div('flex:1'));
-        bar.appendChild(this._button(opts.addLabel || 'Добавить', () => {
-            entries.push(JSON.parse(JSON.stringify(opts.blank)));
-            section[key] = K.encodeCollection(entries);
-            opts.rerender();
-        }));
-        host.appendChild(bar);
-
-        const acc = new AccordionList({
+        const persist = () => { section[key] = K.encodeCollection(entries); };
+        new DataTable({
             items: entries,
-            header: opts.header,
-            sub: opts.sub,
-            onRemove: idx => { entries.splice(idx, 1); section[key] = K.encodeCollection(entries); opts.rerender(); },
-            onReorder: (a, b) => { const [m] = entries.splice(a, 1); entries.splice(b, 0, m); section[key] = K.encodeCollection(entries); opts.rerender(); },
-            renderBody: (body, entry) => opts.body(body, entry)
-        });
-        acc.mount(host);
+            countLabel: opts.countLabel,
+            columns: opts.columns,
+            expandable: opts.expandable ? (box, entry, idx, api) => opts.expandable(box, entry, idx, api, persist) : undefined,
+            onAdd: () => {
+                entries.push(JSON.parse(JSON.stringify(opts.blank)));
+                persist();
+                opts.rerender();
+            },
+            addLabel: opts.addLabel,
+            onRemove: idx => { entries.splice(idx, 1); persist(); opts.rerender(); },
+            onReorder: opts.expandable ? undefined : (a, b) => {
+                const [m] = entries.splice(a, 1);
+                entries.splice(b, 0, m);
+                persist(); opts.rerender();
+            },
+            onChanged: persist
+        }).mount(host);
     }
 
-    _renderReactions(entry) {
+    _reactionsTable(entry) {
         const K = AgoniaCardEditorBase;
         const list = K.decodeNested(entry.Reactions);
-        const sec = ShellKit.section('Реакции');
-        const host = this._div('padding:0 8px 8px;display:flex;flex-direction:column;gap:6px;');
-        sec.appendChild(host);
+        const persist = () => { entry.Reactions = K.encodeNested(list); };
+        const wrap = this._div('padding:8px 0 0;');
+        const cap = this._div('font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--color-text-dim);margin:8px 0 6px;');
+        cap.textContent = this._tt('Реакции');
+        wrap.appendChild(cap);
 
-        list.forEach((r, i) => {
-            const row = this._div('display:grid;grid-template-columns:1fr 90px 90px 1fr 1fr 34px;gap:6px;align-items:end;');
-            row.appendChild(ShellKit.field('Переменная', ShellKit.number(r.TriggerVarId, v => { r.TriggerVarId = v; })));
-            row.appendChild(ShellKit.field('Условие',
-                ShellKit.select([{ value: 'equal', label: '=' }, { value: 'greater', label: '>' },
-                    { value: 'less', label: '<' }, { value: 'notEqual', label: '≠' }],
-                    r.Condition, v => { r.Condition = v; })));
-            row.appendChild(ShellKit.field('Значение', ShellKit.number(r.Value, v => { r.Value = v; })));
-            row.appendChild(ShellKit.field('Свитчи (id:знач.)',
-                ShellKit.text(r.SwitchesToChange, v => { r.SwitchesToChange = v; })));
-            row.appendChild(ShellKit.field('Переменные (id:знач.)',
-                ShellKit.text(r.VariablesToChange, v => { r.VariablesToChange = v; })));
-            const del = document.createElement('button');
-            del.className = 'agonia-btn danger';
-            del.textContent = '✕';
-            del.addEventListener('click', () => {
-                list.splice(i, 1);
-                entry.Reactions = K.encodeNested(list);
-                sec.replaceWith(this._renderReactions(entry));
-            });
-            row.appendChild(del);
-            host.appendChild(row);
-        });
-        const add = document.createElement('button');
-        add.className = 'agonia-btn';
-        add.textContent = '+ Реакция';
-        add.addEventListener('click', () => {
-            list.push({ TriggerVarId: 1, Condition: 'equal', Value: 0, SwitchesToChange: '', VariablesToChange: '' });
-            entry.Reactions = K.encodeNested(list);
-            sec.replaceWith(this._renderReactions(entry));
-        });
-        host.appendChild(add);
-        return sec;
+        new DataTable({
+            items: list,
+            countLabel: 'реакций',
+            columns: [
+                { label: 'Переменная', key: 'TriggerVarId', type: 'number', align: 'right', width: '110px' },
+                { label: 'Условие', key: 'Condition', type: 'select', width: '90px',
+                    options: [['equal', '='], ['greater', '>'], ['less', '<'], ['notEqual', '≠']] },
+                { label: 'Значение', key: 'Value', type: 'number', align: 'right', width: '90px' },
+                { label: 'Свитчи (id:знач.)', key: 'SwitchesToChange', type: 'text' },
+                { label: 'Переменные (id:знач.)', key: 'VariablesToChange', type: 'text' }
+            ],
+            onAdd: () => {
+                list.push({ TriggerVarId: 1, Condition: 'equal', Value: 0, SwitchesToChange: '', VariablesToChange: '' });
+                persist();
+                wrap.replaceWith(this._reactionsTable(entry));
+            },
+            addLabel: '+ Реакция',
+            onRemove: idx => { list.splice(idx, 1); persist(); wrap.replaceWith(this._reactionsTable(entry)); },
+            onChanged: persist
+        }).mount(wrap);
+        return wrap;
     }
 
     // -- Drop -----------------------------------------------------------
@@ -1193,19 +1151,17 @@ _renderSteps(content) {
         ];
 
         for (const [title, fields, ...flags] of groups) {
-            const sec = ShellKit.section(this._tt(title));
-            const grid = ShellKit.grid();
+            const form = new InspectorForm();
+            form.section(this._tt(title));
             for (const [key, label] of fields) {
-                grid.appendChild(ShellKit.field(this._tt(label),
-                    ShellKit.text(s[key], v => { s[key] = v; })));
+                form.field({ key, label: this._tt(label), type: 'text' }, s, () => {});
             }
             for (const [key, label] of flags) {
-                const f = ShellKit.field(this._tt(label));
-                f.appendChild(ShellKit.checkbox(s[key], v => { s[key] = v; }));
-                grid.appendChild(f);
+                form.field({ key, label: this._tt(label), type: 'check' }, s, () => {});
             }
-            sec.appendChild(grid);
-            content.appendChild(sec);
+            const panel = this._div('padding:0 8px 12px;');
+            form.mount(panel);
+            content.appendChild(panel);
         }
     }
 }

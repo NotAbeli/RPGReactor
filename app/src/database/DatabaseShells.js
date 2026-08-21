@@ -355,11 +355,461 @@ const ShellKit = {
     }
 };
 
+/** Range + number, kept in sync. Values outside [min,max] are typed freely. */
+class SliderNumber {
+    /** @param value number, onChange (n)=>void, opts {min,max,step,unit,width} */
+    constructor(value, onChange, opts = {}) {
+        this.root = document.createElement('div');
+        this.root.className = 'agn-slider';
+        const min = opts.min !== undefined ? opts.min : 0;
+        const max = opts.max !== undefined ? opts.max : 100;
+        const step = opts.step !== undefined ? opts.step : 1;
+        let v = Number(value);
+        if (Number.isNaN(v)) v = min;
+
+        this.range = document.createElement('input');
+        this.range.type = 'range';
+        this.range.min = min; this.range.max = max; this.range.step = step;
+        this.range.value = Math.min(Math.max(v, min), max);
+        this.num = document.createElement('input');
+        this.num.type = 'number';
+        this.num.className = 'agonia-input';
+        this.num.min = min; this.num.max = max; this.num.step = step;
+        this.num.value = v;
+
+        const commit = (n, fromRange) => {
+            if (Number.isNaN(n)) return;
+            if (fromRange && n >= min && n <= max) this.num.value = n;
+            this.range.value = Math.min(Math.max(n, min), max);
+            onChange(n);
+        };
+        this.range.addEventListener('input', () => commit(Number(this.range.value), true));
+        this.num.addEventListener('input', () => {
+            const n = Number(this.num.value);
+            if (!Number.isNaN(n)) {
+                this.range.value = Math.min(Math.max(n, min), max);
+                onChange(n);
+            }
+        });
+        this.root.appendChild(this.range);
+        this.root.appendChild(this.num);
+        if (opts.unit) {
+            const u = document.createElement('span');
+            u.className = 'agn-slider-unit';
+            u.textContent = opts.unit;
+            this.root.appendChild(u);
+        }
+    }
+}
+
+/**
+ * InspectorForm - one record as label-left / control-right rows.
+ * Sections are ruled captions, no nested panels.
+ *
+ *   const form = new InspectorForm();
+ *   form.head('Удар мечом', 'дуга · R1.5');   // optional
+ *   form.section('Геометрия');
+ *   form.row('Форма', control, hint);
+ *   form.field({label, key, type, min, max, step, options, unit, hint}, record, commit);
+ *   form.mount(container);
+ */
+class InspectorForm {
+    constructor() {
+        this.root = document.createElement('div');
+        this.root.className = 'agn-insp';
+    }
+    head(title, sub) {
+        const h = document.createElement('div');
+        h.className = 'agn-insp-head';
+        const t = document.createElement('div');
+        t.className = 'agn-insp-title';
+        t.textContent = title;
+        h.appendChild(t);
+        if (sub) {
+            const s = document.createElement('div');
+            s.className = 'agn-insp-sub';
+            s.textContent = sub;
+            h.appendChild(s);
+        }
+        this.root.appendChild(h);
+        return this;
+    }
+    section(caption) {
+        const s = document.createElement('div');
+        s.className = 'agn-insp-section';
+        const c = document.createElement('span');
+        c.className = 'agn-insp-caption';
+        c.textContent = caption;
+        s.appendChild(c);
+        this.root.appendChild(s);
+        return this;
+    }
+    row(label, control, hint) {
+        const r = document.createElement('div');
+        r.className = 'agn-insp-row';
+        const l = document.createElement('div');
+        l.className = 'agn-insp-label';
+        l.textContent = label;
+        if (hint) {
+            const small = document.createElement('small');
+            small.textContent = hint;
+            l.appendChild(small);
+        } else {
+            l.title = label;
+        }
+        r.appendChild(l);
+        const c = document.createElement('div');
+        c.className = 'agn-insp-control';
+        if (control) c.appendChild(control);
+        r.appendChild(c);
+        this.root.appendChild(r);
+        return this;
+    }
+    /** Schema-driven row: def {label,key,type,hint,min,max,step,unit,options,placeholder,textarea} */
+    field(def, record, commit) {
+        const k = def.key;
+        const save = v => { record[k] = v; commit(); };
+        if (def.type === 'select') {
+            const opts = def.options.map(([v, l]) => ({ value: v, label: l }));
+            const cur = record[k] !== undefined && record[k] !== '' ? String(record[k]) : (def.def || def.options[0][0]);
+            return this.row(def.label, ShellKit.select(opts, cur, save), def.hint);
+        }
+        if (def.type === 'check') {
+            const w = document.createElement('div');
+            w.style.cssText = 'display:flex;align-items:center;gap:8px;';
+            w.appendChild(ShellKit.checkbox(record[k], save));
+            return this.row(def.label, w, def.hint);
+        }
+        if (def.type === 'textarea') {
+            const t = document.createElement('textarea');
+            t.className = 'agonia-input';
+            t.style.cssText = 'flex:1 1 100%;min-height:56px;resize:vertical;font-family:var(--font-mono,monospace);';
+            if (def.placeholder) t.placeholder = def.placeholder;
+            t.value = typeof record[k] === 'string' ? record[k] : JSON.stringify(record[k] || {}, null, 1);
+            t.addEventListener('input', () => save(t.value));
+            return this.row(def.label, t, def.hint);
+        }
+        if (def.type === 'number') {
+            const n = document.createElement('input');
+            n.type = 'number';
+            n.className = 'agonia-input';
+            if (def.min !== undefined) n.min = def.min;
+            if (def.max !== undefined) n.max = def.max;
+            if (def.step !== undefined) n.step = def.step;
+            n.value = record[k] === undefined || record[k] === null || record[k] === '' ? 0 : record[k];
+            n.addEventListener('input', () => {
+                const x = Number(n.value);
+                if (!Number.isNaN(x)) save(x);
+            });
+            return this.row(def.label, n, def.hint);
+        }
+        if (def.type === 'slider') {
+            const s = new SliderNumber(record[k] === undefined ? def.min || 0 : Number(record[k]),
+                save, { min: def.min, max: def.max, step: def.step, unit: def.unit });
+            return this.row(def.label, s.root, def.hint);
+        }
+        const t = document.createElement('input');
+        t.type = 'text';
+        t.className = 'agonia-input';
+        if (def.placeholder) t.placeholder = def.placeholder;
+        t.value = record[k] === undefined || record[k] === null ? '' : String(record[k]);
+        t.addEventListener('input', () => save(t.value));
+        return this.row(def.label, t, def.hint);
+    }
+    /** Several schema rows under one section: fieldDefs([defs], record, {section, commit}). */
+    fields(defs, record, opts = {}) {
+        if (opts.section) this.section(opts.section);
+        for (const d of defs) this.field(d, record, opts.commit || (() => {}));
+    }
+    mount(container) {
+        container.appendChild(this.root);
+        return this;
+    }
+}
+
+/**
+ * DataTable - records as a spreadsheet: inline cell editing, zebra,
+ * sticky header, optional expandable detail rows, add/remove/reorder.
+ *
+ *   new DataTable({
+ *     items, columns: [
+ *       { label:'№', get:(r,i)=>i+1, align:'right', width:'40px' },      // computed, read-only
+ *       { label:'Название', key:'Name', type:'text' },                    // editable by key
+ *       { label:'Режим', key:'Mode', type:'select', options:[[v,l],...] },// always-on select
+ *     ],
+ *     expandable: (body, item, idx, api) => {...},  // optional ▶ column
+ *     onAdd: () => ...,  addLabel: 'Добавить',
+ *     onRemove: idx => ...,  onReorder: (from,to) => ...,
+ *     onChanged: () => ...  // persist after cell edits
+ *   })
+ */
+class DataTable {
+    constructor(opts) {
+        this.o = Object.assign({ addLabel: 'Добавить' }, opts);
+        this.sortKey = null;
+        this.sortDir = 1;
+        this.open = new Set(); // real indices with expanded rows
+    }
+    get order() {
+        const o = this.o;
+        const idx = o.items.map((it, i) => i);
+        if (!this.sortKey) return idx;
+        const col = o.columns.find(c => c.key === this.sortKey);
+        if (!col) return idx;
+        const val = r => {
+            const v = r[col.key];
+            return v === undefined || v === null ? '' : v;
+        };
+        return idx.sort((a, b) => {
+            const va = val(o.items[a]), vb = val(o.items[b]);
+            const na = Number(va), nb = Number(vb);
+            const cmp = (!Number.isNaN(na) && !Number.isNaN(nb) && va !== '' && vb !== '')
+                ? na - nb : String(va).localeCompare(String(vb), 'ru');
+            return cmp * this.sortDir;
+        });
+    }
+    mount(container) {
+        container.innerHTML = '';
+        this.root = document.createElement('div');
+        this.root.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const bar = document.createElement('div');
+        bar.className = 'agn-table-bar';
+        const count = document.createElement('div');
+        count.className = 'agn-table-count';
+        count.textContent = this.o.items.length + ' ' + (this.o.countLabel || 'записей');
+        bar.appendChild(count);
+        bar.appendChild((() => { const s = document.createElement('div'); s.style.flex = '1'; return s; })());
+        if (this.o.onAdd) {
+            const add = document.createElement('button');
+            add.className = 'agonia-btn';
+            add.textContent = this.o.addLabel;
+            add.addEventListener('click', () => this.o.onAdd());
+            bar.appendChild(add);
+        }
+        this.root.appendChild(bar);
+
+        const wrap = document.createElement('div');
+        wrap.className = 'agn-table-wrap';
+        this.table = document.createElement('table');
+        this.table.className = 'agn-table';
+        wrap.appendChild(this.table);
+        this.root.appendChild(wrap);
+        container.appendChild(this.root);
+        this._renderHead();
+        this._renderBody();
+    }
+    _renderHead() {
+        const o = this.o;
+        const thead = document.createElement('thead');
+        const tr = document.createElement('tr');
+        if (o.expandable) {
+            const th = document.createElement('th');
+            th.style.width = '24px';
+            tr.appendChild(th);
+        }
+        for (const col of o.columns) {
+            const th = document.createElement('th');
+            th.textContent = col.label;
+            if (col.width) th.style.width = col.width;
+            if (col.align === 'right') th.style.textAlign = 'right';
+            if (col.key) {
+                th.classList.add('agn-sortable');
+                if (this.sortKey === col.key) th.textContent = col.label + (this.sortDir > 0 ? ' ▲' : ' ▼');
+                th.addEventListener('click', () => {
+                    if (this.sortKey === col.key) {
+                        if (this.sortDir > 0) this.sortDir = -1;
+                        else { this.sortKey = null; this.sortDir = 1; }
+                    } else { this.sortKey = col.key; this.sortDir = 1; }
+                    this._renderHead();
+                    this._renderBody();
+                });
+            }
+            tr.appendChild(th);
+        }
+        if (o.onRemove || o.onReorder) {
+            const th = document.createElement('th');
+            th.style.width = (o.onRemove && o.onReorder) ? '86px' : '40px';
+            tr.appendChild(th);
+        }
+        thead.appendChild(tr);
+        this.table.appendChild(thead);
+    }
+    _renderBody() {
+        const o = this.o;
+        if (this.tbody) this.tbody.remove();
+        const tbody = document.createElement('tbody');
+        this.tbody = tbody;
+
+        if (!o.items.length) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = (o.expandable ? 1 : 0) + o.columns.length + (o.onRemove || o.onReorder ? 1 : 0);
+            const empty = document.createElement('div');
+            empty.className = 'agn-table-empty';
+            empty.textContent = 'Записей нет';
+            td.appendChild(empty);
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+            this.table.appendChild(tbody);
+            return;
+        }
+
+        for (const realIdx of this.order) {
+            const item = o.items[realIdx];
+            const tr = document.createElement('tr');
+            tr.className = 'agn-data-row';
+
+            if (o.expandable) {
+                const td = document.createElement('td');
+                td.style.padding = '2px 4px';
+                const caret = document.createElement('span');
+                caret.className = 'agn-caret';
+                caret.textContent = this.open.has(realIdx) ? '▾' : '▸';
+                caret.addEventListener('click', () => {
+                    if (this.open.has(realIdx)) this.open.delete(realIdx);
+                    else this.open.add(realIdx);
+                    this._renderHead();
+                    this._renderBody();
+                });
+                td.appendChild(caret);
+                tr.appendChild(td);
+            }
+
+            for (const col of o.columns) {
+                const td = document.createElement('td');
+                if (col.align === 'right') td.className = 'agn-num';
+                if (col.className) td.classList.add(col.className);
+                if (col.type === 'select' && col.key) {
+                    const opts = col.options.map(([v, l]) => ({ value: v, label: l }));
+                    const cur = item[col.key] !== undefined && item[col.key] !== '' ? String(item[col.key]) : String((col.options[0] || [])[0]);
+                    td.appendChild(ShellKit.select(opts, cur, v => {
+                        item[col.key] = col.number ? Number(v) : v;
+                        if (o.onChanged) o.onChanged();
+                    }));
+                } else if (col.type === 'check' && col.key) {
+                    td.appendChild(ShellKit.checkbox(item[col.key], v => {
+                        item[col.key] = v;
+                        if (o.onChanged) o.onChanged();
+                    }));
+                } else if (col.type && col.key) {
+                    td.classList.add('agn-editable');
+                    const render = () => {
+                        td.textContent = '';
+                        td.appendChild(document.createTextNode(this._cellText(item, col)));
+                    };
+                    render();
+                    td.addEventListener('click', () => {
+                        if (td.querySelector('.agn-cell-input')) return;
+                        this._editCell(td, item, col, render);
+                    });
+                } else {
+                    const txt = this._cellText(item, col, realIdx);
+                    td.appendChild(document.createTextNode(txt));
+                    if (col.dim) td.classList.add('agn-dim');
+                }
+                tr.appendChild(td);
+            }
+
+            if (o.onRemove || o.onReorder) {
+                const td = document.createElement('td');
+                td.style.whiteSpace = 'nowrap';
+                td.style.textAlign = 'right';
+                if (o.onReorder && !this.sortKey) {
+                    const up = document.createElement('button');
+                    up.className = 'agonia-btn agn-rowbtn';
+                    up.textContent = '▲'; up.title = 'Выше';
+                    up.addEventListener('click', () => { if (realIdx > 0) o.onReorder(realIdx, realIdx - 1); });
+                    td.appendChild(up);
+                    const down = document.createElement('button');
+                    down.className = 'agonia-btn agn-rowbtn';
+                    down.textContent = '▼'; down.title = 'Ниже';
+                    down.addEventListener('click', () => { if (realIdx < o.items.length - 1) o.onReorder(realIdx, realIdx + 1); });
+                    td.appendChild(down);
+                }
+                if (o.onRemove) {
+                    const del = document.createElement('button');
+                    del.className = 'agonia-btn danger agn-rowbtn';
+                    del.textContent = '✕'; del.title = 'Удалить';
+                    del.addEventListener('click', () => o.onRemove(realIdx));
+                    td.appendChild(del);
+                }
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+
+            if (o.expandable && this.open.has(realIdx)) {
+                const xtr = document.createElement('tr');
+                xtr.className = 'agn-expand-row';
+                const xtd = document.createElement('td');
+                xtd.colSpan = (o.expandable ? 1 : 0) + o.columns.length + (o.onRemove || o.onReorder ? 1 : 0);
+                o.expandable(xtd, item, realIdx, {
+                    refresh: () => { this._renderHead(); this._renderBody(); },
+                    close: () => { this.open.delete(realIdx); this._renderHead(); this._renderBody(); }
+                });
+                xtr.appendChild(xtd);
+                tbody.appendChild(xtr);
+            }
+        }
+        this.table.appendChild(tbody);
+    }
+    _cellText(item, col, idx) {
+        const v = col.get ? col.get(item, idx) : item[col.key];
+        if (v === undefined || v === null || v === '') return '—';
+        return String(v);
+    }
+    _editCell(td, item, col, render) {
+        const o = this.o;
+        const input = document.createElement('input');
+        input.className = 'agn-cell-input';
+        if (col.type === 'number') {
+            input.type = 'number';
+            if (col.min !== undefined) input.min = col.min;
+            if (col.max !== undefined) input.max = col.max;
+        } else {
+            input.type = 'text';
+        }
+        const raw = col.get ? col.get(item, -1) : item[col.key];
+        input.value = raw === undefined || raw === null ? '' : raw;
+        td.textContent = '';
+        td.appendChild(input);
+        input.focus();
+        input.select();
+        let done = false;
+        const finish = (apply) => {
+            if (done) return;
+            done = true;
+            if (apply) {
+                // Commit BEFORE re-render so blur cannot swallow the value.
+                if (col.key) {
+                    if (col.type === 'number') {
+                        const n = Number(input.value);
+                        if (!Number.isNaN(n)) item[col.key] = n;
+                    } else {
+                        item[col.key] = input.value;
+                    }
+                }
+                if (o.onChanged) o.onChanged();
+            }
+            render();
+        };
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+            else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+            e.stopPropagation();
+        });
+        input.addEventListener('blur', () => finish(true));
+        input.addEventListener('click', e => e.stopPropagation());
+    }
+}
+
 if (typeof window !== 'undefined') {
     window.MasterDetailShell = MasterDetailShell;
     window.AccordionList = AccordionList;
     window.ShellKit = ShellKit;
+    window.SliderNumber = SliderNumber;
+    window.InspectorForm = InspectorForm;
+    window.DataTable = DataTable;
 }
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { MasterDetailShell, AccordionList, ShellKit };
+    module.exports = { MasterDetailShell, AccordionList, ShellKit, SliderNumber, InspectorForm, DataTable };
 }

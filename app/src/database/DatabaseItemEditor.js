@@ -111,45 +111,33 @@ class DatabaseItemEditor {
         const systemData = this.databaseManager.getSystem();
         const elements = systemData ? systemData.elements || [] : [];
 
-        // --- General Settings ---
+        // --- General Settings (inspector rows, S19) ---
         const generalSection = document.createElement('div');
-        generalSection.className = 'database-section';
+        generalSection.className = 'agn-insp';
         generalSection.innerHTML = `
-            <div class="database-section-header">${tt('General')}</div>
-            <div class="database-section-content"><div class="db-general-grid">
-                <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
-                    <label style="font-size: 11px; color: var(--color-text-muted); font-weight: 600;">${tt('Icon')}</label>
-                    <div id="item-icon-container-${item.id}"></div>
+            <div class="agn-insp-section"><span class="agn-insp-caption">${tt('Общее')}</span></div>
+            <div class="agn-insp-row">
+                <div class="agn-insp-label">${tt('Иконка')}</div>
+                <div class="agn-insp-control" id="item-icon-container-${item.id}"></div>
+            </div>
+            <div class="agn-insp-row">
+                <div class="agn-insp-label">${tt('Название')}</div>
+                <div class="agn-insp-control"><input type="text" class="agonia-input" value="${rrEscapeHtml(item.name)}" data-field="name" data-item-id="${item.id}"></div>
+            </div>
+            <div class="agn-insp-row">
+                <div class="agn-insp-label">${tt('Описание')}</div>
+                <div class="agn-insp-control"><textarea class="agonia-input" rows="2" style="flex:1 1 100%;min-height:52px;resize:vertical;" data-field="description" data-item-id="${item.id}">${rrEscapeHtml(item.description)}</textarea></div>
+            </div>
+            <div class="agn-insp-row">
+                <div class="agn-insp-label">${tt('Цена')}</div>
+                <div class="agn-insp-control"><input type="number" class="agonia-input" value="${rrEscapeHtml(item.price || 0)}" data-field="price" data-item-id="${item.id}"></div>
+            </div>
+            <div class="agn-insp-row">
+                <div class="agn-insp-label">${tt('Расходуемый')}</div>
+                <div class="agn-insp-control">
+                    <input type="checkbox" class="system-checkbox" ${item.consumable ? 'checked' : ''} data-field="consumable" data-item-id="${item.id}">
+                    <span style="color: var(--color-text-dim); font-size: 11px;">${tt('исчезает из инвентаря после использования')}</span>
                 </div>
-                <div class="db-form db-fill">
-                    <div class="db-row-cols">
-                        <span class="db-col">
-                            <label>${tt('Name')}</label>
-                            <input type="text" class="database-field-value" value="${rrEscapeHtml(item.name)}" data-field="name" data-item-id="${item.id}">
-                        </span>
-                    </div>
-                    <div class="db-row-cols db-row-grow">
-                        <span class="db-col">
-                            <label>${tt('Description')}</label>
-                            <textarea class="database-field-value" rows="2" data-field="description" data-item-id="${item.id}">${rrEscapeHtml(item.description)}</textarea>
-                        </span>
-                    </div>
-                    <div class="db-row-cols">
-                        <span class="db-col">
-                            <label>${tt('Price')}</label>
-                            <input type="number" class="database-field-value" value="${rrEscapeHtml(item.price || 0)}" data-field="price" data-item-id="${item.id}">
-                        </span>
-                    </div>
-                    <div class="db-row-cols">
-                        <span class="db-col">
-                            <label>${tt('Consumable')}</label>
-                            <span style="display: flex; align-items: center; gap: 8px;">
-                                <input type="checkbox" class="system-checkbox" ${item.consumable ? 'checked' : ''} data-field="consumable" data-item-id="${item.id}">
-                                <span style="color: var(--color-text-muted); font-size: 11px;">${tt('Item is removed from inventory after use')}</span>
-                            </span>
-                        </span>
-                    </div>
-                </div></div>
             </div>
         `;
         // General flows into the two-column grid with the other sections
@@ -164,30 +152,32 @@ class DatabaseItemEditor {
 
         // Grid wrapper for all sections
         const gridWrapper = document.createElement('div');
-        gridWrapper.className = 'database-sections-grid';
+        gridWrapper.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
         gridWrapper.appendChild(generalSection);
 
-        // --- Common Event Effects (S18) ---
+        // --- Common Event Effects (S18; S19 inspector rows) ---
         // Only code 44 (Common Event) is used by this project; battle
         // effects were amputated with the standard battle (S12/S13) and
         // stay hidden in the data, untouched.
         const ceEffects = (item.effects || []).filter(e => e && e.code === 44);
         const hiddenEffects = (item.effects || []).length - ceEffects.length;
         const effectsSection = document.createElement('div');
-        effectsSection.className = 'database-section';
+        effectsSection.className = 'agn-insp';
         effectsSection.innerHTML = `
-            <div class="database-section-header">${tt('Эффект: Общее событие')}</div>
-            <div class="database-section-content" id="item-ce-effects-${item.id}">
-                <div style="display:flex;flex-direction:column;gap:6px;">
+            <div class="agn-insp-section"><span class="agn-insp-caption">${tt('Эффект: Общее событие')}</span></div>
+            <div id="item-ce-effects-${item.id}">
+                <div style="display:flex;flex-direction:column;gap:2px;">
                     ${ceEffects.map((e, index) => `
-                        <div style="display:flex;gap:8px;align-items:center;" data-ce-index="${index}">
-                            <span style="font-size:11px;color:var(--color-text-dim);flex:none;">${tt('Общее событие')}</span>
-                            <input type="number" min="1" style="width:84px;padding:5px 8px;font-size:12px;box-sizing:border-box;background-color:var(--color-bg-deep);color:var(--color-text-strong);border:1px solid var(--color-border);border-radius:4px;"
-                                   value="${rrEscapeHtml(e.dataId || 1)}" data-ce-input data-ce-original-index="${(item.effects || []).indexOf(e)}">
-                            <button type="button" class="agonia-btn danger" data-ce-remove data-ce-original-index="${(item.effects || []).indexOf(e)}">✕</button>
+                        <div class="agn-insp-row" data-ce-index="${index}">
+                            <div class="agn-insp-label">${tt('Общее событие №')}</div>
+                            <div class="agn-insp-control">
+                                <input type="number" min="1" class="agonia-input" style="flex:none;width:84px;"
+                                       value="${rrEscapeHtml(e.dataId || 1)}" data-ce-input data-ce-original-index="${(item.effects || []).indexOf(e)}">
+                                <button type="button" class="agonia-btn danger" data-ce-remove data-ce-original-index="${(item.effects || []).indexOf(e)}">✕</button>
+                            </div>
                         </div>
                     `).join('')}
-                    <div style="display:flex;gap:8px;align-items:center;">
+                    <div style="display:flex;gap:8px;align-items:center;padding:6px 2px;">
                         <button type="button" class="agonia-btn" data-ce-add>${tt('+ Общее событие')}</button>
                         ${hiddenEffects > 0 ? `<span style="font-size:10px;color:var(--color-text-dim);">${hiddenEffects} ${tt('боевых эффекта(ов) скрыто (данные не тронуты)')}</span>` : ''}
                     </div>
@@ -196,7 +186,7 @@ class DatabaseItemEditor {
         `;
         gridWrapper.appendChild(effectsSection);
 
-        // --- Tags Section (SuperDuperItemTags) ---
+        // --- Tags Section (SuperDuperItemTags; S19 inspector rows) ---
         // Tags live in the item note: <sptags:a, b> + <spdisposable>; the
         // plugin parses both at boot. The fields mirror them and rewrite
         // only these tags, leaving every other note tag untouched.
@@ -204,33 +194,37 @@ class DatabaseItemEditor {
         const disposable = DatabaseItemEditor.readSpDisposable(item.note);
         const knownTags = DatabaseItemEditor.collectKnownTags(this.databaseManager);
         const tagsSection = document.createElement('div');
-        tagsSection.className = 'database-section';
+        tagsSection.className = 'agn-insp';
         tagsSection.innerHTML = `
-            <div class="database-section-header">${tt('Теги')} (SuperDuperItemTags)</div>
-            <div class="database-section-content" style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
-                <div style="flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 4px;">
-                    <label style="font-size: 11px; color: var(--color-text);">${tt('Теги через запятую')} (${tt('пишется в note как <sptags:…>')})</label>
-                    <input type="text" list="sptags-suggestions-${item.id}" class="database-field-value" value="${rrEscapeHtml(tags.join(', '))}"
-                           data-sptags-input data-item-id="${item.id}" style="width: 100%;">
+            <div class="agn-insp-section"><span class="agn-insp-caption">${tt('Теги')} (SuperDuperItemTags)</span></div>
+            <div class="agn-insp-row">
+                <div class="agn-insp-label">${tt('Теги через запятую')}<small>${tt('пишется в note как <sptags:…>')}</small></div>
+                <div class="agn-insp-control">
+                    <input type="text" list="sptags-suggestions-${item.id}" class="agonia-input" style="flex:1 1 420px;" value="${rrEscapeHtml(tags.join(', '))}"
+                           data-sptags-input data-item-id="${item.id}">
                     <datalist id="sptags-suggestions-${item.id}">
                         ${knownTags.map(tag => `<option value="${rrEscapeHtml(tag)}"></option>`).join('')}
                     </datalist>
                 </div>
-                <label style="display: flex; align-items: center; gap: 8px; color: var(--color-text); font-size: 12px; cursor: pointer;">
-                    <input type="checkbox" data-spdisposable-input ${disposable ? 'checked' : ''}>
-                    ${tt('Одноразовый')} (spdisposable)
-                </label>
+            </div>
+            <div class="agn-insp-row">
+                <div class="agn-insp-label">${tt('Одноразовый')} (spdisposable)</div>
+                <div class="agn-insp-control">
+                    <input type="checkbox" style="cursor:pointer;" data-spdisposable-input ${disposable ? 'checked' : ''}>
+                    <span style="color: var(--color-text-dim); font-size: 11px;">${tt('запрет передачи/продажи')}</span>
+                </div>
             </div>
         `;
         gridWrapper.appendChild(tagsSection);
 
-        // --- Note Section ---
+        // --- Note Section (S19 inspector rows) ---
         const noteSection = document.createElement('div');
-        noteSection.className = 'database-section';
+        noteSection.className = 'agn-insp';
         noteSection.innerHTML = `
-            <div class="database-section-header">${tt('Note')}</div>
-            <div class="database-section-content">
-                <textarea class="database-field-value" rows="4" style="width: 100%;" data-field="note" data-item-id="${item.id}">${rrEscapeHtml(item.note)}</textarea>
+            <div class="agn-insp-section"><span class="agn-insp-caption">${tt('Note')}</span></div>
+            <div class="agn-insp-row">
+                <div class="agn-insp-label">${tt('Заметка')}</div>
+                <div class="agn-insp-control"><textarea class="agonia-input" rows="4" style="flex:1 1 100%;min-height:72px;resize:vertical;font-family:var(--font-mono,monospace);" data-field="note" data-item-id="${item.id}">${rrEscapeHtml(item.note)}</textarea></div>
             </div>
         `;
         gridWrapper.appendChild(noteSection);
