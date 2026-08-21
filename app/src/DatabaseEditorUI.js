@@ -517,14 +517,23 @@ class DatabaseEditorUI {
                 detailEl.innerHTML = this._selectEntryMarkup();
                 return;
             }
+            // The same padded wrapper the item/weapon/armor editors mount
+            // into - without it the inspector panels hug the panel edges.
+            detailEl.innerHTML = '';
+            const wrapper = document.createElement('div');
+            wrapper.style.display = 'flex';
+            wrapper.style.flexDirection = 'column';
+            wrapper.style.height = '100%';
+            wrapper.style.padding = '16px';
+            wrapper.style.position = 'relative';
+            detailEl.appendChild(wrapper);
             try {
-                api.renderDetail(detailEl, entries[selectedIdx], selectedIdx, commit);
+                api.renderDetail(wrapper, entries[selectedIdx], selectedIdx, commit);
             } catch (e) {
                 const box = document.createElement('div');
                 box.style.cssText = 'margin:12px;padding:10px 14px;border:1px solid var(--color-danger,#b33);border-radius:4px;background:rgba(179,51,51,.12);font-size:12px;';
                 box.textContent = String((e && e.stack) || e).split('\n')[0];
-                detailEl.innerHTML = '';
-                detailEl.appendChild(box);
+                wrapper.appendChild(box);
             }
         };
 
