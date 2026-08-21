@@ -146,8 +146,9 @@ class DatabaseEditorUI {
         const parent = listEl?.parentNode;
 
         parent?.querySelectorAll('.database-search-container, .database-button-bar, .database-list-pager, .database-change-max-btn, .inventory-mode-switch').forEach(el => el.remove());
-        // S23: the unified Инвентарь top bar lives above the entries content.
-        document.querySelectorAll('.database-entries-content > .inventory-mode-switch').forEach(el => el.remove());
+        // S23: the unified Инвентарь top bar lives in .database-main-content,
+        // above .database-entries-content.
+        document.querySelectorAll('.database-main-content > .inventory-mode-switch').forEach(el => el.remove());
 
         if (this._listKeyHandler) {
             document.removeEventListener('keydown', this._listKeyHandler);
@@ -428,12 +429,17 @@ class DatabaseEditorUI {
             else this.giftsEditor.showGiftsDetail(detailEl);
         }
 
-        // Full-width mode bar above everything (list panel + detail).
+        // Full-width mode bar above everything. S23-hotfix: it must live in
+        // the COLUMN parent (.database-main-content) as a sibling ABOVE
+        // .database-entries-content - inside the row-flex entries-content
+        // it stretched into a screen-tall third column.
+        const main = document.querySelector('.database-main-content');
         const entries = document.querySelector('.database-entries-content');
-        entries?.querySelector(':scope > .inventory-mode-switch')?.remove();
-        if (entries) {
+        main?.querySelectorAll(':scope > .inventory-mode-switch').forEach(el => el.remove());
+        if (main && entries) {
             const bar = this._inventoryModeBar(modes, current.key, key => this.showInventoryUnifiedTab(key));
-            entries.insertBefore(bar, entries.firstChild);
+            bar.style.flex = '0 0 auto';
+            main.insertBefore(bar, entries);
         }
     }
 
