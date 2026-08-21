@@ -736,8 +736,8 @@ class DataTable {
                 if (col.align === 'right') td.className = 'agn-num';
                 if (col.className) td.classList.add(col.className);
                 if (col.type === 'select' && col.key) {
-                    const opts = col.options.map(([v, l]) => ({ value: v, label: l }));
-                    const cur = item[col.key] !== undefined && item[col.key] !== '' ? String(item[col.key]) : String((col.options[0] || [])[0]);
+                    const opts = (col.options || []).map(([v, l]) => ({ value: v, label: l }));
+                    const cur = item[col.key] !== undefined && item[col.key] !== '' ? String(item[col.key]) : String(((col.options || [])[0] || [])[0]);
                     td.appendChild(ShellKit.select(opts, cur, v => {
                         item[col.key] = col.number ? Number(v) : v;
                         if (o.onChanged) o.onChanged();

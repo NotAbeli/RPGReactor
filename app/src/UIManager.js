@@ -297,7 +297,7 @@ class UIManager {
             submenu: editMenu
         }));
 
-        // Database menu (S21: 10 tabs - ИИ врагов lives inside Бой)
+        // Database menu (S22: 9 tabs - System 1 + Agonia merged into «Система»)
         const databaseMenu = new nw.Menu();
         databaseMenu.append(new nw.MenuItem({
             label: 'Спрайтер',
@@ -333,12 +333,8 @@ class UIManager {
             click: () => this.callbacks.openDatabase('commonEvents')
         }));
         databaseMenu.append(new nw.MenuItem({
-            label: 'System 1',
-            click: () => this.callbacks.openDatabase('system1')
-        }));
-        databaseMenu.append(new nw.MenuItem({
-            label: 'Agonia Engine',
-            click: () => this.callbacks.openDatabase('agonia')
+            label: 'Система',
+            click: () => this.callbacks.openDatabase('system')
         }));
 
         menubar.append(new nw.MenuItem({

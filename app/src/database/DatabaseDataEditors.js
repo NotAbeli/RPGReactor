@@ -437,20 +437,26 @@ class DatabaseCraftEditor extends AgoniaCardEditorBase {
 
     _ingredientsTable(entry) {
         const K = AgoniaCardEditorBase;
-        const list = K.decodeNested(entry.Ingredients);
+        const list = K.decodeNested(entry.Ingredients); // string item IDs, NOT objects
         const persist = () => { entry.Ingredients = K.encodeNested(list); };
         const wrap = this._div('padding:4px 0 0;');
 
-        const cap = this._sectionTitle('Ингредиенты');
-        wrap.appendChild(cap);
+        wrap.appendChild(this._sectionTitle('Ингредиенты'));
+        const opts = this.itemOptions('item');
         new DataTable({
             items: list,
             countLabel: 'позиций',
             columns: [
-                { label: 'Предмет', key: 'ItemId', type: 'select' },
-                { label: 'Кол-во', key: 'Count', type: 'number', align: 'right', width: '100px' }
+                { label: 'Предмет', get: r => this._itemName(r) }
             ],
-            onAdd: () => { list.push({ ItemId: '1', Count: 1 }); persist(); wrap.replaceWith(this._ingredientsTable(entry)); },
+            expandable: (box, idStr, idx, api) => {
+                const f = new InspectorForm();
+                f.row(this._tt('Предмет'),
+                    this._select(opts, idStr, v => { list[idx] = v; persist(); }),
+                    this._tt('ID предмета, из которого собирается крафт'));
+                f.mount(box);
+            },
+            onAdd: () => { list.push('1'); persist(); wrap.replaceWith(this._ingredientsTable(entry)); },
             addLabel: '+ Ингредиент',
             onRemove: idx => { list.splice(idx, 1); persist(); wrap.replaceWith(this._ingredientsTable(entry)); },
             onChanged: persist
@@ -688,12 +694,12 @@ class DatabaseLootEditor extends AgoniaCardEditorBase {
         const wrap = this._div('padding:4px 0 0;');
 
         wrap.appendChild(this._sectionTitle('Предметы пула'));
-        const opts = this.itemOptions('item');
+        const itemOpts = this.itemOptions('item').map(o => [o.value, o.label]);
         new DataTable({
             items,
             countLabel: 'предметов',
             columns: [
-                { label: 'Предмет', key: 'ItemId', type: 'select' },
+                { label: 'Предмет', key: 'ItemId', type: 'select', options: itemOpts },
                 { label: 'Вес (шанс)', key: 'Price', type: 'number', align: 'right', width: '110px' },
                 { label: 'Размер (кол-во)', key: 'Size', type: 'number', align: 'right', width: '120px' }
             ],
@@ -750,11 +756,12 @@ class DatabaseGiftsEditor extends AgoniaCardEditorBase {
         const persist = () => { entry.SpecificItems = K.encodeNested(list); changed(); };
         const wrap = this._div('padding:4px 0 0;');
         wrap.appendChild(this._sectionTitle('Любимые предметы (очки)'));
+        const itemOpts = this.itemOptions('item').map(o => [o.value, o.label]);
         new DataTable({
             items: list,
             countLabel: 'предметов',
             columns: [
-                { label: 'Предмет', key: 'ItemId', type: 'select' },
+                { label: 'Предмет', key: 'ItemId', type: 'select', options: itemOpts },
                 { label: 'Очки', key: 'Points', type: 'number', align: 'right', width: '100px' }
             ],
             onAdd: () => { list.push({ ItemId: '1', Points: 10 }); persist(); wrap.replaceWith(this._giftItemsTable(entry, changed)); },

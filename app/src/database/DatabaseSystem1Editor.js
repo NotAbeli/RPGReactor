@@ -44,7 +44,7 @@ class DatabaseSystem1Editor {
         this.locationPicker = new TransferPlayerEditor(databaseManager, projectManager);
     }
 
-    showSystem1Detail(container) {
+    showSystem1Detail(container, opts) {
         const tt = text => { const s = window.I18n ? window.I18n.tText(text) : text; return (typeof AgoniaLabels !== 'undefined' && AgoniaLabels.translate) ? AgoniaLabels.translate(s) : s; };
         const system = this.databaseManager.getSystem();
         if (!system) {
@@ -60,18 +60,20 @@ class DatabaseSystem1Editor {
             overflow-y: auto;
         `;
 
-        // Full-width title banner
-        const titleBanner = document.createElement('div');
-        titleBanner.style.cssText = `
-            background-color: var(--color-bg-deep);
-            padding: 14px 20px;
-            border-bottom: 2px solid var(--color-accent-border-mid);
-            font-size: 20px;
-            font-weight: 600;
-            color: var(--color-text-strong);
-        `;
-        titleBanner.textContent = tt('System 1');
-        wrapper.appendChild(titleBanner);
+        // Full-width title banner (skipped when embedded in «Система», S22)
+        if (!opts || !opts.noBanner) {
+            const titleBanner = document.createElement('div');
+            titleBanner.style.cssText = `
+                background-color: var(--color-bg-deep);
+                padding: 14px 20px;
+                border-bottom: 2px solid var(--color-accent-border-mid);
+                font-size: 20px;
+                font-weight: 600;
+                color: var(--color-text-strong);
+            `;
+            titleBanner.textContent = tt('System 1');
+            wrapper.appendChild(titleBanner);
+        }
 
         // 3-column grid
         const columnsGrid = document.createElement('div');

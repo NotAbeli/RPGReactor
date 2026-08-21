@@ -260,6 +260,11 @@ class DatabaseSpriterEditor {
             padding: 14px 20px; border-bottom: 2px solid var(--color-accent-border-mid);
             font-size: 20px; font-weight: 600; color: var(--color-text-strong);
             display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+            padding: 14px 20px;
+            border-bottom: 2px solid var(--color-accent-border-mid);
+            font-size: 20px; font-weight: 600;
+            color: var(--color-text-strong);
+            display: flex; align-items: baseline; gap: 14px;
         `;
         banner.textContent = this._tt('Спрайтер');
         const sub = document.createElement('span');
@@ -336,26 +341,36 @@ class DatabaseSpriterEditor {
 
     _renderGlobals(content, spriter) {
         content.innerHTML = '';
-        const f = new InspectorForm();
-        f.section(this._tt('Основное'));
-        f.row(this._tt('Основная переменная состояния'),
-            this._numberField(spriter.VariableId, { min: 1 }, v => { spriter.VariableId = v; }),
-            this._tt('Значение этой переменной выбирает активный скин/позу героя (в этом проекте — 17, «что в руке»)'));
-        f.row(this._tt('Включить систему поз'),
-            this._checkboxField(spriter.EnablePoses, v => { spriter.EnablePoses = v; }),
-            this._tt('Если выключено — настройки поз полностью игнорируются (удобно, пока рисуются спрайты)'));
-        f.row(this._tt('Обновлять лидера'),
-            this._checkboxField(spriter.ApplyToActor, v => { spriter.ApplyToActor = v; }),
-            this._tt('Менять иконку персонажа в меню вместе со скином'));
-        f.row(this._tt('Debug Console'),
-            this._checkboxField(spriter.Debug, v => { spriter.Debug = v; }),
-            this._tt('Подробное логирование в консоль игры (F8)'));
-        f.mount(content);
+        content.appendChild(this._sectionTitle('Глобальные настройки спрайтера'));
 
+        const grid = document.createElement('div');
+        grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;padding:8px 0;';
+
+        const mainPanel = this._panel();
+        const varRow = this._fieldLabel('Основная переменная состояния', 'Значение этой переменной выбирает активный скин/позу героя (в этом проекте — 17, «что в руке»)');
+        varRow.appendChild(this._numberField(spriter.VariableId, { min: 1 }, v => { spriter.VariableId = v; }));
+        mainPanel.appendChild(varRow);
+
+        const poseRow = this._fieldLabel('Включить систему поз', 'Если выключено — настройки поз полностью игнорируются (удобно, пока рисуются спрайты)');
+        poseRow.appendChild(this._checkboxField(spriter.EnablePoses, v => { spriter.EnablePoses = v; }));
+        mainPanel.appendChild(poseRow);
+
+        const actorRow = this._fieldLabel('Обновлять лидера', 'Менять иконку персонажа в меню вместе со скином');
+        actorRow.appendChild(this._checkboxField(spriter.ApplyToActor, v => { spriter.ApplyToActor = v; }));
+        mainPanel.appendChild(actorRow);
+        grid.appendChild(mainPanel);
+
+        const debugPanel = this._panel();
+        const dbgRow = this._fieldLabel('Debug Console', 'Подробное логирование в консоль игры (F8)');
+        dbgRow.appendChild(this._checkboxField(spriter.Debug, v => { spriter.Debug = v; }));
+        debugPanel.appendChild(dbgRow);
         const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:11px;color:var(--color-text-dim);line-height:1.5;padding:8px 2px;';
+        hint.style.cssText = 'font-size:11px;color:var(--color-text-dim);line-height:1.5;';
         hint.textContent = this._tt('Скины и позы героя подхватываются по значению основной переменной. Записи ниже в списках имеют меньший приоритет; условия проверяются от верхней записи вниз.');
-        content.appendChild(hint);
+        debugPanel.appendChild(hint);
+        grid.appendChild(debugPanel);
+
+        content.appendChild(grid);
     }
 
     // ------------------------------------------------------------------
@@ -482,44 +497,45 @@ class DatabaseSpriterEditor {
         content.innerHTML = '';
         const meta = this.collectionKeys.find(c => c.key === kind);
         const entries = DatabaseSpriterEditor.decodeCollection(spriter[kind]);
-        const persist = () => { spriter[kind] = DatabaseSpriterEditor.encodeCollection(entries); };
-        const rerender = () => this._renderCollection(content, spriter, kind);
 
-        const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:11px;color:var(--color-text-dim);padding:4px 0 8px;line-height:1.4;';
-        hint.textContent = this._tt(meta.hint);
-        content.appendChild(hint);
+        const header = document.createElement('div');
+        header.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px 0 8px;';
+        const title = document.createElement('div');
+        title.style.cssText = 'font-size:15px;font-weight:600;color:var(--color-text-strong);';
+        title.textContent = this._tt(meta.label);
+        header.appendChild(title);
+        const count = document.createElement('span');
+        count.style.cssText = 'font-size:11px;color:var(--color-text-dim);';
+        count.textContent = this._tt(meta.hint);
+        header.appendChild(count);
+        header.appendChild(document.createElement('div')).style.cssText = 'flex:1;';
+        header.appendChild(this._smallButton('Добавить', () => {
+            entries.push(DatabaseSpriterEditor.blankEntry(kind));
+            spriter[kind] = DatabaseSpriterEditor.encodeCollection(entries);
+            this._renderCollection(content, spriter, kind);
+        }));
+        content.appendChild(header);
 
-        const host = document.createElement('div');
-        host.style.cssText = 'height:640px;';
-        content.appendChild(host);
+        if (!entries.length) {
+            const empty = document.createElement('div');
+            empty.style.cssText = `
+                color: var(--color-text-muted); text-align: center;
+                padding: 40px 0; font-size: 13px;
+            `;
+            empty.textContent = this._tt('Записей нет — нажмите «Добавить»');
+            content.appendChild(empty);
+            return;
+        }
 
-        const K = DatabaseSpriterEditor;
-        new MasterDetailShell({
-            items: entries,
-            searchText: r => [r.Name, r.IdName, r.Priority].join(' '),
-            addLabel: 'Добавить',
-            blank: () => K.blankEntry(kind),
-            onChanged: persist,
-            title: (r, i) => (i + 1) + '. ' + this._entryHeadline(r, kind),
-            summary: r => this._condSummary(r),
-            thumb: r => {
-                const vis = r.Visuals || {};
-                const url = vis.CharacterName ? this._imgUrl(vis.CharacterName) : '';
-                return url ? { url } : { letter: (r.Name || r.IdName || '·').slice(0, 1) };
-            },
-            renderForm: (formCol, entry, idx, api) => this._renderEntryInspector(formCol, entry, kind, api, entries, persist, rerender)
-        }).mount(host);
-    }
-
-    _condSummary(entry) {
-        const cond = entry.Conditions;
-        if (!cond) return '';
-        const parts = [];
-        parts.push(cond.MainValue === -1 ? 'базовый (−1)' : 'var=' + cond.MainValue);
-        for (const sw of [cond.SwitchId1, cond.SwitchId2]) if (Number(sw) > 0) parts.push('sw' + sw);
-        if (Number(cond.ExtVarId) > 0) parts.push('доп.var' + cond.ExtVarId + this._opLabel(cond.ExtVarOp) + cond.ExtVarVal);
-        return parts.join(' · ');
+        // S22: cap the card column - full-screen used to smear a single
+        // entry into a wide ribbon (users read cards best <=1100px).
+        const cardHost = document.createElement('div');
+        cardHost.style.cssText = 'max-width:1100px;';
+        content.appendChild(cardHost);
+        entries.forEach((entry, idx) => {
+            const card = this._renderEntryCard(entry, idx, kind, entries, spriter, cardHost);
+            cardHost.appendChild(card);
+        });
     }
 
     /** Red error banner instead of a silently empty tab (S21). */
@@ -542,90 +558,85 @@ class DatabaseSpriterEditor {
         return entry.Name || (kind === 'PoseMappings' ? 'Поза' : 'Скин');
     }
 
-    _renderEntryInspector(formCol, entry, kind, api, entries, persist, rerender) {
-        const changed = () => { persist(); api.refreshList && api.refreshList(); };
-        const f = new InspectorForm();
-        f.head((entries.indexOf(entry) + 1) + '. ' + this._entryHeadline(entry, kind), this._condSummary(entry));
-
-        if (kind === 'NPCMappings') {
-            const vis = this._ensure(entry, 'Visuals', {});
-            f.section(this._tt('NPC'));
-            f.row(this._tt('ID Название (тег)'),
-                this._npcTagLine(entry, changed), this._tt('Писать в Note события: <sds:ЭтоИмя>'));
-            f.mount(formCol);
-            const vForm = new InspectorForm();
-            vForm.section(this._tt('Графика'));
-            vForm.mount(formCol);
-            this._renderSpriteVisuals(formCol, entry, kind, changed);
-            return;
-        }
-
-        f.section(this._tt('Запись'));
-        f.row(this._tt('Название'), this._textField(entry.Name, {}, v => { entry.Name = v; changed(); }));
-        f.row(this._tt('Приоритет'),
-            this._numberField(entry.Priority, { min: 0 }, v => { entry.Priority = v; changed(); }),
-            this._tt('При равных условиях побеждает запись с большим приоритетом'));
-        f.mount(formCol);
-
-        // Conditions inspector
-        const cond = this._ensure(entry, 'Conditions', {});
-        const cf = new InspectorForm();
-        cf.section(this._tt('Условия'));
-        cf.row(this._tt('Значение основной переменной'),
-            this._numberField(cond.MainValue, { min: -1 }, v => { cond.MainValue = v; changed(); }),
-            this._tt('−1 = базовый скин/поза для всех неперехваченных значений'));
-        cf.row(this._tt('Свитч 1 (ВКЛ)'), this._numberField(cond.SwitchId1, { min: 0 }, v => { cond.SwitchId1 = v; changed(); }));
-        cf.row(this._tt('Свитч 2 (ВКЛ)'), this._numberField(cond.SwitchId2, { min: 0 }, v => { cond.SwitchId2 = v; changed(); }));
-        cf.row(this._tt('Свитч 3 (доигрывание)'), this._numberField(cond.SwitchId3, { min: 0 }, v => { cond.SwitchId3 = v; changed(); }),
-            this._tt('Пока ВКЛ — поза удерживается даже после смены значения переменной'));
-        const extLine = document.createElement('div');
-        extLine.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;';
-        extLine.appendChild(this._numberField(cond.ExtVarId, { min: 0 }, v => { cond.ExtVarId = v; changed(); }));
-        extLine.appendChild(this._selectField(cond.ExtVarOp || 'equal', [
-            { value: 'equal', label: '=' }, { value: 'greater', label: '>' },
-            { value: 'less', label: '<' }, { value: 'notEqual', label: '≠' }
-        ], v => { cond.ExtVarOp = v; changed(); }));
-        const evv = this._numberField(cond.ExtVarVal, { min: 0 }, v => { cond.ExtVarVal = v; changed(); });
-        evv.style.width = '84px';
-        extLine.appendChild(evv);
-        cf.row(this._tt('Доп. переменная'), extLine, this._tt('var id · операция · значение'));
-        cf.mount(formCol);
-
-        // Visuals (existing panels, now stacked in the form column)
-        if (kind === 'PoseMappings') {
-            const vf = new InspectorForm();
-            vf.section(this._tt('Визуал позы'));
-            vf.mount(formCol);
-            this._renderPoseVisuals(formCol, entry, changed);
-        } else {
-            const vf = new InspectorForm();
-            vf.section(this._tt('Визуал скина'));
-            vf.mount(formCol);
-            this._renderSpriteVisuals(formCol, entry, kind, changed);
-        }
-    }
-
-    _npcTagLine(entry, changed) {
-        const tagLine = document.createElement('div');
-        tagLine.style.cssText = 'display:flex;gap:6px;align-items:center;flex:1;';
-        const tag = document.createElement('code');
-        tag.style.cssText = `
-            font-size: 12px; padding: 4px 8px; flex: 1;
-            background-color: var(--color-bg-deep);
-            border: 1px solid var(--color-border); border-radius: 4px;
-            color: var(--color-accent-text, #7ab0ff);
+    _renderEntryCard(entry, idx, kind, entries, spriter, content) {
+        const self = this;
+        const card = document.createElement('div');
+        card.style.cssText = `
+            background-color: var(--color-bg-panel);
+            border: 1px solid var(--color-border);
+            border-radius: 6px;
+            margin-bottom: 12px;
+            display: flex; flex-direction: column;
         `;
-        tag.textContent = '<sds:' + (entry.IdName || '') + '>';
-        tagLine.appendChild(tag);
-        tagLine.appendChild(this._smallButton('Копировать', () => {
-            if (navigator.clipboard) navigator.clipboard.writeText(tag.textContent);
+
+        const head = document.createElement('div');
+        head.style.cssText = `
+            display: flex; align-items: center; gap: 10px;
+            padding: 8px 12px;
+            background-color: var(--color-bg-deep);
+            border-radius: 6px 6px 0 0;
+            border-bottom: 1px solid var(--color-border);
+        `;
+        const toggle = document.createElement('span');
+        toggle.textContent = '▼';
+        toggle.style.cssText = 'cursor:pointer;font-size:10px;color:var(--color-text-dim);';
+        head.appendChild(toggle);
+
+        const nameLbl = document.createElement('span');
+        nameLbl.style.cssText = 'font-weight:600;font-size:13px;color:var(--color-text-strong);';
+        nameLbl.textContent = (idx + 1) + '. ' + this._entryHeadline(entry, kind);
+        head.appendChild(nameLbl);
+
+        const condLbl = document.createElement('span');
+        condLbl.style.cssText = 'font-size:11px;color:var(--color-text-dim);';
+        const cond = entry.Conditions;
+        if (cond) {
+            let parts = [];
+            parts.push(cond.MainValue === -1 ? 'базовый (−1)' : 'var=' + cond.MainValue);
+            for (const sw of [cond.SwitchId1, cond.SwitchId2]) if (Number(sw) > 0) parts.push('sw' + sw);
+            if (Number(cond.ExtVarId) > 0) parts.push('доп.var' + cond.ExtVarId + this._opLabel(cond.ExtVarOp) + cond.ExtVarVal);
+            condLbl.textContent = parts.join(' · ');
+        }
+        head.appendChild(condLbl);
+
+        head.appendChild(document.createElement('div')).style.cssText = 'flex:1;';
+
+        head.appendChild(this._smallButton('▲', () => {
+            if (idx === 0) return;
+            const tmp = entries[idx - 1]; entries[idx - 1] = entries[idx]; entries[idx] = tmp;
+            spriter[kind] = DatabaseSpriterEditor.encodeCollection(entries);
+            self._renderCollection(content, spriter, kind);
         }));
-        const input = this._textField(entry.IdName, {}, v => { entry.IdName = v.trim(); tag.textContent = '<sds:' + v.trim() + '>'; changed(); });
-        const wrap = document.createElement('div');
-        wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;flex:1;';
-        wrap.appendChild(input);
-        wrap.appendChild(tagLine);
-        return wrap;
+        head.appendChild(this._smallButton('▼', () => {
+            if (idx === entries.length - 1) return;
+            const tmp = entries[idx + 1]; entries[idx + 1] = entries[idx]; entries[idx] = tmp;
+            spriter[kind] = DatabaseSpriterEditor.encodeCollection(entries);
+            self._renderCollection(content, spriter, kind);
+        }));
+        head.appendChild(this._smallButton('Копия', () => {
+            const clone = JSON.parse(JSON.stringify(entry));
+            entries.splice(idx + 1, 0, clone);
+            spriter[kind] = DatabaseSpriterEditor.encodeCollection(entries);
+            self._renderCollection(content, spriter, kind);
+        }));
+        head.appendChild(this._smallButton('Удалить', () => {
+            entries.splice(idx, 1);
+            spriter[kind] = DatabaseSpriterEditor.encodeCollection(entries);
+            self._renderCollection(content, spriter, kind);
+        }, 'danger'));
+
+        const body = document.createElement('div');
+        body.style.cssText = 'padding:12px;display:flex;gap:16px;flex-wrap:wrap;';
+        toggle.addEventListener('click', () => {
+            const collapsed = body.style.display === 'none';
+            body.style.display = collapsed ? 'flex' : 'none';
+            toggle.textContent = collapsed ? '▼' : '▶';
+        });
+
+        this._renderEntryBody(body, entry, kind);
+        card.appendChild(head);
+        card.appendChild(body);
+        return card;
     }
 
     _opLabel(op) {
@@ -639,6 +650,99 @@ class DatabaseSpriterEditor {
     _ensure(entry, key, fallback) {
         if (!entry[key] || typeof entry[key] !== 'object') entry[key] = fallback;
         return entry[key];
+    }
+
+    _renderEntryBody(body, entry, kind) {
+        // Left column: identity + conditions
+        const left = this._panel();
+        left.style.width = '300px';
+
+        if (kind === 'NPCMappings') {
+            const nameRow = this._fieldLabel('ID Название (тег)', 'Писать в Note события: <sds:ЭтоИмя>');
+            nameRow.appendChild(this._textField(entry.IdName, {}, v => { entry.IdName = v.trim(); }));
+            left.appendChild(nameRow);
+            const tagRow = this._fieldLabel('Тег для копирования');
+            const tagLine = document.createElement('div');
+            tagLine.style.cssText = 'display:flex;gap:6px;align-items:center;';
+            const tag = document.createElement('code');
+            tag.style.cssText = `
+                font-size: 12px; padding: 4px 8px; flex: 1;
+                background-color: var(--color-bg-deep);
+                border: 1px solid var(--color-border); border-radius: 4px;
+                color: var(--color-accent-text, #7ab0ff);
+            `;
+            tag.textContent = '<sds:' + (entry.IdName || '') + '>';
+            tagLine.appendChild(tag);
+            tagLine.appendChild(this._smallButton('Копировать', () => {
+                navigator.clipboard && navigator.clipboard.writeText(tag.textContent);
+            }));
+            tagRow.appendChild(tagLine);
+            left.appendChild(tagRow);
+        } else {
+            const nameRow = this._fieldLabel('Название');
+            nameRow.appendChild(this._textField(entry.Name, {}, v => { entry.Name = v; }));
+            left.appendChild(nameRow);
+
+            const prioRow = this._fieldLabel('Приоритет', 'При равных условиях побеждает запись с большим приоритетом');
+            prioRow.appendChild(this._numberField(entry.Priority, { min: 0 }, v => { entry.Priority = v; }));
+            left.appendChild(prioRow);
+
+            this._renderConditions(left, entry);
+        }
+
+        // Right column: visuals + preview
+        const right = this._panel();
+        right.style.flex = '1';
+        right.style.minWidth = '420px';
+
+        if (kind === 'PoseMappings') {
+            this._renderPoseVisuals(right, entry);
+        } else {
+            this._renderSpriteVisuals(right, entry, kind);
+        }
+
+        body.appendChild(left);
+        body.appendChild(right);
+    }
+
+    _renderConditions(panel, entry) {
+        const cond = this._ensure(entry, 'Conditions', {});
+        panel.appendChild(this._sectionTitle('Условия')).style.padding = '4px 0 0';
+
+        const main = this._fieldLabel('Значение основной переменной', '−1 = базовый скин/поза для всех неперехваченных значений');
+        main.appendChild(this._numberField(cond.MainValue, { min: -1 }, v => { cond.MainValue = v; }));
+        panel.appendChild(main);
+
+        const swRow = document.createElement('div');
+        swRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;';
+        const sw1 = this._fieldLabel('Свитч 1 (ВКЛ)');
+        sw1.appendChild(this._numberField(cond.SwitchId1, { min: 0 }, v => { cond.SwitchId1 = v; }));
+        swRow.appendChild(sw1);
+        const sw2 = this._fieldLabel('Свитч 2 (ВКЛ)');
+        sw2.appendChild(this._numberField(cond.SwitchId2, { min: 0 }, v => { cond.SwitchId2 = v; }));
+        swRow.appendChild(sw2);
+        panel.appendChild(swRow);
+
+        const sw3 = this._fieldLabel('Свитч 3 (доигрывание)', 'Пока ВКЛ — поза удерживается даже после смены значения переменной');
+        sw3.appendChild(this._numberField(cond.SwitchId3, { min: 0 }, v => { cond.SwitchId3 = v; }));
+        panel.appendChild(sw3);
+
+        const extRow = document.createElement('div');
+        extRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 60px 1fr;gap:6px;align-items:end;';
+        const ev = this._fieldLabel('Доп. переменная');
+        ev.appendChild(this._numberField(cond.ExtVarId, { min: 0 }, v => { cond.ExtVarId = v; }));
+        extRow.appendChild(ev);
+        const op = this._fieldLabel('Операция');
+        op.appendChild(this._selectField(cond.ExtVarOp || 'equal', [
+            { value: 'equal', label: '=' }, { value: 'greater', label: '>' },
+            { value: 'less', label: '<' }, { value: 'notEqual', label: '≠' }
+        ], v => { cond.ExtVarOp = v; }));
+        extRow.appendChild(op);
+        extRow.appendChild(document.createElement('div'));
+        const evv = this._fieldLabel('Значение');
+        evv.appendChild(this._numberField(cond.ExtVarVal, { min: 0 }, v => { cond.ExtVarVal = v; }));
+        extRow.appendChild(evv);
+        panel.appendChild(extRow);
     }
 
     _req(name) {
@@ -681,7 +785,7 @@ class DatabaseSpriterEditor {
         }
     }
 
-    _renderSpriteVisuals(host, entry, kind, changed) {
+    _renderSpriteVisuals(panel, entry, kind) {
         const vis = this._ensure(entry, 'Visuals', {});
         const isNPC = kind === 'NPCMappings';
 
@@ -697,12 +801,12 @@ class DatabaseSpriterEditor {
         }));
         line.appendChild(pickBtn);
         fileRow.appendChild(line);
-        host.appendChild(fileRow);
+        panel.appendChild(fileRow);
 
         if (!isNPC) {
             const idxRow = this._fieldLabel('Индекс персонажа (0–7)', 'Клик по ячейке в превью листа');
             idxRow.appendChild(this._numberField(vis.CharacterIndex, { min: 0, max: 7 }, v => { vis.CharacterIndex = v; this._refreshPreview(); }));
-            host.appendChild(idxRow);
+            panel.appendChild(idxRow);
         }
 
         // Tile settings
@@ -721,7 +825,7 @@ class DatabaseSpriterEditor {
         tileRow.appendChild(mk('Idle индекс', 'IdleIndex', { min: -1, max: 7, step: 1 }, '−1 = выкл'));
         tileRow.appendChild(mk('Idle анимация', 'IdleAnimSpeed', { min: -1, step: 1 }, '0 = выкл, −1 = стандарт'));
         tileRow.appendChild(mk('Задержка (тики)', 'AnimationDelay', { min: 1, step: 1 }, 'для ручной смены индексов'));
-        host.appendChild(tileRow);
+        panel.appendChild(tileRow);
 
         const selRow = document.createElement('div');
         selRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;';
@@ -738,19 +842,19 @@ class DatabaseSpriterEditor {
             { value: 2, label: 'Ритмичный (0-1-3-2)' }
         ], v => { vis.Pattern = Number(v); }));
         selRow.appendChild(pattern);
-        host.appendChild(selRow);
+        panel.appendChild(selRow);
 
         if (!isNPC) {
             const animRow = this._fieldLabel('Ручная смена индексов', 'Массив индексов графики (0–7), меняются по кругу с задержкой выше');
             animRow.appendChild(this._textField(vis.AnimationIndices, { placeholder: 'например: 0,1,2,1' }, v => { vis.AnimationIndices = v; }));
-            host.appendChild(animRow);
+            panel.appendChild(animRow);
         }
 
         // Live preview player
-        host.appendChild(this._renderPlayer(entry, kind));
+        panel.appendChild(this._renderPlayer(entry, kind));
     }
 
-    _renderPoseVisuals(host, entry, changed) {
+    _renderPoseVisuals(panel, entry) {
         const vis = this._ensure(entry, 'Visuals', { GridX: 0, GridY: 0, Width: 48, Height: 48 });
 
         const fileRow = this._fieldLabel('Файл спрайта', 'Пусто = вырезать позу из текущей графики героя');
@@ -763,7 +867,7 @@ class DatabaseSpriterEditor {
             fileInput.value = name;
         })));
         fileRow.appendChild(line);
-        host.appendChild(fileRow);
+        panel.appendChild(fileRow);
 
         const grid = document.createElement('div');
         grid.style.cssText = 'display:grid;grid-template-columns:repeat(4,1fr);gap:8px;';
@@ -772,10 +876,10 @@ class DatabaseSpriterEditor {
             f.appendChild(this._numberField(vis[key], { min: 0, step: 1 }, v => { vis[key] = v; }));
             grid.appendChild(f);
         }
-        host.appendChild(grid);
+        panel.appendChild(grid);
 
         // Sheet picker with clickable grid
-        host.appendChild(this._renderPoseGrid(entry));
+        panel.appendChild(this._renderPoseGrid(entry));
     }
 
     _renderPoseGrid(entry) {

@@ -219,22 +219,25 @@ class DatabaseAgoniaEditor {
         return data.agonia;
     }
 
-    showAgoniaDetail(container) {
+    showAgoniaDetail(container, opts) {
         const agonia = this.getAgonia();
 
         const wrapper = document.createElement('div');
         wrapper.style.cssText = 'display:flex;flex-direction:column;height:100%;overflow-y:auto;';
 
-        const banner = document.createElement('div');
-        banner.style.cssText = `
-            background-color: var(--color-bg-deep);
-            padding: 14px 20px;
-            border-bottom: 2px solid var(--color-accent-border-mid);
-            font-size: 20px; font-weight: 600;
-            color: var(--color-text-strong);
-        `;
-        banner.textContent = this._tt('Agonia Engine');
-        wrapper.appendChild(banner);
+        // Banner skipped when embedded in «Система» (S22)
+        if (!opts || !opts.noBanner) {
+            const banner = document.createElement('div');
+            banner.style.cssText = `
+                background-color: var(--color-bg-deep);
+                padding: 14px 20px;
+                border-bottom: 2px solid var(--color-accent-border-mid);
+                font-size: 20px; font-weight: 600;
+                color: var(--color-text-strong);
+            `;
+            banner.textContent = this._tt('Agonia Engine');
+            wrapper.appendChild(banner);
+        }
 
         for (const sectionKey of Object.keys(DatabaseAgoniaEditor.SECTIONS)) {
             const section = DatabaseAgoniaEditor.SECTIONS[sectionKey];

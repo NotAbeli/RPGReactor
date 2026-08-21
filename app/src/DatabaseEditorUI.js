@@ -337,11 +337,11 @@ class DatabaseEditorUI {
             case 'system':
                 this.openDatabase('system1');
                 return;
-            case 'system1': {
-                // Show System 1 editor
-                const { detailEl } = this.prepareDatabaseSection('system1', this._dbTitle('system1', 'System 1'), { showListPanel: false });
-
-                this.system1Editor.showSystem1Detail(detailEl);
+            // S22: System 1 + Agonia Engine merged into one «Система» tab
+            // (sub-tabs Общие / Движок). Old types redirect for bookmarks.
+            case 'system1':
+            case 'agonia': {
+                this.showSystemTab(type === 'agonia' ? 'engine' : 'general');
                 return;
             }
             case 'items': {
@@ -384,12 +384,6 @@ class DatabaseEditorUI {
                 if (!this.uiEditor) return;
                 const { detailEl } = this.prepareDatabaseSection('uiStudio', this._dbTitle('uiStudio', 'Интерфейс'), { showListPanel: false });
                 this.uiEditor.showUIDetail(detailEl);
-                return;
-            }
-            case 'agonia': {
-                if (!this.agoniaEditor) return;
-                const { detailEl } = this.prepareDatabaseSection('agonia', this._dbTitle('agonia', 'Agonia Engine'), { showListPanel: false });
-                this.agoniaEditor.showAgoniaDetail(detailEl);
                 return;
             }
             default:
@@ -455,6 +449,48 @@ class DatabaseEditorUI {
         if (current.key === 'craft') this.craftEditor.showCraftDetail(body);
         else if (current.key === 'loot') this.lootEditor.showLootDetail(body);
         else this.giftsEditor.showGiftsDetail(body);
+    }
+
+    /**
+     * S22: the «Система» tab - System 1 (Общие) and Agonia Engine
+     * (Движок) merged into one tab with sub-tabs, one visual language.
+     */
+    showSystemTab(mode) {
+        const tt = text => window.I18n ? window.I18n.tText(text) : text;
+        const modes = [
+            { key: 'general', label: 'Общие' },
+            { key: 'engine', label: 'Движок' }
+        ];
+        const current = modes.find(m => m.key === mode) || modes[0];
+
+        const { detailEl } = this.prepareDatabaseSection('system', tt('Система'), { showListPanel: false });
+
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'display:flex;flex-direction:column;height:100%;overflow:hidden;';
+
+        const banner = document.createElement('div');
+        banner.style.cssText = `
+            background-color: var(--color-bg-deep);
+            padding: 14px 20px; border-bottom: 2px solid var(--color-accent-border-mid);
+            font-size: 20px; font-weight: 600; color: var(--color-text-strong);
+            display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+        `;
+        banner.textContent = tt('Система');
+        const sub = document.createElement('span');
+        sub.style.cssText = 'font-size:12px;font-weight:400;color:var(--color-text-dim);';
+        sub.textContent = tt('Общие настройки игры и подсистемы движка Agonia');
+        banner.appendChild(sub);
+        wrapper.appendChild(banner);
+
+        wrapper.appendChild(this._inventoryModeBar(modes, current.key, key => this.showSystemTab(key)));
+
+        const body = document.createElement('div');
+        body.style.cssText = 'flex:1;overflow-y:auto;padding:0 16px 16px;';
+        wrapper.appendChild(body);
+        detailEl.appendChild(wrapper);
+
+        if (current.key === 'general') this.system1Editor.showSystem1Detail(body, { noBanner: true });
+        else this.agoniaEditor.showAgoniaDetail(body, { noBanner: true });
     }
 
     _inventoryModeBar(modes, activeKey, onPick) {
@@ -1200,8 +1236,7 @@ class DatabaseEditorUI {
             { name: 'Интерфейс', type: 'uiStudio' },
             { name: 'Тайлсеты', type: 'tilesets' },
             { name: 'Общие события', type: 'commonEvents' },
-            { name: 'System 1', type: 'system1' },
-            { name: 'Agonia Engine', type: 'agonia' }
+            { name: 'Система', type: 'system' }
         ];
 
         categories.forEach(category => {
