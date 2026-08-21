@@ -417,7 +417,8 @@ class DatabaseSpriterEditor {
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;';
 
-        // Left: fields
+        // Left: the simple card - name + sprite file (S24: face, profile
+        // and note are cut from the UI; the data in Actors.json stays).
         const left = this._panel();
         left.style.width = '340px';
 
@@ -435,61 +436,87 @@ class DatabaseSpriterEditor {
         })));
         spriteRow.appendChild(spriteLine);
         left.appendChild(spriteRow);
-
-        const idxRow = this._fieldLabel('Индекс спрайта (0–7)');
-        idxRow.appendChild(this._numberField(actor.characterIndex || 0, { min: 0, max: 7 }, v => { actor.characterIndex = v; }));
-        left.appendChild(idxRow);
-
-        const faceRow = this._fieldLabel('Лицо (img/faces)');
-        const faceLine = document.createElement('div');
-        faceLine.style.cssText = 'display:flex;gap:6px;';
-        faceLine.appendChild(this._textField(actor.faceName, { placeholder: 'имя файла без .png' }, v => { actor.faceName = v; }));
-        faceLine.appendChild(this._smallButton('Выбрать…', () => this._showFilePicker(actor.faceName, name => {
-            actor.faceName = name;
-            this._renderHero(content);
-        }, 'faces')));
-        faceRow.appendChild(faceLine);
-        left.appendChild(faceRow);
-
-        const faceIdxRow = this._fieldLabel('Индекс лица (0–7)');
-        faceIdxRow.appendChild(this._numberField(actor.faceIndex || 0, { min: 0, max: 7 }, v => { actor.faceIndex = v; }));
-        left.appendChild(faceIdxRow);
-
-        const mkArea = (label, key, hint) => {
-            const wrap = this._fieldLabel(label, hint);
-            const area = document.createElement('textarea');
-            area.value = actor[key] || '';
-            area.rows = 3;
-            area.style.cssText = `
-                width:100%;box-sizing:border-box;padding:5px 8px;font-size:12px;resize:vertical;
-                background-color:var(--color-bg-deep);color:var(--color-text-strong);
-                border:1px solid var(--color-border);border-radius:4px;
-            `;
-            area.addEventListener('input', () => { actor[key] = area.value; });
-            wrap.appendChild(area);
-            return wrap;
-        };
-        left.appendChild(mkArea('Профиль', 'profile'));
-        left.appendChild(mkArea('Заметки', 'note', 'Мета-теги плагинов, как в Note событий'));
         row.appendChild(left);
 
-        // Right: live sprite player + face preview
+        // Right: live player + clickable character sheet (click = index).
         const right = this._panel();
         right.style.flex = '1';
         right.style.minWidth = '320px';
         const pvEntry = { Visuals: { CharacterName: actor.characterName, CharacterIndex: actor.characterIndex || 0, Frames: 3, Directions: 4, FPS: 8, Pattern: 0, Width: 0, Height: 0 } };
         right.appendChild(this._renderPlayer(pvEntry, 'hero'));
-
-        const faceTitle = this._fieldLabel('Лицо (лист 4×2)');
-        const faceImg = document.createElement('img');
-        faceImg.src = this._imgUrlFrom('faces', actor.faceName);
-        faceImg.style.cssText = 'image-rendering:pixelated;max-width:100%;max-height:220px;border:1px solid var(--color-border);border-radius:4px;background-color:var(--color-bg-deep);';
-        if (!actor.faceName) faceImg.style.display = 'none';
-        faceTitle.appendChild(faceImg);
-        right.appendChild(faceTitle);
+        right.appendChild(this._renderHeroSheet(actor, content));
         row.appendChild(right);
 
         content.appendChild(row);
+    }
+
+    /** Clickable character sheet: 8 cells (4x2), click = CharacterIndex.
+     *  $-big sheets are a single cell. (S24) */
+    _renderHeroSheet(actor, content) {
+        const wrap = this._fieldLabel('Индекс персонажа — клик по ячейке листа');
+        const box = document.createElement('div');
+        box.style.cssText = `
+            border: 1px solid var(--color-border); border-radius: 4px;
+            background-color: var(--color-bg-deep);
+            padding: 8px; overflow: auto; max-height: 320px;
+        `;
+        const file = actor.characterName;
+        const big = (typeof RRAssetFiles !== 'undefined')
+            ? RRAssetFiles.isBigCharacter(String(file || ''))
+            : String(file || '').startsWith('$');
+
+        const img = document.createElement('img');
+        img.src = file ? this._imgUrl(file) : '';
+        img.style.cssText = 'image-rendering: pixelated; max-width: 100%; display: block; cursor: pointer;';
+        if (!file) {
+            img.alt = this._tt('Выберите файл спрайта');
+            img.style.minHeight = '60px';
+        }
+
+        const selBox = document.createElement('div');
+        selBox.style.cssText = `
+            position: absolute;
+            border: 2px solid var(--color-accent-text, #7ab0ff);
+            box-shadow: 0 0 0 1000px rgba(0,0,0,0.45);
+            pointer-events: none;
+        `;
+        const holder = document.createElement('div');
+        holder.style.cssText = 'position:relative;display:inline-block;';
+        holder.appendChild(img);
+        holder.appendChild(selBox);
+        box.appendChild(holder);
+
+        const overlay = () => {
+            selBox.parentNode && selBox.parentNode.removeChild(selBox);
+            if (!img.naturalWidth || !file) return;
+            const cellW = big ? img.naturalWidth : img.naturalWidth / 4;
+            const cellH = big ? img.naturalHeight : img.naturalHeight / 2;
+            const idx = big ? 0 : Math.min(7, Math.max(0, Number(actor.characterIndex) || 0));
+            const col = big ? 0 : idx % 4;
+            const rowI = big ? 0 : Math.floor(idx / 4);
+            selBox.style.left = (img.offsetLeft + col * cellW) + 'px';
+            selBox.style.top = (img.offsetTop + rowI * cellH) + 'px';
+            selBox.style.width = cellW + 'px';
+            selBox.style.height = cellH + 'px';
+            img.parentNode.appendChild(selBox);
+        };
+        img.addEventListener('load', overlay);
+        setTimeout(overlay, 60);
+
+        img.addEventListener('click', e => {
+            if (!img.naturalWidth || !file) return;
+            if (big) return; // single character, nothing to pick
+            const rect = img.getBoundingClientRect();
+            const cellW = img.naturalWidth / 4;
+            const cellH = img.naturalHeight / 2;
+            const col = Math.max(0, Math.min(3, Math.floor((e.clientX - rect.left) / (rect.width / 4))));
+            const rowI = Math.max(0, Math.min(1, Math.floor((e.clientY - rect.top) / (rect.height / 2))));
+            actor.characterIndex = rowI * 4 + col;
+            this._renderHero(content); // re-render: player + sheet frame
+        });
+
+        wrap.appendChild(box);
+        return wrap;
     }
 
     _renderCollection(content, spriter, kind) {
