@@ -16,7 +16,6 @@ class DatabaseWeaponEditor {
 
     showWeaponDetail(container, weapon) {
         this.currentWeapon = weapon;
-        this._hostContainer = container; // S25: refresh must not wipe the shell list
 
         const wrapper = document.createElement('div');
         wrapper.style.display = 'flex';
@@ -497,16 +496,17 @@ class DatabaseWeaponEditor {
     }
 
     refreshWeaponDetail(weapon) {
-        // S25: prefer the remembered host (the shell form column) - wiping
-        // #database-detail would destroy the master-detail list beside it.
-        const container = (this._hostContainer && this._hostContainer.isConnected)
-            ? this._hostContainer
-            : document.getElementById('database-detail');
+        console.log('DatabaseWeaponEditor.refreshWeaponDetail - Refreshing weapon:', weapon.id);
+        console.log('DatabaseWeaponEditor.refreshWeaponDetail - Weapon traits:', weapon.traits);
+
+        const container = document.getElementById('database-detail');
         if (container) {
+            console.log('DatabaseWeaponEditor.refreshWeaponDetail - Found container, clearing and rebuilding');
             container.innerHTML = '';
             this.showWeaponDetail(container, weapon);
+            console.log('DatabaseWeaponEditor.refreshWeaponDetail - Detail rebuilt');
         } else {
-            console.warn('DatabaseWeaponEditor.refreshWeaponDetail - no container');
+            console.warn('DatabaseWeaponEditor.refreshWeaponDetail - Could not find detail panel container!');
         }
     }
 }

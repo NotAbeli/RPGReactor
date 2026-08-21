@@ -90,19 +90,9 @@ class DatabaseItemEditor {
         return [...tags].sort((a, b) => a.localeCompare(b, 'ru'));
     }
 
-    /** CE-effect re-render: into the remembered host (the shell form
-     *  column), never #database-detail - that would wipe the list (S25). */
-    _rerenderHost(container, item) {
-        const host = (this._hostContainer && this._hostContainer.isConnected)
-            ? this._hostContainer
-            : (container.closest('.database-detail') || container);
-        host.innerHTML = '';
-        this.showItemDetail(host, item);
-    }
-
     showItemDetail(container, item) {
         this.currentItem = item;
-        this._hostContainer = container; // S25: CE re-render must not wipe the shell list
+
         const wrapper = document.createElement('div');
         wrapper.style.display = 'flex';
         wrapper.style.flexDirection = 'column';
@@ -255,7 +245,7 @@ class DatabaseItemEditor {
                         if (item.effects && item.effects[oi]) {
                             item.effects.splice(oi, 1);
                             this.databaseManager.updateItem(item.id, item);
-                            this._rerenderHost(container, item);
+                            this.showItemDetail(container.closest('.database-detail') || container, item);
                         }
                     });
                 });
@@ -265,7 +255,7 @@ class DatabaseItemEditor {
                         item.effects = item.effects || [];
                         item.effects.push({ code: 44, dataId: 1, value1: 0, value2: 0 });
                         this.databaseManager.updateItem(item.id, item);
-                        this._rerenderHost(container, item);
+                        this.showItemDetail(container.closest('.database-detail') || container, item);
                     });
                 }
             }
