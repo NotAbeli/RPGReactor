@@ -433,26 +433,27 @@ class DatabaseSpriterEditor {
         return 'скинов';
     }
 
-    /** One-entry detail form (S32): превью → Название+Приоритет → файл →
-     *  детали анимации → Условия (конструктор проверок). Head shows only
-     *  the number + live condition summary - never the name (no doubles).
-     *  onMeta() re-renders the hosting grid card/header. */
+    /** One-entry detail form (S33): превью → файл → Название+Приоритет →
+     *  ▸ Продвинутая анимация → ▸ Условия. Nothing renders above the
+     *  preview; the conditions summary lives in the collapsed details
+     *  caption. onMeta() re-renders the hosting grid card/header. */
     _renderEntryDetail(wrapper, entry, idx, kind, commit, onMeta) {
         const changed = () => commit();
         const retune = () => { if (onMeta) onMeta(); };
 
-        // --- Head: number + condition summary (S32: no name double) ---
-        const vf = new InspectorForm();
-        vf.head('#' + (idx + 1),
-            kind === 'NPCMappings' ? 'Библиотека NPC — тег <sds:…>' : this._condSummary(entry));
-        vf.mount(wrapper);
-
-        // --- Preview ---
+        // --- Preview (always a framed 360px panel; static cell for poses) ---
         try {
-            wrapper.appendChild(this._renderPlayer(entry, kind)); // static cell for poses
+            wrapper.appendChild(this._renderPlayer(entry, kind));
         } catch (e) { /* preview is optional */ }
 
-        // --- Название + Приоритет right under the graphics (S32) ---
+        // --- File / sheet right under the preview ---
+        if (kind === 'PoseMappings') {
+            this._renderPoseVisuals(wrapper, entry, changed);
+        } else {
+            this._renderSpriteVisuals(wrapper, entry, kind, changed);
+        }
+
+        // --- Название + Приоритет ---
         const nf = new InspectorForm();
         if (kind === 'NPCMappings') {
             nf.row(this._tt('ID Название (тег)'), this._npcTagLine(entry, () => { changed(); retune(); }), this._tt('Писать в Note события: <sds:ЭтоИмя>'));
@@ -464,28 +465,31 @@ class DatabaseSpriterEditor {
         }
         nf.mount(wrapper);
 
-        // --- File / sheet (the only visible "визуал" input) ---
-        if (kind === 'PoseMappings') {
-            this._renderPoseVisuals(wrapper, entry, changed);
-        } else {
-            this._renderSpriteVisuals(wrapper, entry, kind, changed);
-        }
-
-        // --- Условия: MainValue + checks constructor (skins/poses) ---
+        // --- ▸ Условия (collapsed, live summary in the caption) ---
         if (kind !== 'NPCMappings') {
             const cond = this._ensure(entry, 'Conditions', {});
-            const refreshHead = () => vf.setTitle('#' + (idx + 1));
-            const refreshSub = () => {
-                if (vf._headSubEl) vf._headSubEl.textContent = this._condSummary(entry);
-                retune();
+            const det = document.createElement('details');
+            det.style.cssText = 'margin-top:8px;border:1px solid var(--color-border);border-radius:4px;background-color:var(--color-bg-panel);padding:0 10px;';
+            det.open = false;
+            const sum = document.createElement('summary');
+            sum.style.cssText = 'padding:8px 0;font-size:13px;font-weight:bold;color:var(--color-text-strong);cursor:pointer;user-select:none;';
+            const refreshSum = () => {
+                sum.textContent = '▸ Условия · ' + this._condSummary(entry);
             };
+            refreshSum();
+
+            const body = document.createElement('div');
+            body.style.cssText = 'padding:0 0 10px;';
             const cf = new InspectorForm();
-            cf.section(this._tt('Условия'));
             cf.row(this._tt('Значение основной переменной'),
-                this._numberField(cond.MainValue, { min: -1 }, v => { cond.MainValue = v; changed(); refreshSub(); }),
+                this._numberField(cond.MainValue, { min: -1 }, v => { cond.MainValue = v; changed(); refreshSum(); retune(); }),
                 this._tt('−1 = базовый скин/поза для всех неперехваченных значений'));
-            cf.mount(wrapper);
-            wrapper.appendChild(this._checksConstructor(cond, () => { changed(); refreshSub(); }));
+            cf.mount(body);
+            body.appendChild(this._checksConstructor(cond, () => { changed(); refreshSum(); retune(); }));
+
+            det.appendChild(sum);
+            det.appendChild(body);
+            wrapper.appendChild(det);
         }
     }
 
@@ -1102,14 +1106,21 @@ class DatabaseSpriterEditor {
 
     /** opts.mini: grid-card mode - no controls, small canvas (S30).
      *  Poses (Visuals.GridX) render ONE static cell and hide the playback
-     *  controls - there is nothing to play (S31). */
+     *  controls - there is nothing to play (S31). S33: every non-mini
+     *  preview renders in the SAME framed fixed-360px panel (skins, NPC,
+     *  poses - identical window). */
     _renderPlayer(entry, kind, opts) {
         const mini = !!(opts && opts.mini);
         const still = !!(entry && entry.Visuals && entry.Visuals.GridX !== undefined);
-        const wrap = (mini || still) ? document.createElement('div') : this._panel();
-        wrap.style.cssText = mini
-            ? 'display:flex;align-items:center;justify-content:center;'
-            : 'padding:8px;max-width:360px;';
+        // S33: grid cards stay bare (the card IS the frame); every form
+        // preview - animated or static pose - renders in the SAME framed
+        // fixed-360px panel.
+        const wrap = mini ? document.createElement('div') : this._panel();
+        if (mini) {
+            wrap.style.cssText = 'display:flex;align-items:center;justify-content:center;';
+        } else {
+            wrap.style.cssText = 'width:360px;box-sizing:border-box;padding:8px;';
+        }
 
         let state = { playing: true, frame: 0, tick: 0, img: null, url: '' };
         if (!mini && !still) {
@@ -1153,7 +1164,8 @@ class DatabaseSpriterEditor {
                background-color:var(--color-bg-deep);border:1px solid var(--color-border);border-radius:4px;`
             : `
             display: flex; align-items: center; justify-content: center;
-            height: 140px; background-color: var(--color-bg-deep);
+            height: 140px; width: 100%; box-sizing: border-box;
+            background-color: var(--color-bg-deep);
             border: 1px solid var(--color-border); border-radius: 4px;
         `;
         const canvas = document.createElement('canvas');
