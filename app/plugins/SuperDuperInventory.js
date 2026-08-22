@@ -1503,32 +1503,14 @@
         this._bgSprite.y = this._layout.y;
         this.addChild(this._bgSprite);
 
-        // S44: fold-slice the backgrounds so the split blocks never
-        // duplicate the plate. Row 1 keeps the top 1/rows slice of the
-        // player background; rows 2..4 render the bottom slice of the SAME
-        // image (or Grid2 Bg whole when a custom one is set).
-        if (this._type === 'player') {
-            var rows = Config.pRows || 4;
-            var slice = (1 / rows);
-            if (this._layout.bg) {
-                this._bgSprite.bitmap.addLoadListener(function(bitmap) {
-                    this._bgSprite.setFrame(0, 0, bitmap.width, Math.floor(bitmap.height * slice));
-                }.bind(this));
-            }
-            if (Config.g2Bg) {
-                this._bg2Sprite = new Sprite(ImageManager.loadPicture(Config.g2Bg));
-            } else if (this._layout.bg) {
-                this._bg2Sprite = new Sprite(ImageManager.loadPicture(this._layout.bg));
-                this._bg2Sprite.bitmap.addLoadListener(function(bitmap) {
-                    var top = Math.floor(bitmap.height * slice);
-                    this._bg2Sprite.setFrame(0, top, bitmap.width, bitmap.height - top);
-                }.bind(this));
-            }
-            if (this._bg2Sprite) {
-                this._bg2Sprite.x = Config.g2X;
-                this._bg2Sprite.y = Config.g2Y;
-                this.addChild(this._bg2Sprite);
-            }
+        // S45: the WHOLE player background stays pinned to row 1 (the
+        // hotbar row block); rows 2..4 render bare slots unless a custom
+        // Grid2 Bg plate is set (drawn whole at Grid2 X/Y).
+        if (this._type === 'player' && Config.g2Bg) {
+            this._bg2Sprite = new Sprite(ImageManager.loadPicture(Config.g2Bg));
+            this._bg2Sprite.x = Config.g2X;
+            this._bg2Sprite.y = Config.g2Y;
+            this.addChild(this._bg2Sprite);
         }
     };
 

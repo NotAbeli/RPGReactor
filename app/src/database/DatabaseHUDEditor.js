@@ -461,46 +461,38 @@ class DatabaseHUDEditor {
             vis['Grid2 Bg'] = vis['Grid2 Bg'] || '';
             this._invVisualCommit(vis); // persist the seeded keys immediately
         }
-        // Row-1 block (hotbar row) - 1 x cols grid; S44: fold-slice, the bg
-        // shows only the top 1/rows slice of the player background image.
+        // Row-1 block (hotbar row). S45: the WHOLE background plate is
+        // pinned to these five cells - the rect covers the full image,
+        // only row-0 slots are drawn on top.
         const playerRect = () => {
             const full = bgRect('Player X', 'Player Y', 'Player Bg',
                 'Player Cols', 'Player Rows', 'Player Spacing', 'Slot Offset X', 'Slot Offset Y', 'Player Slot');
-            const rows = full.rows || 4;
-            const sliceH = full.h / rows;
-            return { ...full, rows: 1, h: sliceH, sliceY: 0, sliceH };
+            return { ...full, rows: 1 };
         };
         defs.push({
             id: 'inv.player',
-            label: this._tt('Инвентарь · ряд 1'),
+            label: this._tt('Инвентарь · ряд 1 (фон)'),
             rect: playerRect,
             apply: (x, y) => { vis['Player X'] = String(Math.round(x)); vis['Player Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
             draw: () => drawGridBox(playerRect())
         });
-        // Rows 2-4 block; S44: Grid2 Bg set -> whole image; empty -> the
-        // BOTTOM slice of the player background (fold, no duplicate plate).
+        // Rows 2-4 block: bare slots by default (the plate stays pinned to
+        // row 1); a custom Grid2 Bg renders whole.
         const grid2Rect = () => {
             const x = vn('Grid2 X', vn('Player X', 50));
             const y = vn('Grid2 Y', vn('Player Y', 50) + vn('Player Spacing', 40));
-            const custom = vis['Grid2 Bg'] && this._picImg(vis['Grid2 Bg']);
-            const bg = (custom && custom.naturalWidth) ? custom : this._picImg(vis['Player Bg']);
             const slot = this._picImg(vis['Player Slot']);
             const cell = (slot && slot.naturalWidth) ? slot.naturalWidth : slotNatural();
             const sp = vn('Player Spacing', 40);
             const cols = vn('Player Cols', 5);
             const totalRows = vn('Player Rows', 4);
             const rows = Math.max(0, totalRows - 1);
+            const custom = vis['Grid2 Bg'] ? this._picImg(vis['Grid2 Bg']) : null;
+            if (custom && custom.naturalWidth) {
+                return { x, y, w: custom.naturalWidth, h: custom.naturalHeight, cols, rows, sp, cell, bgImg: custom, slotImg: slot, offX: vn('Slot Offset X', 0), offY: vn('Slot Offset Y', 0) };
+            }
             const gridW = vn('Slot Offset X', 0) + (cols - 1) * sp + cell;
             const gridH = vn('Slot Offset Y', 0) + (rows - 1) * sp + cell;
-            if (bg && bg.naturalWidth) {
-                if (custom && custom.naturalWidth) {
-                    return { x, y, w: bg.naturalWidth, h: bg.naturalHeight, cols, rows, sp, cell, bgImg: bg, slotImg: slot, offX: vn('Slot Offset X', 0), offY: vn('Slot Offset Y', 0) };
-                }
-                // fold slice: bottom (rows-1)/rows of the player bg
-                const sliceY = bg.naturalHeight / totalRows;
-                const sliceH = bg.naturalHeight - sliceY;
-                return { x, y, w: bg.naturalWidth, h: sliceH, cols, rows, sp, cell, bgImg: bg, slotImg: slot, offX: vn('Slot Offset X', 0), offY: vn('Slot Offset Y', 0), sliceY, sliceH };
-            }
             return { x, y, w: Math.max(gridW, cell), h: Math.max(gridH, cell), cols, rows, sp, cell, bgImg: null, slotImg: slot, offX: vn('Slot Offset X', 0), offY: vn('Slot Offset Y', 0) };
         };
         defs.push({
