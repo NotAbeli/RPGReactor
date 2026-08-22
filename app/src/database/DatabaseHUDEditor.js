@@ -246,7 +246,9 @@ class DatabaseHUDEditor {
             "Hotbar Count X": "12", "Hotbar Count Y": "12",
             "Custom Window Img": "", "Custom Window X": "0", "Custom Window Y": "0",
             "Name X": "10", "Name Y": "10", "Name Align": "left", "Name Font Size": "22",
-            "Desc X": "10", "Desc Y": "40", "Desc Width": "200", "Desc Font Size": "18"
+            "Desc X": "10", "Desc Y": "40", "Desc Width": "200", "Desc Font Size": "18",
+            // S43: separated rows block (defaults resolve at runtime too)
+            "Grid2 X": "", "Grid2 Y": "", "Grid2 Bg": ""
         };
     }
 
@@ -442,14 +444,51 @@ class DatabaseHUDEditor {
             this._strokeSelected(ctx, r);
             ctx.restore();
         };
-        const playerRect = () => bgRect('Player X', 'Player Y', 'Player Bg',
-            'Player Cols', 'Player Rows', 'Player Spacing', 'Slot Offset X', 'Slot Offset Y', 'Player Slot');
+        // S43: seed the Grid2 keys (separated rows block) into the blob.
+        // Empty-string placeholders from INV_VISUAL_DEFAULTS count as unset.
+        if (vis['Grid2 X'] === undefined || vis['Grid2 X'] === '') {
+            vis['Grid2 X'] = String(vn('Player X', 50));
+            vis['Grid2 Y'] = String(vn('Player Y', 50) + vn('Player Spacing', 40));
+            vis['Grid2 Bg'] = vis['Player Bg'] || '';
+            this._invVisualCommit(vis); // persist the seeded keys immediately
+        }
+        // Row-1 block (hotbar row) - 1 x cols grid on the Player bg.
+        const playerRect = () => {
+            const r = bgRect('Player X', 'Player Y', 'Player Bg',
+                'Player Cols', 'Player Rows', 'Player Spacing', 'Slot Offset X', 'Slot Offset Y', 'Player Slot');
+            // visual box covers just row 0 (the bg image still shows whole)
+            const rowH = r.offY + r.cell;
+            return { ...r, rows: 1, h: Math.min(r.h, rowH) };
+        };
         defs.push({
             id: 'inv.player',
-            label: this._tt('Инвентарь · окно игрока'),
+            label: this._tt('Инвентарь · ряд 1'),
             rect: playerRect,
             apply: (x, y) => { vis['Player X'] = String(Math.round(x)); vis['Player Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
             draw: () => drawGridBox(playerRect())
+        });
+        // Rows 2-4 block on its own background.
+        const grid2Rect = () => {
+            const x = vn('Grid2 X', vn('Player X', 50));
+            const y = vn('Grid2 Y', vn('Player Y', 50) + vn('Player Spacing', 40));
+            const bg = this._picImg(vis['Grid2 Bg']);
+            const slot = this._picImg(vis['Player Slot']);
+            const cell = (slot && slot.naturalWidth) ? slot.naturalWidth : slotNatural();
+            const sp = vn('Player Spacing', 40);
+            const cols = vn('Player Cols', 5);
+            const rows = Math.max(0, vn('Player Rows', 4) - 1);
+            const gridW = vn('Slot Offset X', 0) + (cols - 1) * sp + cell;
+            const gridH = vn('Slot Offset Y', 0) + (rows - 1) * sp + cell;
+            const w = (bg && bg.naturalWidth) ? bg.naturalWidth : Math.max(gridW, cell);
+            const h = (bg && bg.naturalHeight) ? bg.naturalHeight : Math.max(gridH, cell);
+            return { x, y, w, h, cols, rows, sp, cell, bgImg: bg, slotImg: slot, offX: vn('Slot Offset X', 0), offY: vn('Slot Offset Y', 0) };
+        };
+        defs.push({
+            id: 'inv.grid2',
+            label: this._tt('Инвентарь · ряды 2–4'),
+            rect: grid2Rect,
+            apply: (x, y) => { vis['Grid2 X'] = String(Math.round(x)); vis['Grid2 Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
+            draw: () => drawGridBox(grid2Rect())
         });
         const chestRect = () => bgRect('Chest X', 'Chest Y', 'Chest Bg',
             'Chest Cols', 'Chest Rows', 'Chest Spacing', 'Slot Offset X', 'Slot Offset Y', 'Chest Slot');
@@ -528,6 +567,25 @@ class DatabaseHUDEditor {
                     ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
                     ctx.setLineDash([]);
                 }
+                // S43: the info-output region (name + description) lives
+                // INSIDE the custom window and moves only with it.
+                const nx = vn('Name X', 10), ny = vn('Name Y', 10);
+                const dx = vn('Desc X', 10), dy = vn('Desc Y', 40);
+                const dw = vn('Desc Width', 200);
+                const region = {
+                    x: r.x + Math.min(nx, dx),
+                    y: r.y + Math.min(ny, dy),
+                    w: Math.max(dw, 60),
+                    h: Math.max(dy + 120, 140) - Math.min(ny, dy)
+                };
+                ctx.fillStyle = 'rgba(128,128,140,0.30)';
+                ctx.fillRect(region.x, region.y, region.w, region.h);
+                ctx.strokeStyle = 'rgba(160,160,180,0.7)';
+                ctx.strokeRect(region.x + 0.5, region.y + 0.5, region.w - 1, region.h - 1);
+                ctx.fillStyle = 'rgba(225,225,240,0.85)';
+                ctx.font = '11px sans-serif';
+                ctx.textAlign = 'left';
+                ctx.fillText(this._tt('имя / описание предмета'), region.x + 6, region.y + 14);
                 this._strokeSelected(ctx, r);
                 ctx.restore();
             }
@@ -914,6 +972,15 @@ class DatabaseHUDEditor {
             form.row(this._tt('Slot 1 Y'), this._numField(craft, 'Slot 1 Y', rerender));
             form.row(this._tt('Шаг слотов'), this._numField(craft, 'Slot Spacing', rerender));
             form.row(this._tt('Размер слота'), this._numField(craft, 'Slot Size', rerender));
+        } else if (def.id === 'inv.grid2') {
+            const vis = this._invVisual();
+            const commit = () => { this._invVisualCommit(vis); rerender(); };
+            form.row(this._tt('X'), this._numField(vis, 'Grid2 X', commit));
+            form.row(this._tt('Y'), this._numField(vis, 'Grid2 Y', commit));
+            form.row(this._tt('Фон (имя картинки)'), this._textField(vis, 'Grid2 Bg', commit));
+            form.row(this._tt('Колонок'), this._numField(vis, 'Player Cols', commit));
+            form.row(this._tt('Строк всего'), this._numField(vis, 'Player Rows', commit));
+            form.row(this._tt('Шаг сетки'), this._numField(vis, 'Player Spacing', commit));
         } else if (def.id === 'inv.player') {
             const vis = this._invVisual();
             const commit = () => { this._invVisualCommit(vis); rerender(); };

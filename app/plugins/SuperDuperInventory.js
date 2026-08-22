@@ -478,6 +478,16 @@
         pX: Visuals['Player X'] ? Number(Visuals['Player X']) : pctX(4),
         pY: Visuals['Player Y'] ? Number(Visuals['Player Y']) : pctY(7),
         pSpace: Number(Visuals['Player Spacing'] || 40),
+
+        // S43: separated row block - rows 2..4 may sit anywhere. Defaults
+        // keep the stock layout (below row 1) until the editor moves them.
+        g2X: Visuals['Grid2 X'] ? Number(Visuals['Grid2 X']) :
+            (Visuals['Player X'] ? Number(Visuals['Player X']) : pctX(4)),
+        g2Y: Visuals['Grid2 Y'] ? Number(Visuals['Grid2 Y']) :
+            (Visuals['Player Y'] ? Number(Visuals['Player Y']) : pctY(7)) +
+            Number(Visuals['Player Spacing'] || 40),
+        g2Bg: (Visuals['Grid2 Bg'] !== undefined && Visuals['Grid2 Bg'] !== '') ?
+            Visuals['Grid2 Bg'] : (Visuals['Player Bg'] || ''),
         
         slotOffX: Number(Visuals['Slot Offset X'] || 0),
         slotOffY: Number(Visuals['Slot Offset Y'] || 0),
@@ -1491,6 +1501,14 @@
         this._bgSprite.x = this._layout.x;
         this._bgSprite.y = this._layout.y;
         this.addChild(this._bgSprite);
+
+        // S43: separated rows 2..4 get their own background plate.
+        if (this._type === 'player' && Config.g2Bg && Config.g2Bg !== this._layout.bg) {
+            this._bg2Sprite = new Sprite(ImageManager.loadPicture(Config.g2Bg));
+            this._bg2Sprite.x = Config.g2X;
+            this._bg2Sprite.y = Config.g2Y;
+            this.addChild(this._bg2Sprite);
+        }
     };
 
     Sprite_SDI_Inventory.prototype.createSlots = function() {
@@ -1499,13 +1517,19 @@
         this._textSprites = [];
 
         var count = this._layout.cols * this._layout.rows;
-        
+
         for (var i = 0; i < count; i++) {
             var col = i % this._layout.cols;
             var row = Math.floor(i / this._layout.cols);
-            
-            var x = this._layout.x + (col * this._layout.space) + Config.slotOffX;
-            var y = this._layout.y + (row * this._layout.space) + Config.slotOffY;
+
+            // S43: row 0 stays at Player X/Y; rows 1+ render at Grid2 X/Y
+            // (defaults keep the stock layout). Slot indices, hit-tests and
+            // drag logic are untouched - only sprite coordinates.
+            var baseX = (row === 0 || this._type !== 'player') ? this._layout.x : Config.g2X;
+            var baseY = (row === 0 || this._type !== 'player') ? this._layout.y
+                : Config.g2Y - this._layout.space; // (row - 1) * space
+            var x = baseX + (col * this._layout.space) + Config.slotOffX;
+            var y = baseY + (row * this._layout.space) + Config.slotOffY;
 
             var slot = new Sprite();
             if (this._layout.slot) {
