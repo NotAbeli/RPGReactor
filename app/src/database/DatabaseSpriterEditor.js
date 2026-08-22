@@ -847,22 +847,53 @@ class DatabaseSpriterEditor {
         det.appendChild(sum);
         det.open = false;
 
-        const tileRow = document.createElement('div');
-        tileRow.style.cssText = 'display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:4px 0 8px;';
+        // S37: preset selects where the domain is small (frames/directions/
+        // idle index), numbers stay where values are arbitrary (FPS, idle
+        // speed, delay); Width and Height sit side by side.
         const mk = (label, key, opts, hint) => {
             const f = this._fieldLabel(label, hint);
             f.appendChild(this._numberField(vis[key], opts, v => { vis[key] = v; this._refreshPreview(); }));
             return f;
         };
-        tileRow.appendChild(mk('Кадров (в ряду)', 'Frames', { min: 3, step: 1 }));
-        tileRow.appendChild(mk('Направления', 'Directions', { min: 1, max: 4, step: 1 }, '4 = крутится, 1 = фиксировано'));
-        tileRow.appendChild(mk('FPS', 'FPS', { min: 0, step: 1 }, '0 = авто'));
-        tileRow.appendChild(mk('Ширина (px)', 'Width', { min: 0, step: 1 }, '0 = авто'));
-        tileRow.appendChild(mk('Высота (px)', 'Height', { min: 0, step: 1 }, '0 = авто'));
-        tileRow.appendChild(mk('Idle индекс', 'IdleIndex', { min: -1, max: 7, step: 1 }, '−1 = выкл'));
-        tileRow.appendChild(mk('Idle анимация', 'IdleAnimSpeed', { min: -1, step: 1 }, '0 = выкл, −1 = стандарт'));
-        tileRow.appendChild(mk('Задержка (тики)', 'AnimationDelay', { min: 1, step: 1 }, 'для ручной смены индексов'));
-        det.appendChild(tileRow);
+        const mkSel = (label, key, options, hint) => {
+            const f = this._fieldLabel(label, hint);
+            const cur = Number(vis[key]);
+            // keep an out-of-list current value visible instead of hiding it
+            if (!options.some(o => Number(o.value) === cur)) {
+                options = options.concat([{ value: cur, label: String(cur) }]);
+            }
+            f.appendChild(this._selectField(cur, options, v => { vis[key] = Number(v); this._refreshPreview(); }));
+            return f;
+        };
+
+        const row1 = document.createElement('div');
+        row1.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:4px 0 8px;';
+        row1.appendChild(mkSel('Кадров (в ряду)', 'Frames', [
+            { value: 3, label: '3' }, { value: 4, label: '4' },
+            { value: 5, label: '5' }, { value: 6, label: '6' }
+        ]));
+        row1.appendChild(mkSel('Направления', 'Directions', [
+            { value: 4, label: 'Крутится (4)' }, { value: 1, label: 'Фиксировано (1)' }
+        ]));
+        row1.appendChild(mk('FPS', 'FPS', { min: 0, step: 1 }, '0 = авто'));
+        det.appendChild(row1);
+
+        const sizeRow = document.createElement('div');
+        sizeRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 0 8px;';
+        sizeRow.appendChild(mk('Ширина (px)', 'Width', { min: 0, step: 1 }, '0 = авто'));
+        sizeRow.appendChild(mk('Высота (px)', 'Height', { min: 0, step: 1 }, '0 = авто'));
+        det.appendChild(sizeRow);
+
+        const row2 = document.createElement('div');
+        row2.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:0 0 8px;';
+        row2.appendChild(mkSel('Idle индекс', 'IdleIndex', [
+            { value: -1, label: 'Выкл' }, { value: 0, label: '0' }, { value: 1, label: '1' },
+            { value: 2, label: '2' }, { value: 3, label: '3' }, { value: 4, label: '4' },
+            { value: 5, label: '5' }, { value: 6, label: '6' }, { value: 7, label: '7' }
+        ]));
+        row2.appendChild(mk('Idle анимация', 'IdleAnimSpeed', { min: -1, step: 1 }, '0 = выкл, −1 = стандарт'));
+        row2.appendChild(mk('Задержка (тики)', 'AnimationDelay', { min: 1, step: 1 }, 'для ручной смены индексов'));
+        det.appendChild(row2);
 
         const selRow = document.createElement('div');
         selRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 0 8px;';
