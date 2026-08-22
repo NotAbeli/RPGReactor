@@ -479,15 +479,16 @@
         pY: Visuals['Player Y'] ? Number(Visuals['Player Y']) : pctY(7),
         pSpace: Number(Visuals['Player Spacing'] || 40),
 
-        // S43: separated row block - rows 2..4 may sit anywhere. Defaults
-        // keep the stock layout (below row 1) until the editor moves them.
+        // S43: separated row block - rows 2..4 may sit anywhere. Grid2 Bg
+        // stays EMPTY by default: the player background image is sliced
+        // fold-style (row 1 keeps the top 1/rows part, Grid2 renders the
+        // bottom slice) so nothing duplicates when the blocks split.
         g2X: Visuals['Grid2 X'] ? Number(Visuals['Grid2 X']) :
             (Visuals['Player X'] ? Number(Visuals['Player X']) : pctX(4)),
         g2Y: Visuals['Grid2 Y'] ? Number(Visuals['Grid2 Y']) :
             (Visuals['Player Y'] ? Number(Visuals['Player Y']) : pctY(7)) +
             Number(Visuals['Player Spacing'] || 40),
-        g2Bg: (Visuals['Grid2 Bg'] !== undefined && Visuals['Grid2 Bg'] !== '') ?
-            Visuals['Grid2 Bg'] : (Visuals['Player Bg'] || ''),
+        g2Bg: Visuals['Grid2 Bg'] || '',
         
         slotOffX: Number(Visuals['Slot Offset X'] || 0),
         slotOffY: Number(Visuals['Slot Offset Y'] || 0),
@@ -1502,12 +1503,32 @@
         this._bgSprite.y = this._layout.y;
         this.addChild(this._bgSprite);
 
-        // S43: separated rows 2..4 get their own background plate.
-        if (this._type === 'player' && Config.g2Bg && Config.g2Bg !== this._layout.bg) {
-            this._bg2Sprite = new Sprite(ImageManager.loadPicture(Config.g2Bg));
-            this._bg2Sprite.x = Config.g2X;
-            this._bg2Sprite.y = Config.g2Y;
-            this.addChild(this._bg2Sprite);
+        // S44: fold-slice the backgrounds so the split blocks never
+        // duplicate the plate. Row 1 keeps the top 1/rows slice of the
+        // player background; rows 2..4 render the bottom slice of the SAME
+        // image (or Grid2 Bg whole when a custom one is set).
+        if (this._type === 'player') {
+            var rows = Config.pRows || 4;
+            var slice = (1 / rows);
+            if (this._layout.bg) {
+                this._bgSprite.bitmap.addLoadListener(function(bitmap) {
+                    this._bgSprite.setFrame(0, 0, bitmap.width, Math.floor(bitmap.height * slice));
+                }.bind(this));
+            }
+            if (Config.g2Bg) {
+                this._bg2Sprite = new Sprite(ImageManager.loadPicture(Config.g2Bg));
+            } else if (this._layout.bg) {
+                this._bg2Sprite = new Sprite(ImageManager.loadPicture(this._layout.bg));
+                this._bg2Sprite.bitmap.addLoadListener(function(bitmap) {
+                    var top = Math.floor(bitmap.height * slice);
+                    this._bg2Sprite.setFrame(0, top, bitmap.width, bitmap.height - top);
+                }.bind(this));
+            }
+            if (this._bg2Sprite) {
+                this._bg2Sprite.x = Config.g2X;
+                this._bg2Sprite.y = Config.g2Y;
+                this.addChild(this._bg2Sprite);
+            }
         }
     };
 

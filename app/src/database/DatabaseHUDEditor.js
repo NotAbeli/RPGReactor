@@ -422,7 +422,14 @@ class DatabaseHUDEditor {
             const ctx = this._winCtx;
             ctx.save();
             if (r.bgImg && r.bgImg.naturalWidth) {
-                ctx.drawImage(r.bgImg, r.x, r.y, r.bgImg.naturalWidth, r.bgImg.naturalHeight);
+                // S44: fold-slice support - sliceY/sliceH crop the bg image
+                // so split blocks never duplicate the plate.
+                if (r.sliceH !== undefined) {
+                    ctx.drawImage(r.bgImg, 0, r.sliceY, r.bgImg.naturalWidth, r.sliceH,
+                        r.x, r.y, r.w, r.h);
+                } else {
+                    ctx.drawImage(r.bgImg, r.x, r.y, r.w, r.h);
+                }
             } else {
                 ctx.strokeStyle = 'rgba(120,220,160,0.65)';
                 ctx.setLineDash([5, 3]);
@@ -446,19 +453,22 @@ class DatabaseHUDEditor {
         };
         // S43: seed the Grid2 keys (separated rows block) into the blob.
         // Empty-string placeholders from INV_VISUAL_DEFAULTS count as unset.
+        // S44: Grid2 Bg stays EMPTY by default - the player background is
+        // fold-sliced instead of duplicated.
         if (vis['Grid2 X'] === undefined || vis['Grid2 X'] === '') {
             vis['Grid2 X'] = String(vn('Player X', 50));
             vis['Grid2 Y'] = String(vn('Player Y', 50) + vn('Player Spacing', 40));
-            vis['Grid2 Bg'] = vis['Player Bg'] || '';
+            vis['Grid2 Bg'] = vis['Grid2 Bg'] || '';
             this._invVisualCommit(vis); // persist the seeded keys immediately
         }
-        // Row-1 block (hotbar row) - 1 x cols grid on the Player bg.
+        // Row-1 block (hotbar row) - 1 x cols grid; S44: fold-slice, the bg
+        // shows only the top 1/rows slice of the player background image.
         const playerRect = () => {
-            const r = bgRect('Player X', 'Player Y', 'Player Bg',
+            const full = bgRect('Player X', 'Player Y', 'Player Bg',
                 'Player Cols', 'Player Rows', 'Player Spacing', 'Slot Offset X', 'Slot Offset Y', 'Player Slot');
-            // visual box covers just row 0 (the bg image still shows whole)
-            const rowH = r.offY + r.cell;
-            return { ...r, rows: 1, h: Math.min(r.h, rowH) };
+            const rows = full.rows || 4;
+            const sliceH = full.h / rows;
+            return { ...full, rows: 1, h: sliceH, sliceY: 0, sliceH };
         };
         defs.push({
             id: 'inv.player',
@@ -467,21 +477,31 @@ class DatabaseHUDEditor {
             apply: (x, y) => { vis['Player X'] = String(Math.round(x)); vis['Player Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
             draw: () => drawGridBox(playerRect())
         });
-        // Rows 2-4 block on its own background.
+        // Rows 2-4 block; S44: Grid2 Bg set -> whole image; empty -> the
+        // BOTTOM slice of the player background (fold, no duplicate plate).
         const grid2Rect = () => {
             const x = vn('Grid2 X', vn('Player X', 50));
             const y = vn('Grid2 Y', vn('Player Y', 50) + vn('Player Spacing', 40));
-            const bg = this._picImg(vis['Grid2 Bg']);
+            const custom = vis['Grid2 Bg'] && this._picImg(vis['Grid2 Bg']);
+            const bg = (custom && custom.naturalWidth) ? custom : this._picImg(vis['Player Bg']);
             const slot = this._picImg(vis['Player Slot']);
             const cell = (slot && slot.naturalWidth) ? slot.naturalWidth : slotNatural();
             const sp = vn('Player Spacing', 40);
             const cols = vn('Player Cols', 5);
-            const rows = Math.max(0, vn('Player Rows', 4) - 1);
+            const totalRows = vn('Player Rows', 4);
+            const rows = Math.max(0, totalRows - 1);
             const gridW = vn('Slot Offset X', 0) + (cols - 1) * sp + cell;
             const gridH = vn('Slot Offset Y', 0) + (rows - 1) * sp + cell;
-            const w = (bg && bg.naturalWidth) ? bg.naturalWidth : Math.max(gridW, cell);
-            const h = (bg && bg.naturalHeight) ? bg.naturalHeight : Math.max(gridH, cell);
-            return { x, y, w, h, cols, rows, sp, cell, bgImg: bg, slotImg: slot, offX: vn('Slot Offset X', 0), offY: vn('Slot Offset Y', 0) };
+            if (bg && bg.naturalWidth) {
+                if (custom && custom.naturalWidth) {
+                    return { x, y, w: bg.naturalWidth, h: bg.naturalHeight, cols, rows, sp, cell, bgImg: bg, slotImg: slot, offX: vn('Slot Offset X', 0), offY: vn('Slot Offset Y', 0) };
+                }
+                // fold slice: bottom (rows-1)/rows of the player bg
+                const sliceY = bg.naturalHeight / totalRows;
+                const sliceH = bg.naturalHeight - sliceY;
+                return { x, y, w: bg.naturalWidth, h: sliceH, cols, rows, sp, cell, bgImg: bg, slotImg: slot, offX: vn('Slot Offset X', 0), offY: vn('Slot Offset Y', 0), sliceY, sliceH };
+            }
+            return { x, y, w: Math.max(gridW, cell), h: Math.max(gridH, cell), cols, rows, sp, cell, bgImg: null, slotImg: slot, offX: vn('Slot Offset X', 0), offY: vn('Slot Offset Y', 0) };
         };
         defs.push({
             id: 'inv.grid2',
@@ -725,13 +745,20 @@ class DatabaseHUDEditor {
         const selBox = document.createElement('div');
         selBox.style.cssText = 'position:absolute;border:2px solid var(--color-accent-text,#7ab0ff);pointer-events:none;display:none;';
         stage.appendChild(selBox);
+        // S44: HUDMaker-style snap guides (red full-screen lines).
+        const snapV = document.createElement('div');
+        snapV.style.cssText = 'position:absolute;top:0;bottom:0;width:1px;background:rgba(255,60,60,0.8);pointer-events:none;display:none;z-index:5;';
+        const snapH = document.createElement('div');
+        snapH.style.cssText = 'position:absolute;left:0;right:0;height:1px;background:rgba(255,60,60,0.8);pointer-events:none;display:none;z-index:5;';
+        stage.appendChild(snapV);
+        stage.appendChild(snapH);
 
         // --- Right: inspector ---
         const right = document.createElement('div');
         right.style.cssText = 'flex:0 0 340px;border-left:1px solid var(--color-border);overflow-y:auto;padding:10px;';
         root.appendChild(right);
 
-        this._dom = { root, count, listBox, stage, scaler, stageWrap, winCanvas, canvas, selBox, right, stateHost };
+        this._dom = { root, count, listBox, stage, scaler, stageWrap, winCanvas, canvas, selBox, snapV, snapH, right, stateHost };
         this._ctx = canvas.getContext('2d');
         this._ctx.imageSmoothingEnabled = false;
         this._winCtx = winCanvas.getContext('2d');
@@ -1269,22 +1296,91 @@ class DatabaseHUDEditor {
                 if (!p) { drag = null; return; }
                 p.x = Math.round(pt.x - drag.dx);
                 p.y = Math.round(pt.y - drag.dy);
+                // S44: snap the piece center/edges to other objects + stage center
+                const r = this._pieceRect(p);
+                const adj = this._snapAdjust(r, drag.idx, null);
+                p.x += adj.dx;
+                p.y += adj.dy;
+                this._showSnapGuides(adj.guideX, adj.guideY);
             } else {
                 const r = drag.def.rect();
-                const x = drag.def.lockX ? r.x : (pt.x - drag.dx);
-                const y = pt.y - drag.dy;
+                let x = drag.def.lockX ? r.x : (pt.x - drag.dx);
+                let y = pt.y - drag.dy;
+                if (!drag.def.lockX) {
+                    const adj = this._snapAdjust({ x, y, w: r.w, h: r.h }, null, drag.def.id);
+                    x += adj.dx;
+                    y += adj.dy;
+                    this._showSnapGuides(adj.guideX, adj.guideY);
+                }
                 drag.def.apply(x, y); // apply() takes the desired TOP-LEFT
             }
             drag.moved = true;
             this._render();
         });
         window.addEventListener('mouseup', () => {
+            this._showSnapGuides(null, null);
             if (drag && drag.moved) {
                 if (drag.kind === 'piece') this._persist();
                 this._refreshInspector();
             }
             drag = null;
         });
+    }
+
+    /**
+     * S44: HUDMaker-style snap. Candidates (stage coords): stage center
+     * and the left/center/right + top/center/bottom edges of every other
+     * piece and window. Threshold 12px. Returns {dx, dy, guideX, guideY}.
+     */
+    _snapAdjust(r, skipPieceIdx, skipWindowId) {
+        const THRESH = 12;
+        const xs = [this._screen.w / 2];
+        const ys = [this._screen.h / 2];
+        const addRect = (o) => {
+            xs.push(o.x, o.x + o.w / 2, o.x + o.w);
+            ys.push(o.y, o.y + o.h / 2, o.y + o.h);
+        };
+        this._pieces.forEach((p, i) => {
+            if (i === skipPieceIdx || !this._pieceVisible(p)) return;
+            const pr = this._pieceRect(p);
+            if (pr) addRect(pr);
+        });
+        for (const def of this._windowDefs()) {
+            if (def.id === skipWindowId) continue;
+            addRect(def.rect());
+        }
+        const near = (a, list) => {
+            let best = null;
+            for (const v of list) {
+                const d = v - a;
+                if (Math.abs(d) <= THRESH && (best === null || Math.abs(d) < Math.abs(best.d))) best = { d, v };
+            }
+            return best;
+        };
+        const res = { dx: 0, dy: 0, guideX: null, guideY: null };
+        const bestX = near(r.x + r.w / 2, xs) || near(r.x, xs) || near(r.x + r.w, xs);
+        if (bestX) { res.dx = bestX.d; res.guideX = bestX.v; }
+        const bestY = near(r.y + r.h / 2, ys) || near(r.y, ys) || near(r.y + r.h, ys);
+        if (bestY) { res.dy = bestY.d; res.guideY = bestY.v; }
+        return res;
+    }
+
+    /** Red full-screen guide lines during an active snap (S44). */
+    _showSnapGuides(guideX, guideY) {
+        const v = this._dom.snapV;
+        const h = this._dom.snapH;
+        if (guideX !== null && guideX !== undefined) {
+            v.style.display = 'block';
+            v.style.left = Math.round(guideX) + 'px';
+        } else {
+            v.style.display = 'none';
+        }
+        if (guideY !== null && guideY !== undefined) {
+            h.style.display = 'block';
+            h.style.top = Math.round(guideY) + 'px';
+        } else {
+            h.style.display = 'none';
+        }
     }
 
     _refreshAll() {
