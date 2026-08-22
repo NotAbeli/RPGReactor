@@ -847,16 +847,17 @@ class DatabaseSpriterEditor {
         det.appendChild(sum);
         det.open = false;
 
-        // S37: preset selects where the domain is small (frames/directions/
-        // idle index), numbers stay where values are arbitrary (FPS, idle
-        // speed, delay); Width and Height sit side by side.
-        const mk = (label, key, opts, hint) => {
-            const f = this._fieldLabel(label, hint);
+        // S37b: rows carry the kit's agonia-field-grid class so the cells
+        // get the scoped min-width:0 (long select options were inflating
+        // the 1fr tracks and smearing the form); inline columns override
+        // the kit auto-fill. All tiny hint captions are cut (S37b).
+        const mk = (label, key, opts) => {
+            const f = this._fieldLabel(label);
             f.appendChild(this._numberField(vis[key], opts, v => { vis[key] = v; this._refreshPreview(); }));
             return f;
         };
-        const mkSel = (label, key, options, hint) => {
-            const f = this._fieldLabel(label, hint);
+        const mkSel = (label, key, options) => {
+            const f = this._fieldLabel(label);
             const cur = Number(vis[key]);
             // keep an out-of-list current value visible instead of hiding it
             if (!options.some(o => Number(o.value) === cur)) {
@@ -865,9 +866,14 @@ class DatabaseSpriterEditor {
             f.appendChild(this._selectField(cur, options, v => { vis[key] = Number(v); this._refreshPreview(); }));
             return f;
         };
+        const row = (cols, padTop) => {
+            const r = document.createElement('div');
+            r.className = 'agonia-field-grid';
+            r.style.cssText = 'grid-template-columns:' + cols + ';gap:8px;padding:' + (padTop ? '4px' : '0') + ' 0 8px;';
+            return r;
+        };
 
-        const row1 = document.createElement('div');
-        row1.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:4px 0 8px;';
+        const row1 = row('repeat(3,1fr)', true);
         row1.appendChild(mkSel('Кадров (в ряду)', 'Frames', [
             { value: 3, label: '3' }, { value: 4, label: '4' },
             { value: 5, label: '5' }, { value: 6, label: '6' }
@@ -875,28 +881,25 @@ class DatabaseSpriterEditor {
         row1.appendChild(mkSel('Направления', 'Directions', [
             { value: 4, label: 'Крутится (4)' }, { value: 1, label: 'Фиксировано (1)' }
         ]));
-        row1.appendChild(mk('FPS', 'FPS', { min: 0, step: 1 }, '0 = авто'));
+        row1.appendChild(mk('FPS', 'FPS', { min: 0, step: 1 }));
         det.appendChild(row1);
 
-        const sizeRow = document.createElement('div');
-        sizeRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 0 8px;';
-        sizeRow.appendChild(mk('Ширина (px)', 'Width', { min: 0, step: 1 }, '0 = авто'));
-        sizeRow.appendChild(mk('Высота (px)', 'Height', { min: 0, step: 1 }, '0 = авто'));
+        const sizeRow = row('repeat(2,1fr)', false);
+        sizeRow.appendChild(mk('Ширина (px)', 'Width', { min: 0, step: 1 }));
+        sizeRow.appendChild(mk('Высота (px)', 'Height', { min: 0, step: 1 }));
         det.appendChild(sizeRow);
 
-        const row2 = document.createElement('div');
-        row2.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:0 0 8px;';
+        const row2 = row('repeat(3,1fr)', false);
         row2.appendChild(mkSel('Idle индекс', 'IdleIndex', [
             { value: -1, label: 'Выкл' }, { value: 0, label: '0' }, { value: 1, label: '1' },
             { value: 2, label: '2' }, { value: 3, label: '3' }, { value: 4, label: '4' },
             { value: 5, label: '5' }, { value: 6, label: '6' }, { value: 7, label: '7' }
         ]));
-        row2.appendChild(mk('Idle анимация', 'IdleAnimSpeed', { min: -1, step: 1 }, '0 = выкл, −1 = стандарт'));
-        row2.appendChild(mk('Задержка (тики)', 'AnimationDelay', { min: 1, step: 1 }, 'для ручной смены индексов'));
+        row2.appendChild(mk('Idle анимация', 'IdleAnimSpeed', { min: -1, step: 1 }));
+        row2.appendChild(mk('Задержка (тики)', 'AnimationDelay', { min: 1, step: 1 }));
         det.appendChild(row2);
 
-        const selRow = document.createElement('div');
-        selRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 0 8px;';
+        const selRow = row('repeat(2,1fr)', false);
         const step = this._fieldLabel('Режим покоя');
         step.appendChild(this._selectField(vis.StepMode, [
             { value: 0, label: 'Классика (движение = аним)' },
@@ -913,7 +916,7 @@ class DatabaseSpriterEditor {
         det.appendChild(selRow);
 
         if (!isNPC) {
-            const animRow = this._fieldLabel('Ручная смена индексов', 'Массив индексов графики (0–7), меняются по кругу с задержкой выше');
+            const animRow = this._fieldLabel('Ручная смена индексов');
             animRow.style.paddingBottom = '8px';
             animRow.appendChild(this._textField(vis.AnimationIndices, { placeholder: 'например: 0,1,2,1' }, v => { vis.AnimationIndices = v; }));
             det.appendChild(animRow);
