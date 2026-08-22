@@ -251,25 +251,48 @@ class DatabaseHUDEditor {
     }
 
     /**
-     * The inventory Visual Settings blob: decode from the section (MV
-     * string), seed from the plugin defaults on first touch. Returns the
-     * live object; call _invVisualCommit(blob) to store it back.
+     * The inventory Visual Settings blob: prefer the sidecar value; seed
+     * from the RETIRED SNAPSHOT in project.rpgreactor (the real tuning the
+     * game runs on) on first touch; fall back to plugin-annotation
+     * defaults only when no snapshot exists. Stored back as an MV string.
      */
     _invVisual() {
+        const defaults = this._snapshotVisual() || DatabaseHUDEditor.INV_VISUAL_DEFAULTS;
         const a = this._agonia();
-        if (!a) return { ...DatabaseHUDEditor.INV_VISUAL_DEFAULTS };
+        if (!a) return { ...defaults };
         if (!a.inventory) a.inventory = {};
         const raw = a.inventory['Visual Settings'];
         if (raw === undefined || raw === null || raw === '') {
-            const blob = { ...DatabaseHUDEditor.INV_VISUAL_DEFAULTS };
+            const blob = { ...defaults };
             a.inventory['Visual Settings'] = JSON.stringify(blob);
             return blob;
         }
         try {
             const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-            return (parsed && typeof parsed === 'object') ? parsed : { ...DatabaseHUDEditor.INV_VISUAL_DEFAULTS };
+            return (parsed && typeof parsed === 'object') ? parsed : { ...defaults };
         } catch (e) {
-            return { ...DatabaseHUDEditor.INV_VISUAL_DEFAULTS };
+            return { ...defaults };
+        }
+    }
+
+    /** Real tuning from project.rpgreactor retiredPlugins (S42). */
+    _snapshotVisual() {
+        const path = this._req('path');
+        const fs = this._req('fs');
+        const proj = this._projectPath();
+        if (!path || !fs || !proj) return null;
+        try {
+            const file = path.join(proj, 'project.rpgreactor');
+            if (!fs.existsSync(file)) return null;
+            const projCfg = JSON.parse(fs.readFileSync(file, 'utf8'));
+            const retired = (projCfg && Array.isArray(projCfg.retiredPlugins)) ? projCfg.retiredPlugins : [];
+            const snap = retired.find(r => r && /SuperDuperInventory/.test(String(r.name)));
+            const raw = snap && snap.parameters && snap.parameters['Visual Settings'];
+            if (!raw) return null;
+            const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            return (parsed && typeof parsed === 'object') ? parsed : null;
+        } catch (e) {
+            return null;
         }
     }
 
@@ -290,143 +313,243 @@ class DatabaseHUDEditor {
         const defs = [];
         const craft = this._craft();
         const n = (k, d) => { const v = Number(craft[k]); return Number.isFinite(v) ? v : d; };
-        const size = n('Slot Size', 56);
+        const pctX = p => Math.round(this._screen.w * p / 100);
+        const pctY = p => Math.round(this._screen.h * p / 100);
+        const size = n('Slot Size', 40);
+        const drawCraftSlot = (ctx, x, y, tag) => {
+            const img = this._picImg(craft['Slot Bg Image']);
+            ctx.save();
+            if (img && img.naturalWidth) {
+                ctx.drawImage(img, x, y, size, size);
+            } else {
+                ctx.strokeStyle = 'rgba(240,200,120,0.7)';
+                ctx.setLineDash([5, 3]);
+                ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+                ctx.setLineDash([]);
+            }
+            if (tag) {
+                ctx.fillStyle = 'rgba(240,200,120,0.85)';
+                ctx.font = '11px sans-serif';
+                ctx.textAlign = 'left';
+                ctx.fillText(tag, x + 4, y - 4);
+            }
+            ctx.restore();
+        };
 
-        // Craft: 3 input slots in a row (dragging slot 1 moves the block)
-        const s1x = n('Slot 1 X', 100), s1y = n('Slot 1 Y', 200);
-        const spacing = n('Slot Spacing', size + 8);
+        // Craft: 3 input slots in a row (dragging slot 1 moves the block).
+        // Plugin defaults (SimpleCraftSystem 387-391): pctX(23)/pctY(14),
+        // spacing = pctX(5).
+        const s1x = () => n('Slot 1 X', pctX(23)), s1y = () => n('Slot 1 Y', pctY(14));
+        const spacing = () => n('Slot Spacing', pctX(5));
         const slotRect = (x, y) => ({ x, y, w: size, h: size });
         defs.push({
             id: 'craft.slots',
             label: this._tt('Крафт · слоты'),
-            rect: () => slotRect(s1x, s1y),
+            rect: () => slotRect(s1x(), s1y()),
             apply: (x, y) => { craft['Slot 1 X'] = String(Math.round(x)); craft['Slot 1 Y'] = String(Math.round(y)); },
             draw: ctx => {
-                for (let i = 0; i < 3; i++) this._drawWindowBox(ctx, slotRect(s1x + i * spacing, s1y), craft['Slot Bg Image'], 'craft');
-                const rx = n('Result Slot X', s1x + 3 * spacing + 24), ry = n('Result Slot Y', s1y);
-                void rx; void ry;
+                for (let i = 0; i < 3; i++) drawCraftSlot(ctx, s1x() + i * spacing(), s1y(), i === 0 ? 'крафт' : '');
             }
         });
-        const rx = () => n('Result Slot X', s1x + 3 * spacing + 24);
-        const ry = () => n('Result Slot Y', s1y);
+        const rx = () => n('Result Slot X', pctX(43)), ry = () => n('Result Slot Y', pctY(14));
         defs.push({
             id: 'craft.result',
             label: this._tt('Крафт · результат'),
             rect: () => slotRect(rx(), ry()),
             apply: (x, y) => { craft['Result Slot X'] = String(Math.round(x)); craft['Result Slot Y'] = String(Math.round(y)); },
-            draw: ctx => this._drawWindowBox(ctx, slotRect(rx(), ry()), craft['Slot Bg Image'], 'craft', '✦')
+            draw: ctx => drawCraftSlot(ctx, rx(), ry(), '✦')
         });
-        const hx = () => n('Hint X', 100), hy = () => n('Hint Y', 120);
+        // Hint/Preview are FULL-WIDTH one-line text sprites in the plugin
+        // (Bitmap(boxWidth, 40)) positioned at their X/Y.
+        const lineH = 40;
+        const drawTextLine = (ctx, r, text, accent) => {
+            ctx.save();
+            ctx.strokeStyle = accent;
+            ctx.setLineDash([5, 3]);
+            ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+            ctx.setLineDash([]);
+            ctx.fillStyle = 'rgba(230,230,245,0.85)';
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(String(text).slice(0, 60), r.x + 6, r.y + r.h / 2 + 4);
+            this._strokeSelected(ctx, r);
+            ctx.restore();
+        };
+        const hx = () => n('Hint X', pctX(0)), hy = () => n('Hint Y', pctY(70));
         defs.push({
             id: 'craft.hint',
             label: this._tt('Крафт · подсказка'),
-            rect: () => ({ x: hx(), y: hy(), w: 180, h: 26 }),
+            rect: () => ({ x: hx(), y: hy(), w: this._screen.w - hx(), h: lineH }),
             apply: (x, y) => { craft['Hint X'] = String(Math.round(x)); craft['Hint Y'] = String(Math.round(y)); },
-            draw: ctx => {
-                this._drawWindowBox(ctx, { x: hx(), y: hy(), w: 180, h: 26 }, null, null);
-                ctx.save();
-                ctx.fillStyle = 'rgba(230,230,245,0.8)';
-                ctx.font = '11px sans-serif';
-                ctx.textAlign = 'left';
-                ctx.fillText(String(craft['Hint Text'] || 'подсказка').slice(0, 26), hx() + 6, hy() + 17);
-                ctx.restore();
-            }
+            draw: ctx => drawTextLine(ctx, { x: hx(), y: hy(), w: this._screen.w - hx(), h: lineH },
+                craft['Hint Text'] || 'подсказка', 'rgba(240,200,120,0.55)')
         });
-        const px = () => n('Preview X', 320), py = () => n('Preview Y', 120);
+        const px = () => n('Preview X', pctX(0)), py = () => n('Preview Y', pctY(75));
         defs.push({
             id: 'craft.preview',
             label: this._tt('Крафт · превью'),
-            rect: () => ({ x: px(), y: py(), w: 170, h: 40 }),
+            rect: () => ({ x: px(), y: py(), w: this._screen.w - px(), h: lineH }),
             apply: (x, y) => { craft['Preview X'] = String(Math.round(x)); craft['Preview Y'] = String(Math.round(y)); },
-            draw: ctx => this._drawWindowBox(ctx, { x: px(), y: py(), w: 170, h: 40 }, null, null, 'prev')
+            draw: ctx => drawTextLine(ctx, { x: px(), y: py(), w: this._screen.w - px(), h: lineH },
+                'Создано: %1', 'rgba(240,200,120,0.55)')
         });
 
-        // Inventory windows (Visual Settings blob)
+        // Inventory windows (Visual Settings blob; S42 exact plugin geometry)
         const vis = this._invVisual();
         const vn = (k, d) => { const v = Number(vis[k]); return Number.isFinite(v) ? v : d; };
-        const grid = (x, y, cols, rows, sp, cell, bg) => ({
-            x, y, w: cols * cell + (cols - 1) * (sp - cell), h: rows * cell + (rows - 1) * (sp - cell), bg
-        });
-        const playerRect = () => grid(vn('Player X', 50), vn('Player Y', 50),
-            vn('Player Cols', 5), vn('Player Rows', 4), vn('Player Spacing', 40), 40, vis['Player Bg']);
+        // Slot size follows the real slot image (InventorySlot_00 = 38)
+        const slotImgFor = vis['Player Slot'];
+        const slotNatural = () => {
+            const img = slotImgFor ? this._picImg(slotImgFor) : null;
+            return (img && img.naturalWidth) ? img.naturalWidth : 38;
+        };
+        const bgRect = (xKey, yKey, bgKey, colsKey, rowsKey, spKey, offKeyX, offKeyY, slotKey) => {
+            const x = vn(xKey, 50), y = vn(yKey, 50);
+            const bg = this._picImg(vis[bgKey]);
+            const slot = slotKey ? this._picImg(vis[slotKey]) : null;
+            const cell = (slot && slot.naturalWidth) ? slot.naturalWidth : slotNatural();
+            const sp = vn(spKey, 40);
+            const cols = vn(colsKey, 5), rows = vn(rowsKey, 4);
+            const gridW = vn(offKeyX, 0) + (cols - 1) * sp + cell;
+            const gridH = vn(offKeyY, 0) + (rows - 1) * sp + cell;
+            const w = (bg && bg.naturalWidth) ? bg.naturalWidth : Math.max(gridW, cell);
+            const h = (bg && bg.naturalHeight) ? bg.naturalHeight : Math.max(gridH, cell);
+            return { x, y, w, h, cols, rows, sp, cell, bgImg: bg, slotImg: slot, offX: vn(offKeyX, 0), offY: vn(offKeyY, 0) };
+        };
+        const drawGridBox = (r) => {
+            const ctx = this._winCtx;
+            ctx.save();
+            if (r.bgImg && r.bgImg.naturalWidth) {
+                ctx.drawImage(r.bgImg, r.x, r.y, r.bgImg.naturalWidth, r.bgImg.naturalHeight);
+            } else {
+                ctx.strokeStyle = 'rgba(120,220,160,0.65)';
+                ctx.setLineDash([5, 3]);
+                ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+                ctx.setLineDash([]);
+            }
+            for (let row = 0; row < r.rows; row++) {
+                for (let col = 0; col < r.cols; col++) {
+                    const sx = r.x + r.offX + col * r.sp;
+                    const sy = r.y + r.offY + row * r.sp;
+                    if (r.slotImg && r.slotImg.naturalWidth) {
+                        ctx.drawImage(r.slotImg, sx, sy, r.cell, r.cell);
+                    } else {
+                        ctx.strokeStyle = 'rgba(120,220,160,0.4)';
+                        ctx.strokeRect(sx + 0.5, sy + 0.5, r.cell - 1, r.cell - 1);
+                    }
+                }
+            }
+            this._strokeSelected(ctx, r);
+            ctx.restore();
+        };
+        const playerRect = () => bgRect('Player X', 'Player Y', 'Player Bg',
+            'Player Cols', 'Player Rows', 'Player Spacing', 'Slot Offset X', 'Slot Offset Y', 'Player Slot');
         defs.push({
             id: 'inv.player',
             label: this._tt('Инвентарь · окно игрока'),
             rect: playerRect,
             apply: (x, y) => { vis['Player X'] = String(Math.round(x)); vis['Player Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
-            draw: ctx => this._drawWindowBox(ctx, playerRect(), vis['Player Bg'], 'inv')
+            draw: () => drawGridBox(playerRect())
         });
-        const chestRect = () => grid(vn('Chest X', 400), vn('Chest Y', 50),
-            vn('Chest Cols', 5), vn('Chest Rows', 3), vn('Chest Spacing', 40), 40, vis['Chest Bg']);
+        const chestRect = () => bgRect('Chest X', 'Chest Y', 'Chest Bg',
+            'Chest Cols', 'Chest Rows', 'Chest Spacing', 'Slot Offset X', 'Slot Offset Y', 'Chest Slot');
         defs.push({
             id: 'inv.chest',
             label: this._tt('Инвентарь · сундук'),
             rect: chestRect,
             apply: (x, y) => { vis['Chest X'] = String(Math.round(x)); vis['Chest Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
-            draw: ctx => this._drawWindowBox(ctx, chestRect(), vis['Chest Bg'], 'inv')
+            draw: () => drawGridBox(chestRect())
         });
-        const hotbarY = () => vn('Hotbar Y', 500);
+        // Hotbar: Sprite anchor 0.5 - X centered by the plugin, Y IS THE
+        // CENTER; exactly 5 slots scaled by hbScale (runtime hardcodes 5).
+        const hbCount = 5;
         const hotbarRect = () => {
-            const count = (() => {
-                const a = this._agonia();
-                const v = a && a.inventory ? Number(a.inventory['Default Max Slots']) : NaN;
-                return Number.isFinite(v) && v > 0 && v <= 30 ? v : 9;
-            })();
             const sp = vn('Hotbar Spacing', 40) * vn('Hotbar Scale', 1.2);
-            const w = count * sp;
-            return { x: (this._screen.w - w) / 2, y: hotbarY(), w, h: sp };
+            const cell = slotNatural() * vn('Hotbar Scale', 1.2);
+            const w = hbCount * sp;
+            const cy = vn('Hotbar Y', 500);
+            const h = cell;
+            return { x: (this._screen.w - w) / 2, y: cy - h / 2, w, h, cy };
         };
         defs.push({
             id: 'inv.hotbar',
             label: this._tt('Инвентарь · хотбар (только Y)'),
             rect: hotbarRect,
             lockX: true,
-            apply: (x, y) => { vis['Hotbar Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
-            draw: ctx => this._drawWindowBox(ctx, hotbarRect(), null, null)
+            // apply receives the desired TOP-LEFT; store the CENTER y.
+            apply: (x, y) => {
+                const r = hotbarRect();
+                void x;
+                vis['Hotbar Y'] = String(Math.round(y + r.h / 2));
+                this._invVisualCommit(vis);
+            },
+            draw: () => {
+                const ctx = this._winCtx;
+                const r = hotbarRect();
+                ctx.save();
+                const cell = slotNatural() * vn('Hotbar Scale', 1.2);
+                const sp = vn('Hotbar Spacing', 40) * vn('Hotbar Scale', 1.2);
+                for (let i = 0; i < hbCount; i++) {
+                    const sx = r.x + i * sp + (sp - cell) / 2;
+                    const sy = r.y;
+                    const img = this._picImg(vis['Player Slot']);
+                    if (img && img.naturalWidth) {
+                        ctx.drawImage(img, sx, sy, cell, cell);
+                    } else {
+                        ctx.strokeStyle = 'rgba(120,220,160,0.4)';
+                        ctx.strokeRect(sx + 0.5, sy + 0.5, cell - 1, cell - 1);
+                    }
+                }
+                this._strokeSelected(ctx, r);
+                ctx.restore();
+            }
         });
-        const cwRect = () => ({ x: vn('Custom Window X', 0), y: vn('Custom Window Y', 300), w: 220, h: 140 });
+        const cwRect = () => {
+            const x = vn('Custom Window X', 0), y = vn('Custom Window Y', 300);
+            const img = this._picImg(vis['Custom Window Img']);
+            const w = (img && img.naturalWidth) ? img.naturalWidth : 220;
+            const h = (img && img.naturalHeight) ? img.naturalHeight : 140;
+            return { x, y, w, h, img };
+        };
         defs.push({
             id: 'inv.custom',
             label: this._tt('Инвентарь · кастомное окно'),
             rect: cwRect,
             apply: (x, y) => { vis['Custom Window X'] = String(Math.round(x)); vis['Custom Window Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
-            draw: ctx => this._drawWindowBox(ctx, cwRect(), vis['Custom Window Img'], 'inv')
+            draw: () => {
+                const ctx = this._winCtx;
+                const r = cwRect();
+                ctx.save();
+                if (r.img && r.img.naturalWidth) {
+                    ctx.drawImage(r.img, r.x, r.y, r.w, r.h);
+                } else {
+                    ctx.strokeStyle = 'rgba(120,220,160,0.65)';
+                    ctx.setLineDash([5, 3]);
+                    ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+                    ctx.setLineDash([]);
+                }
+                this._strokeSelected(ctx, r);
+                ctx.restore();
+            }
         });
 
         return defs;
     }
 
-    _drawWindowBox(ctx, r, imgName, family, tag) {
-        ctx.save();
-        const img = imgName ? this._picImg(imgName) : null;
-        if (img && img.naturalWidth) {
-            ctx.drawImage(img, r.x, r.y, r.w, r.h);
-        } else {
-            ctx.strokeStyle = family === 'inv' ? 'rgba(120,220,160,0.65)' : 'rgba(240,200,120,0.7)';
-            ctx.setLineDash([5, 3]);
-            ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-            ctx.setLineDash([]);
-            ctx.fillStyle = 'rgba(10,10,18,0.35)';
-            ctx.fillRect(r.x, r.y, r.w, r.h);
+    /** Accent frame around the selected window rect (S42). */
+    _strokeSelected(ctx, r) {
+        if (!this._selectedWindow) return;
+        const sel = this._windowDefsCache && this._windowDefsCache.find(d => d.id === this._selectedWindow);
+        if (!sel) return;
+        const sr = sel.rect();
+        if (sr.x === r.x && sr.y === r.y) {
+            ctx.strokeStyle = 'rgba(122,176,255,0.95)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4);
+            ctx.lineWidth = 1;
         }
-        if (this._selectedWindow) {
-            const sel = this._windowDefs().find(d => d.id === this._selectedWindow);
-            if (sel && sel.rect && this._rectEq(sel.rect(), r)) {
-                ctx.strokeStyle = 'var(--color-accent-text,#7ab0ff)';
-                ctx.strokeStyle = 'rgba(122,176,255,0.95)';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4);
-                ctx.lineWidth = 1;
-            }
-        }
-        ctx.fillStyle = 'rgba(230,230,245,0.75)';
-        ctx.font = '10px sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText(tag || '', r.x + 4, r.y - 4);
-        ctx.restore();
     }
 
-    _rectEq(a, b) { return a && b && a.x === b.x && a.y === b.y; }
 
     // ------------------------------------------------------------------
     // Mount / layout
@@ -799,6 +922,8 @@ class DatabaseHUDEditor {
             form.row(this._tt('Колонок'), this._numField(vis, 'Player Cols', commit));
             form.row(this._tt('Строк'), this._numField(vis, 'Player Rows', commit));
             form.row(this._tt('Шаг сетки'), this._numField(vis, 'Player Spacing', commit));
+            form.row(this._tt('Отступ слотов X'), this._numField(vis, 'Slot Offset X', commit));
+            form.row(this._tt('Отступ слотов Y'), this._numField(vis, 'Slot Offset Y', commit));
         } else if (def.id === 'inv.chest') {
             const vis = this._invVisual();
             const commit = () => { this._invVisualCommit(vis); rerender(); };
@@ -867,7 +992,8 @@ class DatabaseHUDEditor {
         // windows layer
         if (this._winCtx) {
             this._winCtx.clearRect(0, 0, this._screen.w, this._screen.h);
-            for (const def of this._windowDefs()) {
+            this._windowDefsCache = this._windowDefs();
+            for (const def of this._windowDefsCache) {
                 try { def.draw(this._winCtx); } catch (e) { /* keep editor alive */ }
             }
         }
