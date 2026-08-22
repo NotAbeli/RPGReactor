@@ -1412,6 +1412,7 @@ class DatabaseUIEditor {
         wrapper.appendChild(content);
 
         const cats = [
+            { id: 'hud', label: 'HUD' },
             { id: 'inventory', label: 'Инвентарь' },
             { id: 'save', label: 'Сохранение' },
             { id: 'title', label: 'Титул' },
@@ -1420,17 +1421,14 @@ class DatabaseUIEditor {
             { id: 'message', label: 'Сообщения' },
             { id: 'choices', label: 'Выборы' },
             { id: 'settings', label: 'Настройки' },
-            { id: 'craft', label: 'Крафт' },
-            { id: 'hud', label: 'HUD' },
-            { id: 'showcase', label: 'Витрина' }
+            { id: 'craft', label: 'Крафт' }
         ];
-        let active = 'inventory';
+        let active = 'hud';
         const render = () => {
             content.innerHTML = '';
             content.style.overflowY = 'auto';
-            if (active === 'inventory') this._renderInventory(content);
-            else if (active === 'hud') this._renderHud(content);
-            else if (active === 'showcase') this._renderShowcase(content);
+            if (active === 'hud') this._renderHud(content);
+            else if (active === 'inventory') this._renderInventory(content);
             else this._renderSection(content, active);
         };
         for (const cat of cats) {
@@ -1668,8 +1666,8 @@ class DatabaseUIEditor {
     }
 
     // ------------------------------------------------------------------
-    // HUD (S39): the embedded live editor on a checkerboard stage +
-    // a mock showcase of the inventory/craft windows drawn by plugins.
+    // HUD (S39/S40): the embedded live editor on a checkerboard stage; the
+    // inventory hotbar mock is drawn on the same stage by the editor.
     // ------------------------------------------------------------------
 
     _renderHud(content) {
@@ -1708,48 +1706,6 @@ class DatabaseUIEditor {
         host.appendChild(btn);
     }
 
-    /** S39: mock showcase of plugin-drawn windows (inventory hotbar/craft)
-     *  on the same checkerboard - rendered from their DB parameters. */
-    _renderShowcase(content) {
-        const title = document.createElement('div');
-        title.style.cssText = 'padding:12px 0 4px;font-size:15px;font-weight:600;color:var(--color-text-strong);';
-        title.textContent = this._tt('Витрина: инвентарь и крафт');
-        content.appendChild(title);
-        const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:11px;color:var(--color-text-dim);line-height:1.5;padding-bottom:8px;';
-        hint.textContent = this._tt('Мок-превью из параметров плагинов (позиции/картинки/размеры). Живой рендер — в игре; здесь видно взаимное расположение с HUD.');
-        content.appendChild(hint);
-
-        const inv = this.getSection ? this.getSection('inventory') : null;
-        const panel = document.createElement('div');
-        panel.style.cssText = `
-            background: repeating-conic-gradient(#3a3a3a 0% 25%, #262626 0% 50%) 0 0 / 32px 32px;
-            border: 1px solid var(--color-border); border-radius: 4px;
-            width: 640px; height: 360px; position: relative; max-width: 100%;
-        `;
-        // hotbar mock: N slots along the bottom (SuperDuperInventory params)
-        const slots = inv ? Number(inv['Hotbar Slots'] || inv['Default Max Slots'] || 9) : 9;
-        const slotSize = 48;
-        const barW = slots * slotSize;
-        for (let i = 0; i < slots; i++) {
-            const slot = document.createElement('div');
-            slot.style.cssText = `
-                position:absolute; width:${slotSize - 4}px; height:${slotSize - 4}px;
-                left:${(640 - barW) / 2 + i * slotSize + 2}px; bottom:12px;
-                border:1px solid rgba(160,160,180,0.8); background:rgba(20,20,28,0.55);
-                box-sizing:border-box; border-radius:3px;
-                font-size:10px; color:rgba(200,200,220,0.7);
-                display:flex; align-items:center; justify-content:center;
-            `;
-            slot.textContent = String(i + 1);
-            panel.appendChild(slot);
-        }
-        const cap = document.createElement('div');
-        cap.style.cssText = 'position:absolute;left:0;right:0;bottom:-22px;font-size:10px;color:var(--color-text-dim);text-align:center;';
-        cap.textContent = this._tt('хотбар инвентаря') + ' · ' + slots + ' ' + this._tt('слотов');
-        panel.appendChild(cap);
-        content.appendChild(panel);
-    }
 }
 
 if (typeof window !== 'undefined') {

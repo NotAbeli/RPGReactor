@@ -23,6 +23,9 @@ class DatabaseHUDEditor {
         this._selected = -1;
         this._images = {}; // name -> HTMLImageElement (loads async)
         this._game = { switches: new Map(), vars: new Map() };
+        // S40: with this ON (default) every piece shows regardless of its
+        // condition - the HUD is fully visible the moment the tab opens.
+        this._showAll = true;
     }
 
     _tt(t) { return typeof window !== 'undefined' && window.I18n ? window.I18n.tText(t) : t; }
@@ -141,6 +144,7 @@ class DatabaseHUDEditor {
     }
 
     _pieceVisible(p) {
+        if (this._showAll) return true;
         const c = p.Condition;
         if (c === undefined || c === null || String(c).trim() === '') return true;
         return !!this._evalExpr(c, true);
@@ -150,33 +154,38 @@ class DatabaseHUDEditor {
     // Images
     // ------------------------------------------------------------------
 
-    _imgUrl(kind, name) {
+    /** HUDMaker image folders (SRD_HUDMaker 186-198):
+     *  pictures/, numbers/, gauge_images/, gauge_backs/. */
+    static imgFolder(kind, slot) {
+        if (kind === 'Picture') return 'pictures';
+        if (kind === 'Image Numbers') return 'numbers';
+        // Image Gauge: main strip and back plate live in separate folders
+        return slot === 'back' ? 'gauge_backs' : 'gauge_images';
+    }
+
+    _imgUrl(kind, name, slot) {
         if (!name) return '';
         const path = this._req('path');
         const proj = this._projectPath();
         if (!path || !proj) return '';
         if (typeof RRAssetFiles === 'undefined') return '';
         try {
-            const sub = kind === 'Picture' ? 'hud/Picture'
-                : kind === 'Image Numbers' ? 'hud/Image Numbers'
-                : 'hud/Image Gauge';
-            return RRAssetFiles.toUrl(path.join(proj, 'img', 'SumRndmDde', sub, name + '.png'));
+            const sub = DatabaseHUDEditor.imgFolder(kind, slot);
+            return RRAssetFiles.toUrl(path.join(proj, 'img', 'SumRndmDde', 'hud', sub, name + '.png'));
         } catch (e) { return ''; }
     }
 
-    _img(kind, name) {
+    _img(kind, name, slot) {
         if (!name) return null;
-        const key = kind + '/' + name;
+        const key = kind + '/' + slot + '/' + name;
         if (this._images[key] !== undefined) return this._images[key];
-        const url = this._imgUrl(kind, name);
+        const url = this._imgUrl(kind, name, slot);
         let entry = null;
         if (url && typeof Image !== 'undefined') {
             const img = new Image();
-            let loaded = false;
-            img.onload = () => { loaded = true; this._render(); };
+            img.onload = () => this._render();
             img.src = url;
             entry = img;
-            entry._hudLoaded = () => loaded;
         }
         this._images[key] = entry;
         return entry;
@@ -261,11 +270,20 @@ class DatabaseHUDEditor {
             image-rendering: pixelated;
         `;
         stageWrap.appendChild(stage);
+        // S40: plugin-drawn UI mock (inventory hotbar) UNDER the pieces -
+        // same checkerboard, one unified scene. Non-interactive (piece
+        // clicks pass through to the HUD canvas above).
+        const mock = document.createElement('canvas');
+        mock.width = screen.w;
+        mock.height = screen.h;
+        mock.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;';
+        stage.appendChild(mock);
         const canvas = document.createElement('canvas');
         canvas.width = screen.w;
         canvas.height = screen.h;
         canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
         stage.appendChild(canvas);
+        this._drawMock(mock);
         const selBox = document.createElement('div');
         selBox.style.cssText = 'position:absolute;border:2px solid var(--color-accent-text,#7ab0ff);pointer-events:none;display:none;';
         stage.appendChild(selBox);
@@ -283,6 +301,42 @@ class DatabaseHUDEditor {
         this._refreshAll();
     }
 
+    /** S40: the inventory hotbar mock (plugin params) on the shared stage. */
+    _drawMock(mockCanvas) {
+        const ctx = mockCanvas.getContext('2d');
+        ctx.clearRect(0, 0, mockCanvas.width, mockCanvas.height);
+        let slots = 9;
+        try {
+            const agonia = this.databaseManager.data && this.databaseManager.data.agonia;
+            if (agonia && agonia.inventory) {
+                const n = Number(agonia.inventory['Default Max Slots']);
+                if (n > 0 && n <= 30) slots = n;
+            }
+        } catch (e) { /* default 9 */ }
+        const size = 48, gap = 4;
+        const barW = slots * size + (slots - 1) * gap;
+        const x0 = Math.round((mockCanvas.width - barW) / 2);
+        const y0 = mockCanvas.height - size - 12;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(160,160,190,0.55)';
+        ctx.fillStyle = 'rgba(16,16,26,0.45)';
+        ctx.lineWidth = 1;
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        for (let i = 0; i < slots; i++) {
+            const x = x0 + i * (size + gap);
+            ctx.beginPath();
+            ctx.rect(x + 0.5, y0 + 0.5, size - 1, size - 1);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(200,200,225,0.6)';
+            ctx.fillText(String(i + 1), x + size / 2, y0 + size / 2);
+            ctx.fillStyle = 'rgba(16,16,26,0.45)';
+        }
+        ctx.restore();
+    }
+
     _blankAnimate() {
         const z = { spd: 0, loop: false, min: 0, max: 0 };
         return { x: Object.assign({}, z), y: Object.assign({}, z), s: Object.assign({}, { spd: 0, loop: false, min: 1, max: 1 }), r: Object.assign({}, z) };
@@ -295,6 +349,29 @@ class DatabaseHUDEditor {
     _refreshStatePanel() {
         const host = this._dom.stateHost;
         host.innerHTML = '';
+        // Master toggle: show every piece regardless of conditions.
+        const all = document.createElement('button');
+        all.className = 'agonia-btn';
+        const on = this._showAll;
+        all.textContent = on ? '👁 ' + this._tt('Показывать все') : '⏻ ' + this._tt('Условия игры');
+        all.style.fontWeight = '700';
+        all.title = on
+            ? this._tt('Все куски видны. Выключите, чтобы условия работали по состоянию игры')
+            : this._tt('Видимость по условиям. Включите, чтобы показать все куски');
+        all.addEventListener('click', () => {
+            this._showAll = !this._showAll;
+            this._render();
+            this._refreshStatePanel();
+            this._refreshList();
+        });
+        host.appendChild(all);
+        if (this._showAll) {
+            const note = document.createElement('span');
+            note.style.cssText = 'font-size:11px;color:var(--color-text-dim);';
+            note.textContent = this._tt('условия отключены');
+            host.appendChild(note);
+            return;
+        }
         const exprs = [];
         for (const p of this._pieces) {
             exprs.push(p.Condition);
@@ -365,7 +442,7 @@ class DatabaseHUDEditor {
             const vis = document.createElement('span');
             vis.style.cssText = 'cursor:pointer;font-size:12px;width:16px;flex:none;color:var(--color-text-dim);';
             vis.textContent = this._pieceVisible(p) ? '●' : '○';
-            vis.title = this._pieceVisible(p) ? this._tt('видим (условие истинно)') : this._tt('скрыт (условие ложно)');
+            vis.title = this._pieceVisible(p) ? this._tt('видим (условие истинно / показывать все)') : this._tt('скрыт (условие ложно)');
             vis.addEventListener('click', e => {
                 e.stopPropagation();
                 // quick toggle: comment the condition with '!' wrapper? No -
@@ -537,11 +614,11 @@ class DatabaseHUDEditor {
         void opa;
         if (p.type === 'Picture') {
             const img = this._img('Picture', p.Image);
-            if (!img || !img.naturalWidth) {
-                const w = 96, h = 96;
+            if (img && img.naturalWidth) {
+                const w = img.naturalWidth * sx, h = img.naturalHeight * sy;
                 return { x: p.x - w / 2, y: p.y - h / 2, w, h };
             }
-            const w = img.naturalWidth * sx, h = img.naturalHeight * sy;
+            const w = 96, h = 96;
             return { x: p.x - w / 2, y: p.y - h / 2, w, h };
         }
         if (p.type === 'Image Numbers') {
@@ -554,9 +631,11 @@ class DatabaseHUDEditor {
             return { x: p.x - w / 2, y: p.y - h / 2, w, h };
         }
         if (p.type === 'Image Gauge') {
-            const back = this._img('Image Gauge', p['Back Image']);
-            const w = (back && back.naturalWidth ? back.naturalWidth : 200) * sx;
-            const h = (back && back.naturalHeight ? back.naturalHeight : 24) * sy;
+            const back = this._img('Image Gauge', p['Back Image'], 'back');
+            const main = this._img('Image Gauge', p['Main Image'], 'main');
+            const bw = back && back.naturalWidth ? back.naturalWidth : (main && main.naturalWidth ? main.naturalWidth : 200);
+            const bh = back && back.naturalHeight ? back.naturalHeight : (main && main.naturalHeight ? main.naturalHeight : 24);
+            const w = bw * sx, h = bh * sy;
             return { x: p.x - w / 2, y: p.y - h / 2, w, h };
         }
         return null;
@@ -594,8 +673,8 @@ class DatabaseHUDEditor {
                 cx += w0 * sx;
             }
         } else if (p.type === 'Image Gauge') {
-            const back = this._img('Image Gauge', p['Back Image']);
-            const main = this._img('Image Gauge', p['Main Image']);
+            const back = this._img('Image Gauge', p['Back Image'], 'back');
+            const main = this._img('Image Gauge', p['Main Image'], 'main');
             const cur = Number(this._evalExpr(p['Cur. Value'], 1)) || 0;
             const max = Number(this._evalExpr(p['Max Value'], 1)) || 1;
             const ratio = Math.max(0, Math.min(1, max === 0 ? 0 : cur / max));
@@ -608,17 +687,17 @@ class DatabaseHUDEditor {
                 this._drawPlaceholder(ctx, p, x0, y0, w, h, p['Back Image']);
             }
             if (main && main.naturalWidth) {
-                const mw = main.naturalWidth * sx, mh = main.naturalHeight * sy;
-                const dir = String(p.Direction || 'left');
-                if (dir === 'up' || dir === 'down') {
-                    const fh = mh * ratio;
-                    const fy = dir === 'up' ? y0 + (h - fh) : y0;
-                    // vertical fill inside the back rect bounds
-                    ctx.drawImage(main, 0, main.naturalHeight - (main.naturalHeight * ratio), main.naturalWidth, main.naturalHeight * ratio,
-                        x0, dir === 'up' ? y0 + (h - fh) : fy, w, fh);
+                // HUDMaker calls this field "Style" (left/right/up/down).
+                const style = String(p.Style || p.Direction || 'left');
+                if (style === 'up' || style === 'down') {
+                    const fh = h * ratio;
+                    const fy = style === 'up' ? y0 + (h - fh) : y0;
+                    ctx.drawImage(main,
+                        0, main.naturalHeight * (1 - ratio), main.naturalWidth, main.naturalHeight * ratio,
+                        x0, fy, w, fh);
                 } else {
                     const fw = w * ratio;
-                    const fx = dir === 'right' ? x0 + (w - fw) : x0;
+                    const fx = style === 'right' ? x0 + (w - fw) : x0;
                     ctx.drawImage(main, fx, y0, fw, h);
                 }
             }
