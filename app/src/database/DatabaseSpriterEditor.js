@@ -314,6 +314,8 @@ class DatabaseSpriterEditor {
         right.style.cssText = 'flex:0 0 460px;border-left:1px solid var(--color-border);display:flex;flex-direction:column;min-height:0;';
         root.appendChild(right);
 
+        let gridRef = null; // the live card grid (for onMeta label refresh)
+
         const renderForm = () => {
             // Kill only the previous FORM players; grid cards keep living.
             this._players = (this._players || []).filter(p => p._tag !== 'spriterForm');
@@ -322,66 +324,25 @@ class DatabaseSpriterEditor {
             if (!entry) {
                 const ph = document.createElement('div');
                 ph.style.cssText = 'color:var(--color-text-muted);text-align:center;padding:60px 12px;font-size:12px;';
-                ph.textContent = this._tt('Выберите карточку слева');
+                ph.textContent = this._tt('Записей нет — нажмите «+ Новый»');
                 right.appendChild(ph);
                 return;
             }
-            const headRow = document.createElement('div');
-            headRow.style.cssText = `
-                display:flex;align-items:center;gap:8px;padding:10px 12px;
-                border-bottom:1px solid var(--color-border);flex-wrap:wrap;
-            `;
-            const name = document.createElement('span');
-            name.style.cssText = 'font-weight:700;font-size:14px;color:var(--color-text-strong);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-            name.textContent = (selected + 1) + '. ' + this._entryHeadline(entry, kind);
-            headRow.appendChild(name);
-            const mkBtn = (lbl, title, fn, danger) => {
-                const b = document.createElement('button');
-                b.className = 'agonia-btn' + (danger ? ' danger' : '');
-                b.textContent = lbl;
-                b.title = title;
-                b.addEventListener('click', fn);
-                headRow.appendChild(b);
-            };
-            mkBtn('▲', 'Выше', () => {
-                if (selected <= 0) return;
-                [entries[selected - 1], entries[selected]] = [entries[selected], entries[selected - 1]];
-                selected--;
-                remember(selected);
-                persist();
-                rebuild();
-            });
-            mkBtn('▼', 'Ниже', () => {
-                if (selected >= entries.length - 1) return;
-                [entries[selected + 1], entries[selected]] = [entries[selected], entries[selected + 1]];
-                selected++;
-                remember(selected);
-                persist();
-                rebuild();
-            });
-            mkBtn('⧉', 'Дублировать', () => {
-                entries.splice(selected + 1, 0, JSON.parse(JSON.stringify(entry)));
-                selected++;
-                remember(selected);
-                persist();
-                rebuild();
-            });
-            mkBtn('✕', 'Удалить', () => {
-                if (!confirm(this._tt('Удалить запись?') + ' ' + this._entryHeadline(entry, kind))) return;
-                entries.splice(selected, 1);
-                selected = Math.min(selected, entries.length - 1);
-                remember(selected);
-                persist();
-                rebuild();
-            }, true);
-            right.appendChild(headRow);
-
+            // S36: no header row - the card grid above already shows the
+            // number/name; move/duplicate/delete live on the card's ПКМ.
             const formScroll = document.createElement('div');
             formScroll.style.cssText = 'flex:1;overflow-y:auto;padding:12px;';
             right.appendChild(formScroll);
             try {
                 this._renderEntryDetail(formScroll, entry, selected, kind, persist, () => {
-                    name.textContent = (selected + 1) + '. ' + this._entryHeadline(entry, kind);
+                    // live-refresh the selected card's caption (name/summary)
+                    const card = gridRef && gridRef.children[selected];
+                    if (card) {
+                        if (card._labelEl) card._labelEl.textContent = (selected + 1) + '. ' + this._entryHeadline(entry, kind);
+                        if (card._subEl) card._subEl.textContent = kind === 'NPCMappings'
+                            ? ('<sds:' + (entry.IdName || '') + '>')
+                            : this._condSummary(entry);
+                    }
                 });
             } catch (e) {
                 formScroll.appendChild(this._errorBanner(e));
@@ -402,6 +363,7 @@ class DatabaseSpriterEditor {
             }
             const grid = document.createElement('div');
             grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;';
+            gridRef = grid;
             entries.forEach((entry, idx) => {
                 const card = document.createElement('div');
                 card.style.cssText = `
@@ -423,6 +385,8 @@ class DatabaseSpriterEditor {
                     ? ('<sds:' + (entry.IdName || '') + '>')
                     : this._condSummary(entry);
                 card.appendChild(sub);
+                card._labelEl = nm;
+                card._subEl = sub;
                 card.addEventListener('click', () => {
                     if (selected === idx) return;
                     selected = idx;
@@ -432,6 +396,57 @@ class DatabaseSpriterEditor {
                         c.style.borderColor = i === selected ? 'var(--color-accent-border-mid)' : 'var(--color-border)';
                     });
                     renderForm();
+                });
+                // S36: card tools moved from the form header to ПКМ.
+                card.addEventListener('contextmenu', e => {
+                    e.preventDefault();
+                    if (selected !== idx) {
+                        selected = idx;
+                        remember(idx);
+                        grid.querySelectorAll(':scope > div').forEach((c, i) => {
+                            c.style.borderColor = i === selected ? 'var(--color-accent-border-mid)' : 'var(--color-border)';
+                        });
+                        renderForm();
+                    }
+                    this._cardContextMenu(e.clientX, e.clientY, [
+                        {
+                            label: '▲ Выше', disabled: selected <= 0, fn: () => {
+                                [entries[selected - 1], entries[selected]] = [entries[selected], entries[selected - 1]];
+                                selected--;
+                                remember(selected);
+                                persist();
+                                rebuild();
+                            }
+                        },
+                        {
+                            label: '▼ Ниже', disabled: selected >= entries.length - 1, fn: () => {
+                                [entries[selected + 1], entries[selected]] = [entries[selected], entries[selected + 1]];
+                                selected++;
+                                remember(selected);
+                                persist();
+                                rebuild();
+                            }
+                        },
+                        {
+                            label: '⧉ Дублировать', fn: () => {
+                                entries.splice(selected + 1, 0, JSON.parse(JSON.stringify(entries[selected])));
+                                selected++;
+                                remember(selected);
+                                persist();
+                                rebuild();
+                            }
+                        },
+                        {
+                            label: '✕ Удалить', danger: true, fn: () => {
+                                if (!confirm(this._tt('Удалить запись?') + ' ' + this._entryHeadline(entries[selected], kind))) return;
+                                entries.splice(selected, 1);
+                                selected = Math.min(selected, entries.length - 1);
+                                remember(selected);
+                                persist();
+                                rebuild();
+                            }
+                        }
+                    ]);
                 });
                 grid.appendChild(card);
             });
@@ -446,6 +461,43 @@ class DatabaseSpriterEditor {
         if (kind === 'PoseMappings') return 'поз';
         if (kind === 'NPCMappings') return 'NPC';
         return 'скинов';
+    }
+
+    /** S36: card ПКМ menu - items: {label, disabled?, danger?, fn}. */
+    _cardContextMenu(x, y, items) {
+        const existing = document.getElementById('sds-card-menu');
+        if (existing) existing.remove();
+        const menu = document.createElement('div');
+        menu.id = 'sds-card-menu';
+        menu.style.cssText = `
+            position: fixed; left: ${x}px; top: ${y}px;
+            background-color: var(--color-bg-menubar);
+            border: 1px solid var(--color-border); border-radius: 4px;
+            padding: 4px 0; z-index: 21001; min-width: 150px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        `;
+        for (const item of items) {
+            const row = document.createElement('div');
+            row.textContent = this._tt(item.label);
+            row.style.cssText = `
+                padding: 7px 16px; font-size: 12px;
+                cursor: ${item.disabled ? 'not-allowed' : 'pointer'};
+                color: ${item.disabled ? 'var(--color-text-dim)'
+                    : item.danger ? 'var(--color-danger, #b55)' : 'var(--color-text-strong)'};
+            `;
+            if (!item.disabled) {
+                row.addEventListener('mouseenter', () => { row.style.background = 'var(--color-border)'; });
+                row.addEventListener('mouseleave', () => { row.style.background = 'transparent'; });
+                row.addEventListener('click', () => {
+                    menu.remove();
+                    item.fn();
+                });
+            }
+            menu.appendChild(row);
+        }
+        document.body.appendChild(menu);
+        const close = () => { menu.remove(); document.removeEventListener('click', close); };
+        setTimeout(() => document.addEventListener('click', close), 0);
     }
 
     /** One-entry detail form (S34): превью → файл → Название+Приоритет →
