@@ -174,36 +174,130 @@ class DatabaseItemEditor {
         `;
         gridWrapper.appendChild(effectsSection);
 
-        // --- Tags Section (SuperDuperItemTags; S19 inspector rows) ---
+        // --- Tags Section (SuperDuperItemTags; S38 toggle chips) ---
         // Tags live in the item note: <sptags:a, b> + <spdisposable>; the
-        // plugin parses both at boot. The fields mirror them and rewrite
-        // only these tags, leaving every other note tag untouched.
-        const tags = DatabaseItemEditor.readSptags(item.note);
-        const disposable = DatabaseItemEditor.readSpDisposable(item.note);
-        const knownTags = DatabaseItemEditor.collectKnownTags(this.databaseManager);
+        // plugin parses both at boot. Tags are PICKED from known chips
+        // (click = add, click again = remove); «+» creates a new tag.
         const tagsSection = document.createElement('div');
         tagsSection.className = 'agn-insp';
         tagsSection.innerHTML = `
-            <div class="agn-insp-section"><span class="agn-insp-caption">${tt('Теги')} (SuperDuperItemTags)</span></div>
-            <div class="agn-insp-row">
-                <div class="agn-insp-label">${tt('Теги через запятую')}<small>${tt('пишется в note как <sptags:…>')}</small></div>
-                <div class="agn-insp-control">
-                    <input type="text" list="sptags-suggestions-${item.id}" class="agonia-input" style="flex:1 1 420px;" value="${rrEscapeHtml(tags.join(', '))}"
-                           data-sptags-input data-item-id="${item.id}">
-                    <datalist id="sptags-suggestions-${item.id}">
-                        ${knownTags.map(tag => `<option value="${rrEscapeHtml(tag)}"></option>`).join('')}
-                    </datalist>
-                </div>
-            </div>
-            <div class="agn-insp-row">
-                <div class="agn-insp-label">${tt('Одноразовый')} (spdisposable)</div>
-                <div class="agn-insp-control">
-                    <input type="checkbox" style="cursor:pointer;" data-spdisposable-input ${disposable ? 'checked' : ''}>
-                    <span style="color: var(--color-text-dim); font-size: 11px;">${tt('запрет передачи/продажи')}</span>
-                </div>
-            </div>
+            <div class="agn-insp-section"><span class="agn-insp-caption">${tt('Теги')}</span></div>
         `;
+
+        const tagsRow = document.createElement('div');
+        tagsRow.className = 'agn-insp-row';
+        const tagsLabel = document.createElement('div');
+        tagsLabel.className = 'agn-insp-label';
+        tagsLabel.textContent = tt('Теги предмета');
+        tagsRow.appendChild(tagsLabel);
+        const chipsHost = document.createElement('div');
+        chipsHost.className = 'agn-insp-control';
+        chipsHost.style.cssText = 'flex-wrap:wrap;gap:6px;flex:1 1 100%;';
+        tagsRow.appendChild(chipsHost);
+        tagsSection.appendChild(tagsRow);
+
+        const dispRow = document.createElement('div');
+        dispRow.className = 'agn-insp-row';
+        const dispLabel = document.createElement('div');
+        dispLabel.className = 'agn-insp-label';
+        dispLabel.textContent = tt('Одноразовый') + ' (spdisposable)';
+        dispRow.appendChild(dispLabel);
+        const dispControl = document.createElement('div');
+        dispControl.className = 'agn-insp-control';
+        const disposableBox = document.createElement('input');
+        disposableBox.type = 'checkbox';
+        disposableBox.style.cursor = 'pointer';
+        disposableBox.checked = DatabaseItemEditor.readSpDisposable(item.note);
+        dispControl.appendChild(disposableBox);
+        dispRow.appendChild(dispControl);
+        tagsSection.appendChild(dispRow);
+        disposableBox.addEventListener('change', () => {
+            item.note = DatabaseItemEditor.writeSpDisposable(item.note, disposableBox.checked);
+            persistNote();
+        });
         gridWrapper.appendChild(tagsSection);
+
+        // Chips wiring (immediate - no re-render of the whole form needed).
+        const noteAreaRef = { el: null };
+        const persistNote = () => {
+            if (noteAreaRef.el) noteAreaRef.el.value = item.note || '';
+            this.databaseManager.updateItem(item.id, item);
+        };
+        const saveTags = list => {
+            item.note = DatabaseItemEditor.writeSptags(item.note, list.join(', '));
+            persistNote();
+        };
+        const chipStyle = on => `
+            padding:3px 12px;font-size:12px;cursor:pointer;border-radius:12px;
+            border:1px solid ${on ? 'var(--color-accent-border-mid)' : 'var(--color-border)'};
+            background-color:${on ? 'var(--color-bg-deep)' : 'var(--color-bg-panel)'};
+            color:${on ? 'var(--color-text-strong)' : 'var(--color-text)'};
+            font-weight:${on ? '700' : '400'};
+        `;
+        const renderChips = () => {
+            const active = DatabaseItemEditor.readSptags(item.note);
+            const known = DatabaseItemEditor.collectKnownTags(this.databaseManager);
+            // tags the item already has but nobody knows yet
+            const all = [...new Set(known.concat(active))];
+            chipsHost.innerHTML = '';
+            for (const tag of all) {
+                const on = active.includes(tag);
+                const chip = document.createElement('button');
+                chip.type = 'button';
+                chip.textContent = tag;
+                chip.style.cssText = chipStyle(on);
+                chip.title = on ? tt('Убрать тег') : tt('Добавить тег');
+                chip.addEventListener('click', () => {
+                    const cur = DatabaseItemEditor.readSptags(item.note);
+                    const next = cur.includes(tag) ? cur.filter(t => t !== tag) : cur.concat([tag]);
+                    saveTags(next);
+                    renderChips();
+                });
+                chipsHost.appendChild(chip);
+            }
+            // «+» - create a new tag
+            const plus = document.createElement('button');
+            plus.type = 'button';
+            plus.textContent = '+';
+            plus.title = tt('Новый тег');
+            plus.style.cssText = chipStyle(false);
+            plus.addEventListener('click', () => {
+                if (chipsHost.querySelector('input[data-sptags-new]')) return;
+                const inp = document.createElement('input');
+                inp.type = 'text';
+                inp.dataset.sptagsNew = '1';
+                inp.placeholder = tt('имя тега');
+                inp.style.cssText = 'padding:3px 8px;font-size:12px;width:110px;background-color:var(--color-bg-deep);color:var(--color-text-strong);border:1px solid var(--color-accent-border-mid);border-radius:12px;';
+                const ok = document.createElement('button');
+                ok.type = 'button';
+                ok.textContent = '✓';
+                ok.style.cssText = chipStyle(true);
+                const cancel = document.createElement('button');
+                cancel.type = 'button';
+                cancel.textContent = '✕';
+                cancel.style.cssText = chipStyle(false);
+                const commit = () => {
+                    const name = inp.value.trim().toLowerCase();
+                    if (name) {
+                        const cur = DatabaseItemEditor.readSptags(item.note);
+                        if (!cur.includes(name)) saveTags(cur.concat([name]));
+                    }
+                    renderChips();
+                };
+                ok.addEventListener('click', commit);
+                cancel.addEventListener('click', () => renderChips());
+                inp.addEventListener('keydown', e => {
+                    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+                    if (e.key === 'Escape') { e.preventDefault(); renderChips(); }
+                });
+                plus.replaceWith(inp);
+                chipsHost.appendChild(ok);
+                chipsHost.appendChild(cancel);
+                inp.focus();
+            });
+            chipsHost.appendChild(plus);
+        };
+        renderChips();
 
         // --- Note Section (S19 inspector rows) ---
         const noteSection = document.createElement('div');
@@ -257,24 +351,10 @@ class DatabaseItemEditor {
                 }
             }
 
-            // sptags / spdisposable sync into the note
-            const tagsInput = container.querySelector(`[data-sptags-input][data-item-id="${item.id}"]`);
-            const disposableBox = container.querySelector('[data-spdisposable-input]');
+            // spdisposable is wired at construction (S38); keep the note
+            // textarea reference live for tag/disposable note sync.
             const noteArea = container.querySelector(`textarea[data-field="note"][data-item-id="${item.id}"]`);
-            if (tagsInput) {
-                tagsInput.addEventListener('change', () => {
-                    item.note = DatabaseItemEditor.writeSptags(item.note, tagsInput.value);
-                    if (noteArea) noteArea.value = item.note || '';
-                    this.databaseManager.updateItem(item.id, item);
-                });
-            }
-            if (disposableBox) {
-                disposableBox.addEventListener('change', () => {
-                    item.note = DatabaseItemEditor.writeSpDisposable(item.note, disposableBox.checked);
-                    if (noteArea) noteArea.value = item.note || '';
-                    this.databaseManager.updateItem(item.id, item);
-                });
-            }
+            if (noteArea) noteAreaRef.el = noteArea;
 
             const editableFields = container.querySelectorAll('[data-item-id]');
             editableFields.forEach(field => {

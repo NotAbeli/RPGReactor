@@ -49,8 +49,6 @@ class DatabaseEditorUI {
         this.classEditor = new DatabaseClassEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         this.skillEditor = new DatabaseSkillEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         this.itemEditor = new DatabaseItemEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
-        this.weaponEditor = new DatabaseWeaponEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
-        this.armorEditor = new DatabaseArmorEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         this.enemyEditor = new DatabaseEnemyEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         this.stateEditor = new DatabaseStateEditor(databaseManager, { getCurrentProject: () => this.currentProject }, this.commonUI, this);
         const eventProjectManager = {
@@ -406,18 +404,14 @@ class DatabaseEditorUI {
         const tt = text => window.I18n ? window.I18n.tText(text) : text;
         const modes = [
             { key: 'items', label: 'Предметы' },
-            { key: 'weapons', label: 'Оружие' },
-            { key: 'armors', label: 'Броня' },
             { key: 'craft', label: 'Крафт' },
             { key: 'loot', label: 'Лут' },
             { key: 'gifts', label: 'Подарки' }
         ];
         const current = modes.find(m => m.key === mode) || modes[0];
 
-        if (current.key === 'items' || current.key === 'weapons' || current.key === 'armors') {
-            const data = current.key === 'items' ? this.databaseManager.getItems()
-                : current.key === 'weapons' ? this.databaseManager.getWeapons()
-                : this.databaseManager.getArmors();
+        if (current.key === 'items') {
+            const data = this.databaseManager.getItems();
             this.showInventoryList = current.key;
             this.showDatabaseViewer(tt(current.label), data, current.key);
             this.setActiveDatabaseNav('inventory');
@@ -1544,10 +1538,6 @@ class DatabaseEditorUI {
             this.skillEditor.showSkillDetail(detailEl, entry);
         } else if (type === 'items') {
             this.itemEditor.showItemDetail(detailEl, entry);
-        } else if (type === 'weapons') {
-            this.weaponEditor.showWeaponDetail(detailEl, entry);
-        } else if (type === 'armors') {
-            this.armorEditor.showArmorDetail(detailEl, entry);
         } else if (type === 'enemies') {
             this.enemyEditor.showEnemyDetail(detailEl, entry);
         } else if (type === 'troops') {
@@ -1567,7 +1557,7 @@ class DatabaseEditorUI {
     }
 
     get listIconTypes() {
-        return ['skills', 'items', 'weapons', 'armors', 'states', 'actors', 'enemies'];
+        return ['skills', 'items', 'states', 'actors', 'enemies'];
     }
 
     /**
@@ -2234,7 +2224,7 @@ class DatabaseEditorUI {
             graphicsContainer.appendChild(svBox);
             preview.appendChild(graphicsContainer);
 
-        } else if ((type === 'items' || type === 'weapons' || type === 'armors' || type === 'skills') && entry.iconIndex !== undefined) {
+        } else if ((type === 'items' || type === 'skills') && entry.iconIndex !== undefined) {
             // Show item icon with click handler
             const iconWrapper = document.createElement('div');
             iconWrapper.style.cssText = `
@@ -2458,12 +2448,6 @@ class DatabaseEditorUI {
             switch(type) {
                 case 'items':
                     this.databaseManager.updateItem(entry.id, entry);
-                    break;
-                case 'weapons':
-                    this.databaseManager.updateWeapon(entry.id, entry);
-                    break;
-                case 'armors':
-                    this.databaseManager.updateArmor(entry.id, entry);
                     break;
                 case 'skills':
                     this.databaseManager.updateSkill(entry.id, entry);
