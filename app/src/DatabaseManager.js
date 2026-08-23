@@ -560,6 +560,15 @@ class DatabaseManager {
             for (const key of Object.keys(defaults[section])) {
                 result[section][key] = this.normalizeAgoniaValue(source[key] !== undefined ? source[key] : defaults[section][key]);
             }
+            // S46: keys the editor added beyond the annotation defaults
+            // (Visual Settings blob, Grid2 X/Y/Bg, ...) must survive the
+            // save normalize pass verbatim - dropping them silently
+            // reverted every editor change on save.
+            for (const key of Object.keys(source)) {
+                if (!(key in defaults[section])) {
+                    result[section][key] = source[key];
+                }
+            }
         }
         // Preserve unknown sections untouched for forward compatibility.
         for (const section of Object.keys(config)) {

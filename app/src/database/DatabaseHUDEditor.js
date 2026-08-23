@@ -594,10 +594,6 @@ class DatabaseHUDEditor {
                 ctx.fillRect(region.x, region.y, region.w, region.h);
                 ctx.strokeStyle = 'rgba(160,160,180,0.7)';
                 ctx.strokeRect(region.x + 0.5, region.y + 0.5, region.w - 1, region.h - 1);
-                ctx.fillStyle = 'rgba(225,225,240,0.85)';
-                ctx.font = '11px sans-serif';
-                ctx.textAlign = 'left';
-                ctx.fillText(this._tt('имя / описание предмета'), region.x + 6, region.y + 14);
                 this._strokeSelected(ctx, r);
                 ctx.restore();
             }
@@ -1316,6 +1312,37 @@ class DatabaseHUDEditor {
                 this._refreshInspector();
             }
             drag = null;
+        });
+        // S46: arrow keys nudge the selected piece/window by 1px
+        // (Shift+Arrow - 10px); persists after the press.
+        window.addEventListener('keydown', e => {
+            if (!this._dom || !this._dom.stage) return;
+            if (!document.getElementById || document.activeElement === null) { /* keep */ }
+            const tag = document.activeElement && document.activeElement.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+            const map = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+            if (!(e.key in map)) return;
+            const step = e.shiftKey ? 10 : 1;
+            const [dx, dy] = map[e.key];
+            if (this._selectedWindow) {
+                const def = this._windowDefs().find(d => d.id === this._selectedWindow);
+                if (!def) return;
+                const r = def.rect();
+                def.apply(def.lockX ? r.x : r.x + dx * step, r.y + dy * step);
+                this._render();
+                this._refreshInspector();
+            } else if (this._selected >= 0 && this._pieces[this._selected]) {
+                const p = this._pieces[this._selected];
+                p.x += dx * step;
+                p.y += dy * step;
+                this._persist();
+                this._render();
+                this._refreshInspector();
+            } else {
+                return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
         });
     }
 
