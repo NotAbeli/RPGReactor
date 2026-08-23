@@ -346,7 +346,7 @@ class DatabaseHUDEditor {
         const slotRect = (x, y) => ({ x, y, w: size, h: size });
         defs.push({
             id: 'craft.slots',
-            label: this._tt('Крафт · слоты'),
+            label: this._tt('Крафт — слоты'),
             rect: () => slotRect(s1x(), s1y()),
             apply: (x, y) => { craft['Slot 1 X'] = String(Math.round(x)); craft['Slot 1 Y'] = String(Math.round(y)); },
             draw: ctx => {
@@ -356,7 +356,7 @@ class DatabaseHUDEditor {
         const rx = () => n('Result Slot X', pctX(43)), ry = () => n('Result Slot Y', pctY(14));
         defs.push({
             id: 'craft.result',
-            label: this._tt('Крафт · результат'),
+            label: this._tt('Крафт — результат'),
             rect: () => slotRect(rx(), ry()),
             apply: (x, y) => { craft['Result Slot X'] = String(Math.round(x)); craft['Result Slot Y'] = String(Math.round(y)); },
             draw: ctx => drawCraftSlot(ctx, rx(), ry(), '✦')
@@ -380,7 +380,7 @@ class DatabaseHUDEditor {
         const hx = () => n('Hint X', pctX(0)), hy = () => n('Hint Y', pctY(70));
         defs.push({
             id: 'craft.hint',
-            label: this._tt('Крафт · подсказка'),
+            label: this._tt('Крафт — подсказка'),
             rect: () => ({ x: hx(), y: hy(), w: this._screen.w - hx(), h: lineH }),
             apply: (x, y) => { craft['Hint X'] = String(Math.round(x)); craft['Hint Y'] = String(Math.round(y)); },
             draw: ctx => drawTextLine(ctx, { x: hx(), y: hy(), w: this._screen.w - hx(), h: lineH },
@@ -389,7 +389,7 @@ class DatabaseHUDEditor {
         const px = () => n('Preview X', pctX(0)), py = () => n('Preview Y', pctY(75));
         defs.push({
             id: 'craft.preview',
-            label: this._tt('Крафт · превью'),
+            label: this._tt('Крафт — превью'),
             rect: () => ({ x: px(), y: py(), w: this._screen.w - px(), h: lineH }),
             apply: (x, y) => { craft['Preview X'] = String(Math.round(x)); craft['Preview Y'] = String(Math.round(y)); },
             draw: ctx => drawTextLine(ctx, { x: px(), y: py(), w: this._screen.w - px(), h: lineH },
@@ -485,7 +485,7 @@ class DatabaseHUDEditor {
         };
         defs.push({
             id: 'inv.bg',
-            label: this._tt('Инвентарь · фон'),
+            label: this._tt('Фон инвентаря'),
             rect: playerBgRect,
             apply: (x, y) => { vis['Player Bg X'] = String(Math.round(x)); vis['Player Bg Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
             draw: () => drawGridBox(playerBgRect())
@@ -503,7 +503,7 @@ class DatabaseHUDEditor {
         };
         defs.push({
             id: 'inv.player',
-            label: this._tt('Инвентарь · ряд 1'),
+            label: this._tt('Ряд 1 (хотбар)'),
             rect: playerRect,
             apply: (x, y) => { vis['Player X'] = String(Math.round(x)); vis['Player Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
             draw: () => drawGridBox(playerRect())
@@ -529,7 +529,7 @@ class DatabaseHUDEditor {
         };
         defs.push({
             id: 'inv.grid2',
-            label: this._tt('Инвентарь · ряды 2–4'),
+            label: this._tt('Ряды 2–4'),
             rect: grid2Rect,
             apply: (x, y) => { vis['Grid2 X'] = String(Math.round(x)); vis['Grid2 Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
             draw: () => drawGridBox(grid2Rect())
@@ -545,7 +545,7 @@ class DatabaseHUDEditor {
         };
         defs.push({
             id: 'inv.chestBg',
-            label: this._tt('Сундук · фон'),
+            label: this._tt('Фон сундука'),
             rect: chestBgRect,
             apply: (x, y) => { vis['Chest Bg X'] = String(Math.round(x)); vis['Chest Bg Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
             draw: () => drawGridBox(chestBgRect())
@@ -563,7 +563,7 @@ class DatabaseHUDEditor {
         };
         defs.push({
             id: 'inv.chest',
-            label: this._tt('Инвентарь · сундук'),
+            label: this._tt('Слоты сундука'),
             rect: chestRect,
             apply: (x, y) => { vis['Chest X'] = String(Math.round(x)); vis['Chest Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
             draw: () => drawGridBox(chestRect())
@@ -581,7 +581,7 @@ class DatabaseHUDEditor {
         };
         defs.push({
             id: 'inv.hotbar',
-            label: this._tt('Инвентарь · хотбар (только Y)'),
+            label: this._tt('Хотбар'),
             rect: hotbarRect,
             lockX: true,
             // apply receives the desired TOP-LEFT; store the CENTER y.
@@ -621,7 +621,7 @@ class DatabaseHUDEditor {
         };
         defs.push({
             id: 'inv.custom',
-            label: this._tt('Инвентарь · кастомное окно'),
+            label: this._tt('Окно информации'),
             rect: cwRect,
             apply: (x, y) => { vis['Custom Window X'] = String(Math.round(x)); vis['Custom Window Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
             draw: () => {
@@ -697,7 +697,7 @@ class DatabaseHUDEditor {
         bar.appendChild(count);
         const addBtn = document.createElement('button');
         addBtn.className = 'agonia-btn';
-        addBtn.textContent = this._tt('+ Кусок');
+        addBtn.textContent = this._tt('+ Элемент HUD');
         addBtn.title = this._tt('Новый Picture-кусок');
         addBtn.addEventListener('click', () => {
             const id = this._pieces.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1;
@@ -759,6 +759,12 @@ class DatabaseHUDEditor {
         stageWrap.style.cssText = 'flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:12px;background-color:var(--color-bg-deep);';
         mid.appendChild(stageWrap);
 
+        // S48: permanent hint bar under the stage.
+        const hintBar = document.createElement('div');
+        hintBar.style.cssText = 'flex:none;padding:5px 12px;border-top:1px solid var(--color-border);font-size:11px;color:var(--color-text-dim);text-align:center;user-select:none;';
+        hintBar.textContent = this._tt('Клик — выбрать · Перетащить — переместить · Стрелки — 1px (Shift — 10px) · 👁 в списке — скрыть');
+        mid.appendChild(hintBar);
+
         const screen = this.getScreenSize();
         this._screen = screen;
         const scaler = document.createElement('div');
@@ -797,13 +803,17 @@ class DatabaseHUDEditor {
         snapH.style.cssText = 'position:absolute;left:0;right:0;height:1px;background:rgba(255,60,60,0.8);pointer-events:none;display:none;z-index:5;';
         stage.appendChild(snapV);
         stage.appendChild(snapH);
+        // S48: floating name badge on the selected object.
+        const badge = document.createElement('div');
+        badge.style.cssText = 'position:absolute;display:none;pointer-events:none;z-index:6;background:rgba(15,18,26,0.9);border:1px solid var(--color-accent-border-mid);border-radius:3px;padding:2px 8px;font-size:11px;font-weight:600;color:var(--color-text-strong);white-space:nowrap;';
+        stage.appendChild(badge);
 
         // --- Right: inspector ---
         const right = document.createElement('div');
         right.style.cssText = 'flex:0 0 340px;border-left:1px solid var(--color-border);overflow-y:auto;padding:10px;';
         root.appendChild(right);
 
-        this._dom = { root, count, listBox, stage, scaler, stageWrap, winCanvas, canvas, selBox, snapV, snapH, right, stateHost };
+        this._dom = { root, count, listBox, stage, scaler, stageWrap, winCanvas, canvas, selBox, snapV, snapH, badge, right, stateHost };
         this._ctx = canvas.getContext('2d');
         this._ctx.imageSmoothingEnabled = false;
         this._winCtx = winCanvas.getContext('2d');
@@ -918,34 +928,72 @@ class DatabaseHUDEditor {
     }
 
     // ------------------------------------------------------------------
-    // Pieces list
+    // Unified list: HUD pieces + interface windows (S48)
     // ------------------------------------------------------------------
+
+    /** Human-friendly tag for a window id. */
+    _windowTag(id) {
+        if (id.startsWith('craft.')) return 'крафт';
+        if (id === 'inv.hotbar') return 'инвентарь';
+        if (id.startsWith('inv.chest')) return 'сундук';
+        if (id.startsWith('inv.')) return 'инвентарь';
+        return '';
+    }
 
     _refreshList() {
         const box = this._dom.listBox;
         box.innerHTML = '';
-        this._dom.count.textContent = this._pieces.length + ' ' + this._tt('кусков');
-        this._pieces.forEach((p, i) => {
+        this._hiddenPieces = this._hiddenPieces || new Set();
+        this._hiddenWindows = this._hiddenWindows || new Set();
+
+        const mkHeader = (text) => {
+            const h = document.createElement('div');
+            h.style.cssText = 'padding:8px 6px 4px;font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--color-text-dim);text-transform:uppercase;user-select:none;';
+            h.textContent = this._tt(text);
+            box.appendChild(h);
+        };
+        const mkEye = (hidden, onToggle) => {
+            const eye = document.createElement('span');
+            eye.textContent = hidden ? '🚫' : '👁';
+            eye.style.cssText = 'flex:none;width:20px;text-align:center;cursor:pointer;font-size:12px;opacity:' + (hidden ? '1' : '.55') + ';';
+            eye.title = hidden ? this._tt('Показать в редакторе (не влияет на игру)')
+                : this._tt('Скрыть в редакторе (не влияет на игру)');
+            eye.addEventListener('click', e => { e.stopPropagation(); onToggle(); });
+            return eye;
+        };
+        const mkRow = (active, children) => {
             const row = document.createElement('div');
-            row.className = 'agonia-md-item' + (i === this._selected ? ' active' : '');
+            row.className = 'agonia-md-item' + (active ? ' active' : '');
             row.style.cssText = `
                 padding:5px 8px;border-radius:3px;cursor:pointer;
                 display:flex;align-items:center;gap:6px;
-                border:1px solid ${i === this._selected ? 'var(--color-accent-border-mid)' : 'transparent'};
+                border:1px solid ${active ? 'var(--color-accent-border-mid)' : 'transparent'};
             `;
-            const vis = document.createElement('span');
-            vis.style.cssText = 'cursor:default;font-size:12px;width:16px;flex:none;color:var(--color-text-dim);';
-            vis.textContent = this._pieceVisible(p) ? '●' : '○';
-            vis.title = this._pieceVisible(p) ? this._tt('видим (условие истинно / показывать все)') : this._tt('скрыт (условие ложно)');
-            row.appendChild(vis);
+            children.forEach(c => row.appendChild(c));
+            return row;
+        };
+
+        // --- Group: HUD pieces ---
+        mkHeader('Куски HUD · ' + this._pieces.length);
+        this._dom.count.textContent = this._pieces.length + ' ' + this._tt('элементов HUD');
+        this._pieces.forEach((p, i) => {
+            const hidden = this._hiddenPieces.has(i);
+            const eye = mkEye(hidden, () => {
+                if (hidden) this._hiddenPieces.delete(i); else this._hiddenPieces.add(i);
+                this._refreshList();
+                this._render();
+            });
+            const condDot = document.createElement('span');
+            condDot.style.cssText = 'cursor:default;font-size:12px;width:12px;flex:none;color:var(--color-text-dim);';
+            condDot.textContent = this._pieceVisible(p) ? '●' : '○';
+            condDot.title = this._pieceVisible(p) ? this._tt('видим (условие истинно / показывать все)') : this._tt('скрыт (условие ложно)');
             const name = document.createElement('span');
             name.style.cssText = 'flex:1;min-width:0;font-size:12px;color:var(--color-text-strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
             name.textContent = '#' + (p.id || '?') + ' ' + (p.Image || p['Main Image'] || p.type);
-            row.appendChild(name);
             const sub = document.createElement('span');
             sub.style.cssText = 'font-size:10px;color:var(--color-text-dim);flex:none;';
-            sub.textContent = p.type.replace('Image ', '') + ' · L' + (p.Layer || 0);
-            row.appendChild(sub);
+            sub.textContent = p.type.replace('Image ', '');
+            const row = mkRow(i === this._selected && !this._selectedWindow, [eye, condDot, name, sub]);
             row.addEventListener('click', () => {
                 this._selected = i;
                 this._selectedWindow = null;
@@ -953,6 +1001,33 @@ class DatabaseHUDEditor {
             });
             box.appendChild(row);
         });
+
+        // --- Group: interface windows ---
+        const winDefs = this._windowDefs();
+        mkHeader('Окна интерфейса · ' + winDefs.length);
+        for (const def of winDefs) {
+            const hidden = this._hiddenWindows.has(def.id);
+            const eye = mkEye(hidden, () => {
+                if (hidden) this._hiddenWindows.delete(def.id); else this._hiddenWindows.add(def.id);
+                this._refreshList();
+                this._render();
+            });
+            const name = document.createElement('span');
+            name.style.cssText = 'flex:1;min-width:0;font-size:12px;color:var(--color-text-strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+            name.textContent = def.label;
+            const tag = document.createElement('span');
+            tag.style.cssText = 'flex:none;font-size:9px;color:var(--color-text-dim);border:1px solid var(--color-border);border-radius:8px;padding:1px 6px;';
+            tag.textContent = this._windowTag(def.id);
+            const row = mkRow(this._selectedWindow === def.id, [eye, name, tag]);
+            row.addEventListener('click', () => {
+                this._selected = -1;
+                this._selectedWindow = def.id;
+                this._refreshList();
+                this._refreshInspector();
+                this._render();
+            });
+            box.appendChild(row);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -969,16 +1044,17 @@ class DatabaseHUDEditor {
         const p = this._pieces[this._selected];
         if (!p) {
             const ph = document.createElement('div');
-            ph.style.cssText = 'color:var(--color-text-muted);text-align:center;padding:40px 0;font-size:12px;';
-            ph.textContent = this._tt('Выберите кусок или окно на сцене / в списке');
+            ph.style.cssText = 'color:var(--color-text-muted);text-align:center;padding:40px 12px;font-size:12px;line-height:1.6;';
+            ph.textContent = this._tt('Выберите элемент HUD или окно — кликом на сцене или в списке слева.');
             right.appendChild(ph);
             return;
         }
         const form = new InspectorForm();
         form.head('#' + (p.id || '?') + ' ' + p.type, 'x ' + Math.round(p.x) + ' · y ' + Math.round(p.y) + ' · слой ' + (p.Layer || 0));
-        form.section(this._tt('Кусок'));
         const commit = () => { this._persist(); this._render(); this._refreshList(); this._refreshInspector(); this._refreshStatePanel(); };
+        form.section(this._tt('Позиция'));
         form.row(this._tt('Слой'), this._numField(p, 'Layer', commit));
+        form.section(this._tt('Вид'));
         form.row(this._tt('Условие (JS)'), this._textField(p, 'Condition', commit));
         const imgKey = p.type === 'Image Gauge' ? 'Main Image' : 'Image';
         form.row(this._tt(imgKey), this._textField(p, imgKey, commit));
@@ -1037,57 +1113,66 @@ class DatabaseHUDEditor {
         const form = new InspectorForm({ tight: true });
         const r = def.rect();
         form.head(def.label, 'x ' + Math.round(r.x) + ' · y ' + Math.round(r.y));
-        form.section(this._tt('Окно'));
         const rerender = () => { this._render(); this._refreshInspector(); };
         const vis = this._invVisual();
         const commit = () => { this._invVisualCommit(vis); rerender(); };
-        const zRow = (key) => form.row(this._tt('Слой (z)'), this._numField(vis, key, commit));
+        // S48: grouped sections - Position first, type specifics, Behavior.
+        const posSection = (xKey, yKey) => {
+            form.section(this._tt('Позиция'));
+            if (xKey) form.row('X', this._numField(vis, xKey, commit));
+            if (yKey) form.row('Y', this._numField(vis, yKey, commit));
+        };
+        const zRow = (key) => form.row(this._tt('Слой'), this._numField(vis, key, commit));
         if (def.id === 'craft.slots') {
             const craft = this._craft();
             const ccommit = rerender;
+            form.section(this._tt('Позиция'));
             form.row('Slot 1 X', this._numField(craft, 'Slot 1 X', ccommit));
             form.row('Slot 1 Y', this._numField(craft, 'Slot 1 Y', ccommit));
+            form.section(this._tt('Сетка'));
             form.row(this._tt('Шаг'), this._numField(craft, 'Slot Spacing', ccommit));
             form.row(this._tt('Размер'), this._numField(craft, 'Slot Size', ccommit));
         } else if (def.id === 'inv.bg') {
-            form.row('X', this._numField(vis, 'Player Bg X', commit));
-            form.row('Y', this._numField(vis, 'Player Bg Y', commit));
+            posSection('Player Bg X', 'Player Bg Y');
+            form.section(this._tt('Вид'));
             form.row(this._tt('Картинка'), this._textField(vis, 'Player Bg', commit));
-            this._appearanceRows(form, vis, commit, true);
+            this._appearanceRows(form, vis, commit);
         } else if (def.id === 'inv.grid2') {
-            form.row('X', this._numField(vis, 'Grid2 X', commit));
-            form.row('Y', this._numField(vis, 'Grid2 Y', commit));
+            posSection('Grid2 X', 'Grid2 Y');
+            form.section(this._tt('Вид'));
             form.row(this._tt('Фон'), this._textField(vis, 'Grid2 Bg', commit));
             form.row(this._tt('Колонок'), this._numField(vis, 'Player Cols', commit));
             form.row(this._tt('Строк'), this._numField(vis, 'Player Rows', commit));
             form.row(this._tt('Шаг'), this._numField(vis, 'Player Spacing', commit));
         } else if (def.id === 'inv.player') {
-            form.row('X', this._numField(vis, 'Player X', commit));
-            form.row('Y', this._numField(vis, 'Player Y', commit));
+            posSection('Player X', 'Player Y');
+            zRow('Z Player');
+            form.section(this._tt('Сетка'));
             form.row(this._tt('Колонок'), this._numField(vis, 'Player Cols', commit));
             form.row(this._tt('Строк'), this._numField(vis, 'Player Rows', commit));
             form.row(this._tt('Шаг'), this._numField(vis, 'Player Spacing', commit));
             form.row(this._tt('Отступ X'), this._numField(vis, 'Slot Offset X', commit));
             form.row(this._tt('Отступ Y'), this._numField(vis, 'Slot Offset Y', commit));
-            zRow('Z Player');
         } else if (def.id === 'inv.chestBg') {
-            form.row('X', this._numField(vis, 'Chest Bg X', commit));
-            form.row('Y', this._numField(vis, 'Chest Bg Y', commit));
+            posSection('Chest Bg X', 'Chest Bg Y');
+            form.section(this._tt('Вид'));
             form.row(this._tt('Картинка'), this._textField(vis, 'Chest Bg', commit));
         } else if (def.id === 'inv.chest') {
-            form.row('X', this._numField(vis, 'Chest X', commit));
-            form.row('Y', this._numField(vis, 'Chest Y', commit));
+            posSection('Chest X', 'Chest Y');
+            zRow('Z Chest');
+            form.section(this._tt('Сетка'));
             form.row(this._tt('Колонок'), this._numField(vis, 'Chest Cols', commit));
             form.row(this._tt('Строк'), this._numField(vis, 'Chest Rows', commit));
-            zRow('Z Chest');
         } else if (def.id === 'inv.hotbar') {
+            form.section(this._tt('Позиция'));
             form.row('Y', this._numField(vis, 'Hotbar Y', commit));
+            form.row(this._tt('Слой'), this._numField(vis, 'Z Hotbar', commit));
+            form.section(this._tt('Вид'));
             form.row(this._tt('Шаг'), this._numField(vis, 'Hotbar Spacing', commit));
             form.row(this._tt('Масштаб'), this._numField(vis, 'Hotbar Scale', commit));
-            form.row(this._tt('Слой (z)'), this._numField(vis, 'Z Hotbar', commit));
         } else if (def.id === 'inv.custom') {
-            form.row('X', this._numField(vis, 'Custom Window X', commit));
-            form.row('Y', this._numField(vis, 'Custom Window Y', commit));
+            posSection('Custom Window X', 'Custom Window Y');
+            form.section(this._tt('Вид'));
             form.row(this._tt('Картинка'), this._textField(vis, 'Custom Window Img', commit));
         }
         form.mount(right);
@@ -1095,7 +1180,7 @@ class DatabaseHUDEditor {
         hint.style.cssText = 'font-size:11px;color:var(--color-text-dim);line-height:1.4;padding:6px 2px;';
         hint.textContent = def.lockX
             ? this._tt('Хотбар центрируется по X автоматически — двигается только по вертикали.')
-            : this._tt('Перетаскивайте окно мышью на шахматке; стрелки — по пикселю (Shift = 10).');
+            : '';
         right.appendChild(hint);
     }
 
@@ -1187,6 +1272,7 @@ class DatabaseHUDEditor {
             this._winCtx.clearRect(0, 0, this._screen.w, this._screen.h);
             this._windowDefsCache = this._windowDefs();
             for (const def of this._windowDefsCache) {
+                if (this._hiddenWindows && this._hiddenWindows.has(def.id)) continue;
                 try { def.draw(this._winCtx); } catch (e) { /* keep editor alive */ }
             }
         }
@@ -1194,7 +1280,11 @@ class DatabaseHUDEditor {
         const ctx = this._ctx;
         ctx.clearRect(0, 0, this._screen.w, this._screen.h);
         ctx.imageSmoothingEnabled = false;
-        for (const [p] of this._sorted()) {
+        let pieceIdx = -1;
+        for (const [p, i] of this._sorted()) {
+            if (this._hiddenPieces && this._hiddenPieces.has(i)) continue;
+            pieceIdx = i;
+            void pieceIdx;
             if (!this._pieceVisible(p)) continue;
             try { this._drawPiece(ctx, p); } catch (e) { /* keep editor alive */ }
         }
@@ -1203,16 +1293,35 @@ class DatabaseHUDEditor {
 
     _drawSelection() {
         const box = this._dom.selBox;
-        if (this._selectedWindow) { box.style.display = 'none'; return; }
-        const p = this._pieces[this._selected];
-        if (!p) { box.style.display = 'none'; return; }
-        const r = this._pieceRect(p);
-        if (!r) { box.style.display = 'none'; return; }
+        const badge = this._dom.badge;
+        let label = null;
+        let r = null;
+        if (this._selectedWindow) {
+            const def = this._windowDefs().find(d => d.id === this._selectedWindow);
+            if (def) { label = def.label; r = def.rect(); }
+        } else if (this._selected >= 0 && this._pieces[this._selected]) {
+            const p = this._pieces[this._selected];
+            label = '#' + (p.id || '?') + ' ' + (p.Image || p['Main Image'] || p.type);
+            r = this._pieceRect(p);
+        }
+        if (!r) {
+            box.style.display = 'none';
+            if (badge) badge.style.display = 'none';
+            return;
+        }
         box.style.display = 'block';
         box.style.left = (r.x - 2) + 'px';
         box.style.top = (r.y - 2) + 'px';
         box.style.width = (r.w + 4) + 'px';
         box.style.height = (r.h + 4) + 'px';
+        if (badge && label) {
+            badge.style.display = 'block';
+            badge.textContent = label;
+            badge.style.left = Math.max(2, r.x - 2) + 'px';
+            badge.style.top = Math.max(2, r.y - 24) + 'px';
+        } else if (badge) {
+            badge.style.display = 'none';
+        }
     }
 
     _pieceRect(p) {
@@ -1348,6 +1457,7 @@ class DatabaseHUDEditor {
         const pickPiece = pt => {
             const sorted = this._sorted().reverse();
             for (const [p, i] of sorted) {
+                if (this._hiddenPieces && this._hiddenPieces.has(i)) continue;
                 if (!this._pieceVisible(p)) continue;
                 const r = this._pieceRect(p);
                 if (r && pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h) return { p, i };
@@ -1358,6 +1468,7 @@ class DatabaseHUDEditor {
             // topmost drawn last -> iterate reversed
             const defs = this._windowDefs().reverse();
             for (const def of defs) {
+                if (this._hiddenWindows && this._hiddenWindows.has(def.id)) continue;
                 const r = def.rect();
                 if (r && pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h) return def;
             }
