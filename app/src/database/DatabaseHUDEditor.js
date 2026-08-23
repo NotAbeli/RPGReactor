@@ -461,17 +461,49 @@ class DatabaseHUDEditor {
             vis['Grid2 Bg'] = vis['Grid2 Bg'] || '';
             this._invVisualCommit(vis); // persist the seeded keys immediately
         }
-        // Row-1 block (hotbar row). S45: the WHOLE background plate is
-        // pinned to these five cells - the rect covers the full image,
-        // only row-0 slots are drawn on top.
+        // S47: detached background plates + z keys seed (stock layout).
+        if (vis['Player Bg X'] === undefined) {
+            vis['Player Bg X'] = String(vn('Player X', 50));
+            vis['Player Bg Y'] = String(vn('Player Y', 50));
+            vis['Chest Bg X'] = String(vn('Chest X', 400));
+            vis['Chest Bg Y'] = String(vn('Chest Y', 50));
+            vis['Z Player'] = '0';
+            vis['Z Chest'] = '0';
+            vis['Z Hotbar'] = '0';
+            vis['Inventory Over HUD'] = 'false';
+            this._invVisualCommit(vis);
+        }
+        // S47: the player background plate is its OWN draggable anchor
+        // (Player Bg X/Y); the slot blocks carry no plate.
+        const playerBgRect = () => {
+            const x = vn('Player Bg X', vn('Player X', 50));
+            const y = vn('Player Bg Y', vn('Player Y', 50));
+            const bg = this._picImg(vis['Player Bg']);
+            const w = (bg && bg.naturalWidth) ? bg.naturalWidth : 250;
+            const h = (bg && bg.naturalHeight) ? bg.naturalHeight : 335;
+            return { x, y, w, h, cols: 0, rows: 0, sp: 0, cell: 0, bgImg: bg, slotImg: null, offX: 0, offY: 0 };
+        };
+        defs.push({
+            id: 'inv.bg',
+            label: this._tt('Инвентарь · фон'),
+            rect: playerBgRect,
+            apply: (x, y) => { vis['Player Bg X'] = String(Math.round(x)); vis['Player Bg Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
+            draw: () => drawGridBox(playerBgRect())
+        });
+        // Row-1 block (hotbar row): BARE slots (the plate is inv.bg now).
         const playerRect = () => {
-            const full = bgRect('Player X', 'Player Y', 'Player Bg',
-                'Player Cols', 'Player Rows', 'Player Spacing', 'Slot Offset X', 'Slot Offset Y', 'Player Slot');
-            return { ...full, rows: 1 };
+            const slot = this._picImg(vis['Player Slot']);
+            const cell = (slot && slot.naturalWidth) ? slot.naturalWidth : slotNatural();
+            const sp = vn('Player Spacing', 40);
+            const cols = vn('Player Cols', 5);
+            const x = vn('Player X', 50), y = vn('Player Y', 50);
+            const gridW = vn('Slot Offset X', 0) + (cols - 1) * sp + cell;
+            const gridH = vn('Slot Offset Y', 0) + cell;
+            return { x, y, w: Math.max(gridW, cell), h: Math.max(gridH, cell), cols, rows: 1, sp, cell, bgImg: null, slotImg: slot, offX: vn('Slot Offset X', 0), offY: vn('Slot Offset Y', 0) };
         };
         defs.push({
             id: 'inv.player',
-            label: this._tt('Инвентарь · ряд 1 (фон)'),
+            label: this._tt('Инвентарь · ряд 1'),
             rect: playerRect,
             apply: (x, y) => { vis['Player X'] = String(Math.round(x)); vis['Player Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
             draw: () => drawGridBox(playerRect())
@@ -502,8 +534,33 @@ class DatabaseHUDEditor {
             apply: (x, y) => { vis['Grid2 X'] = String(Math.round(x)); vis['Grid2 Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
             draw: () => drawGridBox(grid2Rect())
         });
-        const chestRect = () => bgRect('Chest X', 'Chest Y', 'Chest Bg',
-            'Chest Cols', 'Chest Rows', 'Chest Spacing', 'Slot Offset X', 'Slot Offset Y', 'Chest Slot');
+        // S47: chest background plate is its own anchor (Chest Bg X/Y).
+        const chestBgRect = () => {
+            const x = vn('Chest Bg X', vn('Chest X', 400));
+            const y = vn('Chest Bg Y', vn('Chest Y', 50));
+            const bg = this._picImg(vis['Chest Bg']);
+            const w = (bg && bg.naturalWidth) ? bg.naturalWidth : 250;
+            const h = (bg && bg.naturalHeight) ? bg.naturalHeight : 335;
+            return { x, y, w, h, cols: 0, rows: 0, sp: 0, cell: 0, bgImg: bg, slotImg: null, offX: 0, offY: 0 };
+        };
+        defs.push({
+            id: 'inv.chestBg',
+            label: this._tt('Сундук · фон'),
+            rect: chestBgRect,
+            apply: (x, y) => { vis['Chest Bg X'] = String(Math.round(x)); vis['Chest Bg Y'] = String(Math.round(y)); this._invVisualCommit(vis); },
+            draw: () => drawGridBox(chestBgRect())
+        });
+        // Chest slots: bare grid (the plate is inv.chestBg).
+        const chestRect = () => {
+            const slot = this._picImg(vis['Chest Slot'] || vis['Player Slot']);
+            const cell = (slot && slot.naturalWidth) ? slot.naturalWidth : slotNatural();
+            const sp = vn('Chest Spacing', 40);
+            const cols = vn('Chest Cols', 5), rows = vn('Chest Rows', 3);
+            const x = vn('Chest X', 400), y = vn('Chest Y', 50);
+            const gridW = vn('Slot Offset X', 0) + (cols - 1) * sp + cell;
+            const gridH = vn('Slot Offset Y', 0) + (rows - 1) * sp + cell;
+            return { x, y, w: Math.max(gridW, cell), h: Math.max(gridH, cell), cols, rows, sp, cell, bgImg: null, slotImg: slot, offX: vn('Slot Offset X', 0), offY: vn('Slot Offset Y', 0) };
+        };
         defs.push({
             id: 'inv.chest',
             label: this._tt('Инвентарь · сундук'),
@@ -976,62 +1033,116 @@ class DatabaseHUDEditor {
     _renderWindowInspector(right) {
         const def = this._windowDefs().find(d => d.id === this._selectedWindow);
         if (!def) { this._selectedWindow = null; this._refreshInspector(); return; }
-        const form = new InspectorForm();
+        // S47: tight layout - the 340px panel cannot fit the wide default grid.
+        const form = new InspectorForm({ tight: true });
         const r = def.rect();
         form.head(def.label, 'x ' + Math.round(r.x) + ' · y ' + Math.round(r.y));
         form.section(this._tt('Окно'));
         const rerender = () => { this._render(); this._refreshInspector(); };
+        const vis = this._invVisual();
+        const commit = () => { this._invVisualCommit(vis); rerender(); };
+        const zRow = (key) => form.row(this._tt('Слой (z)'), this._numField(vis, key, commit));
         if (def.id === 'craft.slots') {
             const craft = this._craft();
-            form.row(this._tt('Slot 1 X'), this._numField(craft, 'Slot 1 X', rerender));
-            form.row(this._tt('Slot 1 Y'), this._numField(craft, 'Slot 1 Y', rerender));
-            form.row(this._tt('Шаг слотов'), this._numField(craft, 'Slot Spacing', rerender));
-            form.row(this._tt('Размер слота'), this._numField(craft, 'Slot Size', rerender));
+            const ccommit = rerender;
+            form.row('Slot 1 X', this._numField(craft, 'Slot 1 X', ccommit));
+            form.row('Slot 1 Y', this._numField(craft, 'Slot 1 Y', ccommit));
+            form.row(this._tt('Шаг'), this._numField(craft, 'Slot Spacing', ccommit));
+            form.row(this._tt('Размер'), this._numField(craft, 'Slot Size', ccommit));
+        } else if (def.id === 'inv.bg') {
+            form.row('X', this._numField(vis, 'Player Bg X', commit));
+            form.row('Y', this._numField(vis, 'Player Bg Y', commit));
+            form.row(this._tt('Картинка'), this._textField(vis, 'Player Bg', commit));
+            this._appearanceRows(form, vis, commit, true);
         } else if (def.id === 'inv.grid2') {
-            const vis = this._invVisual();
-            const commit = () => { this._invVisualCommit(vis); rerender(); };
-            form.row(this._tt('X'), this._numField(vis, 'Grid2 X', commit));
-            form.row(this._tt('Y'), this._numField(vis, 'Grid2 Y', commit));
-            form.row(this._tt('Фон (имя картинки)'), this._textField(vis, 'Grid2 Bg', commit));
-            form.row(this._tt('Колонок'), this._numField(vis, 'Player Cols', commit));
-            form.row(this._tt('Строк всего'), this._numField(vis, 'Player Rows', commit));
-            form.row(this._tt('Шаг сетки'), this._numField(vis, 'Player Spacing', commit));
-        } else if (def.id === 'inv.player') {
-            const vis = this._invVisual();
-            const commit = () => { this._invVisualCommit(vis); rerender(); };
-            form.row(this._tt('X'), this._numField(vis, 'Player X', commit));
-            form.row(this._tt('Y'), this._numField(vis, 'Player Y', commit));
+            form.row('X', this._numField(vis, 'Grid2 X', commit));
+            form.row('Y', this._numField(vis, 'Grid2 Y', commit));
+            form.row(this._tt('Фон'), this._textField(vis, 'Grid2 Bg', commit));
             form.row(this._tt('Колонок'), this._numField(vis, 'Player Cols', commit));
             form.row(this._tt('Строк'), this._numField(vis, 'Player Rows', commit));
-            form.row(this._tt('Шаг сетки'), this._numField(vis, 'Player Spacing', commit));
-            form.row(this._tt('Отступ слотов X'), this._numField(vis, 'Slot Offset X', commit));
-            form.row(this._tt('Отступ слотов Y'), this._numField(vis, 'Slot Offset Y', commit));
+            form.row(this._tt('Шаг'), this._numField(vis, 'Player Spacing', commit));
+        } else if (def.id === 'inv.player') {
+            form.row('X', this._numField(vis, 'Player X', commit));
+            form.row('Y', this._numField(vis, 'Player Y', commit));
+            form.row(this._tt('Колонок'), this._numField(vis, 'Player Cols', commit));
+            form.row(this._tt('Строк'), this._numField(vis, 'Player Rows', commit));
+            form.row(this._tt('Шаг'), this._numField(vis, 'Player Spacing', commit));
+            form.row(this._tt('Отступ X'), this._numField(vis, 'Slot Offset X', commit));
+            form.row(this._tt('Отступ Y'), this._numField(vis, 'Slot Offset Y', commit));
+            zRow('Z Player');
+        } else if (def.id === 'inv.chestBg') {
+            form.row('X', this._numField(vis, 'Chest Bg X', commit));
+            form.row('Y', this._numField(vis, 'Chest Bg Y', commit));
+            form.row(this._tt('Картинка'), this._textField(vis, 'Chest Bg', commit));
         } else if (def.id === 'inv.chest') {
-            const vis = this._invVisual();
-            const commit = () => { this._invVisualCommit(vis); rerender(); };
-            form.row(this._tt('X'), this._numField(vis, 'Chest X', commit));
-            form.row(this._tt('Y'), this._numField(vis, 'Chest Y', commit));
+            form.row('X', this._numField(vis, 'Chest X', commit));
+            form.row('Y', this._numField(vis, 'Chest Y', commit));
             form.row(this._tt('Колонок'), this._numField(vis, 'Chest Cols', commit));
             form.row(this._tt('Строк'), this._numField(vis, 'Chest Rows', commit));
+            zRow('Z Chest');
         } else if (def.id === 'inv.hotbar') {
-            const vis = this._invVisual();
-            const commit = () => { this._invVisualCommit(vis); rerender(); };
-            form.row(this._tt('Y'), this._numField(vis, 'Hotbar Y', commit));
+            form.row('Y', this._numField(vis, 'Hotbar Y', commit));
             form.row(this._tt('Шаг'), this._numField(vis, 'Hotbar Spacing', commit));
             form.row(this._tt('Масштаб'), this._numField(vis, 'Hotbar Scale', commit));
+            form.row(this._tt('Слой (z)'), this._numField(vis, 'Z Hotbar', commit));
         } else if (def.id === 'inv.custom') {
-            const vis = this._invVisual();
-            const commit = () => { this._invVisualCommit(vis); rerender(); };
-            form.row(this._tt('X'), this._numField(vis, 'Custom Window X', commit));
-            form.row(this._tt('Y'), this._numField(vis, 'Custom Window Y', commit));
+            form.row('X', this._numField(vis, 'Custom Window X', commit));
+            form.row('Y', this._numField(vis, 'Custom Window Y', commit));
+            form.row(this._tt('Картинка'), this._textField(vis, 'Custom Window Img', commit));
         }
         form.mount(right);
         const hint = document.createElement('div');
         hint.style.cssText = 'font-size:11px;color:var(--color-text-dim);line-height:1.4;padding:6px 2px;';
         hint.textContent = def.lockX
             ? this._tt('Хотбар центрируется по X автоматически — двигается только по вертикали.')
-            : this._tt('Перетаскивайте окно мышью на шахматке.');
+            : this._tt('Перетаскивайте окно мышью на шахматке; стрелки — по пикселю (Shift = 10).');
         right.appendChild(hint);
+    }
+
+    /** S47: shared inventory appearance controls - fade speed select+number,
+     *  dimmer opacity, hover opacity, over-HUD toggle. */
+    _appearanceRows(form, vis, commit, withZ) {
+        void withZ;
+        form.section(this._tt('Появление'));
+        const fadeWrap = document.createElement('div');
+        fadeWrap.style.cssText = 'display:flex;gap:6px;align-items:center;flex:1;min-width:0;';
+        const sel = document.createElement('select');
+        sel.className = 'agonia-select';
+        sel.style.flex = '1';
+        const presets = [[255, 'Мгновенно'], [60, 'Быстро'], [35, 'Средне'], [15, 'Медленно']];
+        for (const [v, l] of presets) {
+            const o = document.createElement('option');
+            o.value = String(v);
+            o.textContent = this._tt(l);
+            sel.appendChild(o);
+        }
+        const cur = Number(vis['Fade Speed']);
+        sel.value = presets.some(([v]) => v === cur) ? String(cur) : String(35);
+        const num = this._numField(vis, 'Fade Speed', commit);
+        num.style.flex = 'none';
+        num.style.width = '64px';
+        sel.addEventListener('change', () => {
+            vis['Fade Speed'] = sel.value;
+            num.value = sel.value;
+            commit();
+        });
+        fadeWrap.appendChild(sel);
+        fadeWrap.appendChild(num);
+        form.row(this._tt('Скорость'), fadeWrap);
+        form.row(this._tt('Затемнение'), this._numField(vis, 'Dimmer Opacity', commit));
+        form.row(this._tt('Наведение'), this._numField(vis, 'Hover Opacity', commit));
+        const overWrap = document.createElement('div');
+        overWrap.style.cssText = 'display:flex;align-items:center;gap:8px;';
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.style.cursor = 'pointer';
+        box.checked = String(vis['Inventory Over HUD']) === 'true';
+        box.addEventListener('change', () => {
+            vis['Inventory Over HUD'] = box.checked ? 'true' : 'false';
+            commit();
+        });
+        overWrap.appendChild(box);
+        form.row(this._tt('Инвентарь над HUD'), overWrap);
     }
 
     _numField(obj, key, commit) {

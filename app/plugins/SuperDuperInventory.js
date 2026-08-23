@@ -489,6 +489,22 @@
             (Visuals['Player Y'] ? Number(Visuals['Player Y']) : pctY(7)) +
             Number(Visuals['Player Spacing'] || 40),
         g2Bg: Visuals['Grid2 Bg'] || '',
+
+        // S47: detached background plates (defaults keep the stock layout).
+        pBgX: Visuals['Player Bg X'] ? Number(Visuals['Player Bg X']) :
+            (Visuals['Player X'] ? Number(Visuals['Player X']) : pctX(4)),
+        pBgY: Visuals['Player Bg Y'] ? Number(Visuals['Player Bg Y']) :
+            (Visuals['Player Y'] ? Number(Visuals['Player Y']) : pctY(7)),
+        cBgX: Visuals['Chest Bg X'] ? Number(Visuals['Chest Bg X']) :
+            (Visuals['Chest X'] ? Number(Visuals['Chest X']) : pctX(31)),
+        cBgY: Visuals['Chest Bg Y'] ? Number(Visuals['Chest Bg Y']) :
+            (Visuals['Chest Y'] ? Number(Visuals['Chest Y']) : pctY(7)),
+
+        // S47: z-priorities (higher = on top; 0 keeps the stock order).
+        zPlayer: Number(Visuals['Z Player'] || 0),
+        zChest: Number(Visuals['Z Chest'] || 0),
+        zHotbar: Number(Visuals['Z Hotbar'] || 0),
+        overHud: String(Visuals['Inventory Over HUD']) === 'true',
         
         slotOffX: Number(Visuals['Slot Offset X'] || 0),
         slotOffY: Number(Visuals['Slot Offset Y'] || 0),
@@ -1499,13 +1515,14 @@
         if (this._layout.bg) {
             this._bgSprite.bitmap = ImageManager.loadPicture(this._layout.bg);
         }
-        this._bgSprite.x = this._layout.x;
-        this._bgSprite.y = this._layout.y;
+        // S47: the plate is DETACHED from the slots - it rides its own
+        // Bg X/Y keys (defaults = the slot block origin, stock layout).
+        this._bgSprite.x = (this._type === 'player') ? Config.pBgX : Config.cBgX;
+        this._bgSprite.y = (this._type === 'player') ? Config.pBgY : Config.cBgY;
         this.addChild(this._bgSprite);
 
-        // S45: the WHOLE player background stays pinned to row 1 (the
-        // hotbar row block); rows 2..4 render bare slots unless a custom
-        // Grid2 Bg plate is set (drawn whole at Grid2 X/Y).
+        // S45/S47: the whole player background stays pinned to the Bg keys;
+        // rows 2..4 render bare slots unless a custom Grid2 Bg plate is set.
         if (this._type === 'player' && Config.g2Bg) {
             this._bg2Sprite = new Sprite(ImageManager.loadPicture(Config.g2Bg));
             this._bg2Sprite.x = Config.g2X;
@@ -1939,6 +1956,8 @@
         _Scene_Map_createMapNameWindow.call(this);
         this._sdiHotbar = new Sprite_SDI_Hotbar();
         this.addChild(this._sdiHotbar);
+        // S47: reapply z-order once the hotbar exists too.
+        if (this._sdiApplyZOrder) this._sdiApplyZOrder();
     };
 
     // FIX: Приподнимаем слой затемнения, если он есть, как это делает SRD_HUDMaker
@@ -2002,6 +2021,33 @@
         this._sdiClickConsumed = false;
         this._sdiDragging = false; 
         this._sdiClickStart = 0;
+
+        // S47: z-priorities - restack the inventory sprites by the Z keys
+        // (0 keeps the stock order; higher = on top). Stable: equal keys
+        // keep the creation order, the dimmer always stays below.
+        this._sdiApplyZOrder();
+    };
+
+    Scene_Map.prototype._sdiApplyZOrder = function() {
+        if (!this._sdiDimmer) return;
+        var entries = [];
+        if (this._sdiPlayer) entries.push([this._sdiPlayer, Config.zPlayer]);
+        if (this._sdiChest) entries.push([this._sdiChest, Config.zChest]);
+        if (this._sdiHotbar) entries.push([this._sdiHotbar, Config.zHotbar]);
+        entries.sort(function(a, b) { return a[1] - b[1]; }); // stable in V8
+        var dimmerIdx = this.children.indexOf(this._sdiDimmer);
+        for (var i = 0; i < entries.length; i++) {
+            var child = entries[i][0];
+            var at = Math.min(dimmerIdx + 1 + i, this.children.length - 1);
+            this.setChildIndex(child, at);
+        }
+        // S47: optionally lift the whole inventory block above HUDMaker's HUD.
+        if (Config.overHud && this._hud) {
+            var hudIdx = this.children.indexOf(this._hud);
+            if (hudIdx >= 0 && this._sdiPlayer && hudIdx > this.children.indexOf(this._sdiPlayer)) {
+                this.setChildIndex(this._hud, this.children.indexOf(this._sdiPlayer));
+            }
+        }
     };
 
     var _Scene_Map_update = Scene_Map.prototype.update;

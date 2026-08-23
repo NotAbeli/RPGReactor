@@ -998,6 +998,13 @@
 .agn-insp-section { display: flex; align-items: center; gap: 10px; margin: 12px 0 4px; user-select: none; }
 .agn-insp-row { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 12px; align-items: center; padding: 6px 2px; border-bottom: 1px solid var(--color-border-subtle, rgba(128,128,128,.15)); }
 .agn-insp-row:last-child { border-bottom: none; }
+/* S47: compact inspector variant for narrow panels (HUD editor's 340px
+   right column) - short labels, 64px numbers, no overflow. */
+.agn-insp--tight .agn-insp-row { grid-template-columns: 112px minmax(0, 1fr); gap: 8px; }
+.agn-insp--tight .agn-insp-label { font-size: 12px; }
+.agn-insp--tight .agn-insp-control .agonia-input { flex: 1 1 auto; min-width: 0; }
+.agn-insp--tight .agn-insp-control .agonia-input[type=number] { width: 64px; flex: none; }
+.agn-insp--tight .agn-insp-control .agonia-select { flex: 1 1 auto; min-width: 0; }
 .agn-insp-label { font-size: 13px; color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agn-insp-label small { display: block; font-size: 10px; color: var(--color-text-dim); white-space: normal; line-height: 1.35; margin-top: 1px; }
 .agn-insp-control { min-width: 0; display: flex; align-items: center; gap: 10px; }

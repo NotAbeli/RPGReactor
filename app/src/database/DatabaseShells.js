@@ -502,9 +502,10 @@ class SliderNumber {
  *   form.mount(container);
  */
 class InspectorForm {
-    constructor() {
+    /** opts.tight: compact rows for narrow panels (S47). */
+    constructor(opts) {
         this.root = document.createElement('div');
-        this.root.className = 'agn-insp';
+        this.root.className = 'agn-insp' + (opts && opts.tight ? ' agn-insp--tight' : '');
         this._pending = []; // S28: rows buffered per section, flushed 2-col
     }
     _flush() {
