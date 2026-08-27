@@ -617,6 +617,13 @@ class EventManager {
         };
 
         // Menu items
+        // P2: «Поставить врага» — шаблоны карточек из БД (Бой → ИИ Врагов)
+        const enemyTemplates = this.getEnemyTemplates();
+        const enemyItems = enemyTemplates.map(t => ({
+            label: String(t.match || '').replace(/[<>]/g, '') + ' · HP ' + (t.hp || '?'),
+            action: () => this.createEnemyStub(tileX, tileY, t)
+        }));
+
         const menuItems = [
             { label: this._t('eventCtx.newEvent'), action: createEventAction, enabled: !eventAtPos },
             { label: this._t('eventCtx.editEvent'), action: () => this.editEvent(eventAtPos), enabled: !!eventAtPos },
@@ -629,6 +636,7 @@ class EventManager {
             { label: this._t('eventCtx.findEvent'), action: () => this.showFindDialog(), enabled: true },
             { label: this._t('eventCtx.findNext'), action: () => this.findNext(), enabled: this.currentSearchResults.length > 0 },
             { label: this._t('eventCtx.findPrev'), action: () => this.findPrevious(), enabled: this.currentSearchResults.length > 0 },
+            ...(enemyItems.length ? [{ separator: true }, { label: this._t('eventCtx.placeEnemy'), submenu: enemyItems }] : []),
             { separator: true },
             { label: this._t('eventCtx.setStart'), submenu: [
                 { label: this._t('eventCtx.player'), action: () => this.setStartingPosition(tileX, tileY, 'player') },
@@ -1286,6 +1294,82 @@ class EventManager {
         // Show edit dialog
         this.editEvent(newEvent, { isNew: true, map: this.currentMap });
         return newEvent;
+    }
+
+    // =====================================================================
+    // P2: Шаблоны врагов — заглушки из карточек БД (Бой → ИИ Врагов).
+    // Рантайм (SuperDuperEnemies) разворачивает заглушку в полный автомат
+    // на загрузке карты; редактору достаточно спрайта для отображения.
+    // =====================================================================
+
+    getEnemyTemplates() {
+        try {
+            const agonia = this.databaseManager && this.databaseManager.data && this.databaseManager.data.agonia;
+            const sec = agonia && agonia.enemies;
+            if (!sec || !sec['EnemyDatabase']) return [];
+            return JSON.parse(sec['EnemyDatabase'])
+                .map(e => { try { return typeof e === 'string' ? JSON.parse(e) : e; } catch (err) { return null; } })
+                .filter(t => t && String(t.template) === 'true' && t.match);
+        } catch (e) {
+            return [];
+        }
+    }
+
+    createEnemyStub(x, y, tpl) {
+        const tt = (text) => (typeof window !== 'undefined' && window.I18n) ? window.I18n.tText(text) : text;
+        if (!this.currentMap) return null;
+        if (x < 0 || x >= this.currentMap.width || y < 0 || y >= this.currentMap.height) return null;
+        if (this.getEventAt(x, y)) {
+            alert(tt('There is already an event at this position.'));
+            return null;
+        }
+
+        this.saveState();
+        const nextId = this.getNextEventId();
+        const tag = String(tpl.match || '').replace(/[<>]/g, '') || 'enemy';
+        const collider = tpl.collider || "<circle cx='0.5' cy='0.7' r='0.25' />";
+        const ev = {
+            id: nextId,
+            name: 'ENEMY ' + tag,
+            note: String(tpl.match || ''),
+            pages: [{
+                conditions: {
+                    actorId: 1, actorValid: false, itemId: 1, itemValid: false,
+                    selfSwitchCh: 'A', selfSwitchValid: false,
+                    switch1Id: 1, switch1Valid: false, switch2Id: 1, switch2Valid: false,
+                    variableId: 1, variableValid: false, variableValue: 0
+                },
+                directionFix: false,
+                image: {
+                    tileId: 0,
+                    characterName: tpl.spriteName || 'Enemy 1',
+                    direction: 2,
+                    pattern: 1,
+                    characterIndex: Number(tpl.spriteIndex) || 0
+                },
+                moveFrequency: 4,
+                moveRoute: { list: [{ code: 0, indent: null, parameters: [] }], repeat: true, skippable: false, wait: false },
+                moveSpeed: 3,
+                moveType: 3,
+                priorityType: 1,
+                stepAnime: false,
+                through: false,
+                trigger: 0,
+                walkAnime: true,
+                list: [
+                    { code: 108, indent: 0, parameters: ['<collider>'] },
+                    { code: 408, indent: 0, parameters: ['interaction: ' + collider] },
+                    { code: 408, indent: 0, parameters: ['</collider> '] },
+                    { code: 0, indent: 0, parameters: [] }
+                ]
+            }],
+            x: x,
+            y: y
+        };
+        this.currentMap.events[nextId] = ev;
+        this.renderEvents();
+        console.log(`Enemy stub '${tag}' placed at (${x}, ${y}) — runtime expands it from the DB card`);
+        return ev;
     }
 
     // Setup event editor modal

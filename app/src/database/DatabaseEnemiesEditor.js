@@ -50,7 +50,14 @@ class DatabaseEnemiesEditor {
             attackRadius: 5, calmRadius: 8, calmTime: 180,
             hearingRadius: 7, hearingThreshold: 60,
             panicContactTime: 120, panicTotalTime: 600,
-            customRules: '[]'
+            customRules: '[]',
+            // P2: шаблон врага — карточка разворачивается в 17-страничный автомат
+            template: 'true', spriteName: 'Enemy 1', spriteIndex: 0,
+            collider: "<circle cx='0.5' cy='0.7' r='0.25' />",
+            tracerId: 1, meleeId: 2, dashName: 'РывокВрага',
+            chaseThreshold: 2, cowerThreshold: 3,
+            damageMeleeVar: 2, damageGunVar: 37, damageMelee: -100, damageFists: -20,
+            damageSE: 'Damage2', sneakKill: 'true'
         };
     }
 
@@ -74,7 +81,7 @@ class DatabaseEnemiesEditor {
             entries: () => K.decodeCollection(enemies['EnemyDatabase']),
             persist: list => { enemies['EnemyDatabase'] = K.encodeCollection(list); },
             blank: () => K.blankEnemy(),
-            label: (r, i) => '#' + (i + 1) + ' ' + (r.match || '—') + ' · HP ' + (r.hp || '?'),
+            label: (r, i) => '#' + (i + 1) + ' ' + (String(r.template) === 'true' ? '🏷 ' : '') + (r.match || '—') + ' · HP ' + (r.hp || '?'),
             search: r => [r.match, r.id, r.flag].join(' '),
             renderDetail: (wrapper, entry, idx, commit) =>
                 this._renderEnemyInspector(wrapper, entry, idx, { changed: commit }),
@@ -118,8 +125,39 @@ class DatabaseEnemiesEditor {
         form.fields([
             { key: 'match', label: 'match-тег', type: 'text', hint: 'тег в Note события — события с ним получают поведение' },
             { key: 'hp', label: 'HP', type: 'slider', min: 1, max: 999, step: 1 },
-            { key: 'id', label: 'ID', type: 'number' }
+            { key: 'id', label: 'ID', type: 'number' },
+            { key: 'template', label: 'Шаблон врага', type: 'check', hint: 'карточка разворачивается в полный автомат (17 страниц) на карте' }
         ], entry, { commit: () => api.changed() });
+
+        // P2: шаблон — внешний вид, атаки, таблица урона
+        const isTpl = String(entry.template) === 'true';
+        if (isTpl) {
+            form.section(this._tt('Внешний вид'));
+            form.fields([
+                { key: 'spriteName', label: 'Спрайт (файл)', type: 'text', hint: 'img/characters — показывается на карте и в редакторе' },
+                { key: 'spriteIndex', label: 'Индекс персонажа', type: 'number', min: 0, max: 7 },
+                { key: 'collider', label: 'Коллайдер (XML)', type: 'text', hint: "например <circle cx='0.5' cy='0.7' r='0.25' />" }
+            ], entry, { commit: () => api.changed() });
+
+            form.section(this._tt('Атаки'));
+            form.fields([
+                { key: 'tracerId', label: 'Трассер №', type: 'number', min: 0, hint: 'карточка из Бой → Трассеры; 0 = без выстрела' },
+                { key: 'meleeId', label: 'Ближний бой №', type: 'number', min: 0, hint: 'карточка из Бой → Ближний бой' },
+                { key: 'dashName', label: 'Имя рывка', type: 'text', hint: 'карточка из Бой → Рывки' },
+                { key: 'chaseThreshold', label: 'Погоня от (врагов в бою)', type: 'number', min: 1, hint: 'счётчик боя — переменная «Счётчик Боя»' },
+                { key: 'cowerThreshold', label: 'Приседание от (врагов в бою)', type: 'number', min: 1 }
+            ], entry, { commit: () => api.changed() });
+
+            form.section(this._tt('Урон по врагу'));
+            form.fields([
+                { key: 'damageMeleeVar', label: 'Оружие ближнее (var ГГ)', type: 'number', hint: 'значение переменной облика/оружия ГГ (лом = 2)' },
+                { key: 'damageGunVar', label: 'Оружие дальнее (var ГГ)', type: 'number', hint: 'ствол = 37' },
+                { key: 'damageMelee', label: 'Урон оружием', type: 'number', hint: '−100 = почти насмерть' },
+                { key: 'damageFists', label: 'Урон без оружия', type: 'number', hint: '−20 + рана' },
+                { key: 'damageSE', label: 'Звук урона', type: 'text' },
+                { key: 'sneakKill', label: 'Скрытное убийство', type: 'check', hint: 'вне боя оружие ближнего боя убивает насмерть' }
+            ], entry, { commit: () => api.changed() });
+        }
 
         form.section(this._tt('Сенсоры (тайлы)'));
         form.fields([

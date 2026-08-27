@@ -525,11 +525,313 @@
   }
 
   // ===========================================================================
+  // P2: ШАБЛОНЫ ВРАГОВ — компиляция 17-страничного скелета из карточки БД
+  // ===========================================================================
+  // Карточка EnemyDatabase с template='true' разворачивается в полный
+  // поведенческий автомат (скелет «бибы» с карты «тест боевки», ивент 12):
+  // покой -> тревога -> выстрел/бой -> паника/погоня -> бегство -> атака
+  // рывком -> раны -> смерть. На карте лежит заглушка: событие с note-тегом
+  // карточки и одной страницей; страницы генерируются на setup карты
+  // (идемпотентно: $dataMap каждый раз перечитывается с диска, скелет
+  // пересобирается с чистого листа; порядок страниц фиксирован, поэтому
+  // селф-свитчи A/B/C/D в сейвах выживают).
+
+  function _sdeNum(v, dflt) { var n = Number(v); return isFinite(n) ? n : dflt; }
+  function _sdeTplString(v, dflt) { return (v === undefined || v === null || v === '') ? dflt : String(v); }
+
+  function _sdeCmd(code, indent, parameters) {
+      return { code: code, indent: indent, parameters: parameters || [] };
+  }
+  function _sdeCond(selfCh, selfValid) {
+      return { actorId: 1, actorValid: false, itemId: 1, itemValid: false,
+          selfSwitchCh: selfCh, selfSwitchValid: selfValid,
+          switch1Id: 1, switch1Valid: false, switch2Id: 1, switch2Valid: false,
+          variableId: 1, variableValid: false, variableValue: 0 };
+  }
+  function _sdeImg(tpl, empty) {
+      if (empty) return { characterIndex: 0, characterName: '', direction: 2, pattern: 0, tileId: 0 };
+      return { tileId: 0, characterName: _sdeTplString(tpl.spriteName, 'Enemy 1'),
+          direction: 2, pattern: 1, characterIndex: _sdeNum(tpl.spriteIndex, 0) };
+  }
+  function _sdeRoute(items) {
+      return { list: items, repeat: true, skippable: false, wait: false };
+  }
+  function _sdeMr(code, params, indent) {
+      var o = { code: code, indent: (indent === undefined ? null : indent) };
+      if (params) o.parameters = params;
+      return o;
+  }
+  function _sdeMrEnd() { return { code: 0, parameters: [] }; }
+  function _sdePage(o) {
+      return {
+          conditions: o.cond, directionFix: !!o.dirFix, image: o.image,
+          list: o.list, moveFrequency: o.freq, moveRoute: _sdeRoute(o.route || [{ code: 0, parameters: [] }]),
+          moveSpeed: o.speed, moveType: o.moveType, priorityType: o.prio,
+          stepAnime: false, through: false, trigger: o.trigger, walkAnime: true
+      };
+  }
+  function _sdeColliderComments(tpl) {
+      var inner = _sdeTplString(tpl.collider, "<circle cx='0.5' cy='0.7' r='0.25' />");
+      return [
+          _sdeCmd(108, 0, ['<collider>']),
+          _sdeCmd(408, 0, ['interaction: ' + inner]),
+          _sdeCmd(408, 0, ['</collider> '])
+      ];
+  }
+  function _sdeTagCmd(tag) { return _sdeCmd(108, 0, [tag]); }
+  function _sdeEnd(indent) { return _sdeCmd(0, indent || 0, []); }
+
+  /**
+   * Скелет бибы: 17 страниц. Параметры шаблона подставляются в спрайт,
+   * коллайдер, атаки (трассер/меле/рывок), пороги погони/приседания и
+   * таблицу урона (стр. 14).
+   */
+  function sdeBuildEnemyPages(tpl) {
+      var tracer = _sdeNum(tpl.tracerId, 1);
+      var melee = _sdeNum(tpl.meleeId, 2);
+      var dashName = _sdeTplString(tpl.dashName, 'РывокВрага');
+      var chase = _sdeNum(tpl.chaseThreshold, 2);
+      var cower = _sdeNum(tpl.cowerThreshold, 3);
+      var dmgMeleeVar = _sdeNum(tpl.damageMeleeVar, 2);
+      var dmgGunVar = _sdeNum(tpl.damageGunVar, 37);
+      var dmgMelee = _sdeNum(tpl.damageMelee, -100);
+      var dmgFists = _sdeNum(tpl.damageFists, -20);
+      var seName = _sdeTplString(tpl.damageSE, 'Damage2');
+      var sneak = _sdeTplString(tpl.sneakKill, 'true') === 'true' ? 0 : 1;
+      var se = function () { return _sdeCmd(250, 2, [{ name: seName, volume: 90, pitch: 100, pan: 0 }]); };
+
+      var chaseRoute = function () {
+          // 205: шаг вперёд + погоня за игроком (wait)
+          return [_sdeCmd(205, 1, [0, {
+              list: [{ code: 36, indent: null }, { code: 45, parameters: ['this.smartMoveToPlayer()'], indent: null }, { code: 0 }],
+              repeat: false, skippable: false, wait: true
+          }]), _sdeCmd(505, 1, [{ code: 36, indent: null }]),
+          _sdeCmd(505, 1, [{ code: 45, parameters: ['this.smartMoveToPlayer()'], indent: null }]),
+          _sdeEnd(1)];
+      };
+
+      var pages = [];
+
+      // P0: покой — стелс-детектор игрока в маршруте
+      pages.push(_sdePage({ cond: _sdeCond('A', false), image: _sdeImg(tpl), freq: 4,
+          speed: 3, moveType: 3, prio: 1, trigger: 0,
+          list: [_sdeTagCmd('<projEffect>')].concat(_sdeColliderComments(tpl), [_sdeEnd()]),
+          route: [_sdeMr(45, ["this.YurStealth(8, 'A')"]), _sdeMrEnd()] }));
+
+      // P1: тревога (услышал шум)
+      pages.push(_sdePage({ cond: _sdeCond('A', false), image: _sdeImg(tpl), freq: 4,
+          speed: 3, moveType: 3, prio: 1, trigger: 0,
+          list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Warning>')]
+              .concat(_sdeColliderComments(tpl), [_sdeEnd()]),
+          route: [_sdeMr(9), _sdeMr(45, ["this.YurStealth(8, 'A')"]), _sdeMrEnd()] }));
+
+      // P2: (A) выстрел трассером, лач A
+      pages.push(_sdePage({ cond: _sdeCond('A', true), image: _sdeImg(tpl), freq: 5,
+          speed: 3, moveType: 0, prio: 1, trigger: 4,
+          list: [_sdeTagCmd('<projEffect>')].concat(_sdeColliderComments(tpl), [
+              _sdeCmd(355, 0, ['this.performTracer(' + tracer + ');']),
+              _sdeCmd(123, 0, ['A', 1]), _sdeEnd()]),
+          route: [_sdeMr(15, [40]), _sdeMr(9), _sdeMrEnd()] }));
+
+      // P3: (C) принудительный бой (без projEffect — как в оригинале)
+      pages.push(_sdePage({ cond: _sdeCond('C', true), image: _sdeImg(tpl), freq: 1,
+          speed: 3, moveType: 3, prio: 1, trigger: 4,
+          list: _sdeColliderComments(tpl).concat([_sdeCmd(721, 0, ['combat', 1]), _sdeEnd()]),
+          route: [_sdeMr(25), _sdeMr(15, [60]), _sdeMrEnd()] }));
+
+      // P4: <Shot> — по нему выстрелили
+      pages.push(_sdePage({ cond: _sdeCond('A', false), image: _sdeImg(tpl), freq: 5,
+          speed: 4, moveType: 0, prio: 1, trigger: 4,
+          list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Shot>')]
+              .concat(_sdeColliderComments(tpl), [
+                  _sdeCmd(721, 0, ['loch', 0]), _sdeCmd(721, 0, ['combat', 1]), _sdeCmd(721, 0, ['shot', 0]), _sdeEnd()]),
+          route: [_sdeMr(45, ['this.smartMoveToPlayer()']), _sdeMrEnd()] }));
+
+      // P5: <Combat> — вход в бой: лач C + заморозка
+      pages.push(_sdePage({ cond: _sdeCond('A', false), image: _sdeImg(tpl), freq: 5,
+          speed: 4, moveType: 3, prio: 1, trigger: 4,
+          list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Combat>')]
+              .concat(_sdeColliderComments(tpl), [
+                  _sdeCmd(123, 0, ['C', 1]), _sdeCmd(112, 0, []), _sdeCmd(230, 1, [999]),
+                  _sdeEnd(1), _sdeCmd(413, 0, []), _sdeEnd()]),
+          route: [_sdeMr(45, ['this.smartMoveToPlayer()']), _sdeMrEnd()] }));
+
+      // P6: <Panic>+<Combat>+<Gun>+<!Loch> — паника: погоня при >= chase
+      pages.push(_sdePage({ cond: _sdeCond('A', false), dirFix: true, image: _sdeImg(tpl), freq: 5,
+          speed: 4, moveType: 0, prio: 1, trigger: 4,
+          list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Condition: AND>'), _sdeTagCmd('<Panic>'),
+              _sdeTagCmd('<Combat>'), _sdeTagCmd('<Gun>'), _sdeTagCmd('<!Loch>')]
+              .concat(_sdeColliderComments(tpl), [
+                  _sdeCmd(111, 0, [1, 59, 0, chase, 1])], chaseRoute(), [
+                  _sdeCmd(412, 0, []), _sdeEnd()]),
+          route: [_sdeMr(45, ['this.smartMoveToPlayer()']), _sdeMrEnd()] }));
+
+      // P7: <Contact>+<Scope>+<Combat>+<Gun>+<!Loch> — видит прицел: паника,
+      // погоня при >= cower, иначе прячется
+      pages.push(_sdePage({ cond: _sdeCond('A', false), dirFix: true, image: _sdeImg(tpl), freq: 5,
+          speed: 4, moveType: 0, prio: 1, trigger: 4,
+          list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Condition: AND>'), _sdeTagCmd('<Contact>'),
+              _sdeTagCmd('<Scope>'), _sdeTagCmd('<Combat>'), _sdeTagCmd('<Gun>'), _sdeTagCmd('<!Loch>')]
+              .concat(_sdeColliderComments(tpl), [
+                  _sdeCmd(721, 0, ['panic', 1]), _sdeCmd(111, 0, [1, 59, 0, cower, 1])],
+                  chaseRoute(), [
+                  _sdeCmd(411, 0, []), _sdeCmd(205, 1, [0, {
+                      list: [{ code: 25, indent: 0 }, { code: 35, indent: 0 },
+                          { code: 15, parameters: [20], indent: 0 }, { code: 11, indent: 0 },
+                          { code: 15, parameters: [20], indent: null }, { code: 0 }],
+                      repeat: false, skippable: false, wait: true
+                  }]),
+                  _sdeCmd(505, 1, [{ code: 25, indent: 0 }]), _sdeCmd(505, 1, [{ code: 35, indent: 0 }]),
+                  _sdeCmd(505, 1, [{ code: 15, parameters: [20], indent: 0 }]), _sdeCmd(505, 1, [{ code: 11, indent: 0 }]),
+                  _sdeCmd(505, 1, [{ code: 15, parameters: [20], indent: null }]), _sdeEnd(1),
+                  _sdeCmd(412, 0, []), _sdeEnd()]),
+          route: [{ code: 0, parameters: [] }] }));
+
+      // P8: <RememberGun>+<Combat>+<Gun> — запомнил ствол: бегство
+      pages.push(_sdePage({ cond: _sdeCond('A', false), dirFix: true, image: _sdeImg(tpl), freq: 5,
+          speed: 4, moveType: 3, prio: 1, trigger: 4,
+          list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Condition: AND>'), _sdeTagCmd('<RememberGun> '),
+              _sdeTagCmd('<Combat>'), _sdeTagCmd('<Gun>')]
+              .concat(_sdeColliderComments(tpl), [
+                  _sdeCmd(721, 0, ['flee', 1]), _sdeCmd(111, 0, [1, 59, 0, cower, 1]),
+                  _sdeCmd(205, 1, [0, {
+                      list: [{ code: 36, indent: null }, { code: 10, indent: null }, { code: 0 }],
+                      repeat: false, skippable: false, wait: true
+                  }]),
+                  _sdeCmd(505, 1, [{ code: 36, indent: null }]), _sdeCmd(505, 1, [{ code: 10, indent: null }]),
+                  _sdeEnd(1), _sdeCmd(411, 0, []), _sdeEnd(1), _sdeCmd(412, 0, []), _sdeEnd()]),
+          route: [_sdeMr(25, null, 0), _sdeMr(35), _sdeMr(15, [20], 0), _sdeMr(11), _sdeMrEnd()] }));
+
+      // P9: <Combat>+<Shot> — под огнём в бою
+      pages.push(_sdePage({ cond: _sdeCond('A', false), image: _sdeImg(tpl), freq: 5,
+          speed: 4, moveType: 0, prio: 1, trigger: 4,
+          list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Condition: AND>'), _sdeTagCmd('<Combat>'),
+              _sdeTagCmd('<Shot>')]
+              .concat(_sdeColliderComments(tpl), [
+                  _sdeCmd(721, 0, ['loch', 0]), _sdeCmd(721, 0, ['flee', 1]), _sdeCmd(721, 0, ['shot', 0]), _sdeEnd()]),
+          route: [_sdeMr(10), _sdeMrEnd()] }));
+
+      // P10: <Flee> — бегство
+      pages.push(_sdePage({ cond: _sdeCond('A', false), image: _sdeImg(tpl), freq: 5,
+          speed: 4, moveType: 0, prio: 1, trigger: 4,
+          list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Flee>')]
+              .concat(_sdeColliderComments(tpl), [
+                  _sdeCmd(111, 0, [1, 59, 0, cower, 1]),
+                  _sdeCmd(205, 1, [0, {
+                      list: [{ code: 36, indent: null }, { code: 10, indent: null }, { code: 0 }],
+                      repeat: false, skippable: false, wait: true
+                  }]),
+                  _sdeCmd(505, 1, [{ code: 36, indent: null }]), _sdeCmd(505, 1, [{ code: 10, indent: null }]),
+                  _sdeEnd(1), _sdeCmd(411, 0, []),
+                  _sdeCmd(205, 1, [0, {
+                      list: [{ code: 11, indent: null }, { code: 0 }],
+                      repeat: false, skippable: false, wait: true
+                  }]),
+                  _sdeCmd(505, 1, [{ code: 11, indent: null }]), _sdeEnd(1),
+                  _sdeCmd(412, 0, []), _sdeEnd()]),
+          route: [{ code: 0, parameters: [] }] }));
+
+      // P11: <Calm>+<Combat> — успокоился: полный сброс ИИ
+      pages.push(_sdePage({ cond: _sdeCond('A', false), dirFix: true, image: _sdeImg(tpl), freq: 5,
+          speed: 4, moveType: 0, prio: 1, trigger: 4,
+          list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Condition: AND>'), _sdeTagCmd('<Calm>'),
+              _sdeTagCmd('<Combat>')]
+              .concat(_sdeColliderComments(tpl), [
+                  _sdeCmd(230, 0, [90]), _sdeCmd(721, 0, ['combat', 0]),
+                  _sdeCmd(721, 0, ['flee', 0]), _sdeCmd(721, 0, ['__reset_all', 1]), _sdeEnd()]),
+          route: [_sdeMr(10), _sdeMrEnd()] }));
+
+      // P12: <Zona>+<Combat> — атака: рывок + удар
+      pages.push(_sdePage({ cond: _sdeCond('A', false), image: _sdeImg(tpl), freq: 5,
+          speed: 4, moveType: 3, prio: 1, trigger: 4,
+          list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Condition: AND>'), _sdeTagCmd('<Zona>'),
+              _sdeTagCmd('<Combat>')]
+              .concat(_sdeColliderComments(tpl), [
+                  _sdeCmd(726, 0, [0, 0, dashName]), _sdeCmd(230, 0, [8]),
+                  _sdeCmd(355, 0, ['this.performMelee(' + melee + ')']),
+                  _sdeCmd(230, 0, [45]), _sdeEnd()]),
+          route: [_sdeMr(45, ['this.smartMoveToPlayer()']), _sdeMrEnd()] }));
+
+      // P13: <Wound> — ранен: сняли рану через 20 кадров
+      pages.push(_sdePage({ cond: _sdeCond('D', false), image: _sdeImg(tpl), freq: 5,
+          speed: 4, moveType: 0, prio: 1, trigger: 4,
+          list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Wound>')]
+              .concat(_sdeColliderComments(tpl), [
+                  _sdeCmd(230, 0, [20]), _sdeCmd(721, 0, ['wound', 0]), _sdeEnd()]),
+          route: [_sdeMr(35), _sdeMr(15, [7]), _sdeMr(11), _sdeMr(15, [60]), _sdeMrEnd()] }));
+
+      // P14: (D) получение урона — таблица по оружию ГГ (var 17)
+      pages.push(_sdePage({ cond: _sdeCond('D', true), image: _sdeImg(tpl), freq: 3,
+          speed: 3, moveType: 0, prio: 1, trigger: 3,
+          list: [_sdeTagCmd('<projEffect>')].concat(_sdeColliderComments(tpl), [
+              _sdeCmd(111, 0, [1, 17, 0, dmgMeleeVar, 0]),
+              _sdeCmd(111, 1, [0, 41, sneak]),
+              _sdeCmd(722, 2, [0, dmgMelee, 0]), se(), _sdeEnd(2),
+              _sdeCmd(411, 1, []),
+              _sdeCmd(731, 2, [0, 0, 0]), _sdeCmd(722, 2, [0, dmgFists, 0]), se(),
+              _sdeCmd(721, 2, ['wound', 1]), _sdeEnd(2),
+              _sdeCmd(412, 1, []), _sdeEnd(1),
+              _sdeCmd(411, 0, []),
+              _sdeCmd(111, 1, [1, 17, 0, dmgGunVar, 0]),
+              _sdeCmd(722, 2, [0, dmgMelee, 0]), _sdeEnd(2),
+              _sdeCmd(411, 1, []), _sdeEnd(2), _sdeCmd(412, 1, []), _sdeEnd(1),
+              _sdeCmd(412, 0, []),
+              _sdeCmd(721, 0, ['combat', 1]), _sdeCmd(123, 0, ['D', 1]), _sdeEnd()]),
+          route: [{ code: 0, parameters: [] }] }));
+
+      // P15: <OnDeath> — смерть
+      pages.push(_sdePage({ cond: _sdeCond('A', false), image: _sdeImg(tpl, true), freq: 3,
+          speed: 3, moveType: 0, prio: 0, trigger: 0,
+          list: [_sdeTagCmd('<OnDeath>'), _sdeEnd()],
+          route: [{ code: 0, parameters: [] }] }));
+
+      // P16: (B) пустая страница-заглушка
+      pages.push(_sdePage({ cond: _sdeCond('B', true), image: _sdeImg(tpl, true), freq: 3,
+          speed: 3, moveType: 0, prio: 0, trigger: 0,
+          list: [_sdeEnd()],
+          route: [{ code: 0, parameters: [] }] }));
+
+      return pages;
+  }
+
+  /** Найти template-карточку по note-тегу события (тот же match, что у правил). */
+  function sdeFindTemplateByNote(note) {
+      if (!note || !MEHP_DB.length) return null;
+      for (var i = 0; i < MEHP_DB.length; i++) {
+          var r = MEHP_DB[i];
+          if (r && r.match && String(r.template) === 'true' && note.indexOf(r.match) >= 0) return r;
+      }
+      return null;
+  }
+
+  /**
+   * Развернуть все заглушки <тег> на текущей $dataMap в полные автоматы.
+   * Вызывается ДО оригинального Game_Map.setup: когда setup исполняется,
+   * $dataMap уже загружен, а события ещё не созданы — они instantiate
+   * со сгенерированными страницами. Идемпотентно: скелет всегда
+   * пересобирается с чистого листа.
+   */
+  function sdeExpandMapTemplates() {
+      if (typeof $dataMap === 'undefined' || !$dataMap || !$dataMap.events) return 0;
+      var expanded = 0;
+      for (var i = 1; i < $dataMap.events.length; i++) {
+          var ev = $dataMap.events[i];
+          if (!ev) continue;
+          var tpl = sdeFindTemplateByNote(ev.note);
+          if (!tpl) continue;
+          var pages = sdeBuildEnemyPages(tpl);
+          if (pages && pages.length) { ev.pages = pages; expanded++; }
+      }
+      return expanded;
+  }
+
+  // ===========================================================================
   // СБОРКА МУСОРА
   // ===========================================================================
 
   var _Game_Map_setup = Game_Map.prototype.setup;
   Game_Map.prototype.setup = function(mapId){
+    sdeExpandMapTemplates(); // P2: заглушки шаблонов -> полные автоматы (до создания событий)
     _Game_Map_setup.call(this,mapId);
     
     _pageConditionCache.clear();
@@ -1264,5 +1566,15 @@
           return Object.keys(set);
       }
   };
+
+  // P2: тест-хук (на поведение игры не влияет)
+  if (typeof window !== 'undefined' && !window.__SDE_TEST) {
+      window.__SDE_TEST = {
+          buildEnemyPages: sdeBuildEnemyPages,
+          findTemplateByNote: sdeFindTemplateByNote,
+          expandMapTemplates: sdeExpandMapTemplates,
+          MEHP_DB: MEHP_DB
+      };
+  }
 
 })();
