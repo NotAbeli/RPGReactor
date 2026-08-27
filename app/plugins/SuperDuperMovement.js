@@ -4093,6 +4093,13 @@
 
   } )();
 
+  // P1: контракт апстрима Altimit — коллайдерная математика доступна другим
+  // плагинам (SuperDuperDrop уже писан под window.Collider; точный A* аддона
+  // консультирует collision mesh через Collider.intersect).
+  if ( typeof window !== 'undefined' && typeof Collider !== 'undefined' ) {
+    window.Collider = Collider;
+  }
+
 } )();
 
 

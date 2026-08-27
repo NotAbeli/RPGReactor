@@ -82,13 +82,36 @@
  * @desc Сила отталкивания от препятствий при поиске пути (0.0 - 5.0).
  * @default 2.5
  *
- * @param Path Refresh Rate
- * @text Частота обновления (кадры)
- * @parent --- НАСТРОЙКИ УМНОГО ПОИСКА ПУТИ (A*) ---
- * @desc Как часто пересчитывать маршрут A* (стандарт: 30).
- * @default 30
- *
- * @param Debug Mode
+  * @param Path Refresh Rate
+  * @text Частота обновления (кадры)
+  * @parent --- НАСТРОЙКИ УМНОГО ПОИСКА ПУТИ (A*) ---
+  * @desc Как часто пересчитывать маршрут A* (стандарт: 30).
+  * @default 30
+  *
+  * @param Hitbox Avoidance
+  * @text Учитывать хитбоксы объектов
+  * @parent --- НАСТРОЙКИ УМНОГО ПОИСКА ПУТИ (A*) ---
+  * @type boolean
+  * @desc A* учитывает реальные коллайдеры объектов (события/игрок/фолловеры) и формы collision mesh карты, а не только флаги тайлов.
+  * @default true
+  *
+  * @param Soft Cost Value
+  * @text Цена движущихся объектов
+  * @parent --- НАСТРОЙКИ УМНОГО ПОИСКА ПУТИ (A*) ---
+  * @type number
+  * @min 0
+  * @desc Штраф на клетки под движущимися объектами (игрок/ИИ): путь обходит их, если обход дешевле. 0 = игнорировать.
+  * @default 3
+  *
+  * @param Goal Exempt Radius
+  * @text Радиус освобождения цели
+  * @parent --- НАСТРОЙКИ УМНОГО ПОИСКА ПУТИ (A*) ---
+  * @type number
+  * @min 0
+  * @desc Препятствия ближе этого радиуса (в клетках) от цели погони не блокируют путь — иначе цель в толпе недостижима.
+  * @default 2
+  *
+  * @param Debug Mode
  * @text Режим отладки
  * @type boolean
  * @desc Включить логирование в консоль (F8).
@@ -230,6 +253,10 @@
     const CONF_REPULSION = Number(params['Repulsion Force'] || 2.5);
     const CONF_REFRESH_RATE = Number(params['Path Refresh Rate'] || 30);
     const MAX_ITERATIONS = 2000;
+    // P1: точный A* — хитбоксы объектов и формы collision mesh
+    const CONF_HITBOX = params['Hitbox Avoidance'] !== 'false';
+    const CONF_SOFT_COST = Number(params['Soft Cost Value'] || 3);
+    const CONF_GOAL_EXEMPT = Number(params['Goal Exempt Radius'] || 2);
     
     const deadZoneRegionsParam = params['Dead Zone Regions'] || '';
     let deadZoneRegions = [];
@@ -239,6 +266,10 @@
 
     // ======================================================================
     // ПОИСК ПУТИ: АЛГОРИТМ A* (PATHFINDING UTILITIES)
+    // P1: точная проходимость (тайл-флаги + collision mesh карты +
+    // реальные хитбоксы объектов с Минковски-инфляцией), octile-эвристика
+    // (admissible => гарантия кратчайшего пути), бинарная куча,
+    // best-effort при недостижимой цели.
     // ======================================================================
     function isDeadZone(x, y, ignoredZones) {
         if (deadZoneRegions.length === 0) return false;
@@ -251,8 +282,8 @@
         const mapMesh = $gameMap.collisionMesh(char._collisionType);
         const dist = Math.hypot(endX - startX, endY - startY);
         if (dist > 20) return false;
-        
-        const stepSize = 0.5; 
+
+        const stepSize = 0.5;
         const steps = Math.ceil(dist / stepSize);
         const dx = (endX - startX) / steps;
         const dy = (endY - startY) / steps;
@@ -266,73 +297,225 @@
         return true;
     }
 
+    // --- Octile-эвристика: admissible для 8 направлений со стоимостями {1, √2}
+    function octile(x1, y1, x2, y2) {
+        const dx = Math.abs(x1 - x2);
+        const dy = Math.abs(y1 - y2);
+        return dx > dy ? dx + (Math.SQRT2 - 1) * dy : dy + (Math.SQRT2 - 1) * dx;
+    }
+
+    // --- Бинарная куча: O(log n) push/pop, тай-брейк по большему g (ровнее путь)
+    class MinHeap {
+        constructor() { this._a = []; }
+        get size() { return this._a.length; }
+        _less(x, y) { return x.f < y.f || (x.f === y.f && x.g > y.g); }
+        push(node) {
+            const a = this._a;
+            a.push(node);
+            let i = a.length - 1;
+            while (i > 0) {
+                const p = (i - 1) >> 1;
+                if (this._less(a[i], a[p])) { const t = a[i]; a[i] = a[p]; a[p] = t; i = p; }
+                else break;
+            }
+        }
+        pop() {
+            const a = this._a;
+            if (a.length === 0) return null;
+            const top = a[0];
+            const last = a.pop();
+            if (a.length > 0) {
+                a[0] = last;
+                let i = 0;
+                for (;;) {
+                    const l = 2 * i + 1, r = l + 1;
+                    let m = i;
+                    if (l < a.length && this._less(a[l], a[m])) m = l;
+                    if (r < a.length && this._less(a[r], a[m])) m = r;
+                    if (m === i) break;
+                    const t = a[i]; a[i] = a[m]; a[m] = t;
+                    i = m;
+                }
+            }
+            return top;
+        }
+    }
+
+    const NEIGHBORS = [
+        {x: 0, y: 1, c: 1}, {x: 0, y: -1, c: 1}, {x: 1, y: 0, c: 1}, {x: -1, y: 0, c: 1},
+        {x: 1, y: 1, c: Math.SQRT2}, {x: 1, y: -1, c: Math.SQRT2},
+        {x: -1, y: 1, c: Math.SQRT2}, {x: -1, y: -1, c: Math.SQRT2}
+    ];
+
+    // --- Классификация: движущееся препятствие (мягкая цена) или статичное (жёсткий блок)
+    function isDynamicMover(char) {
+        if (typeof Game_Player !== 'undefined' && char instanceof Game_Player) return true;
+        if (typeof Game_Follower !== 'undefined' && char instanceof Game_Follower) return true;
+        if (char._amsSmartTarget) return true;                               // наш умный ИИ
+        if (char._moveRouteForcing) return true;                             // принудительный маршрут
+        if (typeof char._moveType === 'number' && char._moveType > 0) return true; // random/approach/custom
+        return false;
+    }
+
+    function colliderApi() {
+        if (typeof Collider !== 'undefined') return Collider;
+        if (typeof window !== 'undefined' && window.Collider) return window.Collider;
+        return null;
+    }
+
+    /**
+     * Контекст одного поиска: кэш проходимости + препятствия из реальных
+     * коллайдеров. AABB препятствия раздувается на AABB ищущего (Минковски):
+     * центр ищущего коллизит с препятствием ⇔ center ∈ (x1,x2)×(y1,y2).
+     */
+    function buildPathContext(char, goalEntity, ignoredZones) {
+        const seekerCollider = (char.collider && char.collider()) || null;
+        const ab = seekerCollider ? seekerCollider.aabbox : null;
+        const ctx = {
+            char: char,
+            ignoredZones: ignoredZones || [],
+            mesh: null,
+            cache: {},
+            obstacles: [],
+            sl: ab ? ab.left : 0.3, st: ab ? ab.top : 0.3,
+            sr: ab ? ab.right : 0.7, sb: ab ? ab.bottom : 0.7,
+            seekerCollider: seekerCollider
+        };
+        if (!CONF_HITBOX) return ctx;
+
+        if (typeof $gameMap !== 'undefined' && $gameMap && $gameMap.collisionMesh) {
+            try { ctx.mesh = $gameMap.collisionMesh(char._collisionType); } catch (e) { ctx.mesh = null; }
+        }
+
+        const characters = (typeof $gameMap !== 'undefined' && $gameMap && $gameMap.characters) ? $gameMap.characters() : [];
+        const gx = goalEntity ? goalEntity._x : undefined;
+        const gy = goalEntity ? goalEntity._y : undefined;
+        for (let i = 0; i < characters.length; i++) {
+            const entry = characters[i];
+            if (!entry || entry === char) continue;
+            if (char.collidableWith && !char.collidableWith(entry)) continue;
+            if (entry === goalEntity) continue; // цель погони — не препятствие для своего преследователя
+            // Освобождение цели: толпа в радиусе Goal Exempt Radius от цели не запирает конец пути
+            if (goalEntity && Math.hypot(entry._x - gx, entry._y - gy) <= CONF_GOAL_EXEMPT + 0.5) continue;
+            const eCol = (entry.collider && entry.collider()) || null;
+            const eAb = eCol ? eCol.aabbox : null;
+            if (!eAb) continue;
+            ctx.obstacles.push({
+                hard: !isDynamicMover(entry),
+                x1: entry._x + eAb.left - ctx.sr,
+                x2: entry._x + eAb.right - ctx.sl,
+                y1: entry._y + eAb.top - ctx.sb,
+                y2: entry._y + eAb.bottom - ctx.st
+            });
+        }
+        return ctx;
+    }
+
+    /**
+     * Штраф входа в клетку: Infinity = непроходима, число = доп. цена.
+     * Лениво, с мемоизацией на один поиск: тайл-флаги -> collision mesh
+     * (точные формы: коллайдер ищущего в точке клетки) -> хитбоксы объектов.
+     */
+    function cellPenalty(ctx, x, y) {
+        const key = x + ',' + y;
+        if (ctx.cache[key] !== undefined) return ctx.cache[key];
+        let penalty = 0;
+        if (isDeadZone(x, y, ctx.ignoredZones)) {
+            penalty = Infinity;
+        } else if (!$gameMap.checkPassage(x, y, 0x0f)) {
+            penalty = Infinity;
+        } else {
+            const Col = colliderApi();
+            if (ctx.mesh && Col && ctx.seekerCollider) {
+                const polys = Col.polygonsWithinColliderList(x, y, ctx.seekerCollider.aabbox, 0, 0, ctx.mesh);
+                for (let i = 0; i < polys.length; i++) {
+                    if (Col.intersect(x, y, ctx.seekerCollider, 0, 0, polys[i])) { penalty = Infinity; break; }
+                }
+            }
+            if (penalty !== Infinity) {
+                for (let i = 0; i < ctx.obstacles.length; i++) {
+                    const ob = ctx.obstacles[i];
+                    if (x + ctx.sr > ob.x1 && x + ctx.sl < ob.x2 && y + ctx.sb > ob.y1 && y + ctx.st < ob.y2) {
+                        if (ob.hard) { penalty = Infinity; break; }
+                        penalty += CONF_SOFT_COST;
+                    }
+                }
+            }
+        }
+        ctx.cache[key] = penalty;
+        return penalty;
+    }
+
     const AStar = {
-        heuristic: function(x1, y1, x2, y2) { return Math.abs(x1 - x2) + Math.abs(y1 - y2); },
-        findPath: function(char, targetX, targetY, ignoredZones) {
-            const startX = Math.round(char._realX);
-            const startY = Math.round(char._realY);
+        heuristic: octile,
+        findPath: function(char, targetX, targetY, ignoredZones, goalEntity) {
+            const startX = Math.round(char._realX !== undefined ? char._realX : char._x);
+            const startY = Math.round(char._realY !== undefined ? char._realY : char._y);
             const endX = Math.round(targetX);
             const endY = Math.round(targetY);
 
             if (startX === endX && startY === endY) return [{x: targetX, y: targetY}];
 
-            const openList = [];
-            const closedList = {}; 
-            openList.push({x: startX, y: startY, parent: null, g: 0, f: 0});
+            const ctx = buildPathContext(char, goalEntity, ignoredZones);
+            const open = new MinHeap();
+            const closed = {};
+            const bestG = {};
             let iterations = 0;
-            const neighbors = [
-                {x:0, y:1, c:1}, {x:0, y:-1, c:1}, {x:1, y:0, c:1}, {x:-1, y:0, c:1},
-                {x:1, y:1, c:1.4}, {x:1, y:-1, c:1.4}, {x:-1, y:1, c:1.4}, {x:-1, y:-1, c:1.4}
-            ];
+            const startH = octile(startX, startY, endX, endY);
+            const startNode = {x: startX, y: startY, parent: null, g: 0, f: startH};
+            bestG[startX + ',' + startY] = 0;
+            open.push(startNode);
+            let bestNode = startNode;   // best-effort: узел с минимальной эвристикой
+            let reached = false;
 
-            while (openList.length > 0) {
-                if (iterations++ > MAX_ITERATIONS) return null;
-                openList.sort((a, b) => a.f - b.f);
-                const current = openList.shift();
-                const key = current.x + "," + current.y;
+            while (open.size > 0) {
+                if (iterations++ > MAX_ITERATIONS) break;
+                const current = open.pop();
+                const ckey = current.x + ',' + current.y;
+                if (closed[ckey]) continue;
+                closed[ckey] = true;
 
-                if (closedList[key]) continue;
-                closedList[key] = true;
-
-                if (current.x === endX && current.y === endY) {
-                    const path = [];
-                    let curr = current;
-                    while (curr.parent) {
-                        path.push({x: curr.x, y: curr.y});
-                        curr = curr.parent;
-                    }
-                    path.reverse();
-                    if (path.length > 0) path[path.length - 1] = {x: targetX, y: targetY};
-                    return path;
+                if (octile(current.x, current.y, endX, endY) < octile(bestNode.x, bestNode.y, endX, endY)) {
+                    bestNode = current;
                 }
 
-                for (let i = 0; i < neighbors.length; i++) {
-                    const nb = neighbors[i];
+                if (current.x === endX && current.y === endY) { bestNode = current; reached = true; break; }
+
+                for (let i = 0; i < NEIGHBORS.length; i++) {
+                    const nb = NEIGHBORS[i];
                     const nx = current.x + nb.x;
                     const ny = current.y + nb.y;
-                    
+
                     if (!$gameMap.isValid(nx, ny)) continue;
-                    if (closedList[nx + "," + ny]) continue;
-                    if (isDeadZone(nx, ny, ignoredZones)) continue;
+                    const nkey = nx + ',' + ny;
+                    if (closed[nkey]) continue;
 
-                    let isPassable = $gameMap.checkPassage(current.x, current.y, 0x0f) && $gameMap.checkPassage(nx, ny, 0x0f);
-                    if (nb.c > 1 && isPassable) {
-                         if (!$gameMap.checkPassage(current.x, ny, 0x0f) || 
-                             !$gameMap.checkPassage(nx, current.y, 0x0f) ||
-                             isDeadZone(current.x, ny, ignoredZones) || 
-                             isDeadZone(nx, current.y, ignoredZones)) {
-                             isPassable = false;
-                         }
+                    const enter = cellPenalty(ctx, nx, ny);
+                    if (enter === Infinity) continue;
+                    if (nb.c > 1) {
+                        // диагональ без срезания углов: обе ортогональные клетки проходимы
+                        if (cellPenalty(ctx, current.x, ny) === Infinity) continue;
+                        if (cellPenalty(ctx, nx, current.y) === Infinity) continue;
                     }
 
-                    if (isPassable) {
-                        const g = current.g + nb.c;
-                        const h = this.heuristic(nx, ny, endX, endY);
-                        openList.push({x: nx, y: ny, parent: current, g: g, f: g + h});
-                    }
+                    const ng = current.g + nb.c + enter;
+                    if (bestG[nkey] !== undefined && bestG[nkey] <= ng) continue;
+                    bestG[nkey] = ng;
+                    open.push({x: nx, y: ny, parent: current, g: ng, f: ng + octile(nx, ny, endX, endY)});
                 }
             }
-            return null;
+
+            // Best-effort: недостижимая цель -> путь к ближайшей достигнутой точке
+            if (!bestNode) return null;
+            if (bestNode.x === startX && bestNode.y === startY && !reached) return null; // не сдвинулись ни на шаг
+
+            const path = [];
+            let curr = bestNode;
+            while (curr) { path.push({x: curr.x, y: curr.y}); curr = curr.parent; }
+            path.reverse();
+            path.shift(); // стартовая клетка не нужна
+            if (reached && path.length > 0) path[path.length - 1] = {x: targetX, y: targetY};
+            return path.length > 0 ? path : [{x: targetX, y: targetY}];
         }
     };
 
@@ -912,7 +1095,10 @@
                     this._amsSmartPath = [{x: tx, y: ty}];
                     this._amsSmartRefreshTimer = 20;
                 } else {
-                    this._amsSmartPath = AStar.findPath(this, tx, ty, ignoredZones);
+                    const goalEntity = target.type === 'player' ? $gamePlayer
+                        : (target.type === 'event' && $gameMap.event(target.id)) ? $gameMap.event(target.id)
+                        : null;
+                    this._amsSmartPath = AStar.findPath(this, tx, ty, ignoredZones, goalEntity);
                     this._amsSmartRefreshTimer = CONF_REFRESH_RATE + Math.randomInt(10);
                 }
             }
@@ -1048,5 +1234,84 @@
         if (this._amsDashActive) return false; // Блокировка движения только в самом полете
         return _SDAP_Game_Player_canMove.call(this);
     };
+
+    // ======================================================================
+    // P1: ВИЗУАЛЬНЫЙ ДЕБАГ МАРШРУТОВ (только при Debug Mode)
+    // Точки пути всех умных ИИ поверх карты; цвет — по типу поведения.
+    // ======================================================================
+    if (debugMode && typeof Sprite !== 'undefined' && typeof Bitmap !== 'undefined'
+        && typeof Scene_Map !== 'undefined' && typeof Graphics !== 'undefined') {
+
+        const PATH_COLORS = {
+            player: '#ff5a5a', event: '#ff9d5a', coord: '#5ad4ff',
+            patrol: '#5aff8a', wander: '#ffd35a', flee: '#d45aff',
+            back_away: '#d45aff', orbit: '#d4ff5a'
+        };
+
+        function redrawPathDebug(bitmap) {
+            bitmap.clear();
+            if (typeof $gameMap === 'undefined' || !$gameMap) return;
+            const tw = $gameMap.tileWidth();
+            const th = $gameMap.tileHeight();
+            const movers = [];
+            if ($gameMap.events) movers.push.apply(movers, $gameMap.events());
+            if (typeof $gamePlayer !== 'undefined' && $gamePlayer) movers.push($gamePlayer);
+            for (let i = 0; i < movers.length; i++) {
+                const m = movers[i];
+                const t = m._amsSmartTarget;
+                const path = m._amsSmartPath;
+                if (!t || !path || path.length === 0) continue;
+                const color = PATH_COLORS[t.type] || '#ffffff';
+                for (let j = 0; j < path.length; j++) {
+                    const sx = Math.round($gameMap.adjustX(path[j].x) * tw + tw / 2);
+                    const sy = Math.round($gameMap.adjustY(path[j].y) * th + th / 2);
+                    bitmap.fillRect(sx - 2, sy - 2, 5, 5, color);
+                }
+                const last = path[path.length - 1];
+                const lx = Math.round($gameMap.adjustX(last.x) * tw + tw / 2);
+                const ly = Math.round($gameMap.adjustY(last.y) * th + th / 2);
+                bitmap.drawCircle(lx, ly, 6, color);
+            }
+        }
+
+        const _SDAP_Scene_Map_createDisplayObjects = Scene_Map.prototype.createDisplayObjects;
+        Scene_Map.prototype.createDisplayObjects = function() {
+            _SDAP_Scene_Map_createDisplayObjects.call(this);
+            try {
+                this._sdaPathDebugSprite = new Sprite(new Bitmap(Graphics.width, Graphics.height));
+                this._sdaPathDebugSprite.opacity = 0.9;
+                this.addChild(this._sdaPathDebugSprite);
+            } catch (e) { /* дебаг не должен ронять сцену */ }
+        };
+
+        const _SDAP_Scene_Map_update = Scene_Map.prototype.update;
+        Scene_Map.prototype.update = function() {
+            _SDAP_Scene_Map_update.call(this);
+            try {
+                if (this._sdaPathDebugSprite && Graphics.frameCount % 10 === 0) {
+                    redrawPathDebug(this._sdaPathDebugSprite.bitmap);
+                }
+            } catch (e) { /* дебаг не должен ронять сцену */ }
+        };
+    }
+
+    // ======================================================================
+    // ТЕСТ-ХУК (виден только вне игры тестам движка; на поведение не влияет)
+    // ======================================================================
+    if (typeof window !== 'undefined' && !window.__SDA_TEST) {
+        window.__SDA_TEST = {
+            AStar: AStar,
+            MinHeap: MinHeap,
+            octile: octile,
+            isDynamicMover: isDynamicMover,
+            buildPathContext: buildPathContext,
+            cellPenalty: cellPenalty,
+            config: {
+                hitbox: () => CONF_HITBOX,
+                softCost: () => CONF_SOFT_COST,
+                goalExempt: () => CONF_GOAL_EXEMPT
+            }
+        };
+    }
 
 })();
