@@ -118,11 +118,22 @@ class EnemyInspectorManager {
             this._removeInteraction();
             this._removeOverlay();
             this._hidePanel();
+            this.placementTemplate = null;
+            // Drop the placement 'copy' cursor if placement was pending.
+            if (this.tilemapManager && this.tilemapManager.container
+                && this.tilemapManager.container.cursor === 'copy') {
+                this.tilemapManager.container.cursor = 'default';
+            }
             return;
         }
         if (this.tilemapManager && this.tilemapManager.container && typeof PIXI !== 'undefined') {
             this._ensureOverlay();
             this._setupInteraction();
+        }
+        // setEventMode(false) leaves a tile-editing crosshair; the NPC picker
+        // is a selection tool - use the default cursor.
+        if (this.tilemapManager && this.tilemapManager.container) {
+            this.tilemapManager.container.cursor = 'default';
         }
         this._ensurePanel();
         this.refreshHighlights();

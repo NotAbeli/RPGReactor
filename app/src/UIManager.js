@@ -412,6 +412,24 @@ class UIManager {
         // which left the web editor with no keyboard shortcuts at all.
         const hasNw = typeof nw !== 'undefined';
 
+        /**
+         * S51b: are we inside the events context (events / light / npc)?
+         * Keyboard shortcuts and edit menus must route to the EVENT manager
+         * there - falling through to map actions (Delete → delete the selected
+         * MAP!) is exactly the "UI lives its own life" bug class. Falls back
+         * to the legacy eventMode flag when the state machine is not wired.
+         */
+        const eventsCtx = () => {
+            if (this.callbacks.getEditingMode) {
+                const mode = this.callbacks.getEditingMode();
+                if (mode) return mode !== 'tiles';
+            }
+            const em = this.callbacks.getEventManager ? this.callbacks.getEventManager() : null;
+            return !!(em && em.eventMode);
+        };
+        // Expose for the toolbar/menu handlers below.
+        this._eventsContextActive = eventsCtx;
+
         // Keyboard shortcuts
         window.addEventListener('keydown', (e) => {
             // F5 - Reload the editor without Chromium's cached application state.
@@ -488,7 +506,7 @@ class UIManager {
                     // Check if event mode is active
                     if (this.callbacks.getEventManager) {
                         const eventManager = this.callbacks.getEventManager();
-                        if (eventManager && eventManager.eventMode && eventManager.canUndo()) {
+                        if (eventManager && eventsCtx() && eventManager.canUndo()) {
                             eventManager.undo();
                             return;
                         }
@@ -519,7 +537,7 @@ class UIManager {
                     // Check if event mode is active
                     if (this.callbacks.getEventManager) {
                         const eventManager = this.callbacks.getEventManager();
-                        if (eventManager && eventManager.eventMode && eventManager.canRedo()) {
+                        if (eventManager && eventsCtx() && eventManager.canRedo()) {
                             eventManager.redo();
                             return;
                         }
@@ -547,7 +565,7 @@ class UIManager {
                 if (!isTextInput) {
                     const eventManager = this.callbacks.getEventManager ? this.callbacks.getEventManager() : null;
                     const selectedMap = document.querySelector('#maps-list .tree-item.selected[data-map-id]');
-                    if ((!eventManager || !eventManager.eventMode) && selectedMap && window.reactor?.projectController?.copyMap) {
+                    if (!eventsCtx() && selectedMap && window.reactor?.projectController?.copyMap) {
                         e.preventDefault();
                         window.reactor.projectController.copyMap(parseInt(selectedMap.getAttribute('data-map-id')));
                         return;
@@ -556,7 +574,7 @@ class UIManager {
 
                 if (!isTextInput && this.callbacks.getEventManager) {
                     const eventManager = this.callbacks.getEventManager();
-                    if (eventManager && eventManager.eventMode && eventManager.selectedEvent) {
+                    if (eventManager && eventsCtx() && eventManager.selectedEvent) {
                         e.preventDefault();
                         eventManager.copyEvent(eventManager.selectedEvent);
                     }
@@ -579,7 +597,7 @@ class UIManager {
                 if (!isTextInput && !eventEditorOpen) {
                     const eventManager = this.callbacks.getEventManager ? this.callbacks.getEventManager() : null;
                     const selectedMap = document.querySelector('#maps-list .tree-item.selected[data-map-id]');
-                    if ((!eventManager || !eventManager.eventMode) && selectedMap && window.reactor?.projectController?.copyMap) {
+                    if (!eventsCtx() && selectedMap && window.reactor?.projectController?.copyMap) {
                         e.preventDefault();
                         window.reactor.projectController.copyMap(parseInt(selectedMap.getAttribute('data-map-id')));
                         return;
@@ -588,7 +606,7 @@ class UIManager {
 
                 if (!isTextInput && !eventEditorOpen && this.callbacks.getEventManager) {
                     const eventManager = this.callbacks.getEventManager();
-                    if (eventManager && eventManager.eventMode && eventManager.selectedEvent) {
+                    if (eventManager && eventsCtx() && eventManager.selectedEvent) {
                         e.preventDefault();
                         eventManager.cutEvent(eventManager.selectedEvent);
                     }
@@ -610,7 +628,7 @@ class UIManager {
 
                 if (!isTextInput && !eventEditorOpenForPaste && this.callbacks.getEventManager) {
                     const eventManager = this.callbacks.getEventManager();
-                    if (eventManager && eventManager.eventMode) {
+                    if (eventsCtx()) {
                         e.preventDefault();
                         // Paste at selected tile position or selected event position
                         const x = eventManager.selectedTileX !== null ? eventManager.selectedTileX :
@@ -643,14 +661,14 @@ class UIManager {
 
                 if (!isTextInput && !eventEditorOpen && this.callbacks.getEventManager) {
                     const eventManager = this.callbacks.getEventManager();
-                    if (eventManager && eventManager.eventMode && eventManager.selectedEvent) {
+                    if (eventManager && eventsCtx() && eventManager.selectedEvent) {
                         e.preventDefault();
                         eventManager.deleteEvent(eventManager.selectedEvent);
                         return;
                     }
 
                     const selectedMap = document.querySelector('#maps-list .tree-item.selected[data-map-id], #quick-access-list .tree-item.selected[data-map-id]');
-                    if ((!eventManager || !eventManager.eventMode) && selectedMap && window.reactor?.projectController?.deleteMap) {
+                    if (!eventsCtx() && selectedMap && window.reactor?.projectController?.deleteMap) {
                         e.preventDefault();
                         window.reactor.projectController.deleteMap(parseInt(selectedMap.getAttribute('data-map-id'), 10));
                     }
@@ -666,7 +684,7 @@ class UIManager {
             // Arrow keys — nudge selected event (event mode only)
             if (this.callbacks.getEventManager && !this.isEditorModalOpenForGlobalShortcuts()) {
                 const em = this.callbacks.getEventManager();
-                if (em && em.eventMode && em.selectedEvent) {
+                if (em && eventsCtx() && em.selectedEvent) {
                     const tag = document.activeElement?.tagName;
                     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
                     const ctrl = e.ctrlKey || e.metaKey;
@@ -916,7 +934,7 @@ class UIManager {
                 // Check if event mode is active
                 if (this.callbacks.getEventManager) {
                     const eventManager = this.callbacks.getEventManager();
-                    if (eventManager && eventManager.eventMode) {
+                    if (eventsCtx()) {
                         eventManager.undo();
                         break;
                     }
@@ -933,7 +951,7 @@ class UIManager {
                 // Check if event mode is active
                 if (this.callbacks.getEventManager) {
                     const eventManager = this.callbacks.getEventManager();
-                    if (eventManager && eventManager.eventMode) {
+                    if (eventsCtx()) {
                         eventManager.redo();
                         break;
                     }

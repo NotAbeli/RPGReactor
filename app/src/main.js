@@ -93,6 +93,7 @@ class RPGReactor {
             toggleEventMode: () => this.toggleEventMode(),
             toggleLightMode: () => this.toggleLightMode(),
             toggleNpcMode: () => this.toggleNpcMode(),
+            getEditingMode: () => (this.editingMode || 'tiles'),
             disableEventModeIfActive: () => this.disableEventModeIfActive(),
             installRuntime: () => this.projectController.installReactorRuntime(),
             migratePlugins: () => this.projectController.migratePluginsToEngineCatalog(),
@@ -133,9 +134,6 @@ class RPGReactor {
 
         // Set up callback for when maps are loaded
         this.projectController.onMapLoaded = () => {
-            // Remember current event mode state
-            const wasInEventMode = this.eventManager ? this.eventManager.eventMode : false;
-
             this.showTilesetPalette();
 
             // Initialize or recreate map editor for tile painting
@@ -274,18 +272,23 @@ class RPGReactor {
                 this.layersPanel.loadFromMap(tilemapManager.currentMap);
             }
 
-            // Restore event mode state if it was on
-            if (wasInEventMode && this.eventManager) {
-                this.eventManager.setEventMode(true);
-                if (this.mapEditor) {
-                    this.mapEditor.setEnabled(false);
-                }
-            } else {
-                // Make sure tileset mode is properly enabled
-                if (this.mapEditor) {
-                    this.mapEditor.setEnabled(true);
-                }
+            // Restore the editing mode across the map reload (S51b): the
+            // state machine owns tiles/events/light/npc; the light/NPC
+            // managers re-bound above re-attach their layers, here we
+            // re-apply the ON-state and the toolbar chrome.
+            const restoreMode = this.editingMode || 'tiles';
+            if (this.mapEditor) {
+                this.mapEditor.setEnabled(restoreMode === 'tiles');
+                if (restoreMode === 'tiles') this.mapEditor.setupMapInteraction();
             }
+            if (restoreMode === 'events' && this.eventManager) {
+                this.eventManager.setEventMode(true);
+            } else if (restoreMode === 'light' && this.lightManager) {
+                this.lightManager.setLightMode(true);
+            } else if (restoreMode === 'npc' && this.enemyInspectorManager) {
+                this.enemyInspectorManager.setNpcMode(true);
+            }
+            if (restoreMode !== 'tiles') this._syncModeChrome();
 
             // Update map info banner
             this.updateMapInfoBanner();
@@ -519,251 +522,170 @@ class RPGReactor {
             this.eventManager.setTilesetPaletteViewer(this.tilesetPaletteViewer);
         }
 
-        // Toggle event mode
-        const newMode = !this.eventManager.eventMode;
-        // Mutual exclusion with light mode: exit light mode when entering event mode.
-        if (newMode && this.lightManager && this.lightManager.lightMode) {
+        // The mode-toggle button flips between tiles and the events context
+        // (whichever events sub-mode was last active re-opens as plain events).
+        this.setEditingMode((this.editingMode && this.editingMode !== 'tiles') ? 'tiles' : 'events');
+    }
+
+    // =====================================================================
+    // S51b: the authoritative editing-mode state machine.
+    // 'tiles' | 'events' | 'light' | 'npc'. Light and NPC are SUB-MODES of
+    // the events context: the toolbar keeps the events tool group (Свет/НПС),
+    // the mode-toggle keeps the EV icon, and tile-editing side effects
+    // (setupMapInteraction / grid refresh / pencil reselect) only fire when
+    // actually crossing the tiles<->events border. Previously light/npc
+    // entered through a full event-mode EXIT, which flipped the toolbar to
+    // the drawing tools, hid the НПС button, corrupted the light-preview
+    // tile dimming and left the mode icon lying about the current state.
+    // =====================================================================
+
+    setEditingMode(mode) {
+        if (!['tiles', 'events', 'light', 'npc'].includes(mode)) return;
+        const prev = this.editingMode || 'tiles';
+        if (prev === mode) return;
+        this.editingMode = mode;
+
+        // --- teardown of the previous mode ---
+        if (prev === 'light' && this.lightManager) {
             this.lightManager.setLightMode(false);
-            const lb = document.getElementById('mode-light-btn');
-            if (lb) lb.classList.remove('active');
         }
-        // Mutual exclusion with NPC mode (S51): exit it when entering event mode.
-        if (newMode && this.enemyInspectorManager && this.enemyInspectorManager.npcMode) {
-            this.exitNpcMode();
+        if (prev === 'npc' && this.enemyInspectorManager) {
+            this.enemyInspectorManager.setNpcMode(false);
         }
-        this.eventManager.setEventMode(newMode);
+        if (prev === 'events' && mode !== 'events') {
+            this.eventManager.setEventMode(false);
+        }
 
-        // Disable/enable map editor based on event mode
+        // --- tile editor ---
         if (this.mapEditor) {
-            this.mapEditor.setEnabled(!newMode);
-            // Disable shadow pen when entering event mode
-            if (newMode && this.mapEditor.shadowPenMode) {
-                this.mapEditor.setShadowPenMode(false);
-            }
-            // Re-setup map interaction when returning to tileset mode
-            if (!newMode) {
+            if (mode === 'tiles') {
+                this.mapEditor.setEnabled(true);
                 this.mapEditor.setupMapInteraction();
-            }
-        }
-
-        // Clear tileset palette selection when entering event mode
-        if (newMode && this.tilesetPaletteViewer) {
-            this.tilesetPaletteViewer.clearSelection();
-        }
-
-        // Deselect all tileset tool buttons when entering event mode
-        if (newMode) {
-            document.querySelectorAll('.tool-draw-mode').forEach(btn => {
-                btn.classList.remove('active');
-            });
-        } else {
-            // Re-select the default tool (pencil) when exiting event mode
-            if (this.mapEditor) {
-                this.mapEditor.setTool('pencil');
-            }
-            document.querySelectorAll('.tool-draw-mode').forEach(btn => {
-                btn.classList.remove('active');
-                if (btn.dataset.tool === 'pencil') {
-                    btn.classList.add('active');
+            } else {
+                this.mapEditor.setEnabled(false);
+                if (this.mapEditor.shadowPenMode) {
+                    this.mapEditor.setShadowPenMode(false);
                 }
-            });
+            }
         }
 
-        // S51: swap the toolbar tool group by mode - tiles get the drawing
-        // tools, events get Свет/НПС. The standalone light button hides in
-        // event mode (its event-group twin takes over).
+        // --- setup of the new mode ---
+        if (mode === 'events') {
+            if (this.tilesetPaletteViewer) {
+                this.tilesetPaletteViewer.clearSelection();
+                this.eventManager.setTilesetPaletteViewer(this.tilesetPaletteViewer);
+            }
+            this.eventManager.setEventMode(true);
+        } else if (mode === 'light') {
+            this.lightManager.setLightMode(true);
+        } else if (mode === 'npc') {
+            this.enemyInspectorManager.setNpcMode(true);
+        } else {
+            // tiles: restore the default tool
+            if (this.mapEditor) this.mapEditor.setTool('pencil');
+            document.querySelectorAll('.tool-draw-mode').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.tool === 'pencil') btn.classList.add('active');
+            });
+        }
+        if (mode !== 'tiles' && mode !== 'events') {
+            // light/npc: draw buttons stay inert inside the events context
+            document.querySelectorAll('.tool-draw-mode').forEach(btn => btn.classList.remove('active'));
+        }
+
+        this._syncModeChrome();
+
+        const statusKey = {
+            tiles: 'status.eventModeDisabled',
+            events: 'status.eventModeEnabled',
+            light: 'status.lightModeEnabled',
+            npc: 'status.npcModeEnabled'
+        }[mode];
+        this.uiManager.updateStatus(window.I18n ? window.I18n.t(statusKey) : statusKey);
+    }
+
+    /** Toolbar chrome for the current editing mode: tool groups, mode-toggle
+     *  icon, sub-mode button states, undo/redo source, grid + layers dim. */
+    _syncModeChrome() {
+        const mode = this.editingMode || 'tiles';
+        const eventsCtx = mode !== 'tiles';
+
+        // Tool groups: tiles get the drawing tools, the events context gets
+        // Свет/НПС (S51).
         document.querySelectorAll('.tiles-only').forEach(el => {
-            el.style.display = newMode ? 'none' : '';
+            el.style.display = eventsCtx ? 'none' : '';
         });
         document.querySelectorAll('.events-only').forEach(el => {
-            el.style.display = newMode ? '' : 'none';
+            el.style.display = eventsCtx ? '' : 'none';
         });
 
-        // Update toolbar mode toggle button (icon + active state)
-        // active = Tiles mode (default), not-active = Events mode
+        // Mode toggle: active = Tiles, icon EV inside the events context
         const modeBtn = document.getElementById('mode-toggle-btn');
         if (modeBtn) {
-            modeBtn.classList.toggle('active', !newMode);
+            modeBtn.classList.toggle('active', !eventsCtx);
             const img = modeBtn.querySelector('img');
-            if (newMode) {
-                if (img) { img.src = 'images/icon-event.png'; img.onerror = function() { this.style.display='none'; this.parentElement.innerHTML='EV'; }; }
-            } else {
-                if (img) { img.src = 'images/icon-single.png'; img.onerror = function() { this.style.display='none'; this.parentElement.innerHTML='TL'; }; }
+            if (img) {
+                img.src = eventsCtx ? 'images/icon-event.png' : 'images/icon-single.png';
+                img.onerror = function () {
+                    this.style.display = 'none';
+                    this.parentElement.innerHTML = eventsCtx ? 'EV' : 'TL';
+                };
             }
-            // Refresh grid lock state for the new mode
             if (this.mapEditor) this.mapEditor.refreshBackgroundGrid();
             if (this.uiManager) this.uiManager.refreshGridButton();
         }
 
-        // Update undo/redo button states based on the current mode
-        if (newMode) {
-            // Event mode - update buttons based on event manager undo state
+        // Sub-mode buttons reflect their mode
+        const lb = document.getElementById('mode-light-btn');
+        if (lb) lb.classList.toggle('active', mode === 'light');
+        const nb = document.getElementById('mode-npc-btn');
+        if (nb) nb.classList.toggle('active', mode === 'npc');
+
+        // Undo/redo source follows the context
+        if (eventsCtx) {
             this.uiManager.updateUndoRedoButtons(
                 this.eventManager.canUndo(),
                 this.eventManager.canRedo()
             );
-        } else {
-            // Map editor mode - update buttons based on map editor undo state
-            if (this.mapEditor) {
-                this.uiManager.updateUndoRedoButtons(
-                    this.mapEditor.canUndo(),
-                    this.mapEditor.canRedo()
-                );
-            }
+        } else if (this.mapEditor) {
+            this.uiManager.updateUndoRedoButtons(
+                this.mapEditor.canUndo(),
+                this.mapEditor.canRedo()
+            );
         }
 
-        // Update status
-        this.uiManager.updateStatus(window.I18n
-            ? window.I18n.t(newMode ? 'status.eventModeEnabled' : 'status.eventModeDisabled')
-            : (newMode ? 'Event mode enabled' : 'Event mode disabled'));
-
-        // Layers Panel: entering event mode dims tile layers to read-only;
-        // exiting restores the active tile layer as the paint target.
-        if (this.layersPanel) this.layersPanel.onEventModeChanged(newMode);
+        // Layers panel: plain events mode dims tile layers read-only (pre-S51
+        // behavior); light/npc keep tiles at full brightness so the light
+        // preview / enemy highlights read clearly.
+        if (this.layersPanel) this.layersPanel.onEventModeChanged(mode === 'events');
     }
 
     // Toggle light mode (Освещение): show + edit SDLight sources on the map.
+    // Lives INSIDE the events context: toggling off returns to plain events.
     toggleLightMode() {
         if (!this.lightManager || !this.lightManager.currentMap) {
             this.uiManager.updateStatus(window.I18n ? window.I18n.t('status.loadMapFirst') : 'Load a map first');
             return;
         }
-        const newMode = !this.lightManager.lightMode;
-
-        // Mutual exclusion with event mode: exit event mode when entering light mode.
-        if (newMode && this.eventManager && this.eventManager.eventMode) {
-            this.toggleEventMode();
-        }
-        // Mutual exclusion with NPC mode (S51).
-        if (newMode && this.enemyInspectorManager && this.enemyInspectorManager.npcMode) {
-            this.exitNpcMode();
-        }
-        // Light mode also disables the tile editor (like event mode does).
-        if (this.mapEditor) {
-            this.mapEditor.setEnabled(!newMode);
-            if (!newMode) this.mapEditor.setupMapInteraction();
-        }
-
-        this.lightManager.setLightMode(newMode);
-
-        // Active state on the toolbar button
-        const btn = document.getElementById('mode-light-btn');
-        if (btn) btn.classList.toggle('active', newMode);
-
-        this.uiManager.updateStatus(window.I18n
-            ? window.I18n.t(newMode ? 'status.lightModeEnabled' : 'status.lightModeDisabled')
-            : (newMode ? 'Light mode enabled' : 'Light mode disabled'));
+        this.setEditingMode(this.editingMode === 'light' ? 'events' : 'light');
     }
 
     // Toggle NPC mode (S51): inspect + edit enemy stubs on the map.
+    // Lives INSIDE the events context: toggling off returns to plain events.
     toggleNpcMode() {
         if (!this.enemyInspectorManager || !this.enemyInspectorManager.currentMap) {
             this.uiManager.updateStatus(window.I18n ? window.I18n.t('status.loadMapFirst') : 'Load a map first');
             return;
         }
-        if (this.enemyInspectorManager.npcMode) {
-            this.exitNpcMode();
-            return;
-        }
-
-        // Mutual exclusion with event and light modes.
-        if (this.eventManager && this.eventManager.eventMode) this.toggleEventMode();
-        if (this.lightManager && this.lightManager.lightMode) this.toggleLightMode();
-
-        if (this.mapEditor) {
-            this.mapEditor.setEnabled(false);
-        }
-
-        this.enemyInspectorManager.setNpcMode(true);
-
-        const btn = document.getElementById('mode-npc-btn');
-        if (btn) btn.classList.add('active');
-
-        this.uiManager.updateStatus(window.I18n
-            ? window.I18n.t('status.npcModeEnabled')
-            : 'NPC mode enabled');
-    }
-
-    exitNpcMode() {
-        if (!this.enemyInspectorManager) return;
-        this.enemyInspectorManager.setNpcMode(false);
-        const btn = document.getElementById('mode-npc-btn');
-        if (btn) btn.classList.remove('active');
-        if (this.mapEditor) {
-            this.mapEditor.setEnabled(true);
-            this.mapEditor.setupMapInteraction();
-        }
-        this.uiManager.updateStatus(window.I18n
-            ? window.I18n.t('status.npcModeDisabled')
-            : 'NPC mode disabled');
+        this.setEditingMode(this.editingMode === 'npc' ? 'events' : 'npc');
     }
 
     // Disable event mode if currently active (called when switching to tileset tools)
     disableEventModeIfActive() {
         if (!this.eventManager) return;
-
-        // Also drop light mode when returning to tile tools.
-        if (this.lightManager && this.lightManager.lightMode) {
-            this.lightManager.setLightMode(false);
-            const lb = document.getElementById('mode-light-btn');
-            if (lb) lb.classList.remove('active');
-        }
-
-        // Also drop NPC mode when returning to tile tools (S51).
-        if (this.enemyInspectorManager && this.enemyInspectorManager.npcMode) {
-            this.exitNpcMode();
-        }
-
-        // If event mode is currently active, deactivate it
-        if (this.eventManager.eventMode) {
-
-            this.eventManager.setEventMode(false);
-
-            // Enable map editor
-            if (this.mapEditor) {
-                this.mapEditor.setEnabled(true);
-                // Re-setup map interaction when returning to tileset mode
-                this.mapEditor.setupMapInteraction();
-            }
-
-            // Clear tileset selection (important to prevent janky behavior)
-            if (this.tilesetPaletteViewer) {
-                this.tilesetPaletteViewer.clearSelection();
-            }
-
-            // Re-select the default tool (pencil)
-            if (this.mapEditor) {
-                this.mapEditor.setTool('pencil');
-            }
-            document.querySelectorAll('.tool-draw-mode').forEach(btn => {
-                btn.classList.remove('active');
-                if (btn.dataset.tool === 'pencil') {
-                    btn.classList.add('active');
-                }
-            });
-
-            // Update toolbar mode button back to Tiles (active = Tiles)
-            const modeBtn = document.getElementById('mode-toggle-btn');
-            if (modeBtn) {
-                modeBtn.classList.add('active');
-                const img = modeBtn.querySelector('img');
-                if (img) { img.src = 'images/icon-single.png'; img.onerror = function() { this.style.display='none'; this.parentElement.innerHTML='TL'; }; }
-            }
-            // Refresh grid lock for tile mode
-            if (this.mapEditor) this.mapEditor.refreshBackgroundGrid();
-            if (this.uiManager) this.uiManager.refreshGridButton();
-
-            // Layers Panel: leaving event mode restores tile-layer editing.
-            if (this.layersPanel) this.layersPanel.onEventModeChanged(false);
-
-            // S51: restore the drawing-tools group (menu path duplicate of
-            // toggleEventMode's swap).
-            document.querySelectorAll('.tiles-only').forEach(el => { el.style.display = ''; });
-            document.querySelectorAll('.events-only').forEach(el => { el.style.display = 'none'; });
-
-            // Update status
-            this.uiManager.updateStatus('Tileset mode enabled');
-        }
+        // S51b: everything funnels through the state machine - tiles drops
+        // any events-context mode (events / light / npc).
+        this.setEditingMode('tiles');
     }
 
     // Create and mount the Layers Panel once; reuses the existing instance
@@ -798,11 +720,12 @@ class RPGReactor {
     }
 
     // Enter event mode if not already active (used by the Layers panel when an
-    // event layer is clicked). Does NOT toggle off.
+    // event layer is clicked). Does NOT toggle off. S51b: goes through the
+    // state machine so light/npc sub-modes are torn down properly.
     ensureEventMode() {
         if (!this.eventManager) return;
-        if (this.eventManager.eventMode) return;
-        this.toggleEventMode();
+        if (this.editingMode === 'events') return;
+        this.setEditingMode('events');
     }
 
     // Show tileset palette viewer
