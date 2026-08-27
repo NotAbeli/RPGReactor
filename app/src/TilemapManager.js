@@ -736,9 +736,13 @@ class TilemapManager {
         if (L.stamps) L.stamps.zIndex = 900;
         if (L.layerHighlight) L.layerHighlight.zIndex = 960;
         // Events container is created by EventManager; find by label.
+        // S50: startingPositions too - without an explicit zIndex it stays at 0
+        // and the player/vehicle start markers render under the tile layers.
         if (this.container && this.container.children) {
             for (const child of this.container.children) {
-                if (child && child.label === 'events') { child.zIndex = 950; break; }
+                if (!child) continue;
+                if (child.label === 'events') { child.zIndex = 950; }
+                else if (child.label === 'startingPositions') { child.zIndex = 955; }
             }
         }
     }

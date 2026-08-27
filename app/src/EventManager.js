@@ -233,6 +233,16 @@ class EventManager {
             tilemapManager.container.addChild(this.startingPositionContainer);
         }
 
+        // S50: zIndex is authoritative on the root container (MapEditor enables
+        // sortableChildren). applyLayerState runs on map load BEFORE these
+        // containers exist, so their zIndex must be assigned here, at creation.
+        // Without it the start-position markers sit at z 0 - buried under every
+        // tile layer (z 10..90) and invisible on any non-transparent map.
+        this.eventContainer.zIndex = 950;
+        this.startingPositionContainer.zIndex = 955;
+        this.hoverHighlight.zIndex = 945;
+        this.selectionHighlight.zIndex = 945;
+
         this.tilemapManager = tilemapManager;
     }
 
