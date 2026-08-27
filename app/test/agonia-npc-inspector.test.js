@@ -146,9 +146,13 @@ test('панель: рендерится без throw, несёт секции �
     assert.ok(html.includes('Кликните по врагу'), 'empty-state hint before selection');
     eim.select(biba());
     html = eim.panelEl.innerHTML;
-    for (const s of ['Карточка', 'Визуал', 'Поведение', 'Урон по врагу', 'От чего зависит', 'На карте', 'Поставить врага']) {
+    for (const s of ['Карточка', 'Визуал', 'Характер', 'Способности', 'Скорость', 'Поведение', 'Урон по врагу', 'От чего зависит', 'Флаги ИИ', 'На карте', 'Поставить врага']) {
         assert.ok(html.includes(s), 'section missing: ' + s);
     }
+    // S52: характер-селект пишет в карточку
+    assert.ok(html.includes('aggressive') && html.includes('peaceful'), 'disposition select options');
+    assert.ok(html.includes('canPanic') && html.includes('canFlee') && html.includes('rememberGun'), 'ability checkboxes');
+    assert.ok(html.includes('zona') && html.includes('panic') && html.includes('remembergun'), 'flags reference chips');
     assert.ok(html.includes('biba'), 'tag shown');
     assert.ok(html.includes('Открыть в БД'), 'open-db button');
     assert.ok(html.includes('Счётчик боя'), 'dependency line rendered');

@@ -267,7 +267,7 @@ class EnemyInspectorManager {
         const wrap = document.createElement('div');
         wrap.id = 'eim-panel';
         wrap.className = 'eim-panel';
-        wrap.style.cssText = 'display:none;flex-direction:column;width:300px;max-height:calc(100% - 16px);position:absolute;top:8px;right:48px;z-index:9000;background:var(--color-bg-panel);border:1px solid var(--color-border);box-shadow:var(--shadow-popup, -2px 2px 8px rgba(0,0,0,0.3));overflow:hidden;';
+        wrap.style.cssText = 'display:none;flex-direction:column;width:400px;max-height:calc(100% - 16px);position:absolute;top:8px;right:48px;z-index:9000;background:var(--color-bg-panel);border:1px solid var(--color-border);box-shadow:var(--shadow-popup, -2px 2px 8px rgba(0,0,0,0.3));overflow:hidden;';
         const host = document.getElementById('canvas-container') || document.body;
         host.appendChild(wrap);
         this.panelEl = wrap;
@@ -323,6 +323,20 @@ class EnemyInspectorManager {
         return `<input data-eim-card="${key}" type="${type || 'text'}" value="${String(value === undefined || value === null ? '' : value).replace(/"/g, '&quot;')}" style="width:100%;box-sizing:border-box;">`;
     }
 
+    _sel(key, value, options) {
+        let html = `<select data-eim-card="${key}" style="width:100%;box-sizing:border-box;">`;
+        for (const [v, label] of options) {
+            html += `<option value="${v}" ${String(value) === v ? 'selected' : ''}>${label}</option>`;
+        }
+        return html + '</select>';
+    }
+
+    _chk(key, checked, label) {
+        return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input data-eim-card="${key}" type="checkbox" ${checked ? 'checked' : ''}>
+            <span>${label}</span></label>`;
+    }
+
     _enemyHtml() {
         const tpl = this.selectedTemplate;
         const ev = this.selectedEvent;
@@ -341,6 +355,24 @@ class EnemyInspectorManager {
         html += this._row(this._t('npcPanel.sprite', 'Спрайт'), this._inp('spriteName', tpl.spriteName));
         html += this._row(this._t('npcPanel.spriteIdx', 'Индекс'), this._inp('spriteIndex', tpl.spriteIndex, 'number'));
         html += this._row('Коллайдер', this._inp('collider', tpl.collider));
+
+        // S52: характер, способности, скорости
+        html += this._sec(this._t('npcPanel.character', 'Характер'));
+        html += this._row(this._t('npcPanel.disposition', 'Поведение'), this._sel('disposition',
+            String(tpl.disposition || 'aggressive'),
+            [['aggressive', this._t('npcPanel.aggressive', 'Злой — нападает (трассер / рывок + удар)')],
+             ['peaceful', this._t('npcPanel.peaceful', 'Мирный — никогда не атакует, только тревожится / пугается / убегает')]]));
+
+        html += this._sec(this._t('npcPanel.abilities', 'Способности'));
+        html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin:2px 0;">`;
+        html += this._chk('canPanic', String(tpl.canPanic) !== 'false', this._t('npcPanel.canPanic', 'Пугается'));
+        html += this._chk('canFlee', String(tpl.canFlee) !== 'false', this._t('npcPanel.canFlee', 'Убегает'));
+        html += this._chk('rememberGun', String(tpl.rememberGun) !== 'false', this._t('npcPanel.rememberGun', 'Помнит оружие'));
+        html += `</div>`;
+
+        html += this._sec(this._t('npcPanel.speed', 'Скорость (MV 1–6)'));
+        html += this._row(this._t('npcPanel.speedCalm', 'В покое'), this._inp('speedCalm', tpl.speedCalm, 'number'));
+        html += this._row(this._t('npcPanel.speedCombat', 'В бою'), this._inp('speedCombat', tpl.speedCombat, 'number'));
 
         html += this._sec(this._t('npcPanel.behavior', 'Поведение'));
         html += this._row(this._t('npcPanel.attackRadius', 'Радиус атаки'), this._inp('attackRadius', tpl.attackRadius, 'number'));
@@ -365,6 +397,9 @@ class EnemyInspectorManager {
             html += `<div style="margin:2px 0;color:var(--color-text);">• ${line}</div>`;
         }
 
+        html += this._sec(this._t('npcPanel.flags', 'Флаги ИИ (какие есть)'));
+        html += this._flagsReferenceHtml(tpl);
+
         html += this._sec(this._t('npcPanel.onMap', 'На карте'));
         html += this._row('ID / ' + this._t('npcPanel.name', 'Имя'), `<code>${ev.id}</code> <input data-eim-ev="name" value="${String(ev.name || '').replace(/"/g, '&quot;')}" style="width:60%;">`);
         html += this._row('X / Y', `<input data-eim-ev="x" type="number" value="${ev.x}" style="width:56px;"> <input data-eim-ev="y" type="number" value="${ev.y}" style="width:56px;">`);
@@ -374,8 +409,46 @@ class EnemyInspectorManager {
         return html;
     }
 
-    _dependencyLines(tpl) {
-        const meleeVar = Number(tpl.damageMeleeVar) || 2;
+    /** S52: справочник флагов движка ИИ с пометкой активных у этого врага. */
+    _flagsReferenceHtml(tpl) {
+        const chip = (name, desc, active) =>
+            `<span title="${desc}" style="display:inline-block;margin:2px 3px 2px 0;padding:2px 8px;border-radius:9px;font-size:10.5px;border:1px solid ${active ? 'var(--color-accent-border-mid,#5a8ad4)' : 'var(--color-border)'};color:${active ? 'var(--color-text-strong,var(--color-text))' : 'var(--color-text-dim)'};opacity:${active ? 1 : 0.55};${active ? 'background:var(--color-accent-tint-25,rgba(122,176,255,0.16));' : ''}">${name}</span>`;
+        const peaceful = String(tpl.disposition) === 'peaceful';
+        const canPanic = String(tpl.canPanic) !== 'false';
+        const canFlee = String(tpl.canFlee) !== 'false';
+        const rememberGun = String(tpl.rememberGun) !== 'false';
+        const attacks = !peaceful && ((Number(tpl.tracerId) || 0) > 0 || (Number(tpl.meleeId) || 0) > 0 || String(tpl.dashName || '') !== '');
+
+        let html = `<div style="font-size:10px;color:var(--color-text-dim);margin-bottom:2px;">${this._t('npcPanel.flagsSensors', 'Сенсоры (считает движок всегда):')}</div><div>`;
+        html += chip('zona', 'Игрок в радиусе атаки', Number(tpl.attackRadius) > 0);
+        html += chip('contact', 'Прямой зрительный контакт (raycast)', true);
+        html += chip('hearing', 'Игрок шумит в радиусе слуха', Number(tpl.hearingRadius) > 0);
+        html += chip('scope', 'ГГ целится (глобальный свитч прицела)', true);
+        html += chip('gun', 'У ГГ дальнобойное оружие', true);
+        html += chip('melee', 'У ГГ оружие ближнего боя', true);
+        html += chip('dead', 'HP врага ≤ 0', true);
+        html += chip('light_*', 'Зоны света (яркая/касательная/фактическая)', true);
+        html += `</div>`;
+
+        html += `<div style="font-size:10px;color:var(--color-text-dim);margin:6px 0 2px;">${this._t('npcPanel.flagsClassic', 'Классические (включены у этого врага — жирнее):')}</div><div>`;
+        html += chip('combat', 'В бою (от zona/hearing, таймаут)', true);
+        html += chip('calm', 'Успокоился (таймер)', Number(tpl.calmTime) > 0);
+        html += chip('warning', 'Насторожился (услышал шум)', true);
+        html += chip('panic', 'Паника', canPanic);
+        html += chip('flee', 'Бегство', canFlee);
+        html += chip('remembergun', 'Запомнил оружие ГГ', rememberGun);
+        html += chip('shot', 'По нему выстрелили (гаснет ~10 тиков)', true);
+        html += chip('loch', 'Промах/ложная цель (гаснет ~10 тиков)', true);
+        html += chip('wound', 'Ранен', true);
+        html += `</div>`;
+        html += `<div style="font-size:10px;color:var(--color-text-dim);margin-top:4px;">${
+            attacks
+                ? 'Атаки: ' + (peaceful ? '—' : [Number(tpl.tracerId) > 0 ? 'трассер' : null, Number(tpl.meleeId) > 0 ? 'удар' : null, String(tpl.dashName || '') !== '' ? 'рывок' : null].filter(Boolean).join(' + ') || '—')
+                : 'Атак нет' + (peaceful ? ' (мирный)' : ' (не заданы карточки атак)') + '. Кастомные правила — в БД, вкладка «ИИ Врагов».'}</div>`;
+        return html;
+    }
+
+    _dependencyLines(tpl) {        const meleeVar = Number(tpl.damageMeleeVar) || 2;
         const gunVar = Number(tpl.damageGunVar) || 37;
         const fists = Number(tpl.damageFists) || -20;
         const byWpn = Number(tpl.damageMelee) || -100;

@@ -57,7 +57,10 @@ class DatabaseEnemiesEditor {
             tracerId: 1, meleeId: 2, dashName: 'РывокВрага',
             chaseThreshold: 2, cowerThreshold: 3,
             damageMeleeVar: 2, damageGunVar: 37, damageMelee: -100, damageFists: -20,
-            damageSE: 'Damage2', sneakKill: 'true'
+            damageSE: 'Damage2', sneakKill: 'true',
+            // S52: поведенческий конструктор
+            disposition: 'aggressive', canPanic: 'true', canFlee: 'true', rememberGun: 'true',
+            speedCalm: 3, speedCombat: 4
         };
     }
 
@@ -132,6 +135,17 @@ class DatabaseEnemiesEditor {
         // P2: шаблон — внешний вид, атаки, таблица урона
         const isTpl = String(entry.template) === 'true';
         if (isTpl) {
+            form.section(this._tt('Характер'));
+            form.field({ key: 'disposition', label: 'Поведение', type: 'select', hint: 'мирный никогда не атакует',
+                options: [['aggressive', 'Злой — нападает'], ['peaceful', 'Мирный — paciфик']] }, entry, { commit: () => api.changed() });
+            form.fields([
+                { key: 'canPanic', label: 'Пугается', type: 'check' },
+                { key: 'canFlee', label: 'Убегает', type: 'check' },
+                { key: 'rememberGun', label: 'Помнит оружие', type: 'check' },
+                { key: 'speedCalm', label: 'Скорость в покое (1–6)', type: 'number', min: 1, max: 6 },
+                { key: 'speedCombat', label: 'Скорость в бою (1–6)', type: 'number', min: 1, max: 6 }
+            ], entry, { commit: () => api.changed() });
+
             form.section(this._tt('Внешний вид'));
             form.fields([
                 { key: 'spriteName', label: 'Спрайт (файл)', type: 'text', hint: 'img/characters — показывается на карте и в редакторе' },

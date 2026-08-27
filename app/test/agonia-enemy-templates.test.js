@@ -125,6 +125,66 @@ test('подстановки: параметры карточки едут в к
     assert.ok(has(pages[14], '[0,41,1]'), 'sneak kill inverted');
 });
 
+test('S52: мирный — без атакных страниц, но с тревогой/ранами/смертью', () => {
+    const { sde } = makeEnv();
+    const pages = sde.buildEnemyPages(Object.assign({}, BIBA, { disposition: 'peaceful' }));
+    const all = JSON.stringify(pages);
+    assert.ok(!all.includes('performTracer'), 'no tracer shot');
+    assert.ok(!all.includes('performMelee'), 'no melee hit');
+    assert.ok(!all.includes('726'), 'no dash command');
+    assert.ok(!all.includes('<Zona>'), 'no zona attack page');
+    assert.ok(all.includes('<Warning>'), 'warning kept');
+    assert.ok(all.includes('<Wound>'), 'wound kept');
+    assert.ok(all.includes('<OnDeath>'), 'death kept');
+    assert.ok(all.includes('"combat",1'), 'combat latch kept');
+    assert.strictEqual(pages.length, 15, '17 - P2 - P12 = 15 pages');
+});
+
+test('S52: тумблеры способностей выпадают свои страницы', () => {
+    const { sde } = makeEnv();
+    const noPanic = sde.buildEnemyPages(Object.assign({}, BIBA, { canPanic: 'false' }));
+    const allNoPanic = JSON.stringify(noPanic);
+    assert.ok(!allNoPanic.includes('<Panic>'), 'panic pages dropped');
+    assert.ok(!allNoPanic.includes('"panic",1'), 'panic flag set dropped');
+    assert.strictEqual(noPanic.length, 15, '17 - P6 - P7 = 15');
+
+    const noRemember = sde.buildEnemyPages(Object.assign({}, BIBA, { rememberGun: 'false' }));
+    assert.ok(!JSON.stringify(noRemember).includes('<RememberGun>'));
+    assert.strictEqual(noRemember.length, 16, '17 - P8 = 16');
+
+    const noFlee = sde.buildEnemyPages(Object.assign({}, BIBA, { canFlee: 'false' }));
+    const allNoFlee = JSON.stringify(noFlee);
+    assert.ok(!allNoFlee.includes('<Flee>'), 'flee page dropped');
+    assert.strictEqual(noFlee.length, 15, '17 - P9 - P10 = 15');
+
+    const nothing = sde.buildEnemyPages(Object.assign({}, BIBA, {
+        disposition: 'peaceful', canPanic: 'false', rememberGun: 'false', canFlee: 'false'
+    }));
+    assert.strictEqual(nothing.length, 10, '17 - P2 - P6 - P7 - P8 - P9 - P10 - P12 = 10');
+    assert.ok(JSON.stringify(nothing).includes('__reset_all'), 'calm reset kept');
+});
+
+test('S52: скорости из карточки подставляются в спокойные/боевые страницы', () => {
+    const { sde } = makeEnv();
+    const pages = sde.buildEnemyPages(Object.assign({}, BIBA, { speedCalm: 2, speedCombat: 6 }));
+    assert.strictEqual(pages[0].moveSpeed, 2, 'rest page speed = speedCalm');
+    assert.strictEqual(pages[3].moveSpeed, 2, 'combat-latch page uses calm speed (as original)');
+    assert.strictEqual(pages[4].moveSpeed, 6, 'shot page speed = speedCombat');
+    assert.strictEqual(pages[5].moveSpeed, 6, 'combat page speed = speedCombat');
+    assert.strictEqual(pages[12].moveSpeed, 6, 'zona page speed = speedCombat');
+    assert.strictEqual(pages[13].moveSpeed, 6, 'wound page speed = speedCombat');
+});
+
+test('S52: P12 без рывка/удара — выпадает целиком у злого без атак', () => {
+    const { sde } = makeEnv();
+    const noDash = sde.buildEnemyPages(Object.assign({}, BIBA, { dashName: '' }));
+    const allNoDash = JSON.stringify(noDash);
+    assert.ok(!allNoDash.includes('726'), 'dash command gone');
+    assert.ok(allNoDash.includes('performMelee'), 'melee kept');
+    const noAttacks = sde.buildEnemyPages(Object.assign({}, BIBA, { dashName: '', meleeId: 0 }));
+    assert.ok(!JSON.stringify(noAttacks).includes('<Zona>'), 'zona page dropped when no dash and no melee');
+});
+
 test('findTemplateByNote: только template-карточки, по тем же тегам, что и правила', () => {
     const box = { match: '<box>', hp: '50' };
     const { sde } = makeEnv();
