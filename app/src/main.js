@@ -92,6 +92,7 @@ class RPGReactor {
             getEventManager: () => this.eventManager,
             toggleEventMode: () => this.toggleEventMode(),
             toggleLightMode: () => this.toggleLightMode(),
+            toggleNpcMode: () => this.toggleNpcMode(),
             disableEventModeIfActive: () => this.disableEventModeIfActive(),
             installRuntime: () => this.projectController.installReactorRuntime(),
             migratePlugins: () => this.projectController.migratePluginsToEngineCatalog(),
@@ -237,6 +238,15 @@ class RPGReactor {
             const lmMap = this.projectController.getTilemapManager().currentMap;
             this.lightManager.setCurrentMap(lmMap);
             this.lightManager.onCoordinatesChange = (x, y) => this.updateMapCoordinates(x, y);
+
+            // Enemy Inspector (S51): instantiate once, then re-init on every
+            // map load; the floating panel mounts itself on first NPC-mode use.
+            if (!this.enemyInspectorManager) {
+                this.enemyInspectorManager = new EnemyInspectorManager(
+                    this.projectController, this.databaseManager, this.eventManager);
+            }
+            this.enemyInspectorManager.setTilemapManager(this.projectController.getTilemapManager());
+            this.enemyInspectorManager.setCurrentMap(lmMap);
 
             // Set up zoom change callback
             const tilemapManager = this.projectController.getTilemapManager();
@@ -517,6 +527,10 @@ class RPGReactor {
             const lb = document.getElementById('mode-light-btn');
             if (lb) lb.classList.remove('active');
         }
+        // Mutual exclusion with NPC mode (S51): exit it when entering event mode.
+        if (newMode && this.enemyInspectorManager && this.enemyInspectorManager.npcMode) {
+            this.exitNpcMode();
+        }
         this.eventManager.setEventMode(newMode);
 
         // Disable/enable map editor based on event mode
@@ -554,6 +568,16 @@ class RPGReactor {
                 }
             });
         }
+
+        // S51: swap the toolbar tool group by mode - tiles get the drawing
+        // tools, events get Свет/НПС. The standalone light button hides in
+        // event mode (its event-group twin takes over).
+        document.querySelectorAll('.tiles-only').forEach(el => {
+            el.style.display = newMode ? 'none' : '';
+        });
+        document.querySelectorAll('.events-only').forEach(el => {
+            el.style.display = newMode ? '' : 'none';
+        });
 
         // Update toolbar mode toggle button (icon + active state)
         // active = Tiles mode (default), not-active = Events mode
@@ -610,6 +634,10 @@ class RPGReactor {
         if (newMode && this.eventManager && this.eventManager.eventMode) {
             this.toggleEventMode();
         }
+        // Mutual exclusion with NPC mode (S51).
+        if (newMode && this.enemyInspectorManager && this.enemyInspectorManager.npcMode) {
+            this.exitNpcMode();
+        }
         // Light mode also disables the tile editor (like event mode does).
         if (this.mapEditor) {
             this.mapEditor.setEnabled(!newMode);
@@ -627,6 +655,49 @@ class RPGReactor {
             : (newMode ? 'Light mode enabled' : 'Light mode disabled'));
     }
 
+    // Toggle NPC mode (S51): inspect + edit enemy stubs on the map.
+    toggleNpcMode() {
+        if (!this.enemyInspectorManager || !this.enemyInspectorManager.currentMap) {
+            this.uiManager.updateStatus(window.I18n ? window.I18n.t('status.loadMapFirst') : 'Load a map first');
+            return;
+        }
+        if (this.enemyInspectorManager.npcMode) {
+            this.exitNpcMode();
+            return;
+        }
+
+        // Mutual exclusion with event and light modes.
+        if (this.eventManager && this.eventManager.eventMode) this.toggleEventMode();
+        if (this.lightManager && this.lightManager.lightMode) this.toggleLightMode();
+
+        if (this.mapEditor) {
+            this.mapEditor.setEnabled(false);
+        }
+
+        this.enemyInspectorManager.setNpcMode(true);
+
+        const btn = document.getElementById('mode-npc-btn');
+        if (btn) btn.classList.add('active');
+
+        this.uiManager.updateStatus(window.I18n
+            ? window.I18n.t('status.npcModeEnabled')
+            : 'NPC mode enabled');
+    }
+
+    exitNpcMode() {
+        if (!this.enemyInspectorManager) return;
+        this.enemyInspectorManager.setNpcMode(false);
+        const btn = document.getElementById('mode-npc-btn');
+        if (btn) btn.classList.remove('active');
+        if (this.mapEditor) {
+            this.mapEditor.setEnabled(true);
+            this.mapEditor.setupMapInteraction();
+        }
+        this.uiManager.updateStatus(window.I18n
+            ? window.I18n.t('status.npcModeDisabled')
+            : 'NPC mode disabled');
+    }
+
     // Disable event mode if currently active (called when switching to tileset tools)
     disableEventModeIfActive() {
         if (!this.eventManager) return;
@@ -636,6 +707,11 @@ class RPGReactor {
             this.lightManager.setLightMode(false);
             const lb = document.getElementById('mode-light-btn');
             if (lb) lb.classList.remove('active');
+        }
+
+        // Also drop NPC mode when returning to tile tools (S51).
+        if (this.enemyInspectorManager && this.enemyInspectorManager.npcMode) {
+            this.exitNpcMode();
         }
 
         // If event mode is currently active, deactivate it
@@ -679,6 +755,11 @@ class RPGReactor {
 
             // Layers Panel: leaving event mode restores tile-layer editing.
             if (this.layersPanel) this.layersPanel.onEventModeChanged(false);
+
+            // S51: restore the drawing-tools group (menu path duplicate of
+            // toggleEventMode's swap).
+            document.querySelectorAll('.tiles-only').forEach(el => { el.style.display = ''; });
+            document.querySelectorAll('.events-only').forEach(el => { el.style.display = 'none'; });
 
             // Update status
             this.uiManager.updateStatus('Tileset mode enabled');

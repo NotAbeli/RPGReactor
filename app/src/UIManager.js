@@ -1024,6 +1024,11 @@ class UIManager {
                     this.callbacks.toggleLightMode();
                 }
                 break;
+            case 'toggle-npc-mode':
+                if (this.callbacks.toggleNpcMode) {
+                    this.callbacks.toggleNpcMode();
+                }
+                break;
         }
     }
 
