@@ -38,6 +38,8 @@ class DatabaseHUDEditor {
         this._showAll = true;
         this._scaleMode = 'fit';
         this._scaleK = 1;
+        this._scene = 'map';          // S49: map | title | save
+        this._hiddenGroups = new Set(); // S49: editor-only group visibility
     }
 
     _tt(t) { return typeof window !== 'undefined' && window.I18n ? window.I18n.tText(t) : t; }
@@ -153,6 +155,15 @@ class DatabaseHUDEditor {
         const c = p.Condition;
         if (c === undefined || c === null || String(c).trim() === '') return true;
         return !!this._evalExpr(c, true);
+    }
+
+    /** S49: editor-only group visibility (hud / inv / craft / hotbar). */
+    _groupHidden(id) {
+        if (!this._hiddenGroups || !this._hiddenGroups.size) return false;
+        if (id.startsWith('craft.')) return this._hiddenGroups.has('craft');
+        if (id === 'inv.hotbar') return this._hiddenGroups.has('hotbar');
+        if (id.startsWith('inv.')) return this._hiddenGroups.has('inv');
+        return this._hiddenGroups.has('hud');
     }
 
     // ------------------------------------------------------------------
@@ -659,6 +670,152 @@ class DatabaseHUDEditor {
         return defs;
     }
 
+    // ------------------------------------------------------------------
+    // S49: scene-specific anchors (Title / Save screens)
+    // ------------------------------------------------------------------
+
+    _titleSection() {
+        const a = this._agonia();
+        if (!a.title) a.title = {};
+        return a.title;
+    }
+
+    _saveSection() {
+        const a = this._agonia();
+        if (!a.save) a.save = {};
+        return a.save;
+    }
+
+    /** Window anchors for the active scene (S49). */
+    _sceneDefs() {
+        const defs = [];
+        if (this._scene === 'title') {
+            const sec = this._titleSection();
+            const n = (k, d) => { const v = Number(sec[k]); return Number.isFinite(v) ? v : d; };
+            const bgImg = this._picImg(sec['Background File'] || sec['Background Image'] || '');
+            // Background plate
+            const bgRect = () => ({
+                x: n('Background X-Axis', 0), y: n('Background Y-Axis', 0),
+                w: (bgImg && bgImg.naturalWidth) ? bgImg.naturalWidth : this._screen.w,
+                h: (bgImg && bgImg.naturalHeight) ? bgImg.naturalHeight : this._screen.h,
+                bgImg
+            });
+            defs.push({
+                id: 'title.bg',
+                label: this._tt('Титул · фон'),
+                rect: bgRect,
+                apply: (x, y) => { sec['Background X-Axis'] = String(Math.round(x)); sec['Background Y-Axis'] = String(Math.round(y)); },
+                draw: ctx => this._drawPlainBox(ctx, bgRect(), 'title')
+            });
+            // Title sprite
+            const spRect = () => ({ x: n('Title Sprite X-Axis', 300), y: n('Title Sprite Y-Axis', 150), w: 260, h: 80 });
+            defs.push({
+                id: 'title.sprite',
+                label: this._tt('Титул · спрайт титула'),
+                rect: spRect,
+                apply: (x, y) => { sec['Title Sprite X-Axis'] = String(Math.round(x)); sec['Title Sprite Y-Axis'] = String(Math.round(y)); },
+                draw: ctx => this._drawPlainBox(ctx, spRect(), 'title')
+            });
+            // Cursor (only when visible)
+            if (String(sec['Cursor Visible']) === 'true' || sec['Cursor Visible'] === true) {
+                const cuRect = () => ({ x: n('Cursor X-Axis', 0), y: n('Cursor Y-Axis', 5), w: 24, h: 24 });
+                defs.push({
+                    id: 'title.cursor',
+                    label: this._tt('Титул · курсор'),
+                    rect: cuRect,
+                    apply: (x, y) => { sec['Cursor X-Axis'] = String(Math.round(x)); sec['Cursor Y-Axis'] = String(Math.round(y)); },
+                    draw: ctx => this._drawPlainBox(ctx, cuRect(), 'title')
+                });
+            }
+            // Commands 1-9 (Command Pos N as "x,y" strings)
+            const cmdNames = ['Новая игра', 'Продолжить', 'Настройки', 'Выход', 'Команда 5', 'Команда 6', 'Команда 7', 'Команда 8', 'Команда 9'];
+            for (let i = 1; i <= 9; i++) {
+                const key = 'Command Pos ' + i;
+                const parse = () => {
+                    const raw = String(sec[key] || '');
+                    const m = raw.match(/(-?\d+)\s*,\s*(-?\d+)/);
+                    return m ? { x: Number(m[1]), y: Number(m[2]) } : null;
+                };
+                if (!parse()) continue;
+                const rect = () => {
+                    const p = parse() || { x: 0, y: 0 };
+                    return { x: p.x, y: p.y, w: 170, h: 34 };
+                };
+                defs.push({
+                    id: 'title.cmd' + i,
+                    label: this._tt('Титул · ' + cmdNames[i - 1]),
+                    rect,
+                    apply: (x, y) => { sec[key] = Math.round(x) + ',' + Math.round(y); },
+                    draw: ctx => this._drawPlainBox(ctx, rect(), 'title', cmdNames[i - 1])
+                });
+            }
+        } else if (this._scene === 'save') {
+            const sec = this._saveSection();
+            const n = (k, d) => { const v = Number(sec[k]); return Number.isFinite(v) ? v : d; };
+            // Backdrop plate
+            const bgImg = this._picImg(sec['Backdrop Image'] || sec['Background Image'] || '');
+            const bgRect = () => ({
+                x: 0, y: 0,
+                w: (bgImg && bgImg.naturalWidth) ? bgImg.naturalWidth : this._screen.w,
+                h: (bgImg && bgImg.naturalHeight) ? bgImg.naturalHeight : this._screen.h,
+                bgImg
+            });
+            defs.push({
+                id: 'save.bg',
+                label: this._tt('Сохранение · фон'),
+                rect: bgRect,
+                apply: () => { /* decorative full-screen plate */ },
+                draw: ctx => this._drawPlainBox(ctx, bgRect(), 'save')
+            });
+            // Dictaphone buttons + elements
+            const elems = [
+                ['Rec', 'Кнопка записи'], ['Play', 'Кнопка воспроизв.'], ['Prev', 'Кнопка назад'],
+                ['Next', 'Кнопка вперёд'], ['Stop', 'Кнопка стоп'], ['Back', 'Кнопка выхода'],
+                ['Text', 'Текст записи'], ['Diary', 'Дневник'], ['Cassette', 'Кассета'],
+                ['Cover', 'Обложка'], ['Clip', 'Клип'], ['Snap', 'Снимок'], ['List', 'Список слотов']
+            ];
+            for (const [k, label] of elems) {
+                const img = this._picImg(sec[k + ' Img Norm'] || '');
+                const rect = () => ({
+                    x: n(k + ' X', 400), y: n(k + ' Y', 300),
+                    w: (img && img.naturalWidth) ? img.naturalWidth : 44,
+                    h: (img && img.naturalHeight) ? img.naturalHeight : 44
+                });
+                defs.push({
+                    id: 'save.' + k.toLowerCase(),
+                    label: this._tt('Сохранение · ' + label),
+                    rect,
+                    apply: (x, y) => { sec[k + ' X'] = String(Math.round(x)); sec[k + ' Y'] = String(Math.round(y)); },
+                    draw: ctx => this._drawPlainBox(ctx, rect(), 'save', k === 'Text' || k === 'List' || k === 'Diary' ? label : '')
+                });
+            }
+        }
+        return defs;
+    }
+
+    /** Simple boxed drawing for scene anchors (S49). */
+    _drawPlainBox(ctx, r, family, tag) {
+        ctx.save();
+        if (r.bgImg && r.bgImg.naturalWidth) {
+            ctx.drawImage(r.bgImg, r.x, r.y, r.w, r.h);
+        } else {
+            ctx.strokeStyle = family === 'title' ? 'rgba(150,190,255,0.65)' : 'rgba(220,170,255,0.65)';
+            ctx.setLineDash([5, 3]);
+            ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+            ctx.setLineDash([]);
+            ctx.fillStyle = 'rgba(10,10,18,0.30)';
+            ctx.fillRect(r.x, r.y, r.w, r.h);
+        }
+        if (tag) {
+            ctx.fillStyle = 'rgba(235,235,250,0.85)';
+            ctx.font = '11px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(tag, r.x + 6, r.y + r.h / 2 + 4);
+        }
+        this._strokeSelected(ctx, r);
+        ctx.restore();
+    }
+
     /** Accent frame around the selected window rect (S42). */
     _strokeSelected(ctx, r) {
         if (!this._selectedWindow) return;
@@ -761,9 +918,51 @@ class DatabaseHUDEditor {
 
         // S48: permanent hint bar under the stage.
         const hintBar = document.createElement('div');
-        hintBar.style.cssText = 'flex:none;padding:5px 12px;border-top:1px solid var(--color-border);font-size:11px;color:var(--color-text-dim);text-align:center;user-select:none;';
-        hintBar.textContent = this._tt('Клик — выбрать · Перетащить — переместить · Стрелки — 1px (Shift — 10px) · 👁 в списке — скрыть');
+        hintBar.style.cssText = 'flex:none;padding:5px 12px;border-top:1px solid var(--color-border);font-size:11px;color:var(--color-text-dim);display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;user-select:none;';
+        hintBar.textContent = this._tt('Клик — выбрать · Перетащить — переместить · Стрелки — 1px (Shift — 10px)');
         mid.appendChild(hintBar);
+
+        // S49: scene selector (Map HUD / Title / Save) + group visibility
+        // toggles - both live on a bar above the state panel.
+        const sceneBar = document.createElement('div');
+        sceneBar.style.cssText = 'flex:none;display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--color-border);flex-wrap:wrap;';
+        const sceneLbl = document.createElement('span');
+        sceneLbl.style.cssText = 'font-size:12px;color:var(--color-text-dim);';
+        sceneLbl.textContent = this._tt('Сцена:');
+        sceneBar.appendChild(sceneLbl);
+        this._scene = this._scene || 'map';
+        for (const [id, label] of [['map', 'Карта (HUD)'], ['title', 'Титул'], ['save', 'Сохранение']]) {
+            const b = document.createElement('button');
+            b.className = 'agonia-btn';
+            b.dataset.sceneId = id;
+            b.textContent = this._tt(label);
+            b.addEventListener('click', () => {
+                this._scene = id;
+                this._selected = -1;
+                this._selectedWindow = null;
+                this._refreshAll();
+            });
+            sceneBar.appendChild(b);
+        }
+        const sceneSpacer = document.createElement('span');
+        sceneSpacer.style.flex = '1';
+        sceneBar.appendChild(sceneSpacer);
+        // Group visibility toggles (editor-only).
+        this._hiddenGroups = this._hiddenGroups || new Set();
+        for (const [gid, glabel] of [['hud', 'HUD'], ['inv', 'Инвентарь'], ['craft', 'Крафт'], ['hotbar', 'Хотбар']]) {
+            const b = document.createElement('button');
+            b.className = 'agonia-btn';
+            b.dataset.groupId = gid;
+            b.textContent = '👁 ' + this._tt(glabel);
+            b.title = this._tt('Скрыть/показать группу в редакторе (на игру не влияет)');
+            b.addEventListener('click', () => {
+                if (this._hiddenGroups.has(gid)) this._hiddenGroups.delete(gid);
+                else this._hiddenGroups.add(gid);
+                this._refreshAll();
+            });
+            sceneBar.appendChild(b);
+        }
+        mid.insertBefore(sceneBar, stateBar);
 
         const screen = this.getScreenSize();
         this._screen = screen;
@@ -857,6 +1056,16 @@ class DatabaseHUDEditor {
     _refreshStatePanel() {
         const host = this._dom.stateHost;
         host.innerHTML = '';
+        // S49: the game-state panel only matters on the Map scene; title
+        // and save screens have no conditions.
+        if (this._scene !== 'map') {
+            const note = document.createElement('span');
+            note.style.cssText = 'font-size:11px;color:var(--color-text-dim);';
+            note.textContent = this._scene === 'title' ? this._tt('Экран титула — условия не применяются')
+                : this._tt('Экран сохранения — условия не применяются');
+            host.appendChild(note);
+            return;
+        }
         const all = document.createElement('button');
         all.className = 'agonia-btn';
         const on = this._showAll;
@@ -933,6 +1142,8 @@ class DatabaseHUDEditor {
 
     /** Human-friendly tag for a window id. */
     _windowTag(id) {
+        if (id.startsWith('title.')) return 'титул';
+        if (id.startsWith('save.')) return 'сохранение';
         if (id.startsWith('craft.')) return 'крафт';
         if (id === 'inv.hotbar') return 'инвентарь';
         if (id.startsWith('inv.chest')) return 'сундук';
@@ -973,7 +1184,8 @@ class DatabaseHUDEditor {
             return row;
         };
 
-        // --- Group: HUD pieces ---
+        // --- Group: HUD pieces (map scene only) ---
+        if (this._scene === 'map') {
         mkHeader('Куски HUD · ' + this._pieces.length);
         this._dom.count.textContent = this._pieces.length + ' ' + this._tt('элементов HUD');
         this._pieces.forEach((p, i) => {
@@ -1001,10 +1213,13 @@ class DatabaseHUDEditor {
             });
             box.appendChild(row);
         });
+        }
 
-        // --- Group: interface windows ---
-        const winDefs = this._windowDefs();
-        mkHeader('Окна интерфейса · ' + winDefs.length);
+        // --- Group: interface windows (scene-dependent) ---
+        const winDefs = this._scene === 'map' ? this._windowDefs() : this._sceneDefs();
+        const groupTitle = this._scene === 'title' ? 'Экран титула'
+            : this._scene === 'save' ? 'Экран сохранения' : 'Окна интерфейса';
+        mkHeader(groupTitle + ' · ' + winDefs.length);
         for (const def of winDefs) {
             const hidden = this._hiddenWindows.has(def.id);
             const eye = mkEye(hidden, () => {
@@ -1107,7 +1322,9 @@ class DatabaseHUDEditor {
     }
 
     _renderWindowInspector(right) {
-        const def = this._windowDefs().find(d => d.id === this._selectedWindow);
+        const isScene = this._scene !== 'map';
+        const pool = isScene ? this._sceneDefs() : this._windowDefs();
+        const def = pool.find(d => d.id === this._selectedWindow);
         if (!def) { this._selectedWindow = null; this._refreshInspector(); return; }
         // S47: tight layout - the 340px panel cannot fit the wide default grid.
         const form = new InspectorForm({ tight: true });
@@ -1116,6 +1333,39 @@ class DatabaseHUDEditor {
         const rerender = () => { this._render(); this._refreshInspector(); };
         const vis = this._invVisual();
         const commit = () => { this._invVisualCommit(vis); rerender(); };
+        // S49: scene anchors (title/save) - a simple live x/y inspector
+        // driven by the def's own rect/apply (positions persist to the
+        // title/save DB sections through the normal sidecar pipeline).
+        if (isScene) {
+            const r0 = def.rect();
+            form.section(this._tt('Позиция'));
+            const mkNum = (get, set) => {
+                const i = document.createElement('input');
+                i.type = 'number';
+                i.className = 'agonia-input';
+                i.style.cssText = 'flex:none;width:64px;';
+                i.value = Math.round(get());
+                i.addEventListener('input', () => {
+                    const n = Number(i.value);
+                    if (!Number.isNaN(n)) { set(n); this._render(); }
+                });
+                return i;
+            };
+            if (def.id !== 'save.bg') {
+                form.row('X', mkNum(() => r0.x, v => {
+                    def.apply(v, r0.y);
+                }));
+                form.row('Y', mkNum(() => r0.y, v => {
+                    def.apply(r0.x, v);
+                }));
+            }
+            form.mount(right);
+            const hint = document.createElement('div');
+            hint.style.cssText = 'font-size:11px;color:var(--color-text-dim);line-height:1.4;padding:6px 2px;';
+            hint.textContent = this._tt('Перетаскивайте элемент мышью на шахматке; стрелки — по пикселю (Shift = 10). Правки сохраняются кнопкой OK.');
+            right.appendChild(hint);
+            return;
+        }
         // S48: grouped sections - Position first, type specifics, Behavior.
         const posSection = (xKey, yKey) => {
             form.section(this._tt('Позиция'));
@@ -1267,24 +1517,33 @@ class DatabaseHUDEditor {
 
     _render() {
         if (!this._ctx) return;
-        // windows layer
+        // windows layer (map scene) or scene anchors (title/save)
         if (this._winCtx) {
             this._winCtx.clearRect(0, 0, this._screen.w, this._screen.h);
-            this._windowDefsCache = this._windowDefs();
-            for (const def of this._windowDefsCache) {
-                if (this._hiddenWindows && this._hiddenWindows.has(def.id)) continue;
-                try { def.draw(this._winCtx); } catch (e) { /* keep editor alive */ }
+            if (this._scene === 'map') {
+                this._windowDefsCache = this._windowDefs();
+                for (const def of this._windowDefsCache) {
+                    if (this._groupHidden(def.id)) continue;
+                    if (this._hiddenWindows && this._hiddenWindows.has(def.id)) continue;
+                    try { def.draw(this._winCtx); } catch (e) { /* keep editor alive */ }
+                }
+            } else {
+                this._windowDefsCache = this._sceneDefs();
+                for (const def of this._windowDefsCache) {
+                    if (this._hiddenWindows && this._hiddenWindows.has(def.id)) continue;
+                    try { def.draw(this._winCtx); } catch (e) { /* keep editor alive */ }
+                }
             }
         }
-        // HUD pieces layer
+        // HUD pieces layer (map scene only)
         const ctx = this._ctx;
         ctx.clearRect(0, 0, this._screen.w, this._screen.h);
+        if (this._scene !== 'map') { this._drawSelection(); return; }
         ctx.imageSmoothingEnabled = false;
-        let pieceIdx = -1;
+        const piecesHidden = this._hiddenGroups && this._hiddenGroups.has('hud');
         for (const [p, i] of this._sorted()) {
+            if (piecesHidden) continue;
             if (this._hiddenPieces && this._hiddenPieces.has(i)) continue;
-            pieceIdx = i;
-            void pieceIdx;
             if (!this._pieceVisible(p)) continue;
             try { this._drawPiece(ctx, p); } catch (e) { /* keep editor alive */ }
         }
@@ -1297,9 +1556,10 @@ class DatabaseHUDEditor {
         let label = null;
         let r = null;
         if (this._selectedWindow) {
-            const def = this._windowDefs().find(d => d.id === this._selectedWindow);
+            const pool = this._scene === 'map' ? this._windowDefs() : this._sceneDefs();
+            const def = pool.find(d => d.id === this._selectedWindow);
             if (def) { label = def.label; r = def.rect(); }
-        } else if (this._selected >= 0 && this._pieces[this._selected]) {
+        } else if (this._scene === 'map' && this._selected >= 0 && this._pieces[this._selected]) {
             const p = this._pieces[this._selected];
             label = '#' + (p.id || '?') + ' ' + (p.Image || p['Main Image'] || p.type);
             r = this._pieceRect(p);
@@ -1436,7 +1696,8 @@ class DatabaseHUDEditor {
 
     /** Test/programmatic hook: move a window anchor to a new TOP-LEFT. */
     dragWindow(id, x, y) {
-        const def = this._windowDefs().find(d => d.id === id);
+        const pool = this._scene === 'map' ? this._windowDefs() : this._sceneDefs();
+        const def = pool.find(d => d.id === id);
         if (!def) return false;
         const r = def.rect();
         def.apply(def.lockX ? r.x : x, y);
@@ -1455,6 +1716,8 @@ class DatabaseHUDEditor {
             return { x: (e.clientX - r.left) * kx, y: (e.clientY - r.top) * ky };
         };
         const pickPiece = pt => {
+            if (this._scene !== 'map') return null;
+            if (this._hiddenGroups && this._hiddenGroups.has('hud')) return null;
             const sorted = this._sorted().reverse();
             for (const [p, i] of sorted) {
                 if (this._hiddenPieces && this._hiddenPieces.has(i)) continue;
@@ -1466,8 +1729,9 @@ class DatabaseHUDEditor {
         };
         const pickWindow = pt => {
             // topmost drawn last -> iterate reversed
-            const defs = this._windowDefs().reverse();
+            const defs = (this._scene === 'map' ? this._windowDefs() : this._sceneDefs()).reverse();
             for (const def of defs) {
+                if (this._scene === 'map' && this._groupHidden(def.id)) continue;
                 if (this._hiddenWindows && this._hiddenWindows.has(def.id)) continue;
                 const r = def.rect();
                 if (r && pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h) return def;
@@ -1630,6 +1894,23 @@ class DatabaseHUDEditor {
         this._refreshInspector();
         this._render();
         this._applyScale();
+        this._refreshSceneBar();
+    }
+
+    /** S49: highlight the active scene + reflect hidden groups on buttons. */
+    _refreshSceneBar() {
+        if (!this._dom || !this._dom.root) return;
+        this._dom.root.querySelectorAll('[data-scene-id]').forEach(b => {
+            const active = b.dataset.sceneId === this._scene;
+            b.style.fontWeight = active ? '700' : '400';
+            b.style.borderColor = active ? 'var(--color-accent-border-mid)' : 'var(--color-border)';
+        });
+        this._dom.root.querySelectorAll('[data-group-id]').forEach(b => {
+            const gid = b.dataset.groupId;
+            const hidden = this._hiddenGroups && this._hiddenGroups.has(gid);
+            b.style.opacity = hidden ? '.45' : '1';
+            b.style.textDecoration = hidden ? 'line-through' : 'none';
+        });
     }
 }
 
