@@ -298,7 +298,7 @@ class EnemyInspectorManager {
         const tag = tpl ? String(tpl.match || '').replace(/[<>]/g, '') : '';
         const head = `
         <div style="padding:6px 10px;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <span style="font-weight:600;">👤 ${tpl ? '' : this._t('npcPanel.title', 'Враги (НПС)')}</span>
+            <span style="font-weight:600;">👤 ${tpl ? '' : this._t('npcPanel.title', 'Враги')}</span>
             ${tpl ? `
             <code style="font-size:12.5px;background:var(--color-bg-deep);padding:1px 6px;border-radius:3px;">${tag}</code>
             <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--color-text-dim);">HP
@@ -320,15 +320,28 @@ class EnemyInspectorManager {
     }
 
     /**
-     * P7: список ивентов текущей карты для контекст-палитры (режим событий):
-     * мини-превью графики + имя + координаты; клик — выбрать на карте,
-     * двойной клик — открыть редактор события.
+     * P7/P8: палитра режима событий — ДВЕ секции: «Виды врагов»
+     * (карточки БД, клик взводит постановку прямо в режиме событий)
+     * и «События карты» (мини-превью + имя + координаты; клик — выбрать,
+     * двойной клик — редактор).
      */
     buildEventsPalette(hostEl) {
         if (!hostEl) return;
         hostEl.innerHTML = '';
+
+        const section = (titleKey, titleFallback) => {
+            const h = document.createElement('div');
+            h.style.cssText = 'font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--color-text-dim);padding:8px 10px 2px;';
+            h.textContent = this._t(titleKey, titleFallback);
+            hostEl.appendChild(h);
+        };
+
+        section('ctxPalette.enemyKinds', 'Виды врагов');
+        this._appendEnemyTemplateGrid(hostEl, () => this.buildEventsPalette(hostEl));
+
+        section('ctxPalette.mapEvents', 'События карты');
         const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:6px 10px;border-bottom:1px solid var(--color-border);';
+        hint.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:2px 10px 6px;border-bottom:1px solid var(--color-border);';
         hint.textContent = this._t('ctxPalette.eventsHint', 'Клик — выбрать событие · двойной клик — редактор');
         hostEl.appendChild(hint);
 
@@ -458,16 +471,23 @@ class EnemyInspectorManager {
     buildSidebarPalette(hostEl) {
         if (!hostEl) return;
         hostEl.innerHTML = '';
-        const templates = this.getTemplates();
         const header = document.createElement('div');
         header.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:6px 10px;border-bottom:1px solid var(--color-border);';
         header.textContent = this._t('npcPalette.hint', 'Кликните по врагу, затем по пустой клетке карты');
         hostEl.appendChild(header);
+        this._appendEnemyTemplateGrid(hostEl, () => this.buildSidebarPalette(hostEl));
+    }
 
+    /**
+     * P8: грид карточек врагов БД с живыми мини-плеерами и постановкой.
+     * Общий билдер для палитры врагов и секции «Виды врагов» палитры событий.
+     */
+    _appendEnemyTemplateGrid(hostEl, rebuild) {
+        const templates = this.getTemplates();
         if (!templates.length) {
             const empty = document.createElement('div');
             empty.style.cssText = 'color:var(--color-text-muted);font-size:12px;padding:10px;';
-            empty.textContent = this._t('npcPalette.empty', 'Нет карточек-шаблонов. Создайте врага в БД (Бой → ИИ Врагов, чекбокс «Шаблон врага»).');
+            empty.textContent = this._t('npcPalette.empty', 'Нет карточек врагов. Создайте врага в БД — Бой, ИИ Врагов, чекбокс «Шаблон врага».');
             hostEl.appendChild(empty);
             return;
         }
@@ -526,7 +546,7 @@ class EnemyInspectorManager {
                 } else if (this.tilemapManager && this.tilemapManager.container) {
                     this.tilemapManager.container.cursor = 'default';
                 }
-                this.buildSidebarPalette(hostEl);
+                if (rebuild) rebuild();
                 this._renderPanel();
             });
             grid.appendChild(card);
@@ -564,7 +584,7 @@ class EnemyInspectorManager {
         let gfx = {}, snd = {};
         try { if (tpl.stateGraphics) gfx = JSON.parse(tpl.stateGraphics) || {}; } catch (e) { gfx = {}; }
         try { if (tpl.stateSounds) snd = JSON.parse(tpl.stateSounds) || {}; } catch (e) { snd = {}; }
-        let html = this._sec(this._t('npcPanel.states', 'Состояния (графика + звук)'));
+        let html = this._sec(this._t('npcPanel.states', 'Состояния'));
         html += `<div style="font-size:10px;color:var(--color-text-muted);margin-bottom:2px;">${this._t('npcPanel.statesHint', 'Пусто = основной спрайт. Звук играется на входе состояния.')}</div>`;
         for (const [key, label] of this._statesList()) {
             const g = gfx[key] || {};
@@ -633,7 +653,7 @@ class EnemyInspectorManager {
                 left += this._chkFeared(w.varValue, fearedSet.has(w.varValue),
                     (w.name || 'var ' + w.varValue) + ' <span style="color:var(--color-text-dim);">· var ' + w.varValue + '</span>');
             }
-            left += `<div style="font-size:10px;color:var(--color-text-muted);margin-top:2px;">${this._t('npcPanel.fearHint', 'Ни один — глобальное условие оружия (GunCondition).')}</div>`;
+            left += `<div style="font-size:10px;color:var(--color-text-muted);margin-top:2px;">${this._t('npcPanel.fearHint', 'Ни один не выбран — действует глобальное условие оружия.')}</div>`;
         }
 
         left += this._sec(this._t('npcPanel.abilities', 'Способности'));
@@ -643,7 +663,7 @@ class EnemyInspectorManager {
         left += this._chk('rememberGun', String(tpl.rememberGun) !== 'false', this._t('npcPanel.rememberGun', 'Помнит оружие'));
         left += `</div>`;
 
-        left += this._sec(this._t('npcPanel.speed', 'Скорость (MV 1–6)'));
+        left += this._sec(this._t('npcPanel.speed', 'Скорость'));
         left += this._row(this._t('npcPanel.speedCalm', 'В покое'), this._inp('speedCalm', tpl.speedCalm, 'number'));
         left += this._row(this._t('npcPanel.speedCombat', 'В бою'), this._inp('speedCombat', tpl.speedCombat, 'number'));
         left += this._row(this._t('npcPanel.stepVolume', 'Громкость шагов %'), this._inp('stepVolume', tpl.stepVolume, 'number'));
@@ -747,7 +767,7 @@ class EnemyInspectorManager {
         const weapons = this.getWeapons();
         let html = '';
         if (weapons.length) {
-            html += `<div style="font-size:10px;color:var(--color-text-muted);margin-bottom:2px;">${this._t('npcPanel.dmgHint', 'Из Арсенала (Бой → Оружие); измени значение — станет переопределением этого врага.')}</div>`;
+            html += `<div style="font-size:10px;color:var(--color-text-muted);margin-bottom:2px;">${this._t('npcPanel.dmgHint', 'База урона — из Арсенала. Измени значение — оно станет личным для этого врага.')}</div>`;
             for (const w of weapons) {
                 const v = String(w.varValue);
                 const effective = (overrides[v] !== undefined) ? overrides[v] : (w.damage !== undefined ? w.damage : '');
@@ -756,8 +776,8 @@ class EnemyInspectorManager {
                     `<input data-eim-override="${v}" type="number" value="${String(effective).replace(/"/g, '&quot;')}" style="width:100%;box-sizing:border-box;">`);
             }
         }
-        html += this._row(this._t('npcPanel.dmgFists', 'Без оружия (кулаки)'), this._inp('damageFists', tpl.damageFists, 'number'));
-        html += this._row('SE (fallback)', this._inp('damageSE', tpl.damageSE));
+        html += this._row(this._t('npcPanel.dmgFists', 'Без оружия'), this._inp('damageFists', tpl.damageFists, 'number'));
+        html += this._row('Общий звук урона', this._inp('damageSE', tpl.damageSE));
         return html;
     }
 

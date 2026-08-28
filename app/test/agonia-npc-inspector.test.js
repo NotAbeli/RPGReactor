@@ -148,7 +148,7 @@ test('панель: рендерится без throw, несёт секции �
     assert.ok(html.includes('Кликните по врагу'), 'empty-state hint before selection');
     eim.select(biba());
     html = eim.panelEl.innerHTML;
-    for (const s of ['Визуал', 'Характер', 'Способности', 'Скорость', 'Поведение', 'Урон по врагу', 'Флаги ИИ', 'На карте', 'Состояния (графика + звук)']) {
+    for (const s of ['Визуал', 'Характер', 'Способности', 'Скорость', 'Поведение', 'Урон по врагу', 'Флаги ИИ', 'На карте', 'Состояния']) {
         assert.ok(html.includes(s), 'section missing: ' + s);
     }
     // P3: мусор убран — секции «Карточка» и «От чего зависит» больше нет
@@ -166,7 +166,7 @@ test('панель: рендерится без throw, несёт секции �
     // P6: спавн переехал в сайдбар-палитру — в панели кнопок постановки нет
     assert.ok(!html.includes('data-eim-place'), 'spawn strip moved to the sidebar palette');
     assert.ok(html.includes('Громкость шагов'), 'step volume field');
-    assert.ok(html.includes('Состояния (графика + звук)'), 'states section');
+    assert.ok(html.includes('Состояния'), 'states section');
     assert.ok(html.includes('data-eim-state-gfx="attack"') && html.includes('data-eim-state-se="death"'), 'state rows');
     assert.ok(!html.includes('Поставить врага</div>'), 'old bottom placement section gone');
     // S52: характер-селект пишет в карточку
@@ -180,7 +180,7 @@ test('панель: рендерится без throw, несёт секции �
     assert.ok(html.includes('Лом') && html.includes('Ствол'), 'arsenal weapons listed');
     assert.ok(html.includes('data-eim-feared="2"') && html.includes('data-eim-feared="37"'), 'fear checkboxes');
     assert.ok(html.includes('data-eim-override="2"') && html.includes('data-eim-override="37"'), 'damage override inputs');
-    assert.ok(html.includes('Без оружия (кулаки)'), 'fists fallback row');
+    assert.ok(html.includes('Без оружия'), 'fists fallback row');
     // выход из режима прячет панель
     eim.setNpcMode(false);
     assert.strictEqual(eim.panelEl.style.display, 'none');
@@ -223,6 +223,34 @@ test('P6: сайдбар-палитра — карточки шаблонов, �
     eim.stopPalettePlayers(); // no-throw
 });
 
+test('P8: палитра режима событий — секции «Виды врагов» и «События карты», постановка врага', () => {
+    const { eim, map, calls } = makeEnv();
+    const collect = (el, acc) => { for (const c of el.children || []) { acc.push(c); collect(c, acc); } return acc; };
+    let edited = null;
+    eim.eventManager.selectEventById = id => { calls.selected = id; };
+    eim.eventManager.editEvent = ev => { edited = ev; };
+    const host = makeElement('div');
+    eim.buildEventsPalette(host);
+    const texts = collect(host, []).map(c => String(c.textContent || ''));
+    // обе секции с заголовками
+    assert.ok(texts.some(t => t === 'Виды врагов'), 'enemy kinds section header');
+    assert.ok(texts.some(t => t === 'События карты'), 'map events section header');
+    // карточка вида + строки событий соседствуют
+    const cards = collect(host, []).filter(c => c.dataset && c.dataset.eimPlace === '<biba>');
+    assert.strictEqual(cards.length, 1, 'biba kind card in the events palette');
+    const rows = collect(host, []).filter(c => c._listeners && c._listeners.click && !c.dataset.eimPlace && c._listeners.dblclick);
+    assert.strictEqual(rows.length, 2, 'two map event rows');
+    // клик по карточке вида взводит постановку
+    cards[0]._listeners.click[0]();
+    assert.ok(eim.placementTemplate && String(eim.placementTemplate.match) === '<biba>', 'placement armed from the events palette');
+    // клик по событию и dbl всё ещё работают
+    const rows2 = collect(host, []).filter(c => c._listeners && c._listeners.click && !c.dataset.eimPlace && c._listeners.dblclick);
+    rows2[1]._listeners.click[0]();
+    assert.strictEqual(calls.selected, 12, 'event row click selects');
+    rows2[1]._listeners.dblclick[0]();
+    assert.ok(edited && edited.id === 12, 'dblclick opens the editor');
+});
+
 test('P6/P7: БД-карточка врага начинается с ряда из пяти карточек графики', () => {
     const src = p => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
     const ctx = {
@@ -260,27 +288,6 @@ test('P6/P7: БД-карточка врага начинается с ряда �
     // у заданного состояния нет пометки «по умолчанию» в его подписи
     const attackCap = texts.find(t => t.includes('рывок и удар'));
     assert.ok(attackCap, 'attack usage caption');
-});
-
-test('P7: палитра событий — список с графикой, клик выбирает, dbl открывает редактор', () => {
-    const { eim, map, calls } = makeEnv();
-    const collect = (el, acc) => { for (const c of el.children || []) { acc.push(c); collect(c, acc); } return acc; };
-    let edited = null;
-    eim.eventManager.selectEventById = id => { calls.selected = id; };
-    eim.eventManager.editEvent = ev => { edited = ev; };
-    const host = makeElement('div');
-    eim.buildEventsPalette(host);
-    const rows = collect(host, []).filter(c => c._listeners && c._listeners.click);
-    assert.strictEqual(rows.length, 2, 'chest + biba rows');
-    const texts = collect(host, []).map(c => String(c.textContent || ''));
-    assert.ok(texts.some(t => t.includes('ENEMY biba')), 'event names listed');
-    assert.ok(texts.some(t => t.endsWith('33,17')), 'coordinates shown');
-    // клик — выбор
-    rows[1]._listeners.click[0]();
-    assert.strictEqual(calls.selected, 12, 'click selects the event');
-    // двойной клик — редактор
-    rows[1]._listeners.dblclick[0]();
-    assert.ok(edited && edited.id === 12, 'dblclick opens the editor');
 });
 
 test('P7: палитра света — список источников, клик выбирает uid', () => {

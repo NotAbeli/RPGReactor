@@ -252,6 +252,24 @@ class RPGReactor {
             }
             this.enemyInspectorManager.setTilemapManager(this.projectController.getTilemapManager());
             this.enemyInspectorManager.setCurrentMap(lmMap);
+            // P8: постановка врагов прямо в режиме событий — EventManager
+            // консультирует взведённый вид и снимает его после постановки.
+            if (this.eventManager) {
+                this.eventManager._getArmedEnemyTemplate = () =>
+                    (this.enemyInspectorManager && this.enemyInspectorManager.placementTemplate) || null;
+                this.eventManager._disarmEnemyTemplate = () => {
+                    if (!this.enemyInspectorManager) return;
+                    this.enemyInspectorManager.placementTemplate = null;
+                    const content = document.getElementById('context-palette-content');
+                    if (content && this.enemyInspectorManager) {
+                        if ((this.editingMode || 'tiles') === 'events') {
+                            this.enemyInspectorManager.buildEventsPalette(content);
+                        } else if (this.editingMode === 'npc') {
+                            this.enemyInspectorManager.buildSidebarPalette(content);
+                        }
+                    }
+                };
+            }
 
             // Set up zoom change callback
             const tilemapManager = this.projectController.getTilemapManager();
@@ -671,7 +689,7 @@ class RPGReactor {
                     ctxTitle(window.I18n ? window.I18n.tText('Источники света') : 'Источники света');
                     this.enemyInspectorManager.buildLightsPalette(ctxContent);
                 } else {
-                    ctxTitle(window.I18n ? window.I18n.tText('Враги (спавн)') : 'Враги (спавн)');
+                    ctxTitle(window.I18n ? window.I18n.tText('Виды врагов') : 'Виды врагов');
                     this.enemyInspectorManager.buildSidebarPalette(ctxContent);
                 }
             }

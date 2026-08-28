@@ -172,3 +172,37 @@ test('P7: инструмент «Событие» — клик по пустой
     click(20, 20);
     assert.strictEqual(created, null, 'tool off — no creation');
 });
+
+test('P8: взведённый вид врага — клик по пустой клетке в режиме событий ставит врага', () => {
+    const EventManager = loadEventManager();
+    const em = new EventManager({}, {});
+    const tm = makeTilemapManager();
+    em.initializeEventLayer(tm);
+    em.currentMap = { id: 45, width: 40, height: 30, events: [null] };
+    em.eventMode = true;
+    let created = null;
+    em.editEvent = ev => { created = ev; };
+    const stubs = [];
+    em.createEnemyStub = (x, y, tpl) => { const ev = { id: 50, name: 'ENEMY ' + tpl.match, note: tpl.match, x, y }; stubs.push(ev); return ev; };
+    let armed = { match: '<biba>' };
+    em._getArmedEnemyTemplate = () => armed;
+    let disarmed = 0;
+    em._disarmEnemyTemplate = () => { armed = null; disarmed++; };
+
+    const click = (x, y) => em.handleMapPointerDown({
+        data: { button: 0, originalEvent: {}, getLocalPosition: () => ({ x: (x + 0.5) * 48, y: (y + 0.5) * 48 }) }
+    }, tm.container);
+
+    click(12, 8);
+    assert.strictEqual(created, null, 'no regular event created');
+    assert.strictEqual(stubs.length, 1, 'enemy stub placed');
+    assert.strictEqual(stubs[0].note, '<biba>', 'stub from the armed template');
+    assert.strictEqual(disarmed, 1, 'placement disarmed after placing');
+    assert.ok(armed === null, 'armed cleared');
+
+    // после снятия — обычное поведение инструмента
+    armed = null;
+    click(3, 3);
+    assert.ok(created && created.x === 3, 'regular event creation resumes');
+    assert.strictEqual(stubs.length, 1, 'no extra stubs');
+});

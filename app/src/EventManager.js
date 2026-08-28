@@ -473,6 +473,17 @@ class EventManager {
         const isDoubleClick = currentTime - this._lastMapClickTime < 300 &&
             this._lastMapClickX === tileX && this._lastMapClickY === tileY;
 
+        // P8: взведённый вид врага из палитры — клик по пустой клетке ставит
+        // заглушку врага прямо в режиме событий (до ветки двойного клика —
+        // защита от случайного редактора свежей заглушки).
+        if (!this.getEventAt(evX, evY) && this._getArmedEnemyTemplate && this._getArmedEnemyTemplate()) {
+            const tpl = this._getArmedEnemyTemplate();
+            this.resetMapClickTracking();
+            const placed = this.createEnemyStub(tileX, tileY, tpl);
+            if (placed && this._disarmEnemyTemplate) this._disarmEnemyTemplate();
+            return;
+        }
+
         if (isDoubleClick) {
             this.resetMapClickTracking();
             const eventAtPos = this.getEventAt(evX, evY);

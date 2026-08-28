@@ -142,8 +142,8 @@ class DatabaseEnemiesEditor {
                 { key: 'canPanic', label: 'Пугается', type: 'check' },
                 { key: 'canFlee', label: 'Убегает', type: 'check' },
                 { key: 'rememberGun', label: 'Помнит оружие', type: 'check' },
-                { key: 'speedCalm', label: 'Скорость в покое (1–6)', type: 'number', min: 1, max: 6 },
-                { key: 'speedCombat', label: 'Скорость в бою (1–6)', type: 'number', min: 1, max: 6 },
+                { key: 'speedCalm', label: 'Скорость в покое', type: 'number', min: 1, max: 6 },
+                { key: 'speedCombat', label: 'Скорость в бою', type: 'number', min: 1, max: 6 },
                 { key: 'stepVolume', label: 'Громкость шагов %', type: 'number', min: 0, max: 150, hint: 'пишется в заглушку как <step_se:VOL>' }
             ], entry, { commit: () => api.changed() });
 
@@ -159,14 +159,14 @@ class DatabaseEnemiesEditor {
                 { key: 'tracerId', label: 'Трассер №', type: 'number', min: 0, hint: 'карточка из Бой → Трассеры; 0 = без выстрела' },
                 { key: 'meleeId', label: 'Ближний бой №', type: 'number', min: 0, hint: 'карточка из Бой → Ближний бой' },
                 { key: 'dashName', label: 'Имя рывка', type: 'text', hint: 'карточка из Бой → Рывки' },
-                { key: 'chaseThreshold', label: 'Погоня от (врагов в бою)', type: 'number', min: 1, hint: 'счётчик боя — переменная «Счётчик Боя»' },
-                { key: 'cowerThreshold', label: 'Приседание от (врагов в бою)', type: 'number', min: 1 }
+                { key: 'chaseThreshold', label: 'Погоня от скольких врагов в бою', type: 'number', min: 1, hint: 'счётчик боя — переменная «Счётчик Боя»' },
+                { key: 'cowerThreshold', label: 'Приседание от скольких врагов в бою', type: 'number', min: 1 }
             ], entry, { commit: () => api.changed() });
 
             form.section(this._tt('Урон по врагу'));
             form.fields([
-                { key: 'damageFists', label: 'Урон без оружия (fallback)', type: 'number', hint: 'кулаки, когда var ГГ не совпал ни с одним оружием Арсенала' },
-                { key: 'damageSE', label: 'Звук урона (fallback)', type: 'text' }
+                { key: 'damageFists', label: 'Урон без оружия', type: 'number', hint: 'кулаки, когда var ГГ не совпал ни с одним оружием Арсенала' },
+                { key: 'damageSE', label: 'Звук урона', type: 'text' }
             ], entry, { commit: () => api.changed() });
         }
 
@@ -335,7 +335,7 @@ class DatabaseEnemiesEditor {
         }
 
         // --- Таблица урона: Арсенал + оверрайды ---
-        this._sectionLabel(host, 'Урон по оружию (овverride этого врага)');
+        this._sectionLabel(host, 'Урон по оружию');
         let overrides = {};
         try { if (entry.damageOverrides) overrides = JSON.parse(entry.damageOverrides) || {}; } catch (e) { overrides = {}; }
         if (weapons.length) {
