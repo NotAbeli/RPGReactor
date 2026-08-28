@@ -735,6 +735,12 @@ class RPGReactor {
             if (this.enemyInspectorManager) this.enemyInspectorManager.stopPalettePlayers();
             if (tilesetSection) tilesetSection.style.display = 'flex';
         }
+        // P11: свап секций оставлял resize-handle тайлсета висящим (4px зазор
+        // над палитрой) и контекст-секция была без своего хэндла — ресайзер
+        // пересинхронизирует видимость хэндлов с фактическим display.
+        if (this.sidebarResizer && this.sidebarResizer.updateHandleVisibility) {
+            this.sidebarResizer.updateHandleVisibility();
+        }
 
         // Undo/redo source follows the context
         if (eventsCtx) {

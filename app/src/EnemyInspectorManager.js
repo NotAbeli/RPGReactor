@@ -380,23 +380,23 @@ class EnemyInspectorManager {
     }
 
     /**
-     * P10: вкладки «Шаблоны» / «На карте» — общий переключатель палитры.
-     * Выбор запоминается per-режим; дефолт — «На карте».
+     * P10/P11: вкладки «Шаблоны» / «На карте» — общий переключатель палитры.
+     * Кнопки в дом-ките agonia-btn (как остальные кнопки движка); активная
+     * подсвечена рамкой-акцентом. Выбор запоминается per-режим; дефолт
+     * «На карте».
      */
     _paletteTabBar(mode, hostEl, rebuild) {
         this._paletteTab = this._paletteTab || {};
         const active = this._paletteTab[mode] || 'onMap';
         const bar = document.createElement('div');
-        bar.style.cssText = 'display:flex;background-color:var(--color-bg-list-item);border-bottom:1px solid var(--color-border);';
+        bar.style.cssText = 'display:flex;gap:6px;padding:6px 10px;border-bottom:1px solid var(--color-border);';
         const mk = (key, label) => {
-            const b = document.createElement('div');
-            b.style.cssText = `
-                flex:1;padding:6px 12px;text-align:center;cursor:pointer;font-size:12px;
-                border-right:1px solid var(--color-border);
-                background-color:${active === key ? 'var(--color-bg-surface)' : 'var(--color-bg-list-item)'};
-                color:${active === key ? 'var(--color-text)' : 'var(--color-text-muted)'};
-                font-weight:${active === key ? '700' : '400'};
-            `;
+            const b = document.createElement('button');
+            b.className = 'agonia-btn';
+            const on = active === key;
+            b.style.cssText = `flex:1;text-align:center;${on
+                ? 'border-color:var(--color-accent-border-mid,#5a8ad4);font-weight:700;background-color:var(--color-bg-surface);'
+                : ''}`;
             b.textContent = label;
             b.addEventListener('click', () => {
                 this._paletteTab[mode] = key;
