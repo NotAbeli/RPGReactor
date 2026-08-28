@@ -1119,9 +1119,12 @@ class LightManager {
         if (tx < 0 || tx >= this.currentMap.width || ty < 0 || ty >= this.currentMap.height) return;
 
         // Placement mode: clicking anywhere drops a new synthetic light.
+        // P9: клик по шаблону библиотеки взводит _pendingTemplate — его
+        // свойства едут в новый источник поверх дефолтов.
         if (this._placementMode) {
             this._exitPlacement();
-            this.addSynthetic(tx, ty);
+            this.addSynthetic(tx, ty, this._pendingTemplate || null);
+            this._pendingTemplate = null;
             return;
         }
 
@@ -1239,7 +1242,7 @@ class LightManager {
         // one keystroke. Panel rebuild is reserved for structural changes only.
     }
 
-    addSynthetic(tx, ty) {
+    addSynthetic(tx, ty, propsOverride) {
         if (!this.currentMap) return;
         const mapKey = String(this.currentMap.id);
         const patch = this._patch;
@@ -1250,6 +1253,13 @@ class LightManager {
             brightness: 1, falloff: 1, presetId: 'global', active: true,
             flashLength: 8, flashWidth: 12, direction: 0, cond: null
         };
+        // P9: свойства шаблона библиотеки поверх дефолтов
+        if (propsOverride && typeof propsOverride === 'object') {
+            for (const k of ['type','radius','radiusY','color','brightness','falloff',
+                    'presetId','active','flashLength','flashWidth','direction','cond']) {
+                if (propsOverride[k] !== undefined) def[k] = propsOverride[k];
+            }
+        }
         patch.syntheticLights[mapKey].push(def);
         this._markDirty();
         const newUid = 's' + (patch.syntheticLights[mapKey].length - 1);

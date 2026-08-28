@@ -205,50 +205,101 @@ test('выбор по клику: заглушка выбирается, чуж�
     assert.strictEqual(eim.selectedEvent, null, 'chest click clears selection');
 });
 
-test('P6: сайдбар-палитра — карточки шаблонов, клик = постановка, рецикл', () => {
-    const { eim } = makeEnv();
+test('P9: палитра врагов — секции «Шаблоны» и «На карте», выбор стаба', () => {
+    const { eim, biba } = makeEnv();
     const collect = (el, acc) => { for (const c of el.children || []) { acc.push(c); collect(c, acc); } return acc; };
+    const textOf = el => collect(el, []).map(c => String(c.textContent || '')).join(' ');
     const host = makeElement('div');
     eim.buildSidebarPalette(host);
+    const texts = collect(host, []).map(c => String(c.textContent || ''));
+    assert.ok(texts.some(t => t === 'Шаблоны'), 'templates section header');
+    assert.ok(texts.some(t => t === 'На карте'), 'on-map section header');
+    // шаблон-карточка осталась
     const cards = collect(host, []).filter(c => c.dataset && c.dataset.eimPlace === '<biba>');
-    assert.strictEqual(cards.length, 1, 'one biba card in the palette');
-    assert.ok(collect(host, []).some(c => String(c.textContent || '').includes('biba')), 'card caption');
-    assert.ok(eim.placementTemplate === null || eim.placementTemplate === undefined, 'nothing selected yet');
-    // клик — вход в режим постановки, повторный клик — отмена
-    cards[0]._listeners.click[0]();
-    assert.ok(eim.placementTemplate && String(eim.placementTemplate.match) === '<biba>', 'placement armed');
+    assert.strictEqual(cards.length, 1, 'biba template card');
+    // стаб на карте в секции «На карте», клик выбирает
+    const stubRows = collect(host, []).filter(c => c._listeners && c._listeners.click
+        && !c.dataset.eimPlace && textOf(c).includes('33,17'));
+    assert.strictEqual(stubRows.length, 1, 'biba stub row on map');
+    stubRows[0]._listeners.click[0]();
+    assert.ok(eim.selectedEvent && eim.selectedEvent.id === 12, 'stub click selects the enemy');
+    // постановка шаблона работает как раньше
     const cards2 = collect(host, []).filter(c => c.dataset && c.dataset.eimPlace === '<biba>');
     cards2[0]._listeners.click[0]();
+    assert.ok(eim.placementTemplate && String(eim.placementTemplate.match) === '<biba>', 'placement armed');
+    const cards3 = collect(host, []).filter(c => c.dataset && c.dataset.eimPlace === '<biba>');
+    cards3[0]._listeners.click[0]();
     assert.strictEqual(eim.placementTemplate, null, 'placement disarmed');
-    eim.stopPalettePlayers(); // no-throw
+    eim.stopPalettePlayers();
 });
 
-test('P8: палитра режима событий — секции «Виды врагов» и «События карты», постановка врага', () => {
+test('P9: палитра событий — секции «Шаблоны» с общими событиями и «На карте», без врагов', () => {
     const { eim, map, calls } = makeEnv();
     const collect = (el, acc) => { for (const c of el.children || []) { acc.push(c); collect(c, acc); } return acc; };
+    const textOf = el => collect(el, []).map(c => String(c.textContent || '')).join(' ');
     let edited = null;
     eim.eventManager.selectEventById = id => { calls.selected = id; };
     eim.eventManager.editEvent = ev => { edited = ev; };
+    // общие события из БД
+    eim.databaseManager.getCommonEvents = () => [null, { id: 1, name: 'Проверка', list: [] }, { id: 2, name: 'Сундук', list: [] }];
     const host = makeElement('div');
     eim.buildEventsPalette(host);
     const texts = collect(host, []).map(c => String(c.textContent || ''));
-    // обе секции с заголовками
-    assert.ok(texts.some(t => t === 'Виды врагов'), 'enemy kinds section header');
-    assert.ok(texts.some(t => t === 'События карты'), 'map events section header');
-    // карточка вида + строки событий соседствуют
-    const cards = collect(host, []).filter(c => c.dataset && c.dataset.eimPlace === '<biba>');
-    assert.strictEqual(cards.length, 1, 'biba kind card in the events palette');
-    const rows = collect(host, []).filter(c => c._listeners && c._listeners.click && !c.dataset.eimPlace && c._listeners.dblclick);
+    assert.ok(texts.some(t => t === 'Шаблоны'), 'templates section header');
+    assert.ok(texts.some(t => t === 'На карте'), 'on-map section header');
+    // общие события в шаблонах
+    const ceRows = collect(host, []).filter(c => c.dataset && c.dataset.eimCe);
+    assert.strictEqual(ceRows.length, 2, 'two common-event rows');
+    assert.ok(texts.some(t => t.includes('Проверка')), 'common event name listed');
+    // карточек врагов в палитре событий БОЛЬШЕ НЕТ
+    assert.strictEqual(collect(host, []).filter(c => c.dataset && c.dataset.eimPlace).length, 0,
+        'enemy cards are gone from the events palette');
+    // события карты в «На карте»
+    const rows = collect(host, []).filter(c => c._listeners && c._listeners.click && c._listeners.dblclick
+        && !c.dataset.eimCe && textOf(c).includes(','));
     assert.strictEqual(rows.length, 2, 'two map event rows');
-    // клик по карточке вида взводит постановку
-    cards[0]._listeners.click[0]();
-    assert.ok(eim.placementTemplate && String(eim.placementTemplate.match) === '<biba>', 'placement armed from the events palette');
-    // клик по событию и dbl всё ещё работают
-    const rows2 = collect(host, []).filter(c => c._listeners && c._listeners.click && !c.dataset.eimPlace && c._listeners.dblclick);
-    rows2[1]._listeners.click[0]();
+    rows[1]._listeners.click[0]();
     assert.strictEqual(calls.selected, 12, 'event row click selects');
-    rows2[1]._listeners.dblclick[0]();
+    rows[1]._listeners.dblclick[0]();
     assert.ok(edited && edited.id === 12, 'dblclick opens the editor');
+    // клик по общему событию взводит постановку, повторный — снимает
+    const ce1 = collect(host, []).filter(c => c.dataset && String(c.dataset.eimCe) === '1');
+    ce1[0]._listeners.click[0]();
+    assert.ok(eim.armedCommonEvent && eim.armedCommonEvent.id === 1, 'common event armed');
+    const ce1b = collect(host, []).filter(c => c.dataset && String(c.dataset.eimCe) === '1');
+    ce1b[0]._listeners.click[0]();
+    assert.strictEqual(eim.armedCommonEvent, null, 'disarmed');
+});
+
+test('P9: палитра света — секции «Шаблоны» с библиотекой и «На карте»', () => {
+    const { eim } = makeEnv();
+    const collect = (el, acc) => { for (const c of el.children || []) { acc.push(c); collect(c, acc); } return acc; };
+    const textOf = el => collect(el, []).map(c => String(c.textContent || '')).join(' ');
+    const armed = [];
+    eim._getLightLibrary = () => [
+        { name: 'Лампа тёплая', color: '#ffaa66', radius: 6 },
+        { name: 'Холодная', color: '#aaccff', radius: 9 }
+    ];
+    eim._onArmLightTemplate = t => armed.push(t);
+    eim._getLights = () => [
+        { uid: 'l1', x: 3, y: 4, props: { type: 'Radial', color: '#ffcc88', radius: 6, active: true } },
+        { uid: 'l2', x: 10, y: 2, props: { type: 'Flashlight', color: '#ffffff', radius: 8, active: false } }
+    ];
+    const host = makeElement('div');
+    eim.buildLightsPalette(host);
+    const texts = collect(host, []).map(c => String(c.textContent || ''));
+    assert.ok(texts.some(t => t === 'Шаблоны'), 'templates section header');
+    assert.ok(texts.some(t => t === 'На карте'), 'on-map section header');
+    assert.ok(texts.some(t => t.includes('Лампа тёплая')), 'library template listed');
+    // клик по шаблону библиотеки взводит постановку через хук
+    const libRows = collect(host, []).filter(c => c._listeners && c._listeners.click
+        && textOf(c).includes('Лампа тёплая'));
+    libRows[0]._listeners.click[0]();
+    assert.deepStrictEqual(armed, [{ name: 'Лампа тёплая', color: '#ffaa66', radius: 6 }], 'template armed via hook');
+    // источники на карте
+    const srcRows = collect(host, []).filter(c => c._listeners && c._listeners.click
+        && textOf(c).includes('Фонарь'));
+    assert.strictEqual(srcRows.length, 1, 'flashlight row on map');
 });
 
 test('P6/P7: БД-карточка врага начинается с ряда из пяти карточек графики', () => {
@@ -301,11 +352,12 @@ test('P7: палитра света — список источников, кл�
     eim._onSelectLight = uid => selected.push(uid);
     const host = makeElement('div');
     eim.buildLightsPalette(host);
-    const rows = collect(host, []).filter(c => c._listeners && c._listeners.click);
-    assert.strictEqual(rows.length, 2, 'two light rows');
     const texts = collect(host, []).map(c => String(c.textContent || ''));
     assert.ok(texts.some(t => t.includes('Фонарь')), 'flashlight labeled');
     assert.ok(texts.some(t => t.includes('выкл')), 'inactive marker shown');
-    rows[1]._listeners.click[0]();
+    const textOf2 = el => collect(el, []).map(c => String(c.textContent || '')).join(' ');
+    const rows = collect(host, []).filter(c => c._listeners && c._listeners.click
+        && textOf2(c).includes('Фонарь'));
+    rows[0]._listeners.click[0]();
     assert.deepStrictEqual(selected, ['l2'], 'click selects the light uid');
 });

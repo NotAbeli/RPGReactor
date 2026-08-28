@@ -206,3 +206,38 @@ test('P8: взведённый вид врага — клик по пустой 
     assert.ok(created && created.x === 3, 'regular event creation resumes');
     assert.strictEqual(stubs.length, 1, 'no extra stubs');
 });
+
+test('P9: взведённое общее событие — клик по пустой клетке создаёт событие с вызовом', () => {
+    const EventManager = loadEventManager();
+    const em = new EventManager({}, {});
+    const tm = makeTilemapManager();
+    em.initializeEventLayer(tm);
+    em.currentMap = { id: 45, width: 40, height: 30, events: [null] };
+    em.eventMode = true;
+    let created = null;
+    em.editEvent = ev => { created = ev; };
+    const ceStubs = [];
+    em.createCommonEventStub = (x, y, ce) => { const ev = { id: 60, name: 'CE ' + ce.name, x, y,
+        pages: [{ list: [{ code: 117, indent: 0, parameters: [Number(ce.id)] }] }] }; ceStubs.push(ev); return ev; };
+    let armed = { id: 5, name: 'Проверка' };
+    em._getArmedCommonEvent = () => armed;
+    let disarmed = 0;
+    em._disarmCommonEvent = () => { armed = null; disarmed++; };
+
+    const click = (x, y) => em.handleMapPointerDown({
+        data: { button: 0, originalEvent: {}, getLocalPosition: () => ({ x: (x + 0.5) * 48, y: (y + 0.5) * 48 }) }
+    }, tm.container);
+
+    click(7, 4);
+    assert.strictEqual(created, null, 'no regular event created');
+    assert.strictEqual(ceStubs.length, 1, 'common-event stub placed');
+    assert.strictEqual(ceStubs[0].pages[0].list[0].code, 117, 'page carries the call command');
+    assert.deepStrictEqual(ceStubs[0].pages[0].list[0].parameters, [5], 'common event id wired');
+    assert.strictEqual(disarmed, 1, 'disarmed after placing');
+
+    // после снятия — обычное создание
+    armed = null;
+    click(9, 9);
+    assert.ok(created && created.x === 9, 'regular creation resumes');
+    assert.strictEqual(ceStubs.length, 1, 'no extra CE stubs');
+});

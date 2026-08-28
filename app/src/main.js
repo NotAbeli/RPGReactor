@@ -249,25 +249,35 @@ class RPGReactor {
                 this.enemyInspectorManager._onSelectLight = (uid) => {
                     if (this.lightManager && this.lightManager.lightMode) this.lightManager._select(uid);
                 };
+                // P9: библиотека света — клик по шаблону взводит постановку
+                // синтетического источника с его свойствами
+                this.enemyInspectorManager._getLightLibrary = () =>
+                    (this.lightManager && this.lightManager.getLibrary) ? this.lightManager.getLibrary() : [];
+                this.enemyInspectorManager._onArmLightTemplate = (tpl) => {
+                    if (!this.lightManager || !this.lightManager.lightMode) return;
+                    this.lightManager._pendingTemplate = tpl;
+                    this.lightManager.enterPlacement();
+                };
             }
             this.enemyInspectorManager.setTilemapManager(this.projectController.getTilemapManager());
             this.enemyInspectorManager.setCurrentMap(lmMap);
-            // P8: постановка врагов прямо в режиме событий — EventManager
-            // консультирует взведённый вид и снимает его после постановки.
+            // P8/P9: постановка шаблонов прямо в режиме событий — враги и
+            // общие события. EventManager консультирует взвод и снимает
+            // после постановки, перестраивая палитру.
             if (this.eventManager) {
                 this.eventManager._getArmedEnemyTemplate = () =>
                     (this.enemyInspectorManager && this.enemyInspectorManager.placementTemplate) || null;
                 this.eventManager._disarmEnemyTemplate = () => {
                     if (!this.enemyInspectorManager) return;
                     this.enemyInspectorManager.placementTemplate = null;
-                    const content = document.getElementById('context-palette-content');
-                    if (content && this.enemyInspectorManager) {
-                        if ((this.editingMode || 'tiles') === 'events') {
-                            this.enemyInspectorManager.buildEventsPalette(content);
-                        } else if (this.editingMode === 'npc') {
-                            this.enemyInspectorManager.buildSidebarPalette(content);
-                        }
-                    }
+                    this._rebuildContextPalette();
+                };
+                this.eventManager._getArmedCommonEvent = () =>
+                    (this.enemyInspectorManager && this.enemyInspectorManager.armedCommonEvent) || null;
+                this.eventManager._disarmCommonEvent = () => {
+                    if (!this.enemyInspectorManager) return;
+                    this.enemyInspectorManager.armedCommonEvent = null;
+                    this._rebuildContextPalette();
                 };
             }
 
@@ -631,6 +641,28 @@ class RPGReactor {
 
     /** Toolbar chrome for the current editing mode: tool groups, mode-toggle
      *  icon, sub-mode button states, undo/redo source, grid + layers dim. */
+    // P7: контекст-палитра в сайдбаре — вместо тайлсета в контексте
+    // событий: общие события и события карты (events), библиотека и
+    // источники света (light), шаблоны и враги на карте (npc).
+    // Рисование — тайлсет как всегда.
+    _rebuildContextPalette() {
+        const mode = this.editingMode || 'tiles';
+        const ctxContent = document.getElementById('context-palette-content');
+        const ctxHeader = document.getElementById('context-palette-header');
+        if (!ctxContent || !this.enemyInspectorManager) return;
+        const ctxTitle = (t) => { if (ctxHeader) ctxHeader.textContent = t; };
+        if (mode === 'events') {
+            ctxTitle(window.I18n ? window.I18n.tText('События') : 'События');
+            this.enemyInspectorManager.buildEventsPalette(ctxContent);
+        } else if (mode === 'light') {
+            ctxTitle(window.I18n ? window.I18n.tText('Освещение') : 'Освещение');
+            this.enemyInspectorManager.buildLightsPalette(ctxContent);
+        } else {
+            ctxTitle(window.I18n ? window.I18n.tText('Враги') : 'Враги');
+            this.enemyInspectorManager.buildSidebarPalette(ctxContent);
+        }
+    }
+
     _syncModeChrome() {
         const mode = this.editingMode || 'tiles';
         const eventsCtx = mode !== 'tiles';
@@ -671,28 +703,15 @@ class RPGReactor {
         if (nb) nb.classList.toggle('active', mode === 'npc');
 
         // P7: контекст-палитра в сайдбаре — вместо тайлсета в контексте
-        // событий: список ивентов (events), источники света (light),
-        // спавн-палитра врагов (npc). Рисование — тайлсет как всегда.
+        // событий: общие события и события карты (events), библиотека и
+        // источники света (light), шаблоны и враги на карте (npc).
+        // Рисование — тайлсет как всегда.
         const tilesetSection = document.getElementById('tileset-palette-section');
         const ctxSection = document.getElementById('context-palette-section');
-        const ctxContent = document.getElementById('context-palette-content');
-        const ctxHeader = document.getElementById('context-palette-header');
-        const ctxTitle = (t) => { if (ctxHeader) ctxHeader.textContent = t; };
         if (mode !== 'tiles') {
             if (tilesetSection) tilesetSection.style.display = 'none';
             if (ctxSection) ctxSection.style.display = 'flex';
-            if (this.enemyInspectorManager && ctxContent) {
-                if (mode === 'events') {
-                    ctxTitle(window.I18n ? window.I18n.tText('События карты') : 'События карты');
-                    this.enemyInspectorManager.buildEventsPalette(ctxContent);
-                } else if (mode === 'light') {
-                    ctxTitle(window.I18n ? window.I18n.tText('Источники света') : 'Источники света');
-                    this.enemyInspectorManager.buildLightsPalette(ctxContent);
-                } else {
-                    ctxTitle(window.I18n ? window.I18n.tText('Виды врагов') : 'Виды врагов');
-                    this.enemyInspectorManager.buildSidebarPalette(ctxContent);
-                }
-            }
+            this._rebuildContextPalette();
         } else {
             if (ctxSection) ctxSection.style.display = 'none';
             if (this.enemyInspectorManager) this.enemyInspectorManager.stopPalettePlayers();

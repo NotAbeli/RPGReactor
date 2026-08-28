@@ -319,31 +319,76 @@ class EnemyInspectorManager {
         return head + `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 16px;padding:4px 10px 10px;font-size:12px;align-items:start;">${body}</div>`;
     }
 
+    /** Заголовок секции палитры (единые «Шаблоны» / «На карте»). */
+    _paletteSectionTitle(titleKey, titleFallback) {
+        const h = document.createElement('div');
+        h.style.cssText = 'font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--color-text-dim);padding:8px 10px 2px;';
+        h.textContent = this._t(titleKey, titleFallback);
+        return h;
+    }
+
     /**
-     * P7/P8: палитра режима событий — ДВЕ секции: «Виды врагов»
-     * (карточки БД, клик взводит постановку прямо в режиме событий)
-     * и «События карты» (мини-превью + имя + координаты; клик — выбрать,
-     * двойной клик — редактор).
+     * P9: палитра режима событий — единая двухсекционная структура.
+     * «Шаблоны»: общие события из БД — клик взводит постановку, клик по
+     * карте создаёт событие с вызовом общего события.
+     * «На карте»: события текущей карты (клик — выбрать, dbl — редактор).
      */
     buildEventsPalette(hostEl) {
         if (!hostEl) return;
         hostEl.innerHTML = '';
 
-        const section = (titleKey, titleFallback) => {
-            const h = document.createElement('div');
-            h.style.cssText = 'font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--color-text-dim);padding:8px 10px 2px;';
-            h.textContent = this._t(titleKey, titleFallback);
-            hostEl.appendChild(h);
-        };
-
-        section('ctxPalette.enemyKinds', 'Виды врагов');
-        this._appendEnemyTemplateGrid(hostEl, () => this.buildEventsPalette(hostEl));
-
-        section('ctxPalette.mapEvents', 'События карты');
+        hostEl.appendChild(this._paletteSectionTitle('ctxPalette.templates', 'Шаблоны'));
         const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:2px 10px 6px;border-bottom:1px solid var(--color-border);';
-        hint.textContent = this._t('ctxPalette.eventsHint', 'Клик — выбрать событие · двойной клик — редактор');
+        hint.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:2px 10px 4px;';
+        hint.textContent = this._t('ctxPalette.ceHint', 'Клик по шаблону, затем по пустой клетке карты');
         hostEl.appendChild(hint);
+
+        const ces = this._getCommonEvents();
+        if (!ces.length) {
+            const empty = document.createElement('div');
+            empty.style.cssText = 'color:var(--color-text-muted);font-size:12px;padding:2px 10px 8px;';
+            empty.textContent = this._t('ctxPalette.noCE', 'Общих событий нет. Создайте их в БД на вкладке «Общие события».');
+            hostEl.appendChild(empty);
+        } else {
+            const list = document.createElement('div');
+            list.style.cssText = 'padding:0 6px 6px;display:flex;flex-direction:column;gap:3px;';
+            for (const ce of ces) {
+                const row = document.createElement('div');
+                const armed = !!(this.armedCommonEvent && this.armedCommonEvent.id === ce.id);
+                row.style.cssText = `
+                    display:flex;align-items:center;gap:8px;padding:4px 6px;cursor:pointer;
+                    border:1px solid ${armed ? 'var(--color-accent-border-mid,#5a8ad4)' : 'var(--color-border)'};
+                    border-radius:4px;background:${armed ? 'var(--color-bg-hover,rgba(122,176,255,0.12))' : 'var(--color-bg-deep)'};
+                `;
+                row.dataset.eimCe = String(ce.id);
+                const num = document.createElement('code');
+                num.style.cssText = 'flex:none;font-size:10.5px;color:var(--color-text-dim);';
+                num.textContent = String(ce.id).padStart(3, '0');
+                row.appendChild(num);
+                const label = document.createElement('div');
+                label.style.cssText = 'flex:1;min-width:0;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+                label.textContent = ce.name || '—';
+                row.appendChild(label);
+                if (armed) {
+                    const m = document.createElement('span');
+                    m.style.cssText = 'flex:none;font-size:10px;color:var(--color-text-dim);';
+                    m.textContent = 'клик по карте…';
+                    row.appendChild(m);
+                }
+                row.addEventListener('click', () => {
+                    this.armedCommonEvent = armed ? null : { id: ce.id, name: ce.name };
+                    this.buildEventsPalette(hostEl);
+                });
+                list.appendChild(row);
+            }
+            hostEl.appendChild(list);
+        }
+
+        hostEl.appendChild(this._paletteSectionTitle('ctxPalette.onMap', 'На карте'));
+        const evHint = document.createElement('div');
+        evHint.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:2px 10px 6px;border-bottom:1px solid var(--color-border);';
+        evHint.textContent = this._t('ctxPalette.eventsHint', 'Клик — выбрать событие · двойной клик — редактор');
+        hostEl.appendChild(evHint);
 
         const events = (this.currentMap && this.currentMap.events) ? this.currentMap.events.filter(e => e) : [];
         if (!events.length) {
@@ -416,15 +461,66 @@ class EnemyInspectorManager {
         }
     }
 
+    /** Общие события из БД (для секции «Шаблоны» палитры событий). */
+    _getCommonEvents() {
+        try {
+            if (this.databaseManager && typeof this.databaseManager.getCommonEvents === 'function') {
+                const all = this.databaseManager.getCommonEvents() || [];
+                return all.filter(ce => ce && ce.name && String(ce.name).trim() !== '');
+            }
+        } catch (e) { /* нет БД — пусто */ }
+        return [];
+    }
+
     /**
-     * P7: список источников света для контекст-палитры (режим света):
-     * цветной свотч + тип + радиус + координаты; клик — выбрать источник.
+     * P7/P9: палитра режима света — «Шаблоны» (библиотека света панели
+     * Освещения; клик взводит постановку источника с его свойствами)
+     * и «На карте» (текущие источники; клик — выбрать).
      */
     buildLightsPalette(hostEl) {
         if (!hostEl) return;
         hostEl.innerHTML = '';
+
+        hostEl.appendChild(this._paletteSectionTitle('ctxPalette.templates', 'Шаблоны'));
+        const libHint = document.createElement('div');
+        libHint.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:2px 10px 4px;';
+        libHint.textContent = this._t('ctxPalette.lightLibHint', 'Клик по шаблону, затем по карте');
+        hostEl.appendChild(libHint);
+
+        const library = (this._getLightLibrary && this._getLightLibrary()) || [];
+        if (!library.length) {
+            const empty = document.createElement('div');
+            empty.style.cssText = 'color:var(--color-text-muted);font-size:12px;padding:2px 10px 8px;';
+            empty.textContent = this._t('ctxPalette.noLightLib', 'Библиотека пуста. Сохраните источник как шаблон в панели Освещения.');
+            hostEl.appendChild(empty);
+        } else {
+            const list = document.createElement('div');
+            list.style.cssText = 'padding:0 6px 6px;display:flex;flex-direction:column;gap:3px;';
+            for (const t of library) {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 6px;cursor:pointer;border:1px solid var(--color-border);border-radius:4px;background:var(--color-bg-deep);';
+                const sw = document.createElement('span');
+                sw.style.cssText = 'flex:none;width:16px;height:16px;border-radius:50%;border:1px solid var(--color-border);background:' + (t.color || '#ffffff') + ';';
+                row.appendChild(sw);
+                const label = document.createElement('div');
+                label.style.cssText = 'flex:1;min-width:0;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+                label.textContent = t.name || 'Свет';
+                row.appendChild(label);
+                const r = document.createElement('span');
+                r.style.cssText = 'flex:none;font-size:10px;color:var(--color-text-dim);';
+                r.textContent = (t.radius || '?') + 'т';
+                row.appendChild(r);
+                row.addEventListener('click', () => {
+                    if (this._onArmLightTemplate) this._onArmLightTemplate(t);
+                });
+                list.appendChild(row);
+            }
+            hostEl.appendChild(list);
+        }
+
+        hostEl.appendChild(this._paletteSectionTitle('ctxPalette.onMap', 'На карте'));
         const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:6px 10px;border-bottom:1px solid var(--color-border);';
+        hint.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:2px 10px 6px;border-bottom:1px solid var(--color-border);';
         hint.textContent = this._t('ctxPalette.lightsHint', 'Клик — выбрать источник света');
         hostEl.appendChild(hint);
 
@@ -464,18 +560,74 @@ class EnemyInspectorManager {
     }
 
     /**
-     * P6: спавн-палитра врагов в левом сайдбаре (вместо тайлсета в НПС-режиме).
-     * Грид живых карточек-мини-плееров по всем template-карточкам БД; клик —
-     * режим постановки (курсор copy), клик по карте = createEnemyStub.
+     * P6/P9: палитра режима врагов — единая двухсекционная структура.
+     * «Шаблоны»: карточки врагов из БД (клик — постановка).
+     * «На карте»: заглушки врагов текущей карты (клик — выбрать, рамка).
      */
     buildSidebarPalette(hostEl) {
         if (!hostEl) return;
         hostEl.innerHTML = '';
-        const header = document.createElement('div');
-        header.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:6px 10px;border-bottom:1px solid var(--color-border);';
-        header.textContent = this._t('npcPalette.hint', 'Кликните по врагу, затем по пустой клетке карты');
-        hostEl.appendChild(header);
+        hostEl.appendChild(this._paletteSectionTitle('ctxPalette.templates', 'Шаблоны'));
         this._appendEnemyTemplateGrid(hostEl, () => this.buildSidebarPalette(hostEl));
+
+        hostEl.appendChild(this._paletteSectionTitle('ctxPalette.onMap', 'На карте'));
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:2px 10px 6px;border-bottom:1px solid var(--color-border);';
+        hint.textContent = this._t('ctxPalette.enemiesHint', 'Клик — выбрать врага на карте');
+        hostEl.appendChild(hint);
+
+        const stubs = this.getEnemyStubs();
+        if (!stubs.length) {
+            const empty = document.createElement('div');
+            empty.style.cssText = 'color:var(--color-text-muted);font-size:12px;padding:10px;';
+            empty.textContent = this._t('ctxPalette.noEnemies', 'На карте нет врагов. Выберите шаблон выше и кликните по пустой клетке.');
+            hostEl.appendChild(empty);
+            return;
+        }
+        const list = document.createElement('div');
+        list.style.cssText = 'padding:6px;display:flex;flex-direction:column;gap:4px;';
+        for (const ev of stubs) {
+            const tpl = this.findTemplateFor(ev);
+            const tag = tpl ? String(tpl.match || '').replace(/[<>]/g, '') : '?';
+            const row = document.createElement('div');
+            const sel = this.selectedEvent === ev;
+            row.style.cssText = `
+                display:flex;align-items:center;gap:8px;padding:4px 6px;cursor:pointer;
+                border:1px solid ${sel ? 'var(--color-accent-border-mid,#5a8ad4)' : 'var(--color-border)'};
+                border-radius:4px;background:${sel ? 'var(--color-bg-hover,rgba(122,176,255,0.12))' : 'var(--color-bg-deep)'};
+            `;
+            // мини-превью спрайта из заглушки
+            const img = (ev.pages && ev.pages[0] && ev.pages[0].image) || {};
+            const thumb = document.createElement('div');
+            const name = String(img.characterName || '');
+            if (name) {
+                const pic = document.createElement('img');
+                pic.src = this._eventSpriteUrl(name);
+                pic.style.cssText = 'width:24px;height:32px;image-rendering:pixelated;object-fit:none;';
+                const idx = Number(img.characterIndex) || 0;
+                pic.style.objectPosition = (-(idx % 4) * 24 - 24) + 'px ' + (-Math.floor(idx / 4) * 32) + 'px';
+                thumb.appendChild(pic);
+            } else {
+                thumb.style.cssText = 'width:24px;height:32px;border:1px dashed var(--color-border);border-radius:3px;';
+            }
+            thumb.style.flex = 'none';
+            thumb.style.overflow = 'hidden';
+            row.appendChild(thumb);
+            const label = document.createElement('div');
+            label.style.cssText = 'flex:1;min-width:0;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+            label.textContent = '👤 ' + tag + ' · ' + String(ev.name || ('EV' + ev.id));
+            row.appendChild(label);
+            const pos = document.createElement('span');
+            pos.style.cssText = 'flex:none;font-size:10px;color:var(--color-text-dim);';
+            pos.textContent = ev.x + ',' + ev.y;
+            row.appendChild(pos);
+            row.addEventListener('click', () => {
+                this.select(ev);
+                this.buildSidebarPalette(hostEl);
+            });
+            list.appendChild(row);
+        }
+        hostEl.appendChild(list);
     }
 
     /**

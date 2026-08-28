@@ -473,14 +473,21 @@ class EventManager {
         const isDoubleClick = currentTime - this._lastMapClickTime < 300 &&
             this._lastMapClickX === tileX && this._lastMapClickY === tileY;
 
-        // P8: взведённый вид врага из палитры — клик по пустой клетке ставит
-        // заглушку врага прямо в режиме событий (до ветки двойного клика —
-        // защита от случайного редактора свежей заглушки).
+        // P8/P9: взведённая постановка из палитры шаблонов. Враг — заглушка
+        // на карте; общее событие — событие с командой вызова. Проверка ДО
+        // ветки двойного клика — защита от случайного редактора.
         if (!this.getEventAt(evX, evY) && this._getArmedEnemyTemplate && this._getArmedEnemyTemplate()) {
             const tpl = this._getArmedEnemyTemplate();
             this.resetMapClickTracking();
             const placed = this.createEnemyStub(tileX, tileY, tpl);
             if (placed && this._disarmEnemyTemplate) this._disarmEnemyTemplate();
+            return;
+        }
+        if (!this.getEventAt(evX, evY) && this._getArmedCommonEvent && this._getArmedCommonEvent()) {
+            const ce = this._getArmedCommonEvent();
+            this.resetMapClickTracking();
+            const created = this.createCommonEventStub(evX, evY, ce);
+            if (created && this._disarmCommonEvent) this._disarmCommonEvent();
             return;
         }
 
@@ -1392,6 +1399,54 @@ class EventManager {
         this.currentMap.events[nextId] = ev;
         this.renderEvents();
         console.log(`Enemy stub '${tag}' placed at (${x}, ${y}) — runtime expands it from the DB card`);
+        return ev;
+    }
+
+    /**
+     * P9: событие-заглушка из общего события — одна страница с командой
+     * вызова общего события (117). Имя — «CE имя».
+     */
+    createCommonEventStub(x, y, ce) {
+        if (!this.currentMap) return null;
+        if (x < 0 || x >= this.currentMap.width || y < 0 || y >= this.currentMap.height) return null;
+        if (this.getEventAt(x, y)) return null;
+
+        this.saveState();
+        const nextId = this.getNextEventId();
+        const ceId = Number(ce.id) || 0;
+        const ev = {
+            id: nextId,
+            name: 'CE ' + (ce.name || ceId),
+            note: '',
+            pages: [{
+                conditions: {
+                    actorId: 1, actorValid: false, itemId: 1, itemValid: false,
+                    selfSwitchCh: 'A', selfSwitchValid: false,
+                    switch1Id: 1, switch1Valid: false, switch2Id: 1, switch2Valid: false,
+                    variableId: 1, variableValid: false, variableValue: 0
+                },
+                directionFix: false,
+                image: { tileId: 0, characterName: '', direction: 2, pattern: 0, characterIndex: 0 },
+                moveFrequency: 3,
+                moveRoute: { list: [{ code: 0, indent: null, parameters: [] }], repeat: true, skippable: false, wait: false },
+                moveSpeed: 3,
+                moveType: 0,
+                priorityType: this.getActiveEventPriority(),
+                stepAnime: false,
+                through: false,
+                trigger: 0,
+                walkAnime: true,
+                list: [
+                    { code: 117, indent: 0, parameters: [ceId] },
+                    { code: 0, indent: 0, parameters: [] }
+                ]
+            }],
+            x: x,
+            y: y
+        };
+        this.currentMap.events[nextId] = ev;
+        this.renderEvents();
+        console.log(`Common-event stub '${ev.name}' placed at (${x}, ${y})`);
         return ev;
     }
 
