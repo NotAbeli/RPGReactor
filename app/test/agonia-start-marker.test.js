@@ -25,6 +25,7 @@ class Container {
     addChild(c) { c.parent = this; this.children.push(c); return c; }
     removeChild(c) { this.children = this.children.filter(x => x !== c); c.parent = null; }
     removeChildren() { const out = this.children; this.children = []; out.forEach(c => { c.parent = null; }); return out; }
+    destroy() { this.children.forEach(c => { if (typeof c.destroy === 'function') c.destroy(); }); this.children = []; this.parent = null; }
 }
 class Graphics extends Container {
     constructor() { super(); this.ops = []; }
@@ -121,4 +122,23 @@ test('setStartingPosition: пишет startMapId/X/Y и сразу рендер�
     assert.strictEqual(saved[0].f, 'System.json');
     assert.strictEqual(em.startingPositionContainer.children.length, 1, 'marker re-rendered immediately');
     assert.strictEqual(em.startingPositionContainer.children[0].x, 10 * 48);
+});
+
+test('P5: createEnemyStub наследует шаги-звуки карточки (<step_se> / <step_se:VOL>)', () => {
+    const EventManager = loadEventManager();
+    const em = new EventManager({}, {});
+    const tm = makeTilemapManager();
+    em.initializeEventLayer(tm);
+    em.currentMap = { id: 45, width: 40, height: 30, events: [null] };
+
+    const plain = em.createEnemyStub(3, 4, { match: '<biba>' });
+    assert.ok(plain, 'stub created');
+    assert.strictEqual(plain.note, '<biba> <step_se>', 'plain step tag without stepVolume');
+
+    em.currentMap.events = [null];
+    const loud = em.createEnemyStub(5, 6, { match: '<rat>', stepVolume: '80' });
+    assert.strictEqual(loud.note, '<rat> <step_se:80>', 'volume tag from the card');
+    assert.strictEqual(loud.pages[0].image.characterName, 'Enemy 1', 'default sprite');
+    assert.ok(plain.pages[0].list.some(c => c.code === 108 && String(c.parameters[0]).includes('<collider>')),
+        'stub page carries collider comments');
 });

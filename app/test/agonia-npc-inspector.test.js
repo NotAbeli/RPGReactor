@@ -139,7 +139,7 @@ test('панель: рендерится без throw, несёт секции �
     assert.ok(html.includes('Кликните по врагу'), 'empty-state hint before selection');
     eim.select(biba());
     html = eim.panelEl.innerHTML;
-    for (const s of ['Визуал', 'Характер', 'Способности', 'Скорость', 'Поведение', 'Урон по врагу', 'Флаги ИИ', 'На карте', 'Поставить врага']) {
+    for (const s of ['Визуал', 'Характер', 'Способности', 'Скорость', 'Поведение', 'Урон по врагу', 'Флаги ИИ', 'На карте', 'Состояния (графика + звук)']) {
         assert.ok(html.includes(s), 'section missing: ' + s);
     }
     // P3: мусор убран — секции «Карточка» и «От чего зависит» больше нет
@@ -154,6 +154,15 @@ test('панель: рендерится без throw, несёт секции �
     assert.ok(html.includes('data-eim-act="pick-sprite"'), 'sprite picker button');
     assert.ok(!html.includes('data-eim-preview'), 'preview image removed');
     assert.ok(!html.includes('data-eim-card="spriteIndex"'), 'index input removed (picker sets it)');
+    // P5: спавн-полоса сверху + состояния + громкость шагов
+    const raw = eim.panelEl.innerHTML;
+    const stripIdx = raw.indexOf('data-eim-place');
+    assert.ok(stripIdx > 0, 'spawn strip present');
+    assert.ok(stripIdx < raw.indexOf('display:grid;grid-template-columns:minmax'), 'spawn strip ABOVE the columns');
+    assert.ok(raw.includes('Громкость шагов'), 'step volume field');
+    assert.ok(raw.includes('Состояния (графика + звук)'), 'states section');
+    assert.ok(raw.includes('data-eim-state-gfx="attack"') && raw.includes('data-eim-state-se="death"'), 'state rows');
+    assert.ok(!raw.includes('Поставить врага</div>'), 'old bottom placement section gone');
     // S52: характер-селект пишет в карточку
     assert.ok(html.includes('aggressive') && html.includes('peaceful'), 'disposition select options');
     assert.ok(html.includes('canPanic') && html.includes('canFlee') && html.includes('rememberGun'), 'ability checkboxes');

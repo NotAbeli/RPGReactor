@@ -311,12 +311,62 @@ class EnemyInspectorManager {
         </div>`;
         const body = this.selectedEvent && this.selectedTemplate
             ? this._enemyHtml()
-            : this._emptyHtml() + this._templatesHtml();
+            : this._emptyHtml();
+        // P5: спавн-полоса наверху — все шаблоны БД всегда под рукой.
+        const spawn = this._spawnStripHtml();
         // P3: две колонки + нижняя полоса, без скролла — панель показывается
         // целиком. Колонкам min-width:0: без него длинный контент (селекты,
         // подписи страха, таблица урона) распирает 1fr-треки и вторая колонка
         // выезжает за край панели (тот же grid-blowout, что в S37b).
-        return head + `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 16px;padding:4px 10px 10px;font-size:12px;align-items:start;">${body}</div>`;
+        return head + spawn + `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 16px;padding:4px 10px 10px;font-size:12px;align-items:start;">${body}</div>`;
+    }
+
+    /** P5: горизонтальная спавн-полоса — все template-карточки БД. */
+    _spawnStripHtml() {
+        const templates = this.getTemplates();
+        if (!templates.length) return '';
+        let html = `<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding:5px 10px;border-bottom:1px solid var(--color-border);">
+            <span style="font-size:10px;color:var(--color-text-dim);font-weight:700;letter-spacing:.5px;">${this._t('npcPanel.place', 'ПОСТАВИТЬ')}</span>`;
+        for (const t of templates) {
+            const tag = String(t.match || '').replace(/[<>]/g, '');
+            const active = this.placementTemplate === t;
+            html += `<button class="agonia-btn" data-eim-place="${String(t.match).replace(/"/g, '&quot;')}" title="${this._t('npcPanel.placeHint', 'Кликните по виду, затем по пустой клетке карты.')}" style="padding:2px 9px;font-size:11px;${active ? 'border-color:var(--color-accent-border-mid);font-weight:700;' : ''}">👤 ${tag} · HP ${t.hp || '?'}${active ? ' ●' : ''}</button>`;
+        }
+        html += `</div>`;
+        return html;
+    }
+
+    /** P5: фиксированный набор состояний карточки. */
+    _statesList() {
+        return [
+            ['rest', this._t('npcPanel.stRest', 'Покой')],
+            ['alert', this._t('npcPanel.stAlert', 'Тревога')],
+            ['combat', this._t('npcPanel.stCombat', 'Бой')],
+            ['panic', this._t('npcPanel.stPanic', 'Паника')],
+            ['flee', this._t('npcPanel.stFlee', 'Бегство')],
+            ['attack', this._t('npcPanel.stAttack', 'Атака')],
+            ['hurt', this._t('npcPanel.stHurt', 'Урон')],
+            ['death', this._t('npcPanel.stDeath', 'Смерть')]
+        ];
+    }
+
+    /** P5: секция «Состояния» — строка на состояние: графика (пикер) + звук. */
+    _statesHtml(tpl) {
+        let gfx = {}, snd = {};
+        try { if (tpl.stateGraphics) gfx = JSON.parse(tpl.stateGraphics) || {}; } catch (e) { gfx = {}; }
+        try { if (tpl.stateSounds) snd = JSON.parse(tpl.stateSounds) || {}; } catch (e) { snd = {}; }
+        let html = this._sec(this._t('npcPanel.states', 'Состояния (графика + звук)'));
+        html += `<div style="font-size:10px;color:var(--color-text-muted);margin-bottom:2px;">${this._t('npcPanel.statesHint', 'Пусто = основной спрайт. Звук играется на входе состояния.')}</div>`;
+        for (const [key, label] of this._statesList()) {
+            const g = gfx[key] || {};
+            const gLabel = g.name ? (String(g.name) + '#' + (Number(g.index) || 0)) : '—';
+            html += `<div style="display:flex;align-items:center;gap:5px;margin:2px 0;min-width:0;">
+                <span style="flex:none;width:58px;color:var(--color-text-dim);">${label}</span>
+                <span title="${this._t('npcPanel.pickSprite', 'Выбрать файл и ячейку персонажа')}" data-eim-state-gfx="${key}" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;padding:2px 6px;border:1px solid var(--color-border);border-radius:3px;background:var(--color-bg-deep);">${gLabel}</span>
+                <input data-eim-state-se="${key}" type="text" value="${String(snd[key] || '').replace(/"/g, '&quot;')}" placeholder="SE" style="flex:none;width:84px;min-width:52px;box-sizing:border-box;font-size:11px;">
+            </div>`;
+        }
+        return html;
     }
 
     _emptyHtml() {
@@ -387,6 +437,9 @@ class EnemyInspectorManager {
         left += this._sec(this._t('npcPanel.speed', 'Скорость (MV 1–6)'));
         left += this._row(this._t('npcPanel.speedCalm', 'В покое'), this._inp('speedCalm', tpl.speedCalm, 'number'));
         left += this._row(this._t('npcPanel.speedCombat', 'В бою'), this._inp('speedCombat', tpl.speedCombat, 'number'));
+        left += this._row(this._t('npcPanel.stepVolume', 'Громкость шагов %'), this._inp('stepVolume', tpl.stepVolume, 'number'));
+
+        left += this._statesHtml(tpl);
 
         left += this._sec(this._t('npcPanel.visual', 'Визуал'));
         // P3b: без превью; файл и ячейка выбираются двухшаговым пикером (как в Спрайтере)
@@ -426,29 +479,35 @@ class EnemyInspectorManager {
         bottom += this._row(this._t('npcPanel.name', 'Имя') + ' / ID', `<code>${ev.id}</code> <input data-eim-ev="name" value="${String(ev.name || '').replace(/"/g, '&quot;')}" style="width:calc(100% - 34px);">`);
         bottom += this._row('X / Y', `<input data-eim-ev="x" type="number" value="${ev.x}" style="width:56px;"> <input data-eim-ev="y" type="number" value="${ev.y}" style="width:56px;">`);
         bottom += `<div style="margin:5px 0;"><button class="agonia-btn" data-eim-act="del" style="padding:2px 10px;font-size:11px;color:#ff7a7a;">✕ ${this._t('npcPanel.delete', 'Удалить врага')}</button></div>`;
-        bottom += this._templatesHtml();
         bottom += `</div></div>`;
 
         return `<div style="min-width:0;">${left}</div><div style="min-width:0;">${right}</div>${bottom}`;
     }
 
     /**
-     * P3b: двухшаговый пикер спрайта Спрайтера (шаг 1 — файл листа,
-     * шаг 2 — ячейка персонажа 4×2; $-листы = одна ячейка). Записывает
-     * в карточку сразу и имя файла, и индекс.
+     * P3b/P5: двухшаговый пикер спрайта Спрайтера (шаг 1 — файл листа,
+     * шаг 2 — ячейка персонажа 4×2; $-листы = одна ячейка). Без state —
+     * пишет основной спрайт карточки; со state — графику состояния.
      */
-    _pickSprite() {
+    _pickSprite(state) {
         if (typeof DatabaseSpriterEditor === 'undefined') return;
         if (!this.selectedTemplate) return;
         if (!this._spriterPicker) {
             this._spriterPicker = new DatabaseSpriterEditor(this.databaseManager, this.projectController, null, null);
         }
-        const cur = String(this.selectedTemplate.spriteName || '');
+        const cur = state ? '' : String(this.selectedTemplate.spriteName || '');
         this._spriterPicker._showFilePicker(cur, (name, index) => {
-            this._saveCard(this.selectedTemplate.match, 'spriteName', name);
-            this._saveCard(this.selectedTemplate.match, 'spriteIndex', String(index !== undefined ? index : 0));
-            const inp = this.panelEl && this.panelEl.querySelector('[data-eim-card="spriteName"]');
-            if (inp) inp.value = name;
+            if (state) {
+                let gfx = {};
+                try { if (this.selectedTemplate.stateGraphics) gfx = JSON.parse(this.selectedTemplate.stateGraphics) || {}; } catch (e) { gfx = {}; }
+                gfx[state] = { name: String(name), index: Number(index) || 0 };
+                this._saveCard(this.selectedTemplate.match, 'stateGraphics', JSON.stringify(gfx));
+            } else {
+                this._saveCard(this.selectedTemplate.match, 'spriteName', name);
+                this._saveCard(this.selectedTemplate.match, 'spriteIndex', String(index !== undefined ? index : 0));
+                const inp = this.panelEl && this.panelEl.querySelector('[data-eim-card="spriteName"]');
+                if (inp) inp.value = name;
+            }
         }, 'characters', { pickCharacterIndex: true });
     }
 
@@ -529,19 +588,6 @@ class EnemyInspectorManager {
             attacks
                 ? 'Атаки: ' + (peaceful ? '—' : [Number(tpl.tracerId) > 0 ? 'трассер' : null, Number(tpl.meleeId) > 0 ? 'удар' : null, String(tpl.dashName || '') !== '' ? 'рывок' : null].filter(Boolean).join(' + ') || '—')
                 : 'Атак нет' + (peaceful ? ' (мирный)' : ' (не заданы карточки атак)') + '. Кастомные правила — в БД, вкладка «ИИ Врагов».'}</div>`;
-        return html;
-    }
-
-    _templatesHtml() {
-        const templates = this.getTemplates();
-        if (!templates.length) return '';
-        let html = this._sec(this._t('npcPanel.place', 'Поставить врага'));
-        html += `<div style="font-size:10px;color:var(--color-text-muted);margin-bottom:4px;">${this._t('npcPanel.placeHint', 'Кликните по виду, затем по пустой клетке карты.')}</div>`;
-        for (const t of templates) {
-            const tag = String(t.match || '').replace(/[<>]/g, '');
-            const active = this.placementTemplate === t;
-            html += `<button class="agonia-btn" data-eim-place="${String(t.match).replace(/"/g, '&quot;')}" style="display:block;width:100%;text-align:left;margin:2px 0;padding:4px 8px;font-size:11px;${active ? 'border-color:var(--color-accent-border-mid);font-weight:700;' : ''}">👤 ${tag} · HP ${t.hp || '?'} ${active ? '· клик по карте…' : ''}</button>`;
-        }
         return html;
     }
 
@@ -664,6 +710,22 @@ class EnemyInspectorManager {
                 if (inp.checked) current.add(v); else current.delete(v);
                 this._saveCard(this.selectedTemplate.match, 'fearedWeapons',
                     Array.from(current).sort((a, b) => a - b).join(','));
+            });
+        });
+        // P5: графика состояния — клик по строке открывает пикер
+        el.querySelectorAll('[data-eim-state-gfx]').forEach(span => {
+            span.addEventListener('click', () => this._pickSprite(span.dataset.eimStateGfx));
+        });
+        // P5: звук состояния
+        el.querySelectorAll('[data-eim-state-se]').forEach(inp => {
+            inp.addEventListener('change', () => {
+                if (!this.selectedTemplate) return;
+                const key = inp.dataset.eimStateSe;
+                let snd = {};
+                try { if (this.selectedTemplate.stateSounds) snd = JSON.parse(this.selectedTemplate.stateSounds) || {}; } catch (e) { snd = {}; }
+                if (String(inp.value || '').trim() === '') delete snd[key];
+                else snd[key] = String(inp.value).trim();
+                this._saveCard(this.selectedTemplate.match, 'stateSounds', JSON.stringify(snd));
             });
         });
         el.querySelectorAll('[data-eim-place]').forEach(b => {

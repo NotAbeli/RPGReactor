@@ -143,7 +143,8 @@ class DatabaseEnemiesEditor {
                 { key: 'canFlee', label: 'Убегает', type: 'check' },
                 { key: 'rememberGun', label: 'Помнит оружие', type: 'check' },
                 { key: 'speedCalm', label: 'Скорость в покое (1–6)', type: 'number', min: 1, max: 6 },
-                { key: 'speedCombat', label: 'Скорость в бою (1–6)', type: 'number', min: 1, max: 6 }
+                { key: 'speedCombat', label: 'Скорость в бою (1–6)', type: 'number', min: 1, max: 6 },
+                { key: 'stepVolume', label: 'Громкость шагов %', type: 'number', min: 0, max: 150, hint: 'пишется в заглушку как <step_se:VOL>' }
             ], entry, { commit: () => api.changed() });
 
             form.section(this._tt('Внешний вид'));
@@ -163,10 +164,6 @@ class DatabaseEnemiesEditor {
             ], entry, { commit: () => api.changed() });
 
             form.section(this._tt('Урон по врагу'));
-            form.field({ key: 'fearedWeapons', label: 'Боится оружия (var)', type: 'text',
-                hint: 'значения var ГГ через запятую; пусто = глобальный GunCondition' }, entry, { commit: () => api.changed() });
-            form.field({ key: 'damageOverrides', label: 'Овverride урона (JSON)', type: 'textarea',
-                hint: 'например {"2":"-150"} — varValue → урон; пусто = урон из Арсенала (Бой → Оружие)' }, entry, { commit: () => api.changed() });
             form.fields([
                 { key: 'damageFists', label: 'Урон без оружия (fallback)', type: 'number', hint: 'кулаки, когда var ГГ не совпал ни с одним оружием Арсенала' },
                 { key: 'damageSE', label: 'Звук урона (fallback)', type: 'text' }
@@ -191,6 +188,12 @@ class DatabaseEnemiesEditor {
 
         form.mount(formCol);
 
+        // P5: дружелюбные блоки шаблона — страх оружием, таблица урона,
+        // состояния (графика+звук с превью) и превью основного спрайта.
+        if (isTpl) {
+            this._renderTplFriendlyBlocks(formCol, entry, () => api.changed());
+        }
+
         // --- Rules: nested DataTable ---
         const rulesTitle = document.createElement('div');
         rulesTitle.style.cssText = 'font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--color-text-dim);margin:16px 0 6px;';
@@ -199,6 +202,185 @@ class DatabaseEnemiesEditor {
         const rulesHost = document.createElement('div');
         formCol.appendChild(rulesHost);
         this._renderRules(rulesHost, entry, () => api.changed());
+    }
+
+    // ------------------------------------------------------------------
+    // P5: дружелюбные блоки карточки шаблона (DOM-билдеры)
+    // ------------------------------------------------------------------
+
+    _getArsenal() {
+        try {
+            const agonia = this.databaseManager && this.databaseManager.data && this.databaseManager.data.agonia;
+            const sec = agonia && agonia.enemies;
+            if (!sec || !sec['Weapon List']) return [];
+            return JSON.parse(sec['Weapon List'])
+                .map(w => { try { return typeof w === 'string' ? JSON.parse(w) : w; } catch (e) { return null; } })
+                .filter(Boolean);
+        } catch (e) {
+            return [];
+        }
+    }
+
+    _spriterPicker() {
+        if (!this._spriterPickerInstance && typeof DatabaseSpriterEditor !== 'undefined') {
+            this._spriterPickerInstance = new DatabaseSpriterEditor(this.databaseManager, this.projectManager, null, null);
+        }
+        return this._spriterPickerInstance;
+    }
+
+    _sectionLabel(host, text) {
+        const t = document.createElement('div');
+        t.style.cssText = 'font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--color-text-dim);margin:14px 0 6px;';
+        t.textContent = this._tt(text);
+        host.appendChild(t);
+    }
+
+    _renderTplFriendlyBlocks(host, entry, changed) {
+        const weapons = this._getArsenal();
+
+        // --- Боится оружия: чекбоксы Арсенала ---
+        this._sectionLabel(host, 'Боится оружия');
+        if (!weapons.length) {
+            const n = document.createElement('div');
+            n.style.cssText = 'font-size:11px;color:var(--color-text-muted);';
+            n.textContent = this._tt('Арсенал пуст — добавьте оружия в Бой → Оружие. Пусто = глобальное условие оружия.');
+            host.appendChild(n);
+        } else {
+            const box = document.createElement('div');
+            box.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px 12px;';
+            const fearedSet = new Set(String(entry.fearedWeapons || '').split(',')
+                .map(s => Number(s.trim())).filter(v => v > 0));
+            for (const w of weapons) {
+                const lbl = document.createElement('label');
+                lbl.style.cssText = 'display:flex;align-items:center;gap:5px;cursor:pointer;font-size:12px;';
+                const chk = document.createElement('input');
+                chk.type = 'checkbox';
+                chk.checked = fearedSet.has(Number(w.varValue));
+                chk.addEventListener('change', () => {
+                    if (chk.checked) fearedSet.add(Number(w.varValue));
+                    else fearedSet.delete(Number(w.varValue));
+                    entry.fearedWeapons = Array.from(fearedSet).sort((a, b) => a - b).join(',');
+                    changed();
+                });
+                lbl.appendChild(chk);
+                const sp = document.createElement('span');
+                sp.textContent = (w.name || 'var ' + w.varValue) + ' (var ' + w.varValue + ')';
+                lbl.appendChild(sp);
+                box.appendChild(lbl);
+            }
+            host.appendChild(box);
+        }
+
+        // --- Таблица урона: Арсенал + оверрайды ---
+        this._sectionLabel(host, 'Урон по оружию (овverride этого врага)');
+        let overrides = {};
+        try { if (entry.damageOverrides) overrides = JSON.parse(entry.damageOverrides) || {}; } catch (e) { overrides = {}; }
+        if (weapons.length) {
+            const tbl = document.createElement('div');
+            tbl.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) 90px;gap:2px 8px;align-items:center;';
+            for (const w of weapons) {
+                const v = String(w.varValue);
+                const nm = document.createElement('span');
+                nm.style.cssText = 'font-size:12px;color:var(--color-text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+                nm.textContent = (w.name || 'var ' + v) + (String(w.sneakKill) === 'true' ? ' · скрытно' : '') + ' — базово ' + (w.damage || 0);
+                tbl.appendChild(nm);
+                const inp = document.createElement('input');
+                inp.type = 'number';
+                inp.value = (overrides[v] !== undefined) ? overrides[v] : (w.damage !== undefined ? w.damage : '');
+                inp.style.cssText = 'width:100%;min-width:52px;box-sizing:border-box;';
+                inp.addEventListener('change', () => {
+                    const val = Number(inp.value) || 0;
+                    if (Number(w.damage) === val) delete overrides[v];
+                    else overrides[v] = String(val);
+                    entry.damageOverrides = JSON.stringify(overrides);
+                    changed();
+                });
+                tbl.appendChild(inp);
+            }
+            host.appendChild(tbl);
+        }
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size:10px;color:var(--color-text-muted);margin-top:2px;';
+        hint.textContent = this._tt('Значение как в Арсенале = без оверрайда; измени — у этого врага свой урон.');
+        host.appendChild(hint);
+
+        // --- Состояния: графика + звук (+ превью) ---
+        this._sectionLabel(host, 'Состояния (графика + звук)');
+        let gfx = {}, snd = {};
+        try { if (entry.stateGraphics) gfx = JSON.parse(entry.stateGraphics) || {}; } catch (e) { gfx = {}; }
+        try { if (entry.stateSounds) snd = JSON.parse(entry.stateSounds) || {}; } catch (e) { snd = {}; }
+        const states = [
+            ['rest', 'Покой'], ['alert', 'Тревога'], ['combat', 'Бой'], ['panic', 'Паника'],
+            ['flee', 'Бегство'], ['attack', 'Атака'], ['hurt', 'Урон'], ['death', 'Смерть']
+        ];
+        const grid = document.createElement('div');
+        grid.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px 14px;';
+        for (const [key, label] of states) {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;gap:6px;min-width:0;margin:2px 0;';
+            const lb = document.createElement('span');
+            lb.style.cssText = 'flex:none;width:56px;font-size:11.5px;color:var(--color-text-dim);';
+            lb.textContent = this._tt(label);
+            row.appendChild(lb);
+            // превью + имя графика + пикер
+            const gbtn = document.createElement('button');
+            gbtn.className = 'agonia-btn';
+            gbtn.style.cssText = 'flex:1;min-width:0;display:flex;align-items:center;gap:6px;padding:2px 6px;font-size:11px;text-align:left;';
+            const g = gfx[key] || {};
+            const img = document.createElement('img');
+            img.style.cssText = 'flex:none;width:24px;height:32px;image-rendering:pixelated;object-fit:none;object-position:0 0;border:1px solid var(--color-border);display:' + (g.name ? 'block' : 'none') + ';';
+            if (g.name) {
+                img.src = this._charUrl(g.name, Number(g.index) || 0);
+            }
+            const gtxt = document.createElement('span');
+            gtxt.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+            gtxt.textContent = g.name ? (String(g.name) + ' #' + (Number(g.index) || 0)) : '—';
+            gbtn.appendChild(img);
+            gbtn.appendChild(gtxt);
+            gbtn.addEventListener('click', () => {
+                const picker = this._spriterPicker();
+                if (!picker) return;
+                picker._showFilePicker('', (name, index) => {
+                    gfx[key] = { name: String(name), index: Number(index) || 0 };
+                    entry.stateGraphics = JSON.stringify(gfx);
+                    img.src = this._charUrl(name, Number(index) || 0);
+                    img.style.display = 'block';
+                    gtxt.textContent = String(name) + ' #' + (Number(index) || 0);
+                    changed();
+                }, 'characters', { pickCharacterIndex: true });
+            });
+            row.appendChild(gbtn);
+            // SE
+            const sinp = document.createElement('input');
+            sinp.type = 'text';
+            sinp.placeholder = 'SE';
+            sinp.value = String(snd[key] || '');
+            sinp.style.cssText = 'flex:none;width:88px;min-width:52px;box-sizing:border-box;font-size:11px;';
+            sinp.addEventListener('change', () => {
+                if (String(sinp.value || '').trim() === '') delete snd[key];
+                else snd[key] = String(sinp.value).trim();
+                entry.stateSounds = JSON.stringify(snd);
+                changed();
+            });
+            row.appendChild(sinp);
+            grid.appendChild(row);
+        }
+        host.appendChild(grid);
+    }
+
+    /** Мини-превью ячейки листа персонажа (24×32, сдвиг по индексу). */
+    _charUrl(name, index) {
+        try {
+            if (typeof RRAssetFiles === 'undefined') return '';
+            const proj = this.projectManager && this.projectManager.getCurrentProject
+                ? this.projectManager.getCurrentProject() : null;
+            if (!proj || !proj.path) return '';
+            let path = null;
+            try { path = (typeof require === 'function') ? require('path') : window.require('path'); } catch (e) { return ''; }
+            return RRAssetFiles.toUrl(path.join(proj.path, 'img', 'characters', name + '.png'));
+        } catch (e) {
+            return '';
+        }
     }
 
     _renderRules(host, entry, commitOuter) {

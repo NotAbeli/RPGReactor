@@ -238,6 +238,45 @@ test('P3: страх оружием заменяет <Gun> на var-17 усло�
 });
 
 
+test('P5: графика состояний подставляется в свои страницы', () => {
+    const { sde } = makeEnv();
+    const pages = sde.buildEnemyPages(Object.assign({}, BIBA, {
+        stateGraphics: JSON.stringify({
+            rest: { name: 'BibaCalm', index: 0 },
+            attack: { name: 'BibaAttack', index: 5 },
+            death: { name: 'BibaCorpse', index: 0 }
+        })
+    }));
+    assert.strictEqual(pages.length, 17, 'full skeleton');
+    assert.strictEqual(pages[0].image.characterName, 'BibaCalm', 'rest sprite on P0');
+    assert.strictEqual(pages[0].image.characterIndex, 0);
+    assert.strictEqual(pages[12].image.characterName, 'BibaAttack', 'attack sprite on P12');
+    assert.strictEqual(pages[12].image.characterIndex, 5);
+    assert.strictEqual(pages[1].image.characterName, 'Enemy 1', 'P1 falls back to the main sprite');
+    assert.strictEqual(pages[15].image.characterName, 'BibaCorpse', 'custom death sprite');
+    // без графики смерти страница смерти остаётся пустой (оригинальное поведение)
+    const plain = sde.buildEnemyPages(BIBA);
+    assert.strictEqual(plain[15].image.characterName, '', 'death stays empty without state graphics');
+});
+
+test('P5: звуки состояний — на входе однократных, не на циклических', () => {
+    const { sde } = makeEnv();
+    const pages = sde.buildEnemyPages(Object.assign({}, BIBA, {
+        stateSounds: JSON.stringify({ alert: 'Alert1', attack: 'Swing2', hurt: 'Ow3', death: 'Death4' })
+    }));
+    const flat = p => JSON.stringify(p.list);
+    assert.ok(flat(pages[1]).includes('Alert1'), 'alert sound on P1');
+    assert.ok(flat(pages[2]).includes('Swing2'), 'attack sound on P2');
+    assert.ok(flat(pages[12]).includes('Swing2'), 'attack sound on P12');
+    assert.ok(flat(pages[14]).includes('Ow3'), 'hurt sound overrides the P14 SE');
+    assert.ok(flat(pages[15]).includes('Death4'), 'death sound on P15');
+    assert.ok(!flat(pages[6]).includes('"name":"Swing2"') && !flat(pages[6]).includes('Alert1'), 'no state sound on looping P6');
+    assert.ok(!flat(pages[11]).includes('Alert1'), 'no state sound on looping P11');
+    // легаси damageSE без stateSounds — прежний fallback
+    const legacy = sde.buildEnemyPages(Object.assign({}, BIBA, { damageSE: 'LegacyHit' }));
+    assert.ok(JSON.stringify(legacy[14].list).includes('LegacyHit'), 'legacy damageSE keeps working');
+});
+
 test('findTemplateByNote: только template-карточки, по тем же тегам, что и правила', () => {
     const box = { match: '<box>', hp: '50' };
     const { sde } = makeEnv();

@@ -487,19 +487,30 @@ Galv.CFSTEP = Galv.CFSTEP || {}; // Galv's stuff
         };
         
         Game_Event.prototype.setStepSe = function() {
-            if (this.event().note.contains("<step_se>") && this._characterName != "") {
+            // P5: <step_se> или <step_se:VOL> (громкость 0–150% на этого врага;
+            // дистанционный фейд до игрока применяется как обычно).
+            this._stepSeVol = 1;
+            var mNote = String(this.event().note).match(/<step_se(?::(\d+))?>/);
+            if (mNote && this._characterName != "") {
                 this._stepSeOn = true;
+                if (mNote[1]) this._stepSeVol = Math.max(0, Math.min(150, Number(mNote[1]))) / 100;
             } else {
                 var page = this.page();
                 var stepSe = false;
+                var vol = 1;
                 if (page) {
                     for (var i = 0; i < page.list.length; i++) {
-                        if (page.list[i].code == 108 && page.list[i].parameters[0].contains("<step_se>")) {
-                            stepSe = true;
+                        if (page.list[i].code == 108) {
+                            var m = String(page.list[i].parameters[0]).match(/<step_se(?::(\d+))?>/);
+                            if (m) {
+                                stepSe = true;
+                                if (m[1]) vol = Math.max(0, Math.min(150, Number(m[1]))) / 100;
+                            }
                         };
                     };
                 };
                 this._stepSeOn = stepSe;
+                this._stepSeVol = vol;
             };
         };
         
@@ -523,7 +534,7 @@ Galv.CFSTEP = Galv.CFSTEP || {}; // Galv's stuff
                 this._stopCount = 0; // Reset stop counter
                 this._stepTimer--;
                 if (this._stepTimer <= 0) {
-                    this.playStepSE();
+                    this.playStepSE(this._stepSeVol);
                     this._stepTimer = this.getStepInterval();
                 }
             } else {

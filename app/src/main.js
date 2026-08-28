@@ -942,6 +942,12 @@ class RPGReactor {
             return;
         }
 
+        // P5: opening the DB (e.g. from the NPC panel's «БД →») fully exits
+        // NPC mode - the map returns to the normal view, the panel closes.
+        if (this.enemyInspectorManager && this.enemyInspectorManager.npcMode) {
+            this.setEditingMode('events');
+        }
+
         if (!this.databaseEditorUI) {
             this.databaseEditorUI = new DatabaseEditorUI(
                 this.databaseManager,

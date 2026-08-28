@@ -649,6 +649,27 @@
       var sneak = _sdeTplString(tpl.sneakKill, 'true') === 'true' ? 0 : 1;
       var se = function (d) { return _sdeCmd(250, (d === undefined ? 2 : d), [{ name: seName, volume: 90, pitch: 100, pan: 0 }]); };
 
+      // P5: карточка состояний — графика и звуки по флагам состояний.
+      // stateGraphics: {attack:{name,index},...}; stateSounds: {alert:'se',...}.
+      // Легаси damageSE живёт как stateSounds.hurt (если тот не задан).
+      var stateGraphics = {};
+      try { if (tpl.stateGraphics) stateGraphics = JSON.parse(tpl.stateGraphics) || {}; } catch (e) { stateGraphics = {}; }
+      var stateSounds = {};
+      try { if (tpl.stateSounds) stateSounds = JSON.parse(tpl.stateSounds) || {}; } catch (e) { stateSounds = {}; }
+      if (!stateSounds.hurt && tpl.damageSE) stateSounds.hurt = String(tpl.damageSE);
+      if (stateSounds.hurt) seName = String(stateSounds.hurt);
+      var sdeImgFor = function (state, emptyDefault) {
+          var g = stateGraphics[state];
+          if (g && g.name !== undefined && g.name !== null && g.name !== '') {
+              return { tileId: 0, characterName: String(g.name), direction: 2, pattern: 1,
+                  characterIndex: Number(g.index) || 0 };
+          }
+          return emptyDefault ? _sdeImg(tpl, true) : _sdeImg(tpl);
+      };
+      var sdeSound = function (name, ind) {
+          return _sdeCmd(250, ind || 0, [{ name: String(name), volume: 90, pitch: 100, pan: 0 }]);
+      };
+
       // S52: поведенческий конструктор — характер, способности, скорости.
       // Дефолты воспроизводят эталонный скелет бибы бит-в-бит.
       var peaceful = _sdeTplString(tpl.disposition, 'aggressive') === 'peaceful';
@@ -673,36 +694,37 @@
       var pages = [];
 
       // P0: покой — стелс-детектор игрока в маршруте
-      pages.push(_sdePage({ cond: _sdeCond('A', false), image: _sdeImg(tpl), freq: 4,
+      pages.push(_sdePage({ cond: _sdeCond('A', false), image: sdeImgFor('rest'), freq: 4,
           speed: speedCalm, moveType: 3, prio: 1, trigger: 0,
           list: [_sdeTagCmd('<projEffect>')].concat(_sdeColliderComments(tpl), [_sdeEnd()]),
           route: [_sdeMr(45, ["this.YurStealth(8, 'A')"]), _sdeMrEnd()] }));
 
       // P1: тревога (услышал шум)
-      pages.push(_sdePage({ cond: _sdeCond('A', false), image: _sdeImg(tpl), freq: 4,
+      pages.push(_sdePage({ cond: _sdeCond('A', false), image: sdeImgFor('alert'), freq: 4,
           speed: speedCalm, moveType: 3, prio: 1, trigger: 0,
           list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Warning>')]
-              .concat(_sdeColliderComments(tpl), [_sdeEnd()]),
+              .concat(_sdeColliderComments(tpl), stateSounds.alert ? [sdeSound(stateSounds.alert)] : [], [_sdeEnd()]),
           route: [_sdeMr(9), _sdeMr(45, ["this.YurStealth(8, 'A')"]), _sdeMrEnd()] }));
 
       // P2: (A) выстрел трассером, лач A — только злому с трассером
       if (!peaceful && tracer > 0) {
-      pages.push(_sdePage({ cond: _sdeCond('A', true), image: _sdeImg(tpl), freq: 5,
+      pages.push(_sdePage({ cond: _sdeCond('A', true), image: sdeImgFor('attack'), freq: 5,
           speed: speedCalm, moveType: 0, prio: 1, trigger: 4,
-          list: [_sdeTagCmd('<projEffect>')].concat(_sdeColliderComments(tpl), [
+          list: [_sdeTagCmd('<projEffect>')].concat(_sdeColliderComments(tpl),
+              stateSounds.attack ? [sdeSound(stateSounds.attack)] : [], [
               _sdeCmd(355, 0, ['this.performTracer(' + tracer + ');']),
               _sdeCmd(123, 0, ['A', 1]), _sdeEnd()]),
           route: [_sdeMr(15, [40]), _sdeMr(9), _sdeMrEnd()] }));
       }
 
       // P3: (C) принудительный бой (без projEffect — как в оригинале)
-      pages.push(_sdePage({ cond: _sdeCond('C', true), image: _sdeImg(tpl), freq: 1,
+      pages.push(_sdePage({ cond: _sdeCond('C', true), image: sdeImgFor('combat'), freq: 1,
           speed: speedCalm, moveType: 3, prio: 1, trigger: 4,
           list: _sdeColliderComments(tpl).concat([_sdeCmd(721, 0, ['combat', 1]), _sdeEnd()]),
           route: [_sdeMr(25), _sdeMr(15, [60]), _sdeMrEnd()] }));
 
       // P4: <Shot> — по нему выстрелили
-      pages.push(_sdePage({ cond: _sdeCond('A', false), image: _sdeImg(tpl), freq: 5,
+      pages.push(_sdePage({ cond: _sdeCond('A', false), image: sdeImgFor('combat'), freq: 5,
           speed: speedCombat, moveType: 0, prio: 1, trigger: 4,
           list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Shot>')]
               .concat(_sdeColliderComments(tpl), [
@@ -710,7 +732,7 @@
           route: [_sdeMr(45, ['this.smartMoveToPlayer()']), _sdeMrEnd()] }));
 
       // P5: <Combat> — вход в бой: лач C + заморозка
-      pages.push(_sdePage({ cond: _sdeCond('A', false), image: _sdeImg(tpl), freq: 5,
+      pages.push(_sdePage({ cond: _sdeCond('A', false), image: sdeImgFor('combat'), freq: 5,
           speed: speedCombat, moveType: 3, prio: 1, trigger: 4,
           list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Combat>')]
               .concat(_sdeColliderComments(tpl), [
@@ -732,7 +754,7 @@
 
       // P6: <Panic>+<Combat>+<Gun>+<!Loch> — паника: погоня при >= chase
       if (canPanic) {
-      pages.push(_sdePage({ cond: _sdeCond('A', false), dirFix: true, image: _sdeImg(tpl), freq: 5,
+      pages.push(_sdePage({ cond: _sdeCond('A', false), dirFix: true, image: sdeImgFor('panic'), freq: 5,
           speed: speedCombat, moveType: 0, prio: 1, trigger: 4,
           list: sdeComposePanic(['<projEffect>', '<Condition: AND>', '<Panic>',
               '<Combat>', '<Gun>', '<!Loch>'], function () {
@@ -743,7 +765,7 @@
 
       // P7: <Contact>+<Scope>+<Combat>+<Gun>+<!Loch> — видит прицел: паника,
       // погоня при >= cower, иначе прячется
-      pages.push(_sdePage({ cond: _sdeCond('A', false), dirFix: true, image: _sdeImg(tpl), freq: 5,
+      pages.push(_sdePage({ cond: _sdeCond('A', false), dirFix: true, image: sdeImgFor('panic'), freq: 5,
           speed: speedCombat, moveType: 0, prio: 1, trigger: 4,
           list: sdeComposePanic(['<projEffect>', '<Condition: AND>', '<Contact>',
               '<Scope>', '<Combat>', '<Gun>', '<!Loch>'], function () {
@@ -765,7 +787,7 @@
 
       // P8: <RememberGun>+<Combat>+<Gun> — запомнил ствол: бегство
       if (rememberGun) {
-      pages.push(_sdePage({ cond: _sdeCond('A', false), dirFix: true, image: _sdeImg(tpl), freq: 5,
+      pages.push(_sdePage({ cond: _sdeCond('A', false), dirFix: true, image: sdeImgFor('flee'), freq: 5,
           speed: speedCombat, moveType: 3, prio: 1, trigger: 4,
           list: sdeComposePanic(['<projEffect>', '<Condition: AND>', '<RememberGun> ',
               '<Combat>', '<Gun>'], function () {
@@ -782,7 +804,7 @@
 
       // P9: <Combat>+<Shot> — под огнём в бою
       if (canFlee) {
-      pages.push(_sdePage({ cond: _sdeCond('A', false), image: _sdeImg(tpl), freq: 5,
+      pages.push(_sdePage({ cond: _sdeCond('A', false), image: sdeImgFor('flee'), freq: 5,
           speed: speedCombat, moveType: 0, prio: 1, trigger: 4,
           list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Condition: AND>'), _sdeTagCmd('<Combat>'),
               _sdeTagCmd('<Shot>')]
@@ -791,7 +813,7 @@
           route: [_sdeMr(10), _sdeMrEnd()] }));
 
       // P10: <Flee> — бегство
-      pages.push(_sdePage({ cond: _sdeCond('A', false), image: _sdeImg(tpl), freq: 5,
+      pages.push(_sdePage({ cond: _sdeCond('A', false), image: sdeImgFor('flee'), freq: 5,
           speed: speedCombat, moveType: 0, prio: 1, trigger: 4,
           list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Flee>')]
               .concat(_sdeColliderComments(tpl), [
@@ -812,7 +834,7 @@
       }
 
       // P11: <Calm>+<Combat> — успокоился: полный сброс ИИ
-      pages.push(_sdePage({ cond: _sdeCond('A', false), dirFix: true, image: _sdeImg(tpl), freq: 5,
+      pages.push(_sdePage({ cond: _sdeCond('A', false), dirFix: true, image: sdeImgFor('combat'), freq: 5,
           speed: speedCombat, moveType: 0, prio: 1, trigger: 4,
           list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Condition: AND>'), _sdeTagCmd('<Calm>'),
               _sdeTagCmd('<Combat>')]
@@ -825,7 +847,7 @@
       if (hasAttack) {
       var p12list = [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Condition: AND>'), _sdeTagCmd('<Zona>'),
           _sdeTagCmd('<Combat>')]
-          .concat(_sdeColliderComments(tpl));
+          .concat(_sdeColliderComments(tpl), stateSounds.attack ? [sdeSound(stateSounds.attack)] : []);
       if (dashName !== '') {
           p12list.push(_sdeCmd(726, 0, [0, 0, dashName]));
           p12list.push(_sdeCmd(230, 0, [8]));
@@ -835,14 +857,14 @@
           p12list.push(_sdeCmd(230, 0, [45]));
       }
       p12list.push(_sdeEnd());
-      pages.push(_sdePage({ cond: _sdeCond('A', false), image: _sdeImg(tpl), freq: 5,
+      pages.push(_sdePage({ cond: _sdeCond('A', false), image: sdeImgFor('attack'), freq: 5,
           speed: speedCombat, moveType: 3, prio: 1, trigger: 4,
           list: p12list,
           route: [_sdeMr(45, ['this.smartMoveToPlayer()']), _sdeMrEnd()] }));
       }
 
       // P13: <Wound> — ранен: сняли рану через 20 кадров
-      pages.push(_sdePage({ cond: _sdeCond('D', false), image: _sdeImg(tpl), freq: 5,
+      pages.push(_sdePage({ cond: _sdeCond('D', false), image: sdeImgFor('hurt'), freq: 5,
           speed: speedCombat, moveType: 0, prio: 1, trigger: 4,
           list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Wound>')]
               .concat(_sdeColliderComments(tpl), [
@@ -903,15 +925,16 @@
               _sdeCmd(412, 0, [])
           ];
       }
-      pages.push(_sdePage({ cond: _sdeCond('D', true), image: _sdeImg(tpl), freq: 3,
+      pages.push(_sdePage({ cond: _sdeCond('D', true), image: sdeImgFor('hurt'), freq: 3,
           speed: speedCalm, moveType: 0, prio: 1, trigger: 3,
           list: [_sdeTagCmd('<projEffect>')].concat(_sdeColliderComments(tpl), p14Body, p14Tail),
           route: [{ code: 0, parameters: [] }] }));
 
-      // P15: <OnDeath> — смерть
-      pages.push(_sdePage({ cond: _sdeCond('A', false), image: _sdeImg(tpl, true), freq: 3,
+      // P15: <OnDeath> — смерть (+ звук смерти, P5)
+      var deathSnd = stateSounds.death ? [sdeSound(stateSounds.death)] : [];
+      pages.push(_sdePage({ cond: _sdeCond('A', false), image: sdeImgFor('death', true), freq: 3,
           speed: 3, moveType: 0, prio: 0, trigger: 0,
-          list: [_sdeTagCmd('<OnDeath>'), _sdeEnd()],
+          list: [_sdeTagCmd('<OnDeath>')].concat(deathSnd, [_sdeEnd()]),
           route: [{ code: 0, parameters: [] }] }));
 
       // P16: (B) пустая страница-заглушка
