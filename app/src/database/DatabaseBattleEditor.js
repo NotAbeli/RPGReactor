@@ -20,7 +20,10 @@ class DatabaseBattleEditor {
             { section: 'battle', key: 'Melee List', kind: 'melee' },
             { section: 'battle', key: 'Projectile List', kind: 'projectile' },
             { section: 'battle', key: 'Tracer List', kind: 'tracer' },
-            { section: 'dash', key: 'Dash Database', kind: 'dash' }
+            { section: 'dash', key: 'Dash Database', kind: 'dash' },
+            // P3: Арсенал — справочник оружий ГГ (живёт в секции enemies,
+            // мост доставляет её в SuperDuperEnemies целиком).
+            { section: 'enemies', key: 'Weapon List', kind: 'weapons' }
         ];
 
         this._fieldDefs = {
@@ -102,6 +105,19 @@ class DatabaseBattleEditor {
                     { key: 'MaxCharges', label: 'Заряды', type: 'slider', min: 1, max: 10, step: 1 },
                     { key: 'SE', label: 'Звук (audio/se)', type: 'text' }
                 ]
+            },
+            weapons: {
+                id: [
+                    { key: 'name', label: 'Название', type: 'text' },
+                    { key: 'varValue', label: 'var ГГ (var 17)', type: 'number', hint: 'значение облика/оружия ГГ — связь со скином Спрайтера' },
+                    { key: 'type', label: 'Тип', type: 'select', options: [['melee', 'Ближнее'], ['ranged', 'Дальнее'], ['tool', 'Инструмент'], ['light', 'Свет']], def: 'melee' }
+                ],
+                geometry: [
+                    { key: 'damage', label: 'Урон по врагу', type: 'number', hint: 'отрицательное; одинаково для пули и удара' },
+                    { key: 'sneakKill', label: 'Скрытное убийство', type: 'check', hint: 'вне боя — насмерть' },
+                    { key: 'noise', label: 'Шум (радиус слуха)', type: 'number', hint: 'справочно; применение — позже' },
+                    { key: 'se', label: 'Звук (audio/se)', type: 'text' }
+                ]
             }
         };
 
@@ -109,7 +125,8 @@ class DatabaseBattleEditor {
             melee: { ID: '1', PID: 1, Name: 'Новая атака', Source: 0, Target: 0, Shape: 'arc', Range: 1.5, Width: 96, Duration: 8, Regions: '', Terrains: '', AnimID: 0, ActionsEvent: 0, ActionsPlayer: 0, ActionsShooter: 0 },
             projectile: { ID: '1', PID: 1, Name: 'Новый снаряд', Source: 0, Target: 0, Graphic: '', Speed: 8, Distance: 12, Hitbox: 24, Z: 3, Regions: '', Terrains: '', AnimID: 0, ActionsEvent: 0, ActionsPlayer: 0, ActionsShooter: 0 },
             tracer: { ID: '1', PID: 1, Name: 'Новый трассер', Source: 0, Target: 0, MaxRange: 10, Color: '#ffffff', Regions: '', Terrains: '', AnimID: 0, ActionsEvent: 0, ActionsPlayer: 0, ActionsShooter: 0 },
-            dash: { Name: 'Рывок', TargetMode: '0', MaxCharges: 1, SpeedMultiplier: 3.0, Duration: 15, Decay: 1.5, Cooldown: 20, SE: 'Wind7' }
+            dash: { Name: 'Рывок', TargetMode: '0', MaxCharges: 1, SpeedMultiplier: 3.0, Duration: 15, Decay: 1.5, Cooldown: 20, SE: 'Wind7' },
+            weapons: { name: 'Оружие', varValue: 0, type: 'melee', damage: -20, sneakKill: 'false', noise: 0, se: '' }
         };
     }
 
@@ -155,8 +172,10 @@ class DatabaseBattleEditor {
             blank: () => JSON.parse(JSON.stringify(this._blanks[meta.kind])),
             label: (r, i) => meta.kind === 'dash'
                 ? (r.Name || 'Рывок')
-                : (i + 1) + '. ' + (r.Name || r.ID || '—'),
-            search: r => [r.Name, r.ID].join(' '),
+                : meta.kind === 'weapons'
+                    ? (r.name || 'Оружие')
+                    : (i + 1) + '. ' + (r.Name || r.ID || '—'),
+            search: r => [r.Name, r.ID, r.name, r.varValue].join(' '),
             renderDetail: (wrapper, record, idx, commit) => {
                 const defs = this._fieldDefs[meta.kind];
                 const groups = [
@@ -168,7 +187,9 @@ class DatabaseBattleEditor {
 
                 const head = meta.kind === 'dash'
                     ? (record.Name || 'Рывок')
-                    : ((idx + 1) + '. ' + (record.Name || record.ID || '—'));
+                    : meta.kind === 'weapons'
+                        ? (record.name || 'Оружие')
+                        : ((idx + 1) + '. ' + (record.Name || record.ID || '—'));
                 const form = new InspectorForm();
                 form.head(this._tt(head), this._summary(record, meta.kind));
                 for (const [title, fields] of groups) {
@@ -183,6 +204,7 @@ class DatabaseBattleEditor {
         if (kind === 'melee') return (r.Shape || 'arc') + ' · R' + r.Range + ' · ' + r.Duration + 'f';
         if (kind === 'projectile') return 'v' + r.Speed + ' · D' + r.Distance + ' · hb' + r.Hitbox;
         if (kind === 'tracer') return '≤' + r.MaxRange + ' · ' + r.Color;
+        if (kind === 'weapons') return 'var ' + (r.varValue || 0) + ' · ' + (r.damage || 0) + (String(r.sneakKill) === 'true' ? ' · скрытно' : '');
         return '×' + r.SpeedMultiplier + ' · ' + r.Duration + 'f · cd' + r.Cooldown;
     }
 }

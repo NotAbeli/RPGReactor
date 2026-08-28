@@ -267,7 +267,8 @@ class EnemyInspectorManager {
         const wrap = document.createElement('div');
         wrap.id = 'eim-panel';
         wrap.className = 'eim-panel';
-        wrap.style.cssText = 'display:none;flex-direction:column;width:400px;max-height:calc(100% - 16px);position:absolute;top:8px;right:48px;z-index:9000;background:var(--color-bg-panel);border:1px solid var(--color-border);box-shadow:var(--shadow-popup, -2px 2px 8px rgba(0,0,0,0.3));overflow:hidden;';
+        // P3: 620px, две колонки, без скролла — панель показывается целиком.
+        wrap.style.cssText = 'display:none;flex-direction:column;width:620px;position:absolute;top:8px;right:48px;z-index:9000;background:var(--color-bg-panel);border:1px solid var(--color-border);box-shadow:var(--shadow-popup, -2px 2px 8px rgba(0,0,0,0.3));';
         const host = document.getElementById('canvas-container') || document.body;
         host.appendChild(wrap);
         this.panelEl = wrap;
@@ -291,9 +292,17 @@ class EnemyInspectorManager {
     }
 
     _panelHtml() {
+        const tpl = this.selectedTemplate;
+        const tag = tpl ? String(tpl.match || '').replace(/[<>]/g, '') : '';
         const head = `
-        <div style="padding:8px 10px;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:6px;">
-            <span style="font-weight:600;">👤 ${this._t('npcPanel.title', 'Враги (НПС)')}</span>
+        <div style="padding:6px 10px;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-weight:600;">👤 ${tpl ? '' : this._t('npcPanel.title', 'Враги (НПС)')}</span>
+            ${tpl ? `
+            <code style="font-size:12.5px;background:var(--color-bg-deep);padding:1px 6px;border-radius:3px;">${tag}</code>
+            <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--color-text-dim);">HP
+                <input data-eim-card="hp" type="number" value="${tpl.hp || 0}" style="width:54px;"></span>
+            <span title="${this._t('npcPanel.warn', 'Правки меняют карточку БД — всех врагов этого вида на всех картах.')}" style="cursor:help;color:var(--color-warn,#e6b34a);font-size:13px;">ⓘ</span>
+            <button class="agonia-btn" data-eim-act="open-db" style="padding:2px 8px;font-size:11px;">${this._t('npcPanel.openDb', 'БД →')}</button>` : ''}
             <span style="flex:1"></span>
             <span id="eim-save-status" style="font-size:10px;color:var(--color-text-muted);">${this._dirtyCard ? '●' : ''}</span>
             <button class="agonia-btn" data-eim-act="save" style="padding:2px 8px;font-size:11px;">💾 ${this._t('npcPanel.save', 'Сохранить')}</button>
@@ -301,7 +310,8 @@ class EnemyInspectorManager {
         const body = this.selectedEvent && this.selectedTemplate
             ? this._enemyHtml()
             : this._emptyHtml() + this._templatesHtml();
-        return head + `<div style="flex:1;overflow:auto;padding:8px 10px;font-size:12px;">${body}</div>`;
+        // P3: две колонки, без скролла — панель показывается целиком.
+        return head + `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;padding:4px 10px 10px;font-size:12px;align-items:start;">${body}</div>`;
     }
 
     _emptyHtml() {
@@ -340,72 +350,119 @@ class EnemyInspectorManager {
     _enemyHtml() {
         const tpl = this.selectedTemplate;
         const ev = this.selectedEvent;
-        const tag = String(tpl.match || '').replace(/[<>]/g, '');
-        let html = '';
 
-        html += this._sec(this._t('npcPanel.card', 'Карточка'));
-        html += this._row(this._t('npcPanel.tag', 'Тег вида'), `<code>${tag}</code>`);
-        html += this._row('HP', this._inp('hp', tpl.hp, 'number'));
-        html += this._row(this._t('npcPanel.scope', 'Область'), tpl.scope === 'global' ? this._t('npcPanel.scopeGlobal', 'глобальная (между картами)') : this._t('npcPanel.scopeLocal', 'локальная'));
-        html += `<div style="margin:4px 0;"><button class="agonia-btn" data-eim-act="open-db" style="padding:3px 10px;font-size:11px;">${this._t('npcPanel.openDb', 'Открыть в БД →')}</button></div>`;
-        html += `<div style="font-size:10px;color:var(--color-warn,#e6b34a);padding:2px;">${this._t('npcPanel.warn', 'Правки ниже меняют карточку БД — всех врагов этого вида на всех картах.')}</div>`;
-
-        html += this._sec(this._t('npcPanel.visual', 'Визуал'));
-        html += `<div style="margin:4px 0;"><img data-eim-preview src="${this._spriteUrl(tpl.spriteName)}" alt="" style="image-rendering:pixelated;max-width:100%;max-height:120px;display:${tpl.spriteName ? 'block' : 'none'};border:1px solid var(--color-border);"></div>`;
-        html += this._row(this._t('npcPanel.sprite', 'Спрайт'), this._inp('spriteName', tpl.spriteName));
-        html += this._row(this._t('npcPanel.spriteIdx', 'Индекс'), this._inp('spriteIndex', tpl.spriteIndex, 'number'));
-        html += this._row('Коллайдер', this._inp('collider', tpl.collider));
-
-        // S52: характер, способности, скорости
-        html += this._sec(this._t('npcPanel.character', 'Характер'));
-        html += this._row(this._t('npcPanel.disposition', 'Поведение'), this._sel('disposition',
+        // --- Левая колонка: кто он ---
+        let left = '';
+        left += this._sec(this._t('npcPanel.character', 'Характер'));
+        left += this._row(this._t('npcPanel.disposition', 'Поведение'), this._sel('disposition',
             String(tpl.disposition || 'aggressive'),
-            [['aggressive', this._t('npcPanel.aggressive', 'Злой — нападает (трассер / рывок + удар)')],
-             ['peaceful', this._t('npcPanel.peaceful', 'Мирный — никогда не атакует, только тревожится / пугается / убегает')]]));
+            [['aggressive', this._t('npcPanel.aggressive', 'Злой — нападает')],
+             ['peaceful', this._t('npcPanel.peaceful', 'Мирный — не атакует')]]));
 
-        html += this._sec(this._t('npcPanel.abilities', 'Способности'));
-        html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin:2px 0;">`;
-        html += this._chk('canPanic', String(tpl.canPanic) !== 'false', this._t('npcPanel.canPanic', 'Пугается'));
-        html += this._chk('canFlee', String(tpl.canFlee) !== 'false', this._t('npcPanel.canFlee', 'Убегает'));
-        html += this._chk('rememberGun', String(tpl.rememberGun) !== 'false', this._t('npcPanel.rememberGun', 'Помнит оружие'));
-        html += `</div>`;
-
-        html += this._sec(this._t('npcPanel.speed', 'Скорость (MV 1–6)'));
-        html += this._row(this._t('npcPanel.speedCalm', 'В покое'), this._inp('speedCalm', tpl.speedCalm, 'number'));
-        html += this._row(this._t('npcPanel.speedCombat', 'В бою'), this._inp('speedCombat', tpl.speedCombat, 'number'));
-
-        html += this._sec(this._t('npcPanel.behavior', 'Поведение'));
-        html += this._row(this._t('npcPanel.attackRadius', 'Радиус атаки'), this._inp('attackRadius', tpl.attackRadius, 'number'));
-        html += this._row(this._t('npcPanel.hearing', 'Радиус слуха'), this._inp('hearingRadius', tpl.hearingRadius, 'number'));
-        html += this._row(this._t('npcPanel.hearingThr', 'Порог шума'), this._inp('hearingThreshold', tpl.hearingThreshold, 'number'));
-        html += this._row(this._t('npcPanel.chase', 'Погоня от (в бою)'), this._inp('chaseThreshold', tpl.chaseThreshold, 'number'));
-        html += this._row(this._t('npcPanel.cower', 'Приседание от'), this._inp('cowerThreshold', tpl.cowerThreshold, 'number'));
-        html += this._row(this._t('npcPanel.tracer', 'Трассер'), this._attackLabel('Tracer List', tpl.tracerId));
-        html += this._row(this._t('npcPanel.melee', 'Ближний бой'), this._attackLabel('Melee List', tpl.meleeId));
-        html += this._row(this._t('npcPanel.dash', 'Рывок'), String(tpl.dashName || '—'));
-
-        html += this._sec(this._t('npcPanel.damage', 'Урон по врагу'));
-        html += this._row(this._t('npcPanel.dmgMelee', 'Оружие ближнее (var)'), this._inp('damageMeleeVar', tpl.damageMeleeVar, 'number'));
-        html += this._row(this._t('npcPanel.dmgGun', 'Оружие дальнее (var)'), this._inp('damageGunVar', tpl.damageGunVar, 'number'));
-        html += this._row(this._t('npcPanel.dmgByWeapon', 'Урон оружием'), this._inp('damageMelee', tpl.damageMelee, 'number'));
-        html += this._row(this._t('npcPanel.dmgFists', 'Урон без оружия'), this._inp('damageFists', tpl.damageFists, 'number'));
-        html += this._row('SE', this._inp('damageSE', tpl.damageSE));
-        html += this._row(this._t('npcPanel.sneak', 'Скрытное убийство'), `<input data-eim-card="sneakKill" type="checkbox" ${String(tpl.sneakKill) === 'true' ? 'checked' : ''}>`);
-
-        html += this._sec(this._t('npcPanel.deps', 'От чего зависит (только чтение)'));
-        for (const line of this._dependencyLines(tpl)) {
-            html += `<div style="margin:2px 0;color:var(--color-text);">• ${line}</div>`;
+        // P3: страх оружием — чекбоксы из Арсенала
+        const weapons = this.getWeapons();
+        if (weapons.length) {
+            const fearedSet = new Set(String(tpl.fearedWeapons || '').split(',')
+                .map(s => Number(s.trim())).filter(n => n > 0));
+            left += `<div style="font-size:10.5px;color:var(--color-text-dim);margin:5px 0 2px;">${this._t('npcPanel.fear', 'Боится оружия (паника/бегство от выбранных):')}</div>`;
+            for (const w of weapons) {
+                left += this._chkFeared(w.varValue, fearedSet.has(w.varValue),
+                    (w.name || 'var ' + w.varValue) + ' <span style="color:var(--color-text-dim);">· var ' + w.varValue + '</span>');
+            }
+            left += `<div style="font-size:10px;color:var(--color-text-muted);margin-top:2px;">${this._t('npcPanel.fearHint', 'Ни один — глобальное условие оружия (GunCondition).')}</div>`;
         }
 
-        html += this._sec(this._t('npcPanel.flags', 'Флаги ИИ (какие есть)'));
-        html += this._flagsReferenceHtml(tpl);
+        left += this._sec(this._t('npcPanel.abilities', 'Способности'));
+        left += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin:2px 0;">`;
+        left += this._chk('canPanic', String(tpl.canPanic) !== 'false', this._t('npcPanel.canPanic', 'Пугается'));
+        left += this._chk('canFlee', String(tpl.canFlee) !== 'false', this._t('npcPanel.canFlee', 'Убегает'));
+        left += this._chk('rememberGun', String(tpl.rememberGun) !== 'false', this._t('npcPanel.rememberGun', 'Помнит оружие'));
+        left += `</div>`;
 
-        html += this._sec(this._t('npcPanel.onMap', 'На карте'));
-        html += this._row('ID / ' + this._t('npcPanel.name', 'Имя'), `<code>${ev.id}</code> <input data-eim-ev="name" value="${String(ev.name || '').replace(/"/g, '&quot;')}" style="width:60%;">`);
-        html += this._row('X / Y', `<input data-eim-ev="x" type="number" value="${ev.x}" style="width:56px;"> <input data-eim-ev="y" type="number" value="${ev.y}" style="width:56px;">`);
-        html += `<div style="margin:6px 0;"><button class="agonia-btn" data-eim-act="del" style="padding:3px 10px;font-size:11px;color:#ff7a7a;">✕ ${this._t('npcPanel.delete', 'Удалить врага')}</button></div>`;
+        left += this._sec(this._t('npcPanel.speed', 'Скорость (MV 1–6)'));
+        left += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 10px;">`;
+        left += this._row(this._t('npcPanel.speedCalm', 'В покое'), this._inp('speedCalm', tpl.speedCalm, 'number'));
+        left += this._row(this._t('npcPanel.speedCombat', 'В бою'), this._inp('speedCombat', tpl.speedCombat, 'number'));
+        left += `</div>`;
 
-        html += this._templatesHtml();
+        left += this._sec(this._t('npcPanel.visual', 'Визуал'));
+        left += `<div style="margin:4px 0;"><img data-eim-preview src="${this._spriteUrl(tpl.spriteName)}" alt="" style="image-rendering:pixelated;max-width:100%;max-height:110px;display:${tpl.spriteName ? 'block' : 'none'};border:1px solid var(--color-border);"></div>`;
+        left += this._row(this._t('npcPanel.sprite', 'Спрайт'), this._inp('spriteName', tpl.spriteName));
+        left += `<div style="display:grid;grid-template-columns:70px 1fr;gap:0 10px;">`;
+        left += this._row(this._t('npcPanel.spriteIdx', 'Индекс'), this._inp('spriteIndex', tpl.spriteIndex, 'number'));
+        left += this._row('Коллайдер', this._inp('collider', tpl.collider));
+        left += `</div>`;
+
+        // --- Правая колонка: как дерётся ---
+        let right = '';
+        right += this._sec(this._t('npcPanel.behavior', 'Поведение'));
+        right += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 10px;">`;
+        right += this._row(this._t('npcPanel.attackRadius', 'Радиус атаки'), this._inp('attackRadius', tpl.attackRadius, 'number'));
+        right += this._row(this._t('npcPanel.hearing', 'Радиус слуха'), this._inp('hearingRadius', tpl.hearingRadius, 'number'));
+        right += this._row(this._t('npcPanel.hearingThr', 'Порог шума'), this._inp('hearingThreshold', tpl.hearingThreshold, 'number'));
+        right += this._row(this._t('npcPanel.chase', 'Погоня от'), this._inp('chaseThreshold', tpl.chaseThreshold, 'number'));
+        right += this._row(this._t('npcPanel.cower', 'Приседание от'), this._inp('cowerThreshold', tpl.cowerThreshold, 'number'));
+        right += `</div>`;
+        right += `<div style="font-size:10.5px;color:var(--color-text-dim);margin:4px 0 0;">`;
+        right += this._t('npcPanel.tracer', 'Трассер') + ': <b>' + this._attackLabel('Tracer List', tpl.tracerId) + '</b> · ';
+        right += this._t('npcPanel.melee', 'Ближний бой') + ': <b>' + this._attackLabel('Melee List', tpl.meleeId) + '</b> · ';
+        right += this._t('npcPanel.dash', 'Рывок') + ': <b>' + (String(tpl.dashName || '') !== '' ? tpl.dashName : '—') + '</b>';
+        right += `</div>`;
+
+        right += this._sec(this._t('npcPanel.damage', 'Урон по врагу'));
+        right += this._damageTableHtml(tpl);
+
+        right += this._sec(this._t('npcPanel.flags', 'Флаги ИИ (какие есть)'));
+        right += this._flagsReferenceHtml(tpl);
+
+        right += this._sec(this._t('npcPanel.onMap', 'На карте'));
+        right += this._row(this._t('npcPanel.name', 'Имя') + ' / ID', `<code>${ev.id}</code> <input data-eim-ev="name" value="${String(ev.name || '').replace(/"/g, '&quot;')}" style="width:calc(100% - 34px);">`);
+        right += this._row('X / Y', `<input data-eim-ev="x" type="number" value="${ev.x}" style="width:56px;"> <input data-eim-ev="y" type="number" value="${ev.y}" style="width:56px;">`);
+        right += `<div style="margin:6px 0;"><button class="agonia-btn" data-eim-act="del" style="padding:3px 10px;font-size:11px;color:#ff7a7a;">✕ ${this._t('npcPanel.delete', 'Удалить врага')}</button></div>`;
+
+        right += this._templatesHtml();
+
+        return `<div>${left}</div><div>${right}</div>`;
+    }
+
+    _chkFeared(varValue, checked, label) {
+        return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:2px 0;">
+            <input data-eim-feared="${varValue}" type="checkbox" ${checked ? 'checked' : ''}>
+            <span>${label}</span></label>`;
+    }
+
+    /** P3: Арсенал (enemies['Weapon List']) — справочник оружий ГГ. */
+    getWeapons() {
+        try {
+            const agonia = this.databaseManager && this.databaseManager.data && this.databaseManager.data.agonia;
+            const sec = agonia && agonia.enemies;
+            if (!sec || !sec['Weapon List']) return [];
+            return JSON.parse(sec['Weapon List'])
+                .map(w => { try { return typeof w === 'string' ? JSON.parse(w) : w; } catch (e) { return null; } })
+                .filter(Boolean);
+        } catch (e) {
+            return [];
+        }
+    }
+
+    /** Таблица урона: оружие → урон (овverride врага > урон Арсенала), fallback кулаки. */
+    _damageTableHtml(tpl) {
+        let overrides = {};
+        try { if (tpl.damageOverrides) overrides = JSON.parse(tpl.damageOverrides) || {}; } catch (e) { overrides = {}; }
+        const weapons = this.getWeapons();
+        let html = '';
+        if (weapons.length) {
+            html += `<div style="font-size:10px;color:var(--color-text-muted);margin-bottom:2px;">${this._t('npcPanel.dmgHint', 'Из Арсенала (Бой → Оружие); измени значение — станет переопределением этого врага.')}</div>`;
+            for (const w of weapons) {
+                const v = String(w.varValue);
+                const effective = (overrides[v] !== undefined) ? overrides[v] : (w.damage !== undefined ? w.damage : '');
+                html += this._row(
+                    `${w.name || 'var ' + v} <span style="color:var(--color-text-dim);">var ${v}${String(w.sneakKill) === 'true' ? ' · скрытно' : ''}</span>`,
+                    `<input data-eim-override="${v}" type="number" value="${String(effective).replace(/"/g, '&quot;')}" style="width:100%;box-sizing:border-box;">`);
+            }
+        }
+        html += this._row(this._t('npcPanel.dmgFists', 'Без оружия (кулаки)'), this._inp('damageFists', tpl.damageFists, 'number'));
+        html += this._row('SE (fallback)', this._inp('damageSE', tpl.damageSE));
         return html;
     }
 
@@ -446,25 +503,6 @@ class EnemyInspectorManager {
                 ? 'Атаки: ' + (peaceful ? '—' : [Number(tpl.tracerId) > 0 ? 'трассер' : null, Number(tpl.meleeId) > 0 ? 'удар' : null, String(tpl.dashName || '') !== '' ? 'рывок' : null].filter(Boolean).join(' + ') || '—')
                 : 'Атак нет' + (peaceful ? ' (мирный)' : ' (не заданы карточки атак)') + '. Кастомные правила — в БД, вкладка «ИИ Врагов».'}</div>`;
         return html;
-    }
-
-    _dependencyLines(tpl) {        const meleeVar = Number(tpl.damageMeleeVar) || 2;
-        const gunVar = Number(tpl.damageGunVar) || 37;
-        const fists = Number(tpl.damageFists) || -20;
-        const byWpn = Number(tpl.damageMelee) || -100;
-        const chase = Number(tpl.chaseThreshold) || 2;
-        const cower = Number(tpl.cowerThreshold) || 3;
-        const hearR = Number(tpl.hearingRadius) || 0;
-        const hearT = Number(tpl.hearingThreshold) || 0;
-        return [
-            `Переменная облика/оружия ГГ: ${meleeVar} → урон ${byWpn}, ${gunVar} → ${byWpn}, прочее → ${fists} + рана`,
-            `Счётчик боя: погоня при ≥ ${chase} врагах в бою, приседание при ≥ ${cower}`,
-            `Слух: радиус ${hearR}, порог шума ${hearT} (заметил — насторожился, YurStealth включает A)`,
-            `Свитч «вне боя»: скрытное убийство оружием ${String(tpl.sneakKill) === 'true' ? 'вкл' : 'выкл'}`,
-            `Свитч прицела ГГ (18): увидел прицел + контакт → паника`,
-            `Свитч глобального сброса ИИ (48), MEHP HP в переменных от базовой`,
-            `Селф-свитчи: A — заметил игрока, B — резерв, C — вошёл в бой, D — получил урон`
-        ];
     }
 
     _templatesHtml() {
@@ -599,6 +637,32 @@ class EnemyInspectorManager {
         });
         el.querySelectorAll('[data-eim-ev]').forEach(inp => {
             inp.addEventListener('change', () => this._saveEventField(inp.dataset.eimEv, inp.value));
+        });
+        // P3: оверрайд урона из таблицы Арсенала
+        el.querySelectorAll('[data-eim-override]').forEach(inp => {
+            inp.addEventListener('change', () => {
+                if (!this.selectedTemplate) return;
+                const v = inp.dataset.eimOverride;
+                const weapon = this.getWeapons().find(w => String(w.varValue) === v);
+                let overrides = {};
+                try { if (this.selectedTemplate.damageOverrides) overrides = JSON.parse(this.selectedTemplate.damageOverrides) || {}; } catch (e) { overrides = {}; }
+                const val = Number(inp.value) || 0;
+                if (weapon && Number(weapon.damage) === val) delete overrides[v];
+                else overrides[v] = String(val);
+                this._saveCard(this.selectedTemplate.match, 'damageOverrides', JSON.stringify(overrides));
+            });
+        });
+        // P3: страх оружием
+        el.querySelectorAll('[data-eim-feared]').forEach(inp => {
+            inp.addEventListener('change', () => {
+                if (!this.selectedTemplate) return;
+                const current = new Set(String(this.selectedTemplate.fearedWeapons || '').split(',')
+                    .map(s => Number(s.trim())).filter(n => n > 0));
+                const v = Number(inp.dataset.eimFeared);
+                if (inp.checked) current.add(v); else current.delete(v);
+                this._saveCard(this.selectedTemplate.match, 'fearedWeapons',
+                    Array.from(current).sort((a, b) => a - b).join(','));
+            });
         });
         el.querySelectorAll('[data-eim-place]').forEach(b => {
             b.addEventListener('click', () => {

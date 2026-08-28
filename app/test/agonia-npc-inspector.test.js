@@ -54,8 +54,11 @@ function makeEnv() {
             { id: '3', match: '<biba>', hp: '100', template: 'true', spriteName: 'Enemy 1', spriteIndex: '0',
               attackRadius: '2', hearingRadius: '3', hearingThreshold: '3',
               chaseThreshold: '2', cowerThreshold: '3',
-              damageMeleeVar: '2', damageGunVar: '37', damageMelee: '-100', damageFists: '-20',
-              sneakKill: 'true' }
+              damageFists: '-20', damageSE: 'Damage2' }
+        ]),
+        'Weapon List': enc([
+            { name: 'Лом', varValue: '2', type: 'melee', damage: '-20', sneakKill: 'true', se: 'Damage2' },
+            { name: 'Ствол', varValue: '37', type: 'ranged', damage: '-100', sneakKill: 'false', se: '' }
         ]) },
         battle: { 'Tracer List': enc([{ id: '1', Name: 'Очередь' }]), 'Melee List': enc([{ id: '2', Name: 'Кувалда' }]) }
     };
@@ -128,16 +131,6 @@ test('_saveEventField: X/Y двигают событие с ре-рендеро�
     assert.strictEqual(biba().x, 10);
 });
 
-test('_dependencyLines: пороги, урон и скрытное убийство в блоке зависимостей', () => {
-    const { eim } = makeEnv();
-    const lines = eim._dependencyLines(eim.getTemplates().find(t => t.match === '<biba>')).join('\n');
-    assert.ok(lines.includes('погоня при ≥ 2'), 'chase threshold');
-    assert.ok(lines.includes('приседание при ≥ 3'), 'cower threshold');
-    assert.ok(lines.includes('2 → урон -100'), 'melee weapon damage');
-    assert.ok(lines.includes('37 → -100'), 'gun weapon damage');
-    assert.ok(lines.includes('скрытное убийство'), 'sneak kill');
-});
-
 test('панель: рендерится без throw, несёт секции и шаблоны', () => {
     const { eim, biba } = makeEnv();
     eim.setNpcMode(true);
@@ -146,19 +139,38 @@ test('панель: рендерится без throw, несёт секции �
     assert.ok(html.includes('Кликните по врагу'), 'empty-state hint before selection');
     eim.select(biba());
     html = eim.panelEl.innerHTML;
-    for (const s of ['Карточка', 'Визуал', 'Характер', 'Способности', 'Скорость', 'Поведение', 'Урон по врагу', 'От чего зависит', 'Флаги ИИ', 'На карте', 'Поставить врага']) {
+    for (const s of ['Визуал', 'Характер', 'Способности', 'Скорость', 'Поведение', 'Урон по врагу', 'Флаги ИИ', 'На карте', 'Поставить врага']) {
         assert.ok(html.includes(s), 'section missing: ' + s);
     }
+    // P3: мусор убран — секции «Карточка» и «От чего зависит» больше нет
+    assert.ok(!html.includes('От чего зависит'), 'deps section removed');
+    // P3: двухколоночная компоновка без скролла
+    assert.ok(html.includes('display:grid;grid-template-columns:1fr 1fr') || eim.panelEl.innerHTML.includes('grid-template-columns:1fr 1fr'), 'two-column grid');
     // S52: характер-селект пишет в карточку
     assert.ok(html.includes('aggressive') && html.includes('peaceful'), 'disposition select options');
     assert.ok(html.includes('canPanic') && html.includes('canFlee') && html.includes('rememberGun'), 'ability checkboxes');
     assert.ok(html.includes('zona') && html.includes('panic') && html.includes('remembergun'), 'flags reference chips');
     assert.ok(html.includes('biba'), 'tag shown');
-    assert.ok(html.includes('Открыть в БД'), 'open-db button');
-    assert.ok(html.includes('Счётчик боя'), 'dependency line rendered');
+    assert.ok(html.includes('БД →'), 'open-db button in header');
+    // P3: Арсенал — страх и таблица урона
+    assert.ok(html.includes('Боится оружия'), 'fear block');
+    assert.ok(html.includes('Лом') && html.includes('Ствол'), 'arsenal weapons listed');
+    assert.ok(html.includes('data-eim-feared="2"') && html.includes('data-eim-feared="37"'), 'fear checkboxes');
+    assert.ok(html.includes('data-eim-override="2"') && html.includes('data-eim-override="37"'), 'damage override inputs');
+    assert.ok(html.includes('Без оружия (кулаки)'), 'fists fallback row');
     // выход из режима прячет панель
     eim.setNpcMode(false);
     assert.strictEqual(eim.panelEl.style.display, 'none');
+});
+
+test('P3: getWeapons читает Арсенал, страх пишет fearedWeapons в карточку', () => {
+    const { eim, agonia, biba } = makeEnv();
+    assert.strictEqual(eim.getWeapons().length, 2, 'arsenal readable');
+    eim.select(biba());
+    eim._saveCard('<biba>', 'fearedWeapons', '37');
+    const arr = JSON.parse(agonia.enemies['EnemyDatabase']).map(e => JSON.parse(e));
+    assert.strictEqual(arr.find(o => o.match === '<biba>').fearedWeapons, '37');
+    assert.strictEqual(eim.selectedTemplate.fearedWeapons, '37', 'live ref updated');
 });
 
 test('выбор по клику: заглушка выбирается, чужие события нет', () => {

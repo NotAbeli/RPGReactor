@@ -163,13 +163,13 @@ class DatabaseEnemiesEditor {
             ], entry, { commit: () => api.changed() });
 
             form.section(this._tt('Урон по врагу'));
+            form.field({ key: 'fearedWeapons', label: 'Боится оружия (var)', type: 'text',
+                hint: 'значения var ГГ через запятую; пусто = глобальный GunCondition' }, entry, { commit: () => api.changed() });
+            form.field({ key: 'damageOverrides', label: 'Овverride урона (JSON)', type: 'textarea',
+                hint: 'например {"2":"-150"} — varValue → урон; пусто = урон из Арсенала (Бой → Оружие)' }, entry, { commit: () => api.changed() });
             form.fields([
-                { key: 'damageMeleeVar', label: 'Оружие ближнее (var ГГ)', type: 'number', hint: 'значение переменной облика/оружия ГГ (лом = 2)' },
-                { key: 'damageGunVar', label: 'Оружие дальнее (var ГГ)', type: 'number', hint: 'ствол = 37' },
-                { key: 'damageMelee', label: 'Урон оружием', type: 'number', hint: '−100 = почти насмерть' },
-                { key: 'damageFists', label: 'Урон без оружия', type: 'number', hint: '−20 + рана' },
-                { key: 'damageSE', label: 'Звук урона', type: 'text' },
-                { key: 'sneakKill', label: 'Скрытное убийство', type: 'check', hint: 'вне боя оружие ближнего боя убивает насмерть' }
+                { key: 'damageFists', label: 'Урон без оружия (fallback)', type: 'number', hint: 'кулаки, когда var ГГ не совпал ни с одним оружием Арсенала' },
+                { key: 'damageSE', label: 'Звук урона (fallback)', type: 'text' }
             ], entry, { commit: () => api.changed() });
         }
 

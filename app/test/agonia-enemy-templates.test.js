@@ -185,6 +185,59 @@ test('S52: P12 без рывка/удара — выпадает целиком 
     assert.ok(!JSON.stringify(noAttacks).includes('<Zona>'), 'zona page dropped when no dash and no melee');
 });
 
+test('P3: таблица урона P14 генерируется из Арсенала', () => {
+    const WL = JSON.stringify([
+        JSON.stringify({ name: 'Лом', varValue: '2', type: 'melee', damage: '-20', sneakKill: 'true', se: 'Damage2' }),
+        JSON.stringify({ name: 'Ствол', varValue: '37', type: 'ranged', damage: '-100', sneakKill: 'false', se: '' })
+    ]);
+    const { sde } = makeEnv({ 'Weapon List': WL });
+    const pages = sde.buildEnemyPages(BIBA);
+    assert.strictEqual(pages.length, 17, 'full skeleton');
+    const p14 = JSON.stringify(pages[14].list);
+    // ветки по оружиям
+    assert.ok(p14.includes('[1,17,0,2,0]'), 'crowbar branch');
+    assert.ok(p14.includes('[1,17,0,37,0]'), 'gun branch');
+    // лом: скрытное убийство (вне боя -9999) + в бою -20
+    assert.ok(p14.includes('-9999'), 'sneak kill');
+    assert.ok(p14.includes('-20'), 'crowbar combat damage');
+    // ствол: -100 всегда, без sneak-ветки для него
+    assert.ok(p14.includes('-100'), 'gun damage');
+    // fallback кулаки + wound + SE оружия
+    assert.ok(p14.includes('"wound",1'), 'wound flag');
+    assert.ok(p14.includes('"D",1'), 'D latch kept');
+});
+
+test('P3: оверрайд урона врага перекрывает Арсенал', () => {
+    const WL = JSON.stringify([JSON.stringify({ name: 'Лом', varValue: '2', damage: '-20' })]);
+    const { sde } = makeEnv({ 'Weapon List': WL });
+    const pages = sde.buildEnemyPages(Object.assign({}, BIBA, { damageFists: '-5', damageOverrides: '{"2":"-150"}' }));
+    const p14 = JSON.stringify(pages[14].list);
+    assert.ok(p14.includes('-150'), 'override applied');
+    assert.ok(!p14.includes('[0,-20,0]'), 'arsenal default replaced');
+    assert.ok(p14.includes('[0,-5,0]'), 'fists fallback intact');
+});
+
+test('P3: страх оружием заменяет <Gun> на var-17 условия', () => {
+    const { sde } = makeEnv();
+    const pages = sde.buildEnemyPages(Object.assign({}, BIBA, { fearedWeapons: '37, 2' }));
+    assert.strictEqual(pages.length, 17, 'page count unchanged');
+    const all = JSON.stringify(pages);
+    assert.ok(!all.includes('<Gun>'), 'Gun sensor tag replaced');
+    // на панических страницах (P6/P7/P8 = индексы 6/7/8) есть var-условия
+    // страха и погоня цела
+    const p6 = JSON.stringify(pages[6].list);
+    assert.ok(p6.includes('[1,17,0,37,0]') && p6.includes('[1,17,0,2,0]'), 'fear conditions');
+    assert.ok(p6.includes('smartMoveToPlayer'), 'chase block kept');
+    // вложенность корректна: каждый 111 закрыт 412
+    for (const pi of [6, 7, 8]) {
+        const list = pages[pi].list;
+        const ifs = list.filter(c => c.code === 111).length;
+        const ends = list.filter(c => c.code === 412).length;
+        assert.strictEqual(ifs, ends, 'balanced if/end on page ' + pi);
+    }
+});
+
+
 test('findTemplateByNote: только template-карточки, по тем же тегам, что и правила', () => {
     const box = { match: '<box>', hp: '50' };
     const { sde } = makeEnv();

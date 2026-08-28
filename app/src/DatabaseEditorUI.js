@@ -499,7 +499,8 @@ class DatabaseEditorUI {
             { key: 'projectile', label: 'Снаряды' },
             { key: 'tracer', label: 'Трассеры' },
             { key: 'dash', label: 'Рывки' },
-            { key: 'enemies', label: 'ИИ Врагов' }
+            { key: 'enemies', label: 'ИИ Врагов' },
+            { key: 'weapons', label: 'Оружие' }
         ];
         const current = modes.find(m => m.key === kind) || modes[0];
 

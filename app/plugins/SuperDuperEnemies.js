@@ -358,6 +358,27 @@
     }
   } catch(e){ console.error("SDE: Error parsing DB", e); }
 
+  // P3: Арсенал — справочник оружий ГГ. Живёт ключом Weapon List в той же
+  // секции enemies (мост доставляет секцию целиком, реестр модулей не трогаем).
+  // Урон из Арсенала компилируется в P14 врага; fearedWeapons карточки
+  // заменяют <Gun>-сенсор на var-17 условия на панических страницах.
+  var SDE_WEAPONS = [];
+  try {
+      if (params['Weapon List']) {
+          SDE_WEAPONS = JSON.parse(params['Weapon List']).map(function (w) {
+              var o = JSON.parse(w);
+              return {
+                  name: o.name || ('var ' + o.varValue),
+                  varValue: Number(o.varValue) || 0,
+                  damage: Number(o.damage) || 0,
+                  sneakKill: String(o.sneakKill) === 'true',
+                  noise: Number(o.noise) || 0,
+                  se: o.se || ''
+              };
+          });
+      }
+  } catch (e) { SDE_WEAPONS = []; }
+
   // --- Global Configs ---
   function parseWeaponConfig(paramString, defaultSwitch) {
       var config = { switchId: defaultSwitch, variableId: 0, variableValues: [] };
@@ -578,8 +599,35 @@
           _sdeCmd(408, 0, ['</collider> '])
       ];
   }
-  function _sdeTagCmd(tag) { return _sdeCmd(108, 0, [tag]); }
-  function _sdeEnd(indent) { return _sdeCmd(0, indent || 0, []); }
+    function _sdeTagCmd(tag) { return _sdeCmd(108, 0, [tag]); }
+    function _sdeEnd(indent) { return _sdeCmd(0, indent || 0, []); }
+
+    /** Сдвинуть копии команд на d уровней вложенности (для var-цепочек). */
+    function sdeShiftCmds(cmds, d) {
+        return cmds.map(function (c) {
+            var n = JSON.parse(JSON.stringify(c));
+            n.indent = (n.indent || 0) + d;
+            return n;
+        });
+    }
+
+    /**
+     * P3: цепочка «если var 17 == v1 → блок; иначе если v2 → блок; ...».
+     * Используется для страха оружием (fearedWeapons) вместо <Gun>-сенсора.
+     */
+    function sdeVar17Chain(values, block) {
+        function chain(i, ind) {
+            var out = [_sdeCmd(111, ind, [1, 17, 0, values[i], 0])]
+                .concat(sdeShiftCmds(block, ind + 1));
+            if (i + 1 < values.length) {
+                out.push(_sdeCmd(411, ind, []));
+                out = out.concat(chain(i + 1, ind + 1));
+            }
+            out.push(_sdeCmd(412, ind, []));
+            return out;
+        }
+        return chain(0, 0);
+    }
 
   /**
    * Скелет бибы: 17 страниц. Параметры шаблона подставляются в спрайт,
@@ -599,7 +647,7 @@
       var dmgFists = _sdeNum(tpl.damageFists, -20);
       var seName = _sdeTplString(tpl.damageSE, 'Damage2');
       var sneak = _sdeTplString(tpl.sneakKill, 'true') === 'true' ? 0 : 1;
-      var se = function () { return _sdeCmd(250, 2, [{ name: seName, volume: 90, pitch: 100, pan: 0 }]); };
+      var se = function (d) { return _sdeCmd(250, (d === undefined ? 2 : d), [{ name: seName, volume: 90, pitch: 100, pan: 0 }]); };
 
       // S52: поведенческий конструктор — характер, способности, скорости.
       // Дефолты воспроизводят эталонный скелет бибы бит-в-бит.
@@ -670,26 +718,37 @@
                   _sdeEnd(1), _sdeCmd(413, 0, []), _sdeEnd()]),
           route: [_sdeMr(45, ['this.smartMoveToPlayer()']), _sdeMrEnd()] }));
 
+      // P6/P7/P8: панические страницы. Если у врага задан страх оружием
+      // (fearedWeapons), <Gun>-сенсор заменяется var-17 цепочкой — враг
+      // паникует только от выбранных оружий ГГ.
+      var feared = String(tpl.fearedWeapons || '').split(',')
+          .map(function (s) { return Number(s.trim()); })
+          .filter(function (n) { return n > 0; });
+      var sdeComposePanic = function (tags, body) {
+          var fullTags = feared.length ? tags.filter(function (t) { return t !== '<Gun>'; }) : tags;
+          return fullTags.map(_sdeTagCmd).concat(_sdeColliderComments(tpl),
+              feared.length ? sdeVar17Chain(feared, body()) : body());
+      };
+
       // P6: <Panic>+<Combat>+<Gun>+<!Loch> — паника: погоня при >= chase
       if (canPanic) {
       pages.push(_sdePage({ cond: _sdeCond('A', false), dirFix: true, image: _sdeImg(tpl), freq: 5,
           speed: speedCombat, moveType: 0, prio: 1, trigger: 4,
-          list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Condition: AND>'), _sdeTagCmd('<Panic>'),
-              _sdeTagCmd('<Combat>'), _sdeTagCmd('<Gun>'), _sdeTagCmd('<!Loch>')]
-              .concat(_sdeColliderComments(tpl), [
-                  _sdeCmd(111, 0, [1, 59, 0, chase, 1])], chaseRoute(), [
-                  _sdeCmd(412, 0, []), _sdeEnd()]),
+          list: sdeComposePanic(['<projEffect>', '<Condition: AND>', '<Panic>',
+              '<Combat>', '<Gun>', '<!Loch>'], function () {
+              return [_sdeCmd(111, 0, [1, 59, 0, chase, 1])].concat(chaseRoute(), [
+                  _sdeCmd(412, 0, []), _sdeEnd()]);
+          }),
           route: [_sdeMr(45, ['this.smartMoveToPlayer()']), _sdeMrEnd()] }));
 
       // P7: <Contact>+<Scope>+<Combat>+<Gun>+<!Loch> — видит прицел: паника,
       // погоня при >= cower, иначе прячется
       pages.push(_sdePage({ cond: _sdeCond('A', false), dirFix: true, image: _sdeImg(tpl), freq: 5,
           speed: speedCombat, moveType: 0, prio: 1, trigger: 4,
-          list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Condition: AND>'), _sdeTagCmd('<Contact>'),
-              _sdeTagCmd('<Scope>'), _sdeTagCmd('<Combat>'), _sdeTagCmd('<Gun>'), _sdeTagCmd('<!Loch>')]
-              .concat(_sdeColliderComments(tpl), [
-                  _sdeCmd(721, 0, ['panic', 1]), _sdeCmd(111, 0, [1, 59, 0, cower, 1])],
-                  chaseRoute(), [
+          list: sdeComposePanic(['<projEffect>', '<Condition: AND>', '<Contact>',
+              '<Scope>', '<Combat>', '<Gun>', '<!Loch>'], function () {
+              return [_sdeCmd(721, 0, ['panic', 1]), _sdeCmd(111, 0, [1, 59, 0, cower, 1])]
+                  .concat(chaseRoute(), [
                   _sdeCmd(411, 0, []), _sdeCmd(205, 1, [0, {
                       list: [{ code: 25, indent: 0 }, { code: 35, indent: 0 },
                           { code: 15, parameters: [20], indent: 0 }, { code: 11, indent: 0 },
@@ -699,7 +758,8 @@
                   _sdeCmd(505, 1, [{ code: 25, indent: 0 }]), _sdeCmd(505, 1, [{ code: 35, indent: 0 }]),
                   _sdeCmd(505, 1, [{ code: 15, parameters: [20], indent: 0 }]), _sdeCmd(505, 1, [{ code: 11, indent: 0 }]),
                   _sdeCmd(505, 1, [{ code: 15, parameters: [20], indent: null }]), _sdeEnd(1),
-                  _sdeCmd(412, 0, []), _sdeEnd()]),
+                  _sdeCmd(412, 0, []), _sdeEnd()]);
+          }),
           route: [{ code: 0, parameters: [] }] }));
       }
 
@@ -707,16 +767,16 @@
       if (rememberGun) {
       pages.push(_sdePage({ cond: _sdeCond('A', false), dirFix: true, image: _sdeImg(tpl), freq: 5,
           speed: speedCombat, moveType: 3, prio: 1, trigger: 4,
-          list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Condition: AND>'), _sdeTagCmd('<RememberGun> '),
-              _sdeTagCmd('<Combat>'), _sdeTagCmd('<Gun>')]
-              .concat(_sdeColliderComments(tpl), [
-                  _sdeCmd(721, 0, ['flee', 1]), _sdeCmd(111, 0, [1, 59, 0, cower, 1]),
+          list: sdeComposePanic(['<projEffect>', '<Condition: AND>', '<RememberGun> ',
+              '<Combat>', '<Gun>'], function () {
+              return [_sdeCmd(721, 0, ['flee', 1]), _sdeCmd(111, 0, [1, 59, 0, cower, 1]),
                   _sdeCmd(205, 1, [0, {
                       list: [{ code: 36, indent: null }, { code: 10, indent: null }, { code: 0 }],
                       repeat: false, skippable: false, wait: true
                   }]),
                   _sdeCmd(505, 1, [{ code: 36, indent: null }]), _sdeCmd(505, 1, [{ code: 10, indent: null }]),
-                  _sdeEnd(1), _sdeCmd(411, 0, []), _sdeEnd(1), _sdeCmd(412, 0, []), _sdeEnd()]),
+                  _sdeEnd(1), _sdeCmd(411, 0, []), _sdeEnd(1), _sdeCmd(412, 0, []), _sdeEnd()];
+          }),
           route: [_sdeMr(25, null, 0), _sdeMr(35), _sdeMr(15, [20], 0), _sdeMr(11), _sdeMrEnd()] }));
       }
 
@@ -789,10 +849,46 @@
                   _sdeCmd(230, 0, [20]), _sdeCmd(721, 0, ['wound', 0]), _sdeEnd()]),
           route: [_sdeMr(35), _sdeMr(15, [7]), _sdeMr(11), _sdeMr(15, [60]), _sdeMrEnd()] }));
 
-      // P14: (D) получение урона — таблица по оружию ГГ (var 17)
-      pages.push(_sdePage({ cond: _sdeCond('D', true), image: _sdeImg(tpl), freq: 3,
-          speed: speedCalm, moveType: 0, prio: 1, trigger: 3,
-          list: [_sdeTagCmd('<projEffect>')].concat(_sdeColliderComments(tpl), [
+      // P14: (D) получение урона. С Арсеналом (P3) таблица генерируется из
+      // карточек оружий: «если var 17 == оружие → урон (овverride врага >
+      // урон оружия)»; sneakKill-оружие вне боя убивает насмерть; fallback —
+      // кулаки (damageFists врага). Без Арсенала — легаси-таблица двух слотов.
+      var p14Tail = [_sdeCmd(721, 0, ['combat', 1]), _sdeCmd(123, 0, ['D', 1]), _sdeEnd()];
+      var p14Body;
+      if (SDE_WEAPONS.length > 0) {
+          var overrides = {};
+          try { if (tpl.damageOverrides) overrides = JSON.parse(tpl.damageOverrides) || {}; } catch (e) { overrides = {}; }
+          var fistsBlock = function (ind) {
+              return [_sdeCmd(731, ind, [0, 0, 0]), _sdeCmd(722, ind, [0, dmgFists, 0]), se(ind),
+                  _sdeCmd(721, ind, ['wound', 1]), _sdeEnd(ind)];
+          };
+          var weaponChain = function (i, ind) {
+              var w = SDE_WEAPONS[i];
+              var dmg = Number(overrides[String(w.varValue)]);
+              if (!isFinite(dmg) || dmg === 0) dmg = w.damage;
+              var wse = function (d) { return _sdeCmd(250, d, [{ name: (w.se || seName), volume: 90, pitch: 100, pan: 0 }]); };
+              var inner;
+              if (w.sneakKill) {
+                  inner = [_sdeCmd(111, ind + 1, [0, 41, 0]),
+                      _sdeCmd(722, ind + 2, [0, -9999, 0]), wse(ind + 2), _sdeEnd(ind + 2),
+                      _sdeCmd(411, ind + 1, []),
+                      _sdeCmd(731, ind + 2, [0, 0, 0]), _sdeCmd(722, ind + 2, [0, dmg, 0]), wse(ind + 2),
+                      _sdeCmd(721, ind + 2, ['wound', 1]), _sdeEnd(ind + 2),
+                      _sdeCmd(412, ind + 1, [])];
+              } else {
+                  inner = [_sdeCmd(731, ind + 1, [0, 0, 0]), _sdeCmd(722, ind + 1, [0, dmg, 0]), wse(ind + 1),
+                      _sdeCmd(721, ind + 1, ['wound', 1]), _sdeEnd(ind + 1)];
+              }
+              var out = [_sdeCmd(111, ind, [1, 17, 0, w.varValue, 0])].concat(inner);
+              out.push(_sdeCmd(411, ind, []));
+              if (i + 1 < SDE_WEAPONS.length) out = out.concat(weaponChain(i + 1, ind + 1));
+              else out = out.concat(fistsBlock(ind + 1));
+              out.push(_sdeCmd(412, ind, []));
+              return out;
+          };
+          p14Body = weaponChain(0, 0);
+      } else {
+          p14Body = [
               _sdeCmd(111, 0, [1, 17, 0, dmgMeleeVar, 0]),
               _sdeCmd(111, 1, [0, 41, sneak]),
               _sdeCmd(722, 2, [0, dmgMelee, 0]), se(), _sdeEnd(2),
@@ -804,8 +900,12 @@
               _sdeCmd(111, 1, [1, 17, 0, dmgGunVar, 0]),
               _sdeCmd(722, 2, [0, dmgMelee, 0]), _sdeEnd(2),
               _sdeCmd(411, 1, []), _sdeEnd(2), _sdeCmd(412, 1, []), _sdeEnd(1),
-              _sdeCmd(412, 0, []),
-              _sdeCmd(721, 0, ['combat', 1]), _sdeCmd(123, 0, ['D', 1]), _sdeEnd()]),
+              _sdeCmd(412, 0, [])
+          ];
+      }
+      pages.push(_sdePage({ cond: _sdeCond('D', true), image: _sdeImg(tpl), freq: 3,
+          speed: speedCalm, moveType: 0, prio: 1, trigger: 3,
+          list: [_sdeTagCmd('<projEffect>')].concat(_sdeColliderComments(tpl), p14Body, p14Tail),
           route: [{ code: 0, parameters: [] }] }));
 
       // P15: <OnDeath> — смерть
