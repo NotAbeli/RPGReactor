@@ -312,8 +312,11 @@ class EnemyInspectorManager {
         const body = this.selectedEvent && this.selectedTemplate
             ? this._enemyHtml()
             : this._emptyHtml() + this._templatesHtml();
-        // P3: две колонки, без скролла — панель показывается целиком.
-        return head + `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;padding:4px 10px 10px;font-size:12px;align-items:start;">${body}</div>`;
+        // P3: две колонки + нижняя полоса, без скролла — панель показывается
+        // целиком. Колонкам min-width:0: без него длинный контент (селекты,
+        // подписи страха, таблица урона) распирает 1fr-треки и вторая колонка
+        // выезжает за край панели (тот же grid-blowout, что в S37b).
+        return head + `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 16px;padding:4px 10px 10px;font-size:12px;align-items:start;">${body}</div>`;
     }
 
     _emptyHtml() {
@@ -326,7 +329,7 @@ class EnemyInspectorManager {
     }
 
     _row(label, inner) {
-        return `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">
+        return `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;min-width:0;">
             <span style="flex:none;width:118px;color:var(--color-text-dim);">${label}</span>
             <span style="flex:1;min-width:0;">${inner}</span></div>`;
     }
@@ -336,7 +339,7 @@ class EnemyInspectorManager {
     }
 
     _sel(key, value, options) {
-        let html = `<select data-eim-card="${key}" style="width:100%;box-sizing:border-box;">`;
+        let html = `<select data-eim-card="${key}" style="width:100%;min-width:0;box-sizing:border-box;">`;
         for (const [v, label] of options) {
             html += `<option value="${v}" ${String(value) === v ? 'selected' : ''}>${label}</option>`;
         }
@@ -344,7 +347,7 @@ class EnemyInspectorManager {
     }
 
     _chk(key, checked, label) {
-        return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+        return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;min-width:0;">
             <input data-eim-card="${key}" type="checkbox" ${checked ? 'checked' : ''}>
             <span>${label}</span></label>`;
     }
@@ -375,14 +378,14 @@ class EnemyInspectorManager {
         }
 
         left += this._sec(this._t('npcPanel.abilities', 'Способности'));
-        left += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin:2px 0;">`;
+        left += `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px 10px;margin:2px 0;">`;
         left += this._chk('canPanic', String(tpl.canPanic) !== 'false', this._t('npcPanel.canPanic', 'Пугается'));
         left += this._chk('canFlee', String(tpl.canFlee) !== 'false', this._t('npcPanel.canFlee', 'Убегает'));
         left += this._chk('rememberGun', String(tpl.rememberGun) !== 'false', this._t('npcPanel.rememberGun', 'Помнит оружие'));
         left += `</div>`;
 
         left += this._sec(this._t('npcPanel.speed', 'Скорость (MV 1–6)'));
-        left += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 10px;">`;
+        left += `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 10px;">`;
         left += this._row(this._t('npcPanel.speedCalm', 'В покое'), this._inp('speedCalm', tpl.speedCalm, 'number'));
         left += this._row(this._t('npcPanel.speedCombat', 'В бою'), this._inp('speedCombat', tpl.speedCombat, 'number'));
         left += `</div>`;
@@ -399,14 +402,14 @@ class EnemyInspectorManager {
         // --- Правая колонка: как дерётся ---
         let right = '';
         right += this._sec(this._t('npcPanel.behavior', 'Поведение'));
-        right += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 10px;">`;
+        right += `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 10px;">`;
         right += this._row(this._t('npcPanel.attackRadius', 'Радиус атаки'), this._inp('attackRadius', tpl.attackRadius, 'number'));
         right += this._row(this._t('npcPanel.hearing', 'Радиус слуха'), this._inp('hearingRadius', tpl.hearingRadius, 'number'));
         right += this._row(this._t('npcPanel.hearingThr', 'Порог шума'), this._inp('hearingThreshold', tpl.hearingThreshold, 'number'));
         right += this._row(this._t('npcPanel.chase', 'Погоня от'), this._inp('chaseThreshold', tpl.chaseThreshold, 'number'));
         right += this._row(this._t('npcPanel.cower', 'Приседание от'), this._inp('cowerThreshold', tpl.cowerThreshold, 'number'));
         right += `</div>`;
-        right += `<div style="font-size:10.5px;color:var(--color-text-dim);margin:4px 0 0;">`;
+        right += `<div style="font-size:10.5px;color:var(--color-text-dim);margin:4px 0 0;min-width:0;overflow-wrap:anywhere;">`;
         right += this._t('npcPanel.tracer', 'Трассер') + ': <b>' + this._attackLabel('Tracer List', tpl.tracerId) + '</b> · ';
         right += this._t('npcPanel.melee', 'Ближний бой') + ': <b>' + this._attackLabel('Melee List', tpl.meleeId) + '</b> · ';
         right += this._t('npcPanel.dash', 'Рывок') + ': <b>' + (String(tpl.dashName || '') !== '' ? tpl.dashName : '—') + '</b>';
@@ -416,11 +419,11 @@ class EnemyInspectorManager {
         right += this._damageTableHtml(tpl);
 
         // --- Нижняя полоса на всю ширину: справочник флагов | карта и постановка ---
-        let bottom = `<div style="grid-column:1 / -1;display:grid;grid-template-columns:1fr 1fr;gap:0 16px;border-top:1px solid var(--color-border);margin-top:4px;padding-top:2px;">`;
-        bottom += `<div>`;
+        let bottom = `<div style="grid-column:1 / -1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 16px;border-top:1px solid var(--color-border);margin-top:4px;padding-top:2px;">`;
+        bottom += `<div style="min-width:0;">`;
         bottom += this._sec(this._t('npcPanel.flags', 'Флаги ИИ (какие есть)'));
         bottom += this._flagsReferenceHtml(tpl);
-        bottom += `</div><div>`;
+        bottom += `</div><div style="min-width:0;">`;
         bottom += this._sec(this._t('npcPanel.onMap', 'На карте'));
         bottom += this._row(this._t('npcPanel.name', 'Имя') + ' / ID', `<code>${ev.id}</code> <input data-eim-ev="name" value="${String(ev.name || '').replace(/"/g, '&quot;')}" style="width:calc(100% - 34px);">`);
         bottom += this._row('X / Y', `<input data-eim-ev="x" type="number" value="${ev.x}" style="width:56px;"> <input data-eim-ev="y" type="number" value="${ev.y}" style="width:56px;">`);
@@ -428,7 +431,7 @@ class EnemyInspectorManager {
         bottom += this._templatesHtml();
         bottom += `</div></div>`;
 
-        return `<div>${left}</div><div>${right}</div>${bottom}`;
+        return `<div style="min-width:0;">${left}</div><div style="min-width:0;">${right}</div>${bottom}`;
     }
 
     /**
@@ -452,7 +455,7 @@ class EnemyInspectorManager {
     }
 
     _chkFeared(varValue, checked, label) {
-        return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:2px 0;">
+        return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:2px 0;min-width:0;">
             <input data-eim-feared="${varValue}" type="checkbox" ${checked ? 'checked' : ''}>
             <span>${label}</span></label>`;
     }

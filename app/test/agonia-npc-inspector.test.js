@@ -144,8 +144,11 @@ test('панель: рендерится без throw, несёт секции �
     }
     // P3: мусор убран — секции «Карточка» и «От чего зависит» больше нет
     assert.ok(!html.includes('От чего зависит'), 'deps section removed');
-    // P3: двухколоночная компоновка + нижняя полоса, без скролла
-    assert.ok(html.includes('grid-template-columns:1fr 1fr'), 'two-column grid');
+    // P3: двухколоночная компоновка + нижняя полоса, без скролла.
+    // Треки minmax(0,1fr) + ячейки min-width:0 — иначе grid-blowout
+    // выдавливает вторую колонку за край панели (S37b/P3c).
+    assert.ok(html.includes('grid-template-columns:minmax(0,1fr) minmax(0,1fr)'), 'two-column grid with shrinkable tracks');
+    assert.ok(html.includes('style="min-width:0;"'), 'column wrappers shrinkable');
     assert.ok(html.includes('grid-column:1 / -1'), 'full-width bottom strip');
     // P3b: спрайт без превью — пикер «…» вместо индекса
     assert.ok(html.includes('data-eim-act="pick-sprite"'), 'sprite picker button');
