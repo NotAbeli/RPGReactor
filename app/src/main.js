@@ -641,6 +641,25 @@ class RPGReactor {
         const nb = document.getElementById('mode-npc-btn');
         if (nb) nb.classList.toggle('active', mode === 'npc');
 
+        // P6: в НПС-режиме спавн-палитра врагов заменяет палитру тайлсета
+        // в левом сайдбаре; плееры палитры живут только внутри режима.
+        const tilesetSection = document.getElementById('tileset-palette-section');
+        const enemySection = document.getElementById('enemy-palette-section');
+        const enemyContent = document.getElementById('enemy-palette-content');
+        const enemyHeader = document.getElementById('enemy-palette-header');
+        if (mode === 'npc') {
+            if (tilesetSection) tilesetSection.style.display = 'none';
+            if (enemySection) enemySection.style.display = 'flex';
+            if (enemyHeader) enemyHeader.textContent = window.I18n ? window.I18n.tText('Враги (спавн)') : 'Враги (спавн)';
+            if (enemyContent && this.enemyInspectorManager) {
+                this.enemyInspectorManager.buildSidebarPalette(enemyContent);
+            }
+        } else {
+            if (enemySection) enemySection.style.display = 'none';
+            if (this.enemyInspectorManager) this.enemyInspectorManager.stopPalettePlayers();
+            if (tilesetSection) tilesetSection.style.display = 'flex';
+        }
+
         // Undo/redo source follows the context
         if (eventsCtx) {
             this.uiManager.updateUndoRedoButtons(

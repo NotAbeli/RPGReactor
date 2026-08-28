@@ -258,6 +258,14 @@
                     </div>
                     <div class="resize-handle" data-target="tileset-palette-section" style="display: none;"></div>
 
+                    <!-- Enemy palette (P6): replaces the tileset palette in NPC mode -->
+                    <div class="sidebar-section resizable-section" id="enemy-palette-section" style="display: none; flex: 2; min-height: 150px;">
+                        <div class="sidebar-header" id="enemy-palette-header"><!-- EnemyInspectorManager builds the title here --></div>
+                        <div class="sidebar-content" id="enemy-palette-content" style="padding: 0; overflow-y: auto; min-height: 0;">
+                            <!-- enemy spawn palette mounts here -->
+                        </div>
+                    </div>
+
                     <!-- Layers Panel Section -->
                     <div class="sidebar-section resizable-section" id="layers-section" style="display: none; flex: 1; min-height: 120px;">
                         <div class="sidebar-header" id="layers-section-header"><!-- LayersPanel builds title + scope toggle here --></div>

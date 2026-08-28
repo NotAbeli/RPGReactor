@@ -312,28 +312,106 @@ class EnemyInspectorManager {
         const body = this.selectedEvent && this.selectedTemplate
             ? this._enemyHtml()
             : this._emptyHtml();
-        // P5: спавн-полоса наверху — все шаблоны БД всегда под рукой.
-        const spawn = this._spawnStripHtml();
         // P3: две колонки + нижняя полоса, без скролла — панель показывается
         // целиком. Колонкам min-width:0: без него длинный контент (селекты,
         // подписи страха, таблица урона) распирает 1fr-треки и вторая колонка
         // выезжает за край панели (тот же grid-blowout, что в S37b).
-        return head + spawn + `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 16px;padding:4px 10px 10px;font-size:12px;align-items:start;">${body}</div>`;
+        return head + `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 16px;padding:4px 10px 10px;font-size:12px;align-items:start;">${body}</div>`;
     }
 
-    /** P5: горизонтальная спавн-полоса — все template-карточки БД. */
-    _spawnStripHtml() {
+    /**
+     * P6: спавн-палитра врагов в левом сайдбаре (вместо тайлсета в НПС-режиме).
+     * Грид живых карточек-мини-плееров по всем template-карточкам БД; клик —
+     * режим постановки (курсор copy), клик по карте = createEnemyStub.
+     */
+    buildSidebarPalette(hostEl) {
+        if (!hostEl) return;
+        hostEl.innerHTML = '';
         const templates = this.getTemplates();
-        if (!templates.length) return '';
-        let html = `<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding:5px 10px;border-bottom:1px solid var(--color-border);">
-            <span style="font-size:10px;color:var(--color-text-dim);font-weight:700;letter-spacing:.5px;">${this._t('npcPanel.place', 'ПОСТАВИТЬ')}</span>`;
+        const header = document.createElement('div');
+        header.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:6px 10px;border-bottom:1px solid var(--color-border);';
+        header.textContent = this._t('npcPalette.hint', 'Кликните по врагу, затем по пустой клетке карты');
+        hostEl.appendChild(header);
+
+        if (!templates.length) {
+            const empty = document.createElement('div');
+            empty.style.cssText = 'color:var(--color-text-muted);font-size:12px;padding:10px;';
+            empty.textContent = this._t('npcPalette.empty', 'Нет карточек-шаблонов. Создайте врага в БД (Бой → ИИ Врагов, чекбокс «Шаблон врага»).');
+            hostEl.appendChild(empty);
+            return;
+        }
+
+        const grid = document.createElement('div');
+        grid.style.cssText = 'padding:8px;display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;';
+
+        // свой инстанс Спрайтера под палитру — пул мини-плееров живёт своей
+        // жизнью и рециклится при каждой пересборке
+        let spriter = null;
+        if (typeof DatabaseSpriterEditor !== 'undefined') {
+            if (!this._paletteSpriter) {
+                this._paletteSpriter = new DatabaseSpriterEditor(this.databaseManager, this.projectController, null, null);
+            }
+            spriter = this._paletteSpriter;
+            if (spriter._players) spriter._players.length = 0;
+            if (spriter._masterTimer) { clearInterval(spriter._masterTimer); spriter._masterTimer = null; }
+        }
+
         for (const t of templates) {
             const tag = String(t.match || '').replace(/[<>]/g, '');
-            const active = this.placementTemplate === t;
-            html += `<button class="agonia-btn" data-eim-place="${String(t.match).replace(/"/g, '&quot;')}" title="${this._t('npcPanel.placeHint', 'Кликните по виду, затем по пустой клетке карты.')}" style="padding:2px 9px;font-size:11px;${active ? 'border-color:var(--color-accent-border-mid);font-weight:700;' : ''}">👤 ${tag} · HP ${t.hp || '?'}${active ? ' ●' : ''}</button>`;
+            const selKey = String(t.match || '');
+            const isArmed = () => !!(this.placementTemplate && String(this.placementTemplate.match || '') === selKey);
+            const card = document.createElement('div');
+            const active = isArmed();
+            card.style.cssText = `
+                border: 1px solid ${active ? 'var(--color-accent-text, #7ab0ff)' : 'var(--color-border)'};
+                border-radius: 6px; padding: 6px; cursor: pointer;
+                background-color: var(--color-bg-deep); text-align: center;
+                ${active ? 'box-shadow: 0 0 0 2px var(--color-accent-tint-25, rgba(122,176,255,0.25));' : ''}
+            `;
+            card.dataset.eimPlace = String(t.match || '');
+
+            if (spriter) {
+                const live = {
+                    get Visuals() {
+                        return { CharacterName: t.spriteName || '', CharacterIndex: Number(t.spriteIndex) || 0 };
+                    }
+                };
+                card.appendChild(spriter._renderPlayer(live, 'skins', { mini: true }));
+            }
+            const cap = document.createElement('div');
+            cap.style.cssText = 'font-size:10px;color:var(--color-text);margin-top:4px;word-break:break-word;';
+            cap.textContent = '👤 ' + tag;
+            card.appendChild(cap);
+            const hp = document.createElement('div');
+            hp.style.cssText = 'font-size:9.5px;color:var(--color-text-dim);';
+            hp.textContent = 'HP ' + (t.hp || '?') + (active ? ' · клик по карте…' : '');
+            card.appendChild(hp);
+
+            card.addEventListener('click', () => {
+                // getTemplates() репарсит MV-строку — сравниваем по тегу, не по ссылке
+                this.placementTemplate = isArmed() ? null : t;
+                if (this.placementTemplate && this.tilemapManager && this.tilemapManager.container) {
+                    this.tilemapManager.container.cursor = 'copy';
+                } else if (this.tilemapManager && this.tilemapManager.container) {
+                    this.tilemapManager.container.cursor = 'default';
+                }
+                this.buildSidebarPalette(hostEl);
+                this._renderPanel();
+            });
+            grid.appendChild(card);
         }
-        html += `</div>`;
-        return html;
+        hostEl.appendChild(grid);
+    }
+
+    /** Остановить плееры палитры (при выходе из НПС-режима). */
+    stopPalettePlayers() {
+        if (this._paletteSpriter && this._paletteSpriter._masterTimer) {
+            clearInterval(this._paletteSpriter._masterTimer);
+            this._paletteSpriter._masterTimer = null;
+        }
+        if (this._paletteSpriter && this._paletteSpriter._players) {
+            this._paletteSpriter._players.length = 0;
+        }
     }
 
     /** P5: фиксированный набор состояний карточки. */

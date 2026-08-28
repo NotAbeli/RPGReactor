@@ -17,6 +17,7 @@ function makeElement(tag) {
         className: '', title: '',
         appendChild(child) { child._parent = this; this.children.push(child); return child; },
         removeChild(c) { this.children = this.children.filter(x => x !== c); },
+        insertBefore(el, ref) { const i = ref ? this.children.indexOf(ref) : -1; if (i >= 0) this.children.splice(i, 0, el); else this.children.push(el); el._parent = this; return el; },
         addEventListener(type, fn) { (this._listeners[type] = this._listeners[type] || []).push(fn); },
         removeEventListener() { },
         querySelector() { return null; },
@@ -24,6 +25,14 @@ function makeElement(tag) {
         setAttribute() { }, getAttribute() { return null; },
         destroy() { this.children = []; this.parent = null; }
     };
+    if (tag === 'canvas') {
+        el.getContext = () => ({
+            clearRect() { }, fillRect() { }, fillText() { }, drawImage() { },
+            save() { }, restore() { }, beginPath() { }, rect() { }, fill() { }, stroke() { },
+            imageSmoothingEnabled: false
+        });
+        el.width = 0; el.height = 0;
+    }
     Object.defineProperty(el, 'innerHTML', {
         get() { return this._innerHTML; },
         set(v) { this._innerHTML = String(v); this.children = []; }
@@ -154,15 +163,12 @@ test('панель: рендерится без throw, несёт секции �
     assert.ok(html.includes('data-eim-act="pick-sprite"'), 'sprite picker button');
     assert.ok(!html.includes('data-eim-preview'), 'preview image removed');
     assert.ok(!html.includes('data-eim-card="spriteIndex"'), 'index input removed (picker sets it)');
-    // P5: спавн-полоса сверху + состояния + громкость шагов
-    const raw = eim.panelEl.innerHTML;
-    const stripIdx = raw.indexOf('data-eim-place');
-    assert.ok(stripIdx > 0, 'spawn strip present');
-    assert.ok(stripIdx < raw.indexOf('display:grid;grid-template-columns:minmax'), 'spawn strip ABOVE the columns');
-    assert.ok(raw.includes('Громкость шагов'), 'step volume field');
-    assert.ok(raw.includes('Состояния (графика + звук)'), 'states section');
-    assert.ok(raw.includes('data-eim-state-gfx="attack"') && raw.includes('data-eim-state-se="death"'), 'state rows');
-    assert.ok(!raw.includes('Поставить врага</div>'), 'old bottom placement section gone');
+    // P6: спавн переехал в сайдбар-палитру — в панели кнопок постановки нет
+    assert.ok(!html.includes('data-eim-place'), 'spawn strip moved to the sidebar palette');
+    assert.ok(html.includes('Громкость шагов'), 'step volume field');
+    assert.ok(html.includes('Состояния (графика + звук)'), 'states section');
+    assert.ok(html.includes('data-eim-state-gfx="attack"') && html.includes('data-eim-state-se="death"'), 'state rows');
+    assert.ok(!html.includes('Поставить врага</div>'), 'old bottom placement section gone');
     // S52: характер-селект пишет в карточку
     assert.ok(html.includes('aggressive') && html.includes('peaceful'), 'disposition select options');
     assert.ok(html.includes('canPanic') && html.includes('canFlee') && html.includes('rememberGun'), 'ability checkboxes');
@@ -197,4 +203,54 @@ test('выбор по клику: заглушка выбирается, чуж�
     assert.ok(eim.selectedEvent && eim.selectedEvent.id === 12, 'biba selected by tile click');
     eim._handlePointerDown({ data: { button: 0, getLocalPosition: () => ({ x: 5.5 * 48, y: 5.5 * 48 }) } });
     assert.strictEqual(eim.selectedEvent, null, 'chest click clears selection');
+});
+
+test('P6: сайдбар-палитра — карточки шаблонов, клик = постановка, рецикл', () => {
+    const { eim } = makeEnv();
+    const collect = (el, acc) => { for (const c of el.children || []) { acc.push(c); collect(c, acc); } return acc; };
+    const host = makeElement('div');
+    eim.buildSidebarPalette(host);
+    const cards = collect(host, []).filter(c => c.dataset && c.dataset.eimPlace === '<biba>');
+    assert.strictEqual(cards.length, 1, 'one biba card in the palette');
+    assert.ok(collect(host, []).some(c => String(c.textContent || '').includes('biba')), 'card caption');
+    assert.ok(eim.placementTemplate === null || eim.placementTemplate === undefined, 'nothing selected yet');
+    // клик — вход в режим постановки, повторный клик — отмена
+    cards[0]._listeners.click[0]();
+    assert.ok(eim.placementTemplate && String(eim.placementTemplate.match) === '<biba>', 'placement armed');
+    const cards2 = collect(host, []).filter(c => c.dataset && c.dataset.eimPlace === '<biba>');
+    cards2[0]._listeners.click[0]();
+    assert.strictEqual(eim.placementTemplate, null, 'placement disarmed');
+    eim.stopPalettePlayers(); // no-throw
+});
+
+test('P6: БД-карточка врага начинается с живого превью (плеер Спрайтера)', () => {
+    const src = p => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
+    const ctx = {
+        console: { log() { }, warn() { }, error() { } },
+        document: { createElement: t => makeElement(t), createTextNode: t => ({ textContent: t }), getElementById: () => null, body: makeElement('body') },
+        window: null, navigator: {},
+        setInterval: () => 1, clearInterval() { }, setTimeout: (f) => { try { f(); } catch (e) { /* player reload guarded */ } },
+        Image: class { set src(v) { if (this.onload) this.onload(); } },
+        PluginManager: { parameters: () => ({}) },
+        DatabaseManager: { agoniaDefaults: () => ({ enemies: {}, battle: {}, dash: {}, spriter: {} }) }
+    };
+    ctx.window = ctx;
+    vm.createContext(ctx);
+    vm.runInContext(src('src/database/DatabaseShells.js'), ctx, { filename: 'DatabaseShells.js' });
+    vm.runInContext(src('src/database/DatabaseSpriterEditor.js') + '\nthis.DatabaseSpriterEditor = DatabaseSpriterEditor;', ctx, { filename: 'DatabaseSpriterEditor.js' });
+    vm.runInContext(src('src/database/DatabaseEnemiesEditor.js') + '\nthis.DatabaseEnemiesEditor = DatabaseEnemiesEditor;', ctx, { filename: 'DatabaseEnemiesEditor.js' });
+    const dbm = {
+        data: { agonia: { enemies: { EnemyDatabase: JSON.stringify([JSON.stringify({ id: '3', match: '<biba>', hp: '100', template: 'true', spriteName: 'Enemy 1', customRules: '[]' })]) }, battle: {}, dash: {}, spriter: {} } }
+    };
+    const ed = new ctx.DatabaseEnemiesEditor(dbm, { getCurrentProject: () => ({ path: 'X:/proj' }) }, {}, {});
+    const host = makeElement('div');
+    ed.classicApi().renderDetail(host, JSON.parse(JSON.stringify({ id: '3', match: '<biba>', hp: '100', template: 'true', spriteName: 'Enemy 1', customRules: '[]' })), 0, () => {});
+    const collect = (el, acc) => { for (const c of el.children || []) { acc.push(c); collect(c, acc); } return acc; };
+    const all = collect(host, []);
+    // ПЕРВЫЙ элемент карточки — превью с канвасом
+    assert.ok(host.children.length > 0, 'card rendered');
+    const texts = all.map(c => String(c.textContent || ''));
+    assert.ok(texts.some(t => t.includes('Живое превью')), 'live preview header');
+    assert.ok(all.some(c => c.tagName === 'canvas'), 'preview canvas present');
+    assert.ok(all.some(c => c.tagName === 'select'), 'direction selector present');
 });

@@ -188,6 +188,24 @@ class DatabaseEnemiesEditor {
 
         form.mount(formCol);
 
+        // P6: живое анимированное превью — ПЕРВОЙ секцией карточки.
+        // Плеер Спрайтера через собственный инстанс (отдельный пул игроков,
+        // вкладка Спрайтера не затрагивается); fake-entry с getter'ом Visuals
+        // живо реагирует на правку spriteName/spriteIndex карточки.
+        if (String(entry.template) === 'true') {
+            const spriter = this._spriterPicker();
+            if (spriter && typeof spriter._renderPlayer === 'function') {
+                spriter._players = (spriter._players || []).filter(p => p._tag !== 'spriterForm');
+                const live = {
+                    get Visuals() {
+                        return { CharacterName: entry.spriteName || '', CharacterIndex: Number(entry.spriteIndex) || 0 };
+                    }
+                };
+                const preview = spriter._renderPlayer(live, 'skins', {});
+                formCol.insertBefore(preview, formCol.firstChild);
+            }
+        }
+
         // P5: дружелюбные блоки шаблона — страх оружием, таблица урона,
         // состояния (графика+звук с превью) и превью основного спрайта.
         if (isTpl) {
