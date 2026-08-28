@@ -166,10 +166,11 @@
             <button class="tool-button" data-action="playtest" title="Playtest" data-i18n-title="toolbar.title.playtest"><img src="images/icon-playtest.png"></button>
             <div class="toolbar-separator"></div>
             <button class="tool-button active" id="mode-toggle-btn" data-action="toggle-event-mode" title="Toggle Tiles / Events" data-i18n-title="toolbar.title.eventManager"><img src="images/icon-single.png" onerror="this.style.display='none'; this.parentElement.innerHTML='TL';"></button>
-            <!-- Event-mode tools (S51): shown instead of the drawing tools while
-                 in the events context (events / light / npc). The light button
-                 carries the mode-light-btn id - all code references point here. -->
+            <!-- Event-mode tools (S51/P7): shown instead of the drawing tools while
+                 in the events context. The event tool (pencil analogue) is first;
+                 the light button carries the mode-light-btn id. -->
             <div class="toolbar-separator events-only" style="display:none;"></div>
+            <button class="tool-button events-only" id="mode-event-btn" data-action="toggle-event-tool" title="Event Tool — клик по пустой клетке создаёт событие" data-i18n-title="toolbar.title.eventTool" style="display:none;"><img src="images/icon-event.png" onerror="this.style.display='none'; this.parentElement.textContent='EV';"></button>
             <button class="tool-button events-only" id="mode-light-btn" data-action="toggle-light-mode" title="Light Mode (Освещение)" data-i18n-title="toolbar.title.lightMode" style="display:none;"><span style="font-size:var(--toolbar-icon-size);line-height:1;">💡</span></button>
             <button class="tool-button events-only" id="mode-npc-btn" data-action="toggle-npc-mode" title="NPC Mode (Враги)" data-i18n-title="toolbar.title.npcMode" style="display:none;"><span style="font-size:var(--toolbar-icon-size);line-height:1;">👤</span></button>
             <div class="toolbar-separator tiles-only"></div>
@@ -258,11 +259,12 @@
                     </div>
                     <div class="resize-handle" data-target="tileset-palette-section" style="display: none;"></div>
 
-                    <!-- Enemy palette (P6): replaces the tileset palette in NPC mode -->
-                    <div class="sidebar-section resizable-section" id="enemy-palette-section" style="display: none; flex: 2; min-height: 150px;">
-                        <div class="sidebar-header" id="enemy-palette-header"><!-- EnemyInspectorManager builds the title here --></div>
-                        <div class="sidebar-content" id="enemy-palette-content" style="padding: 0; overflow-y: auto; min-height: 0;">
-                            <!-- enemy spawn palette mounts here -->
+                    <!-- Context palette (P6/P7): replaces the tileset palette in the
+                         events context - enemies (npc), events list (events), lights (light) -->
+                    <div class="sidebar-section resizable-section" id="context-palette-section" style="display: none; flex: 2; min-height: 150px;">
+                        <div class="sidebar-header" id="context-palette-header"><!-- main.js sets the title by mode --></div>
+                        <div class="sidebar-content" id="context-palette-content" style="padding: 0; overflow-y: auto; min-height: 0;">
+                            <!-- context palette content mounts here -->
                         </div>
                     </div>
 

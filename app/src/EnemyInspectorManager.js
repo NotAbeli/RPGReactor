@@ -320,6 +320,137 @@ class EnemyInspectorManager {
     }
 
     /**
+     * P7: список ивентов текущей карты для контекст-палитры (режим событий):
+     * мини-превью графики + имя + координаты; клик — выбрать на карте,
+     * двойной клик — открыть редактор события.
+     */
+    buildEventsPalette(hostEl) {
+        if (!hostEl) return;
+        hostEl.innerHTML = '';
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:6px 10px;border-bottom:1px solid var(--color-border);';
+        hint.textContent = this._t('ctxPalette.eventsHint', 'Клик — выбрать событие · двойной клик — редактор');
+        hostEl.appendChild(hint);
+
+        const events = (this.currentMap && this.currentMap.events) ? this.currentMap.events.filter(e => e) : [];
+        if (!events.length) {
+            const empty = document.createElement('div');
+            empty.style.cssText = 'color:var(--color-text-muted);font-size:12px;padding:10px;';
+            empty.textContent = this._t('ctxPalette.noEvents', 'На карте нет событий. Кликните по пустой клетке карты, чтобы создать.');
+            hostEl.appendChild(empty);
+            return;
+        }
+        const list = document.createElement('div');
+        list.style.cssText = 'padding:6px;display:flex;flex-direction:column;gap:4px;';
+        for (const ev of events) {
+            const img = (ev.pages && ev.pages[0] && ev.pages[0].image) || {};
+            const row = document.createElement('div');
+            const sel = this.eventManager && this.eventManager.selectedEvent === ev;
+            row.style.cssText = `
+                display:flex;align-items:center;gap:8px;padding:4px 6px;cursor:pointer;
+                border:1px solid ${sel ? 'var(--color-accent-border-mid,#5a8ad4)' : 'var(--color-border)'};
+                border-radius:4px;background:${sel ? 'var(--color-bg-hover,rgba(122,176,255,0.12))' : 'var(--color-bg-deep)'};
+            `;
+            // мини-превью: лист персонажа с object-position на ячейку
+            const thumb = document.createElement('div');
+            const name = String(img.characterName || '');
+            if (name) {
+                const pic = document.createElement('img');
+                pic.src = this._eventSpriteUrl(name);
+                pic.style.cssText = 'width:24px;height:32px;image-rendering:pixelated;object-fit:none;';
+                const idx = Number(img.characterIndex) || 0;
+                pic.style.objectPosition = (-idx % 4 * 24) + 'px ' + (Math.floor(idx / 4) * 32) + 'px';
+                // сдвиг на 2-й кадр (шаг) для живости: +24px по x
+                pic.style.objectPosition = (-(idx % 4) * 24 - 24) + 'px ' + (-Math.floor(idx / 4) * 32) + 'px';
+                thumb.appendChild(pic);
+            } else {
+                thumb.style.cssText = 'width:24px;height:32px;border:1px dashed var(--color-border);border-radius:3px;';
+            }
+            thumb.style.flex = 'none';
+            thumb.style.overflow = 'hidden';
+            row.appendChild(thumb);
+            const label = document.createElement('div');
+            label.style.cssText = 'flex:1;min-width:0;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+            label.textContent = String(ev.name || ('EV' + ev.id));
+            row.appendChild(label);
+            const pos = document.createElement('span');
+            pos.style.cssText = 'flex:none;font-size:10px;color:var(--color-text-dim);';
+            pos.textContent = ev.x + ',' + ev.y;
+            row.appendChild(pos);
+
+            row.addEventListener('click', () => {
+                if (this.eventManager && this.eventManager.selectEventById) this.eventManager.selectEventById(ev.id);
+                this.buildEventsPalette(hostEl);
+            });
+            row.addEventListener('dblclick', () => {
+                if (this.eventManager && this.eventManager.editEvent) this.eventManager.editEvent(ev);
+            });
+            list.appendChild(row);
+        }
+        hostEl.appendChild(list);
+    }
+
+    _eventSpriteUrl(name) {
+        try {
+            if (typeof RRAssetFiles === 'undefined') return '';
+            const proj = this.projectController && this.projectController.getCurrentProject();
+            if (!proj || !proj.path) return '';
+            let path = null;
+            try { path = (typeof require === 'function') ? require('path') : window.require('path'); } catch (e) { return ''; }
+            return RRAssetFiles.toUrl(path.join(proj.path, 'img', 'characters', name + '.png'));
+        } catch (e) {
+            return '';
+        }
+    }
+
+    /**
+     * P7: список источников света для контекст-палитры (режим света):
+     * цветной свотч + тип + радиус + координаты; клик — выбрать источник.
+     */
+    buildLightsPalette(hostEl) {
+        if (!hostEl) return;
+        hostEl.innerHTML = '';
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:6px 10px;border-bottom:1px solid var(--color-border);';
+        hint.textContent = this._t('ctxPalette.lightsHint', 'Клик — выбрать источник света');
+        hostEl.appendChild(hint);
+
+        const lights = (this._getLights && this._getLights()) || [];
+        if (!lights.length) {
+            const empty = document.createElement('div');
+            empty.style.cssText = 'color:var(--color-text-muted);font-size:12px;padding:10px;';
+            empty.textContent = this._t('ctxPalette.noLights', 'На карте нет источников света.');
+            hostEl.appendChild(empty);
+            return;
+        }
+        const list = document.createElement('div');
+        list.style.cssText = 'padding:6px;display:flex;flex-direction:column;gap:4px;';
+        for (const L of lights) {
+            const p = L.props || {};
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 6px;cursor:pointer;border:1px solid var(--color-border);border-radius:4px;background:var(--color-bg-deep);';
+            const sw = document.createElement('span');
+            sw.style.cssText = 'flex:none;width:18px;height:18px;border-radius:50%;border:1px solid var(--color-border);background:' + (p.color || '#ffffff') + ';';
+            row.appendChild(sw);
+            const label = document.createElement('div');
+            label.style.cssText = 'flex:1;min-width:0;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+            label.textContent = (p.type === 'Flashlight' ? '🔦 Фонарь' : '💡 ' + (p.presetId || 'Свет'))
+                + ' · ' + (p.radius || '?') + 'т'
+                + (p.active === false ? ' · выкл' : '');
+            row.appendChild(label);
+            const pos = document.createElement('span');
+            pos.style.cssText = 'flex:none;font-size:10px;color:var(--color-text-dim);';
+            pos.textContent = L.x + ',' + L.y;
+            row.appendChild(pos);
+            row.addEventListener('click', () => {
+                if (this._onSelectLight) this._onSelectLight(L.uid);
+            });
+            list.appendChild(row);
+        }
+        hostEl.appendChild(list);
+    }
+
+    /**
      * P6: спавн-палитра врагов в левом сайдбаре (вместо тайлсета в НПС-режиме).
      * Грид живых карточек-мини-плееров по всем template-карточкам БД; клик —
      * режим постановки (курсор copy), клик по карте = createEnemyStub.

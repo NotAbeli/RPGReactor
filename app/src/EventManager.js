@@ -40,6 +40,7 @@ class EventManager {
         this._lastMapClickTime = 0;
         this._lastMapClickX = null;
         this._lastMapClickY = null;
+        this.eventToolActive = true; // P7: инструмент «Событие» (аналог карандаша): клик по пустой клетке создаёт событие
 
         // Undo/Redo system
         this.undoStack = [];
@@ -486,6 +487,14 @@ class EventManager {
         this.selectTile(tileX, tileY);
 
         const eventAtPos = this.getEventAt(evX, evY);
+
+        // P7: инструмент «Событие» — одиночный клик по пустой клетке создаёт
+        // событие (аналог карандаша в режиме рисования). Выключается кнопкой.
+        if (!eventAtPos && this.eventToolActive) {
+            this.createNewEvent(evX, evY);
+            return;
+        }
+
         if (!eventAtPos && this.tilesetPaletteViewer) {
             const selectedTiles = this.tilesetPaletteViewer.getSelectedTiles();
             if (selectedTiles && selectedTiles.length > 0) {

@@ -93,6 +93,7 @@ class RPGReactor {
             toggleEventMode: () => this.toggleEventMode(),
             toggleLightMode: () => this.toggleLightMode(),
             toggleNpcMode: () => this.toggleNpcMode(),
+            toggleEventTool: () => this.toggleEventTool(),
             getEditingMode: () => (this.editingMode || 'tiles'),
             disableEventModeIfActive: () => this.disableEventModeIfActive(),
             installRuntime: () => this.projectController.installReactorRuntime(),
@@ -242,6 +243,12 @@ class RPGReactor {
             if (!this.enemyInspectorManager) {
                 this.enemyInspectorManager = new EnemyInspectorManager(
                     this.projectController, this.databaseManager, this.eventManager);
+                // P7: хуки контекст-палитры для режима света
+                this.enemyInspectorManager._getLights = () => (this.lightManager && this.lightManager.currentMap)
+                    ? this.lightManager.collectMapLights(this.lightManager.currentMap.id) : [];
+                this.enemyInspectorManager._onSelectLight = (uid) => {
+                    if (this.lightManager && this.lightManager.lightMode) this.lightManager._select(uid);
+                };
             }
             this.enemyInspectorManager.setTilemapManager(this.projectController.getTilemapManager());
             this.enemyInspectorManager.setCurrentMap(lmMap);
@@ -635,27 +642,41 @@ class RPGReactor {
             if (this.uiManager) this.uiManager.refreshGridButton();
         }
 
-        // Sub-mode buttons reflect their mode
+        // Sub-mode buttons reflect their mode; the event tool (P7, pencil
+        // analogue) is active in plain events mode while armed.
+        const evb = document.getElementById('mode-event-btn');
+        if (evb) evb.classList.toggle('active',
+            mode === 'events' && (!this.eventManager || this.eventManager.eventToolActive !== false));
         const lb = document.getElementById('mode-light-btn');
         if (lb) lb.classList.toggle('active', mode === 'light');
         const nb = document.getElementById('mode-npc-btn');
         if (nb) nb.classList.toggle('active', mode === 'npc');
 
-        // P6: в НПС-режиме спавн-палитра врагов заменяет палитру тайлсета
-        // в левом сайдбаре; плееры палитры живут только внутри режима.
+        // P7: контекст-палитра в сайдбаре — вместо тайлсета в контексте
+        // событий: список ивентов (events), источники света (light),
+        // спавн-палитра врагов (npc). Рисование — тайлсет как всегда.
         const tilesetSection = document.getElementById('tileset-palette-section');
-        const enemySection = document.getElementById('enemy-palette-section');
-        const enemyContent = document.getElementById('enemy-palette-content');
-        const enemyHeader = document.getElementById('enemy-palette-header');
-        if (mode === 'npc') {
+        const ctxSection = document.getElementById('context-palette-section');
+        const ctxContent = document.getElementById('context-palette-content');
+        const ctxHeader = document.getElementById('context-palette-header');
+        const ctxTitle = (t) => { if (ctxHeader) ctxHeader.textContent = t; };
+        if (mode !== 'tiles') {
             if (tilesetSection) tilesetSection.style.display = 'none';
-            if (enemySection) enemySection.style.display = 'flex';
-            if (enemyHeader) enemyHeader.textContent = window.I18n ? window.I18n.tText('Враги (спавн)') : 'Враги (спавн)';
-            if (enemyContent && this.enemyInspectorManager) {
-                this.enemyInspectorManager.buildSidebarPalette(enemyContent);
+            if (ctxSection) ctxSection.style.display = 'flex';
+            if (this.enemyInspectorManager && ctxContent) {
+                if (mode === 'events') {
+                    ctxTitle(window.I18n ? window.I18n.tText('События карты') : 'События карты');
+                    this.enemyInspectorManager.buildEventsPalette(ctxContent);
+                } else if (mode === 'light') {
+                    ctxTitle(window.I18n ? window.I18n.tText('Источники света') : 'Источники света');
+                    this.enemyInspectorManager.buildLightsPalette(ctxContent);
+                } else {
+                    ctxTitle(window.I18n ? window.I18n.tText('Враги (спавн)') : 'Враги (спавн)');
+                    this.enemyInspectorManager.buildSidebarPalette(ctxContent);
+                }
             }
         } else {
-            if (enemySection) enemySection.style.display = 'none';
+            if (ctxSection) ctxSection.style.display = 'none';
             if (this.enemyInspectorManager) this.enemyInspectorManager.stopPalettePlayers();
             if (tilesetSection) tilesetSection.style.display = 'flex';
         }
@@ -697,6 +718,24 @@ class RPGReactor {
             return;
         }
         this.setEditingMode(this.editingMode === 'npc' ? 'events' : 'npc');
+    }
+
+    // P7: инструмент «Событие» (аналог карандаша) — тумблер: клик по пустой
+    // клетке создаёт событие. Кнопка отражает состояние; работает только в
+    // чистом режиме событий.
+    toggleEventTool() {
+        if (!this.eventManager) return;
+        if ((this.editingMode || 'tiles') !== 'events') {
+            this.setEditingMode('events');
+            this.eventManager.eventToolActive = true;
+        } else {
+            this.eventManager.eventToolActive = !this.eventManager.eventToolActive;
+        }
+        const btn = document.getElementById('mode-event-btn');
+        if (btn) btn.classList.toggle('active', !!this.eventManager.eventToolActive);
+        this.uiManager.updateStatus(this.eventManager.eventToolActive
+            ? (window.I18n ? window.I18n.t('status.eventToolOn') : 'Event tool: click an empty tile to create an event')
+            : (window.I18n ? window.I18n.t('status.eventToolOff') : 'Event tool off (selection only)'));
     }
 
     // Disable event mode if currently active (called when switching to tileset tools)

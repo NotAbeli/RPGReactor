@@ -1047,6 +1047,11 @@ class UIManager {
                     this.callbacks.toggleNpcMode();
                 }
                 break;
+            case 'toggle-event-tool':
+                if (this.callbacks.toggleEventTool) {
+                    this.callbacks.toggleEventTool();
+                }
+                break;
         }
     }
 

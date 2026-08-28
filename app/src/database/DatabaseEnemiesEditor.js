@@ -188,21 +188,66 @@ class DatabaseEnemiesEditor {
 
         form.mount(formCol);
 
-        // P6: живое анимированное превью — ПЕРВОЙ секцией карточки.
-        // Плеер Спрайтера через собственный инстанс (отдельный пул игроков,
-        // вкладка Спрайтера не затрагивается); fake-entry с getter'ом Visuals
-        // живо реагирует на правку spriteName/spriteIndex карточки.
+        // P7: ряд из ПЯТИ карточек графики — первая секция карточки.
+        // Основная/Тревога/Атака/Урон/Смерть; у незаданных — дефолтная
+        // графика карточки с пометкой; клик по карточке = пикер состояния.
         if (String(entry.template) === 'true') {
             const spriter = this._spriterPicker();
             if (spriter && typeof spriter._renderPlayer === 'function') {
                 spriter._players = (spriter._players || []).filter(p => p._tag !== 'spriterForm');
-                const live = {
-                    get Visuals() {
-                        return { CharacterName: entry.spriteName || '', CharacterIndex: Number(entry.spriteIndex) || 0 };
-                    }
-                };
-                const preview = spriter._renderPlayer(live, 'skins', {});
-                formCol.insertBefore(preview, formCol.firstChild);
+                const row = document.createElement('div');
+                row.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;margin-bottom:4px;';
+                const cards = [
+                    ['rest', this._tt('Основная'), this._tt('покой, ходьба, бой — если для состояния нет своей графики')],
+                    ['alert', this._tt('Тревога'), this._tt('услышал шум игрока')],
+                    ['attack', this._tt('Атака'), this._tt('рывок и удар / выстрел по игроку')],
+                    ['hurt', this._tt('Урон'), this._tt('при получении удара или пули')],
+                    ['death', this._tt('Смерть'), this._tt('когда HP на нуле')]
+                ];
+                let gfx = {};
+                try { if (entry.stateGraphics) gfx = JSON.parse(entry.stateGraphics) || {}; } catch (e) { gfx = {}; }
+                for (const [key, label, usage] of cards) {
+                    const g = gfx[key];
+                    const hasOwn = !!(g && g.name);
+                    const card = document.createElement('div');
+                    card.style.cssText = `
+                        border: 1px solid ${hasOwn ? 'var(--color-accent-border-mid, #5a8ad4)' : 'var(--color-border)'};
+                        border-radius: 6px; padding: 5px; cursor: pointer;
+                        background-color: var(--color-bg-deep); text-align: center;
+                    `;
+                    card.title = this._tt('Клик — выбрать графику: ') + usage;
+                    const live = {
+                        get Visuals() {
+                            const src = (hasOwn && gfx[key]) ? gfx[key] : entry;
+                            return { CharacterName: src.spriteName || '', CharacterIndex: Number(src.spriteIndex) || 0 };
+                        }
+                    };
+                    card.appendChild(spriter._renderPlayer(live, 'skins', { mini: true }));
+                    const cap = document.createElement('div');
+                    cap.style.cssText = 'font-size:10.5px;font-weight:700;color:var(--color-text-strong);margin-top:3px;';
+                    cap.textContent = label;
+                    card.appendChild(cap);
+                    const use = document.createElement('div');
+                    use.style.cssText = 'font-size:9px;color:var(--color-text-dim);line-height:1.25;margin-top:1px;';
+                    use.textContent = hasOwn ? usage : (usage + ' · ' + this._tt('по умолчанию'));
+                    card.appendChild(use);
+                    card.addEventListener('click', () => {
+                        spriter._showFilePicker('', (name, index) => {
+                            let cur = {};
+                            try { if (entry.stateGraphics) cur = JSON.parse(entry.stateGraphics) || {}; } catch (e) { cur = {}; }
+                            cur[key] = { name: String(name), index: Number(index) || 0 };
+                            entry.stateGraphics = JSON.stringify(cur);
+                            api.changed();
+                            // живое обновление карточки ряда: картинку перезагрузит
+                            // снапшот-детектор плеера (геттер читает gfx[key]),
+                            // рамку и подпись правим на месте
+                            card.style.borderColor = 'var(--color-accent-border-mid, #5a8ad4)';
+                            use.textContent = usage;
+                        }, 'characters', { pickCharacterIndex: true });
+                    });
+                    row.appendChild(card);
+                }
+                formCol.insertBefore(row, formCol.firstChild);
             }
         }
 

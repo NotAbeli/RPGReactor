@@ -28,10 +28,11 @@ class Container {
     destroy() { this.children.forEach(c => { if (typeof c.destroy === 'function') c.destroy(); }); this.children = []; this.parent = null; }
 }
 class Graphics extends Container {
-    constructor() { super(); this.ops = []; }
+    constructor() { super(); this.ops = []; this.visible = true; }
     rect(...a) { this.ops.push(['rect', a]); return this; }
     fill(...a) { this.ops.push(['fill', a]); return this; }
     stroke(...a) { this.ops.push(['stroke', a]); return this; }
+    clear() { this.ops.length = 0; return this; }
 }
 class Text extends Container {
     constructor(opts) {
@@ -141,4 +142,33 @@ test('P5: createEnemyStub наследует шаги-звуки карточк�
     assert.strictEqual(loud.pages[0].image.characterName, 'Enemy 1', 'default sprite');
     assert.ok(plain.pages[0].list.some(c => c.code === 108 && String(c.parameters[0]).includes('<collider>')),
         'stub page carries collider comments');
+});
+
+test('P7: инструмент «Событие» — клик по пустой клетке создаёт событие', () => {
+    const EventManager = loadEventManager();
+    const em = new EventManager({}, {});
+    const tm = makeTilemapManager();
+    em.initializeEventLayer(tm);
+    em.currentMap = { id: 45, width: 40, height: 30, events: [null,
+        { id: 7, name: 'chest', note: '', pages: [{ image: { characterName: '' } }], x: 5, y: 5 }
+    ] };
+    em.eventMode = true;
+    let created = null;
+    em.editEvent = ev => { created = ev; };
+
+    const click = (x, y) => em.handleMapPointerDown({
+        data: { button: 0, originalEvent: {}, getLocalPosition: () => ({ x: (x + 0.5) * 48, y: (y + 0.5) * 48 }) }
+    }, tm.container);
+
+    click(10, 10);
+    assert.ok(created && created.x === 10 && created.y === 10, 'empty-tile click created an event');
+    assert.ok(created.pages && created.pages.length === 1, 'created event has a page');
+
+    created = null;
+    click(5, 5);
+    assert.strictEqual(created, null, 'click on an existing event selects, does not create');
+
+    em.eventToolActive = false;
+    click(20, 20);
+    assert.strictEqual(created, null, 'tool off — no creation');
 });

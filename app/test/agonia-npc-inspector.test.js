@@ -223,7 +223,7 @@ test('P6: сайдбар-палитра — карточки шаблонов, �
     eim.stopPalettePlayers(); // no-throw
 });
 
-test('P6: БД-карточка врага начинается с живого превью (плеер Спрайтера)', () => {
+test('P6/P7: БД-карточка врага начинается с ряда из пяти карточек графики', () => {
     const src = p => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
     const ctx = {
         console: { log() { }, warn() { }, error() { } },
@@ -247,10 +247,58 @@ test('P6: БД-карточка врага начинается с живого 
     ed.classicApi().renderDetail(host, JSON.parse(JSON.stringify({ id: '3', match: '<biba>', hp: '100', template: 'true', spriteName: 'Enemy 1', customRules: '[]' })), 0, () => {});
     const collect = (el, acc) => { for (const c of el.children || []) { acc.push(c); collect(c, acc); } return acc; };
     const all = collect(host, []);
-    // ПЕРВЫЙ элемент карточки — превью с канвасом
-    assert.ok(host.children.length > 0, 'card rendered');
     const texts = all.map(c => String(c.textContent || ''));
-    assert.ok(texts.some(t => t.includes('Живое превью')), 'live preview header');
-    assert.ok(all.some(c => c.tagName === 'canvas'), 'preview canvas present');
-    assert.ok(all.some(c => c.tagName === 'select'), 'direction selector present');
+    // ряд из пяти карточек — первая секция
+    assert.strictEqual(host.children.length > 0, true, 'card rendered');
+    const first = host.children[0];
+    assert.ok(collect(first, []).length > 10, 'five-card row is the first block');
+    for (const label of ['Основная', 'Тревога', 'Атака', 'Урон', 'Смерть']) {
+        assert.ok(texts.some(t => t.includes(label)), 'card caption: ' + label);
+    }
+    assert.ok(texts.some(t => t.includes('по умолчанию')), 'default marker for unset states');
+    assert.ok(all.some(c => c.tagName === 'canvas'), 'animated canvases present');
+    // у заданного состояния нет пометки «по умолчанию» в его подписи
+    const attackCap = texts.find(t => t.includes('рывок и удар'));
+    assert.ok(attackCap, 'attack usage caption');
+});
+
+test('P7: палитра событий — список с графикой, клик выбирает, dbl открывает редактор', () => {
+    const { eim, map, calls } = makeEnv();
+    const collect = (el, acc) => { for (const c of el.children || []) { acc.push(c); collect(c, acc); } return acc; };
+    let edited = null;
+    eim.eventManager.selectEventById = id => { calls.selected = id; };
+    eim.eventManager.editEvent = ev => { edited = ev; };
+    const host = makeElement('div');
+    eim.buildEventsPalette(host);
+    const rows = collect(host, []).filter(c => c._listeners && c._listeners.click);
+    assert.strictEqual(rows.length, 2, 'chest + biba rows');
+    const texts = collect(host, []).map(c => String(c.textContent || ''));
+    assert.ok(texts.some(t => t.includes('ENEMY biba')), 'event names listed');
+    assert.ok(texts.some(t => t.endsWith('33,17')), 'coordinates shown');
+    // клик — выбор
+    rows[1]._listeners.click[0]();
+    assert.strictEqual(calls.selected, 12, 'click selects the event');
+    // двойной клик — редактор
+    rows[1]._listeners.dblclick[0]();
+    assert.ok(edited && edited.id === 12, 'dblclick opens the editor');
+});
+
+test('P7: палитра света — список источников, клик выбирает uid', () => {
+    const { eim } = makeEnv();
+    const collect = (el, acc) => { for (const c of el.children || []) { acc.push(c); collect(c, acc); } return acc; };
+    const selected = [];
+    eim._getLights = () => [
+        { uid: 'l1', x: 3, y: 4, props: { type: 'Radial', color: '#ffcc88', radius: 6, active: true } },
+        { uid: 'l2', x: 10, y: 2, props: { type: 'Flashlight', color: '#ffffff', radius: 8, active: false } }
+    ];
+    eim._onSelectLight = uid => selected.push(uid);
+    const host = makeElement('div');
+    eim.buildLightsPalette(host);
+    const rows = collect(host, []).filter(c => c._listeners && c._listeners.click);
+    assert.strictEqual(rows.length, 2, 'two light rows');
+    const texts = collect(host, []).map(c => String(c.textContent || ''));
+    assert.ok(texts.some(t => t.includes('Фонарь')), 'flashlight labeled');
+    assert.ok(texts.some(t => t.includes('выкл')), 'inactive marker shown');
+    rows[1]._listeners.click[0]();
+    assert.deepStrictEqual(selected, ['l2'], 'click selects the light uid');
 });
