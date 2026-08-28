@@ -335,7 +335,7 @@ class EnemyInspectorManager {
     }
 
     _inp(key, value, type) {
-        return `<input data-eim-card="${key}" type="${type || 'text'}" value="${String(value === undefined || value === null ? '' : value).replace(/"/g, '&quot;')}" style="width:100%;box-sizing:border-box;">`;
+        return `<input data-eim-card="${key}" type="${type || 'text'}" value="${String(value === undefined || value === null ? '' : value).replace(/"/g, '&quot;')}" style="width:100%;min-width:52px;box-sizing:border-box;">`;
     }
 
     _sel(key, value, options) {
@@ -385,10 +385,8 @@ class EnemyInspectorManager {
         left += `</div>`;
 
         left += this._sec(this._t('npcPanel.speed', 'Скорость (MV 1–6)'));
-        left += `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 10px;">`;
         left += this._row(this._t('npcPanel.speedCalm', 'В покое'), this._inp('speedCalm', tpl.speedCalm, 'number'));
         left += this._row(this._t('npcPanel.speedCombat', 'В бою'), this._inp('speedCombat', tpl.speedCombat, 'number'));
-        left += `</div>`;
 
         left += this._sec(this._t('npcPanel.visual', 'Визуал'));
         // P3b: без превью; файл и ячейка выбираются двухшаговым пикером (как в Спрайтере)
@@ -402,13 +400,13 @@ class EnemyInspectorManager {
         // --- Правая колонка: как дерётся ---
         let right = '';
         right += this._sec(this._t('npcPanel.behavior', 'Поведение'));
-        right += `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 10px;">`;
+        // P3d: поля поведения в один столбец — в половинной колонке двухколоночный
+        // грид оставлял инпутам ~15px (нечитаемо); метки над полным рядом.
         right += this._row(this._t('npcPanel.attackRadius', 'Радиус атаки'), this._inp('attackRadius', tpl.attackRadius, 'number'));
         right += this._row(this._t('npcPanel.hearing', 'Радиус слуха'), this._inp('hearingRadius', tpl.hearingRadius, 'number'));
         right += this._row(this._t('npcPanel.hearingThr', 'Порог шума'), this._inp('hearingThreshold', tpl.hearingThreshold, 'number'));
         right += this._row(this._t('npcPanel.chase', 'Погоня от'), this._inp('chaseThreshold', tpl.chaseThreshold, 'number'));
         right += this._row(this._t('npcPanel.cower', 'Приседание от'), this._inp('cowerThreshold', tpl.cowerThreshold, 'number'));
-        right += `</div>`;
         right += `<div style="font-size:10.5px;color:var(--color-text-dim);margin:4px 0 0;min-width:0;overflow-wrap:anywhere;">`;
         right += this._t('npcPanel.tracer', 'Трассер') + ': <b>' + this._attackLabel('Tracer List', tpl.tracerId) + '</b> · ';
         right += this._t('npcPanel.melee', 'Ближний бой') + ': <b>' + this._attackLabel('Melee List', tpl.meleeId) + '</b> · ';
