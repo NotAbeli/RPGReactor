@@ -601,6 +601,11 @@ class RPGReactor {
         // --- teardown of the previous mode ---
         if (prev === 'light' && this.lightManager) {
             this.lightManager.setLightMode(false);
+            // P12: затемнение было включено самим режимом — вернуть как было
+            if (this._lightAutoPreview && this.lightManager.previewOn) {
+                this.lightManager.setPreview(false);
+            }
+            this._lightAutoPreview = false;
         }
         if (prev === 'npc' && this.enemyInspectorManager) {
             this.enemyInspectorManager.setNpcMode(false);
@@ -631,6 +636,14 @@ class RPGReactor {
             this.eventManager.setEventMode(true);
         } else if (mode === 'light') {
             this.lightManager.setLightMode(true);
+            // P12: в режиме света карта обязана показывать затемнение —
+            // включаем плейтест-превью, если юзер не включил его сам (☀)
+            if (!this.lightManager.previewOn) {
+                this._lightAutoPreview = true;
+                this.lightManager.setPreview(true);
+            } else {
+                this._lightAutoPreview = false;
+            }
         } else if (mode === 'npc') {
             this.enemyInspectorManager.setNpcMode(true);
         } else {

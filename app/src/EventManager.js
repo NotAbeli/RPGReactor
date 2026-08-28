@@ -506,10 +506,10 @@ class EventManager {
 
         const eventAtPos = this.getEventAt(evX, evY);
 
-        // P7: инструмент «Событие» — одиночный клик по пустой клетке создаёт
-        // событие (аналог карандаша в режиме рисования). Выключается кнопкой.
+        // P7/P12: инструмент «Событие» — одиночный клик по пустой клетке
+        // ставит событие ТИХО (редактор — только по двойному клику).
         if (!eventAtPos && this.eventToolActive) {
-            this.createNewEvent(evX, evY);
+            this.createNewEvent(evX, evY, { silent: true });
             return;
         }
 
@@ -1256,8 +1256,9 @@ class EventManager {
         return newEvent;
     }
 
-    // Create new event
-    createNewEvent(x, y) {
+    // Create new event. opts.silent: place WITHOUT opening the editor —
+    // the P12 event tool places on single click; the editor opens on double.
+    createNewEvent(x, y, opts) {
         if (!this.currentMap) {
             console.warn('No map loaded');
             return null;
@@ -1318,6 +1319,14 @@ class EventManager {
         };
 
         console.log(`Created new event ${newEvent.name} at (${x}, ${y})`);
+
+        if (opts && opts.silent) {
+            // P12: тихая постановка — событие сразу на карте, редактор не открываем
+            this.saveState();
+            this.currentMap.events[newEvent.id] = newEvent;
+            this.renderEvents();
+            return newEvent;
+        }
 
         // Show edit dialog
         this.editEvent(newEvent, { isNew: true, map: this.currentMap });

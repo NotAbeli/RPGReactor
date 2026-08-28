@@ -421,11 +421,6 @@ class EnemyInspectorManager {
         const active = this._paletteTabBar('events', hostEl, () => this.buildEventsPalette(hostEl));
 
         if (active === 'templates') {
-            const hint = document.createElement('div');
-            hint.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:6px 10px 4px;';
-            hint.textContent = this._t('ctxPalette.etHint', 'Клик по шаблону, затем по пустой клетке карты. ПКМ по событию — сохранить как шаблон.');
-            hostEl.appendChild(hint);
-
             const tpls = this.getEventTemplates();
             if (!tpls.length) {
                 const empty = document.createElement('div');
@@ -487,11 +482,6 @@ class EnemyInspectorManager {
         }
 
         // --- Вкладка «На карте» ---
-        const evHint = document.createElement('div');
-        evHint.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:6px 10px;border-bottom:1px solid var(--color-border);';
-        evHint.textContent = this._t('ctxPalette.eventsHint', 'Клик — выбрать событие · двойной клик — редактор · ПКМ — в шаблоны');
-        hostEl.appendChild(evHint);
-
         const events = (this.currentMap && this.currentMap.events) ? this.currentMap.events.filter(e => e) : [];
         if (!events.length) {
             const empty = document.createElement('div');
@@ -574,11 +564,6 @@ class EnemyInspectorManager {
         const active = this._paletteTabBar('light', hostEl, () => this.buildLightsPalette(hostEl));
 
         if (active === 'templates') {
-            const libHint = document.createElement('div');
-            libHint.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:6px 10px 4px;';
-            libHint.textContent = this._t('ctxPalette.lightLibHint', 'Клик по шаблону, затем по карте. ⭐ на источнике — сохранить как шаблон.');
-            hostEl.appendChild(libHint);
-
             const library = (this._getLightLibrary && this._getLightLibrary()) || [];
             if (!library.length) {
                 const empty = document.createElement('div');
@@ -613,11 +598,6 @@ class EnemyInspectorManager {
         }
 
         // --- Вкладка «На карте» ---
-        const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:6px 10px;border-bottom:1px solid var(--color-border);';
-        hint.textContent = this._t('ctxPalette.lightsHint', 'Клик — выбрать · ⭐ — сохранить как шаблон');
-        hostEl.appendChild(hint);
-
         const lights = (this._getLights && this._getLights()) || [];
         if (!lights.length) {
             const empty = document.createElement('div');
@@ -682,11 +662,6 @@ class EnemyInspectorManager {
             this._appendEnemyTemplateGrid(hostEl, () => this.buildSidebarPalette(hostEl));
             return;
         }
-
-        const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:10px;color:var(--color-text-muted);padding:6px 10px;border-bottom:1px solid var(--color-border);';
-        hint.textContent = this._t('ctxPalette.enemiesHint', 'Клик — выбрать врага на карте');
-        hostEl.appendChild(hint);
 
         const stubs = this.getEnemyStubs();
         if (!stubs.length) {
@@ -849,7 +824,6 @@ class EnemyInspectorManager {
         try { if (tpl.stateGraphics) gfx = JSON.parse(tpl.stateGraphics) || {}; } catch (e) { gfx = {}; }
         try { if (tpl.stateSounds) snd = JSON.parse(tpl.stateSounds) || {}; } catch (e) { snd = {}; }
         let html = this._sec(this._t('npcPanel.states', 'Состояния'));
-        html += `<div style="font-size:10px;color:var(--color-text-muted);margin-bottom:2px;">${this._t('npcPanel.statesHint', 'Пусто = основной спрайт. Звук играется на входе состояния.')}</div>`;
         for (const [key, label] of this._statesList()) {
             const g = gfx[key] || {};
             const gLabel = g.name ? (String(g.name) + '#' + (Number(g.index) || 0)) : '—';
@@ -912,12 +886,11 @@ class EnemyInspectorManager {
         if (weapons.length) {
             const fearedSet = new Set(String(tpl.fearedWeapons || '').split(',')
                 .map(s => Number(s.trim())).filter(n => n > 0));
-            left += `<div style="font-size:10.5px;color:var(--color-text-dim);margin:5px 0 2px;">${this._t('npcPanel.fear', 'Боится оружия (паника/бегство от выбранных):')}</div>`;
+            left += `<div style="font-size:10.5px;color:var(--color-text-dim);margin:5px 0 2px;">${this._t('npcPanel.fear', 'Боится оружия:')}</div>`;
             for (const w of weapons) {
                 left += this._chkFeared(w.varValue, fearedSet.has(w.varValue),
                     (w.name || 'var ' + w.varValue) + ' <span style="color:var(--color-text-dim);">· var ' + w.varValue + '</span>');
             }
-            left += `<div style="font-size:10px;color:var(--color-text-muted);margin-top:2px;">${this._t('npcPanel.fearHint', 'Ни один не выбран — действует глобальное условие оружия.')}</div>`;
         }
 
         left += this._sec(this._t('npcPanel.abilities', 'Способности'));
@@ -1031,7 +1004,6 @@ class EnemyInspectorManager {
         const weapons = this.getWeapons();
         let html = '';
         if (weapons.length) {
-            html += `<div style="font-size:10px;color:var(--color-text-muted);margin-bottom:2px;">${this._t('npcPanel.dmgHint', 'База урона — из Арсенала. Измени значение — оно станет личным для этого врага.')}</div>`;
             for (const w of weapons) {
                 const v = String(w.varValue);
                 const effective = (overrides[v] !== undefined) ? overrides[v] : (w.damage !== undefined ? w.damage : '');
