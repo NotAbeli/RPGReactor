@@ -144,8 +144,13 @@ test('панель: рендерится без throw, несёт секции �
     }
     // P3: мусор убран — секции «Карточка» и «От чего зависит» больше нет
     assert.ok(!html.includes('От чего зависит'), 'deps section removed');
-    // P3: двухколоночная компоновка без скролла
-    assert.ok(html.includes('display:grid;grid-template-columns:1fr 1fr') || eim.panelEl.innerHTML.includes('grid-template-columns:1fr 1fr'), 'two-column grid');
+    // P3: двухколоночная компоновка + нижняя полоса, без скролла
+    assert.ok(html.includes('grid-template-columns:1fr 1fr'), 'two-column grid');
+    assert.ok(html.includes('grid-column:1 / -1'), 'full-width bottom strip');
+    // P3b: спрайт без превью — пикер «…» вместо индекса
+    assert.ok(html.includes('data-eim-act="pick-sprite"'), 'sprite picker button');
+    assert.ok(!html.includes('data-eim-preview'), 'preview image removed');
+    assert.ok(!html.includes('data-eim-card="spriteIndex"'), 'index input removed (picker sets it)');
     // S52: характер-селект пишет в карточку
     assert.ok(html.includes('aggressive') && html.includes('peaceful'), 'disposition select options');
     assert.ok(html.includes('canPanic') && html.includes('canFlee') && html.includes('rememberGun'), 'ability checkboxes');

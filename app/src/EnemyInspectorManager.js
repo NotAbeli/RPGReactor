@@ -267,8 +267,10 @@ class EnemyInspectorManager {
         const wrap = document.createElement('div');
         wrap.id = 'eim-panel';
         wrap.className = 'eim-panel';
-        // P3: 620px, две колонки, без скролла — панель показывается целиком.
-        wrap.style.cssText = 'display:none;flex-direction:column;width:620px;position:absolute;top:8px;right:48px;z-index:9000;background:var(--color-bg-panel);border:1px solid var(--color-border);box-shadow:var(--shadow-popup, -2px 2px 8px rgba(0,0,0,0.3));';
+        // P3: 620px, две колонки + нижняя полоса, без скролла — панель
+        // показывается целиком; на узком контейнере сжимается, не вылезая
+        // за левый край экрана.
+        wrap.style.cssText = 'display:none;flex-direction:column;width:620px;max-width:calc(100% - 64px);position:absolute;top:8px;right:48px;z-index:9000;background:var(--color-bg-panel);border:1px solid var(--color-border);box-shadow:var(--shadow-popup, -2px 2px 8px rgba(0,0,0,0.3));';
         const host = document.getElementById('canvas-container') || document.body;
         host.appendChild(wrap);
         this.panelEl = wrap;
@@ -320,12 +322,12 @@ class EnemyInspectorManager {
     }
 
     _sec(title) {
-        return `<div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--color-text-dim);margin:12px 0 6px;">${title}</div>`;
+        return `<div style="font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--color-text-dim);margin:7px 0 4px;">${title}</div>`;
     }
 
     _row(label, inner) {
-        return `<div style="display:flex;align-items:center;gap:6px;margin:3px 0;">
-            <span style="flex:none;width:130px;color:var(--color-text-dim);">${label}</span>
+        return `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">
+            <span style="flex:none;width:118px;color:var(--color-text-dim);">${label}</span>
             <span style="flex:1;min-width:0;">${inner}</span></div>`;
     }
 
@@ -386,12 +388,13 @@ class EnemyInspectorManager {
         left += `</div>`;
 
         left += this._sec(this._t('npcPanel.visual', 'Визуал'));
-        left += `<div style="margin:4px 0;"><img data-eim-preview src="${this._spriteUrl(tpl.spriteName)}" alt="" style="image-rendering:pixelated;max-width:100%;max-height:110px;display:${tpl.spriteName ? 'block' : 'none'};border:1px solid var(--color-border);"></div>`;
-        left += this._row(this._t('npcPanel.sprite', 'Спрайт'), this._inp('spriteName', tpl.spriteName));
-        left += `<div style="display:grid;grid-template-columns:70px 1fr;gap:0 10px;">`;
-        left += this._row(this._t('npcPanel.spriteIdx', 'Индекс'), this._inp('spriteIndex', tpl.spriteIndex, 'number'));
+        // P3b: без превью; файл и ячейка выбираются двухшаговым пикером (как в Спрайтере)
+        left += `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">
+            <span style="flex:none;width:118px;color:var(--color-text-dim);">${this._t('npcPanel.sprite', 'Спрайт')}</span>
+            <input data-eim-card="spriteName" type="text" value="${String(tpl.spriteName || '').replace(/"/g, '&quot;')}" style="flex:1;min-width:0;box-sizing:border-box;" placeholder="img/characters">
+            <button class="agonia-btn" data-eim-act="pick-sprite" title="${this._t('npcPanel.pickSprite', 'Выбрать файл и ячейку персонажа')}" style="flex:none;padding:2px 9px;">…</button>
+        </div>`;
         left += this._row('Коллайдер', this._inp('collider', tpl.collider));
-        left += `</div>`;
 
         // --- Правая колонка: как дерётся ---
         let right = '';
@@ -412,17 +415,40 @@ class EnemyInspectorManager {
         right += this._sec(this._t('npcPanel.damage', 'Урон по врагу'));
         right += this._damageTableHtml(tpl);
 
-        right += this._sec(this._t('npcPanel.flags', 'Флаги ИИ (какие есть)'));
-        right += this._flagsReferenceHtml(tpl);
+        // --- Нижняя полоса на всю ширину: справочник флагов | карта и постановка ---
+        let bottom = `<div style="grid-column:1 / -1;display:grid;grid-template-columns:1fr 1fr;gap:0 16px;border-top:1px solid var(--color-border);margin-top:4px;padding-top:2px;">`;
+        bottom += `<div>`;
+        bottom += this._sec(this._t('npcPanel.flags', 'Флаги ИИ (какие есть)'));
+        bottom += this._flagsReferenceHtml(tpl);
+        bottom += `</div><div>`;
+        bottom += this._sec(this._t('npcPanel.onMap', 'На карте'));
+        bottom += this._row(this._t('npcPanel.name', 'Имя') + ' / ID', `<code>${ev.id}</code> <input data-eim-ev="name" value="${String(ev.name || '').replace(/"/g, '&quot;')}" style="width:calc(100% - 34px);">`);
+        bottom += this._row('X / Y', `<input data-eim-ev="x" type="number" value="${ev.x}" style="width:56px;"> <input data-eim-ev="y" type="number" value="${ev.y}" style="width:56px;">`);
+        bottom += `<div style="margin:5px 0;"><button class="agonia-btn" data-eim-act="del" style="padding:2px 10px;font-size:11px;color:#ff7a7a;">✕ ${this._t('npcPanel.delete', 'Удалить врага')}</button></div>`;
+        bottom += this._templatesHtml();
+        bottom += `</div></div>`;
 
-        right += this._sec(this._t('npcPanel.onMap', 'На карте'));
-        right += this._row(this._t('npcPanel.name', 'Имя') + ' / ID', `<code>${ev.id}</code> <input data-eim-ev="name" value="${String(ev.name || '').replace(/"/g, '&quot;')}" style="width:calc(100% - 34px);">`);
-        right += this._row('X / Y', `<input data-eim-ev="x" type="number" value="${ev.x}" style="width:56px;"> <input data-eim-ev="y" type="number" value="${ev.y}" style="width:56px;">`);
-        right += `<div style="margin:6px 0;"><button class="agonia-btn" data-eim-act="del" style="padding:3px 10px;font-size:11px;color:#ff7a7a;">✕ ${this._t('npcPanel.delete', 'Удалить врага')}</button></div>`;
+        return `<div>${left}</div><div>${right}</div>${bottom}`;
+    }
 
-        right += this._templatesHtml();
-
-        return `<div>${left}</div><div>${right}</div>`;
+    /**
+     * P3b: двухшаговый пикер спрайта Спрайтера (шаг 1 — файл листа,
+     * шаг 2 — ячейка персонажа 4×2; $-листы = одна ячейка). Записывает
+     * в карточку сразу и имя файла, и индекс.
+     */
+    _pickSprite() {
+        if (typeof DatabaseSpriterEditor === 'undefined') return;
+        if (!this.selectedTemplate) return;
+        if (!this._spriterPicker) {
+            this._spriterPicker = new DatabaseSpriterEditor(this.databaseManager, this.projectController, null, null);
+        }
+        const cur = String(this.selectedTemplate.spriteName || '');
+        this._spriterPicker._showFilePicker(cur, (name, index) => {
+            this._saveCard(this.selectedTemplate.match, 'spriteName', name);
+            this._saveCard(this.selectedTemplate.match, 'spriteIndex', String(index !== undefined ? index : 0));
+            const inp = this.panelEl && this.panelEl.querySelector('[data-eim-card="spriteName"]');
+            if (inp) inp.value = name;
+        }, 'characters', { pickCharacterIndex: true });
     }
 
     _chkFeared(varValue, checked, label) {
@@ -518,28 +544,6 @@ class EnemyInspectorManager {
         return html;
     }
 
-    _spriteUrl(name) {
-        if (!name) return '';
-        try {
-            if (typeof RRAssetFiles === 'undefined') return '';
-            const proj = this.projectController && this.projectController.getCurrentProject();
-            if (!proj || !proj.path) return '';
-            const path = this._req('path');
-            if (!path) return '';
-            return RRAssetFiles.toUrl(path.join(proj.path, 'img', 'characters', name + '.png'));
-        } catch (e) {
-            return '';
-        }
-    }
-
-    _req(name) {
-        try {
-            if (typeof require === 'function') return require(name);
-            if (typeof window !== 'undefined' && typeof window.require === 'function') return window.require(name);
-        } catch (e) { /* not in NW/node */ }
-        return null;
-    }
-
     // ------------------------------------------------------------------
     // Правки: карточка (БД, глобально) и событие (карта)
     // ------------------------------------------------------------------
@@ -621,6 +625,7 @@ class EnemyInspectorManager {
                     const r = (typeof window !== 'undefined' && window.reactor) ? window.reactor : null;
                     if (r && r.openDatabase) r.openDatabase('enemyAI');
                 } else if (a === 'del') this._deleteSelected();
+                else if (a === 'pick-sprite') this._pickSprite();
             });
         });
         el.querySelectorAll('[data-eim-card]').forEach(inp => {
@@ -629,10 +634,6 @@ class EnemyInspectorManager {
                 const key = inp.dataset.eimCard;
                 const value = inp.type === 'checkbox' ? (inp.checked ? 'true' : 'false') : inp.value;
                 this._saveCard(this.selectedTemplate.match, key, value);
-                if (key === 'spriteName' || key === 'spriteIndex') {
-                    const img = el.querySelector('[data-eim-preview]');
-                    if (img && key === 'spriteName') { img.src = this._spriteUrl(value); img.style.display = value ? 'block' : 'none'; }
-                }
             });
         });
         el.querySelectorAll('[data-eim-ev]').forEach(inp => {
