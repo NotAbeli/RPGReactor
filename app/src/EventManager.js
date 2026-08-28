@@ -473,9 +473,9 @@ class EventManager {
         const isDoubleClick = currentTime - this._lastMapClickTime < 300 &&
             this._lastMapClickX === tileX && this._lastMapClickY === tileY;
 
-        // P8/P9: взведённая постановка из палитры шаблонов. Враг — заглушка
-        // на карте; общее событие — событие с командой вызова. Проверка ДО
-        // ветки двойного клика — защита от случайного редактора.
+        // P8/P10: взведённая постановка из палитры шаблонов. Враг — заглушка
+        // на карте; шаблон события — копия с новым id. Проверка ДО ветки
+        // двойного клика — защита от случайного редактора.
         if (!this.getEventAt(evX, evY) && this._getArmedEnemyTemplate && this._getArmedEnemyTemplate()) {
             const tpl = this._getArmedEnemyTemplate();
             this.resetMapClickTracking();
@@ -483,11 +483,11 @@ class EventManager {
             if (placed && this._disarmEnemyTemplate) this._disarmEnemyTemplate();
             return;
         }
-        if (!this.getEventAt(evX, evY) && this._getArmedCommonEvent && this._getArmedCommonEvent()) {
-            const ce = this._getArmedCommonEvent();
+        if (!this.getEventAt(evX, evY) && this._getArmedEventTemplate && this._getArmedEventTemplate()) {
+            const tpl = this._getArmedEventTemplate();
             this.resetMapClickTracking();
-            const created = this.createCommonEventStub(evX, evY, ce);
-            if (created && this._disarmCommonEvent) this._disarmCommonEvent();
+            const placed = this.placeEventFromTemplate(tpl, tileX, tileY);
+            if (placed && this._disarmEventTemplate) this._disarmEventTemplate();
             return;
         }
 
@@ -657,6 +657,7 @@ class EventManager {
             { separator: true },
             { label: this._t('eventCtx.cutEvent'), action: () => this.cutEvent(eventAtPos), enabled: !!eventAtPos },
             { label: this._t('eventCtx.copyEvent'), action: () => this.copyEvent(eventAtPos), enabled: !!eventAtPos },
+            { label: this._t('eventCtx.saveTemplate'), action: () => this.saveEventAsTemplate(eventAtPos), enabled: !!eventAtPos },
             { label: this._t('eventCtx.pasteEvent'), action: () => this.pasteEvent(tileX, tileY), enabled: true },
             { label: this._t('eventCtx.deleteEvent'), action: () => this.deleteEvent(eventAtPos), enabled: !!eventAtPos },
             { separator: true },
@@ -1402,52 +1403,38 @@ class EventManager {
         return ev;
     }
 
+
+
     /**
-     * P9: событие-заглушка из общего события — одна страница с командой
-     * вызова общего события (117). Имя — «CE имя».
+     * P10: поставить копию события из шаблона (сохранённого через ПКМ).
+     * Глубокая копия с новым id на заданной позиции.
      */
-    createCommonEventStub(x, y, ce) {
-        if (!this.currentMap) return null;
+    placeEventFromTemplate(tpl, x, y) {
+        if (!this.currentMap || !tpl || !tpl.event) return null;
         if (x < 0 || x >= this.currentMap.width || y < 0 || y >= this.currentMap.height) return null;
         if (this.getEventAt(x, y)) return null;
 
         this.saveState();
         const nextId = this.getNextEventId();
-        const ceId = Number(ce.id) || 0;
-        const ev = {
-            id: nextId,
-            name: 'CE ' + (ce.name || ceId),
-            note: '',
-            pages: [{
-                conditions: {
-                    actorId: 1, actorValid: false, itemId: 1, itemValid: false,
-                    selfSwitchCh: 'A', selfSwitchValid: false,
-                    switch1Id: 1, switch1Valid: false, switch2Id: 1, switch2Valid: false,
-                    variableId: 1, variableValid: false, variableValue: 0
-                },
-                directionFix: false,
-                image: { tileId: 0, characterName: '', direction: 2, pattern: 0, characterIndex: 0 },
-                moveFrequency: 3,
-                moveRoute: { list: [{ code: 0, indent: null, parameters: [] }], repeat: true, skippable: false, wait: false },
-                moveSpeed: 3,
-                moveType: 0,
-                priorityType: this.getActiveEventPriority(),
-                stepAnime: false,
-                through: false,
-                trigger: 0,
-                walkAnime: true,
-                list: [
-                    { code: 117, indent: 0, parameters: [ceId] },
-                    { code: 0, indent: 0, parameters: [] }
-                ]
-            }],
-            x: x,
-            y: y
-        };
+        const ev = JSON.parse(JSON.stringify(tpl.event));
+        delete ev.cut;
+        ev.id = nextId;
+        ev.x = x;
+        ev.y = y;
         this.currentMap.events[nextId] = ev;
         this.renderEvents();
-        console.log(`Common-event stub '${ev.name}' placed at (${x}, ${y})`);
+        console.log(`Event from template '${tpl.name}' placed at (${x}, ${y})`);
         return ev;
+    }
+
+    /**
+     * P10: сохранить событие как шаблон (ПКМ). Копия уходит в стор
+     * AgoniaEngine.json['eventTemplates'] через инспектор/хук.
+     */
+    saveEventAsTemplate(ev) {
+        if (!ev) return null;
+        if (this._saveEventTemplate) return this._saveEventTemplate(ev);
+        return null;
     }
 
     // Setup event editor modal

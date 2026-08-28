@@ -258,12 +258,24 @@ class RPGReactor {
                     this.lightManager._pendingTemplate = tpl;
                     this.lightManager.enterPlacement();
                 };
+                // P10: ⭐ на строке источника — сохранить как шаблон (авто-имя)
+                this.enemyInspectorManager._onSaveLightTemplate = (L) => {
+                    if (!this.lightManager || typeof this.lightManager.saveTemplate !== 'function') return;
+                    const p = L.props || {};
+                    const base = (p.type === 'Flashlight' ? 'Фонарь ' : 'Свет ')
+                        + String(p.color || '#ffffff') + ' ' + (p.radius || '?');
+                    let name = base;
+                    let n = 2;
+                    const lib = this.lightManager.getLibrary() || [];
+                    while (lib.some(t => t && t.name === name)) name = base + ' ' + n++;
+                    this.lightManager.saveTemplate(name, p);
+                };
             }
             this.enemyInspectorManager.setTilemapManager(this.projectController.getTilemapManager());
             this.enemyInspectorManager.setCurrentMap(lmMap);
-            // P8/P9: постановка шаблонов прямо в режиме событий — враги и
-            // общие события. EventManager консультирует взвод и снимает
-            // после постановки, перестраивая палитру.
+            // P8/P10: постановка шаблонов прямо в режиме событий — враги и
+            // сохранённые события. EventManager консультирует взвод и
+            // снимает после постановки, перестраивая палитру.
             if (this.eventManager) {
                 this.eventManager._getArmedEnemyTemplate = () =>
                     (this.enemyInspectorManager && this.enemyInspectorManager.placementTemplate) || null;
@@ -272,12 +284,18 @@ class RPGReactor {
                     this.enemyInspectorManager.placementTemplate = null;
                     this._rebuildContextPalette();
                 };
-                this.eventManager._getArmedCommonEvent = () =>
-                    (this.enemyInspectorManager && this.enemyInspectorManager.armedCommonEvent) || null;
-                this.eventManager._disarmCommonEvent = () => {
+                this.eventManager._getArmedEventTemplate = () =>
+                    (this.enemyInspectorManager && this.enemyInspectorManager.armedEventTemplate) || null;
+                this.eventManager._disarmEventTemplate = () => {
                     if (!this.enemyInspectorManager) return;
-                    this.enemyInspectorManager.armedCommonEvent = null;
+                    this.enemyInspectorManager.armedEventTemplate = null;
                     this._rebuildContextPalette();
+                };
+                this.eventManager._saveEventTemplate = (ev) => {
+                    if (!this.enemyInspectorManager) return null;
+                    const rec = this.enemyInspectorManager.saveEventTemplate(ev.name || ('EV' + ev.id), ev);
+                    if (rec) this._rebuildContextPalette();
+                    return rec;
                 };
             }
 

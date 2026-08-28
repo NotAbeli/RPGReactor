@@ -207,7 +207,7 @@ test('P8: взведённый вид врага — клик по пустой 
     assert.strictEqual(stubs.length, 1, 'no extra stubs');
 });
 
-test('P9: взведённое общее событие — клик по пустой клетке создаёт событие с вызовом', () => {
+test('P10: взведённый шаблон события — клик по пустой клетке ставит копию', () => {
     const EventManager = loadEventManager();
     const em = new EventManager({}, {});
     const tm = makeTilemapManager();
@@ -216,13 +216,17 @@ test('P9: взведённое общее событие — клик по пу�
     em.eventMode = true;
     let created = null;
     em.editEvent = ev => { created = ev; };
-    const ceStubs = [];
-    em.createCommonEventStub = (x, y, ce) => { const ev = { id: 60, name: 'CE ' + ce.name, x, y,
-        pages: [{ list: [{ code: 117, indent: 0, parameters: [Number(ce.id)] }] }] }; ceStubs.push(ev); return ev; };
-    let armed = { id: 5, name: 'Проверка' };
-    em._getArmedCommonEvent = () => armed;
+    const placed = [];
+    em.placeEventFromTemplate = (tpl, x, y) => {
+        const ev = JSON.parse(JSON.stringify(tpl.event));
+        ev.id = 60; ev.x = x; ev.y = y;
+        placed.push(ev);
+        return ev;
+    };
+    let armed = { name: 'Сундук', event: { id: 5, name: 'Сундук', pages: [{ list: [{ code: 101, parameters: ['текст'] }] }] } };
+    em._getArmedEventTemplate = () => armed;
     let disarmed = 0;
-    em._disarmCommonEvent = () => { armed = null; disarmed++; };
+    em._disarmEventTemplate = () => { armed = null; disarmed++; };
 
     const click = (x, y) => em.handleMapPointerDown({
         data: { button: 0, originalEvent: {}, getLocalPosition: () => ({ x: (x + 0.5) * 48, y: (y + 0.5) * 48 }) }
@@ -230,14 +234,35 @@ test('P9: взведённое общее событие — клик по пу�
 
     click(7, 4);
     assert.strictEqual(created, null, 'no regular event created');
-    assert.strictEqual(ceStubs.length, 1, 'common-event stub placed');
-    assert.strictEqual(ceStubs[0].pages[0].list[0].code, 117, 'page carries the call command');
-    assert.deepStrictEqual(ceStubs[0].pages[0].list[0].parameters, [5], 'common event id wired');
+    assert.strictEqual(placed.length, 1, 'template copy placed');
+    assert.strictEqual(placed[0].name, 'Сундук', 'copy carries the template data');
+    assert.ok(placed[0].pages[0].list[0].code === 101, 'pages deep-copied');
     assert.strictEqual(disarmed, 1, 'disarmed after placing');
 
     // после снятия — обычное создание
     armed = null;
     click(9, 9);
     assert.ok(created && created.x === 9, 'regular creation resumes');
-    assert.strictEqual(ceStubs.length, 1, 'no extra CE stubs');
+    assert.strictEqual(placed.length, 1, 'no extra template copies');
+});
+
+test('P10: placeEventFromTemplate — копия с новым id, saveEventAsTemplate через хук', () => {
+    const EventManager = loadEventManager();
+    const em = new EventManager({}, {});
+    const tm = makeTilemapManager();
+    em.initializeEventLayer(tm);
+    em.currentMap = { id: 45, width: 40, height: 30, events: [null] };
+    let savedTo = null;
+    em._saveEventTemplate = ev => { savedTo = ev; return { name: ev.name, event: JSON.parse(JSON.stringify(ev)) }; };
+
+    // ПКМ-экшн: сохранить событие как шаблон
+    const rec = em.saveEventAsTemplate({ id: 3, name: 'Люк', x: 1, y: 1, pages: [] });
+    assert.ok(savedTo && savedTo.name === 'Люк', 'hook received the event');
+    assert.ok(rec && rec.name === 'Люк', 'record returned');
+
+    // постановка: глубокая копия, id переназначен
+    const placed = em.placeEventFromTemplate(rec, 8, 8);
+    assert.ok(placed && placed.id !== 3, 'new id assigned');
+    assert.strictEqual(placed.x, 8, 'position applied');
+    assert.strictEqual(em.currentMap.events[placed.id], placed, 'added to the map');
 });

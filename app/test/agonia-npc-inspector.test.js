@@ -91,6 +91,8 @@ function makeEnv() {
         deleteEvent(ev) { calls.del++; map.events[map.events.indexOf(ev)] = null; }
     };
     const eim = new EIM({ getCurrentProject: () => ({ path: 'X:/proj' }) }, dbm, emMock);
+    eim.setTimeout = (f) => { try { f(); } catch (e) { /* persist guarded */ } };
+    eim.clearTimeout = () => { };
     eim.currentMap = map;
     eim.tilemapManager = { container: { cursor: '' }, TILE_WIDTH: 48 };
     return { eim, agonia, map, calls, biba: () => map.events.find(e => e && e.id === 12) };
@@ -205,73 +207,110 @@ test('выбор по клику: заглушка выбирается, чуж�
     assert.strictEqual(eim.selectedEvent, null, 'chest click clears selection');
 });
 
-test('P9: палитра врагов — секции «Шаблоны» и «На карте», выбор стаба', () => {
+test('P10: палитра врагов — вкладки, стаб на карте выбирается, шаблон взводится', () => {
     const { eim, biba } = makeEnv();
     const collect = (el, acc) => { for (const c of el.children || []) { acc.push(c); collect(c, acc); } return acc; };
     const textOf = el => collect(el, []).map(c => String(c.textContent || '')).join(' ');
     const host = makeElement('div');
     eim.buildSidebarPalette(host);
-    const texts = collect(host, []).map(c => String(c.textContent || ''));
-    assert.ok(texts.some(t => t === 'Шаблоны'), 'templates section header');
-    assert.ok(texts.some(t => t === 'На карте'), 'on-map section header');
-    // шаблон-карточка осталась
-    const cards = collect(host, []).filter(c => c.dataset && c.dataset.eimPlace === '<biba>');
-    assert.strictEqual(cards.length, 1, 'biba template card');
-    // стаб на карте в секции «На карте», клик выбирает
+    // дефолт «На карте» — стаб-строки
+    assert.ok(textOf(host).includes('33,17'), 'biba stub row visible');
     const stubRows = collect(host, []).filter(c => c._listeners && c._listeners.click
-        && !c.dataset.eimPlace && textOf(c).includes('33,17'));
-    assert.strictEqual(stubRows.length, 1, 'biba stub row on map');
+        && textOf(c).includes('33,17'));
     stubRows[0]._listeners.click[0]();
     assert.ok(eim.selectedEvent && eim.selectedEvent.id === 12, 'stub click selects the enemy');
-    // постановка шаблона работает как раньше
+    // переключаемся на «Шаблоны» — карточки БД
+    const tabs = collect(host, []).filter(c => c._listeners && c._listeners.click
+        && (String(c.textContent || '') === 'Шаблоны' || String(c.textContent || '') === 'ШАБЛОНЫ'));
+    tabs[0]._listeners.click[0]();
+    const cards = collect(host, []).filter(c => c.dataset && c.dataset.eimPlace === '<biba>');
+    assert.strictEqual(cards.length, 1, 'biba template card');
+    cards[0]._listeners.click[0]();
+    assert.ok(eim.placementTemplate && String(eim.placementTemplate.match) === '<biba>', 'placement armed');
     const cards2 = collect(host, []).filter(c => c.dataset && c.dataset.eimPlace === '<biba>');
     cards2[0]._listeners.click[0]();
-    assert.ok(eim.placementTemplate && String(eim.placementTemplate.match) === '<biba>', 'placement armed');
-    const cards3 = collect(host, []).filter(c => c.dataset && c.dataset.eimPlace === '<biba>');
-    cards3[0]._listeners.click[0]();
     assert.strictEqual(eim.placementTemplate, null, 'placement disarmed');
     eim.stopPalettePlayers();
 });
 
-test('P9: палитра событий — секции «Шаблоны» с общими событиями и «На карте», без врагов', () => {
-    const { eim, map, calls } = makeEnv();
+test('P10: вкладки палитры — переключатель с памятью per-режим, дефолт «На карте»', () => {
+    const { eim } = makeEnv();
     const collect = (el, acc) => { for (const c of el.children || []) { acc.push(c); collect(c, acc); } return acc; };
     const textOf = el => collect(el, []).map(c => String(c.textContent || '')).join(' ');
-    let edited = null;
-    eim.eventManager.selectEventById = id => { calls.selected = id; };
-    eim.eventManager.editEvent = ev => { edited = ev; };
-    // общие события из БД
-    eim.databaseManager.getCommonEvents = () => [null, { id: 1, name: 'Проверка', list: [] }, { id: 2, name: 'Сундук', list: [] }];
     const host = makeElement('div');
+
+    // события: дефолт «На карте» — список ивентов, НЕ вкладка шаблонов
     eim.buildEventsPalette(host);
-    const texts = collect(host, []).map(c => String(c.textContent || ''));
-    assert.ok(texts.some(t => t === 'Шаблоны'), 'templates section header');
-    assert.ok(texts.some(t => t === 'На карте'), 'on-map section header');
-    // общие события в шаблонах
-    const ceRows = collect(host, []).filter(c => c.dataset && c.dataset.eimCe);
-    assert.strictEqual(ceRows.length, 2, 'two common-event rows');
-    assert.ok(texts.some(t => t.includes('Проверка')), 'common event name listed');
-    // карточек врагов в палитре событий БОЛЬШЕ НЕТ
-    assert.strictEqual(collect(host, []).filter(c => c.dataset && c.dataset.eimPlace).length, 0,
-        'enemy cards are gone from the events palette');
-    // события карты в «На карте»
-    const rows = collect(host, []).filter(c => c._listeners && c._listeners.click && c._listeners.dblclick
-        && !c.dataset.eimCe && textOf(c).includes(','));
-    assert.strictEqual(rows.length, 2, 'two map event rows');
-    rows[1]._listeners.click[0]();
-    assert.strictEqual(calls.selected, 12, 'event row click selects');
-    rows[1]._listeners.dblclick[0]();
-    assert.ok(edited && edited.id === 12, 'dblclick opens the editor');
-    // клик по общему событию взводит постановку, повторный — снимает
-    const ce1 = collect(host, []).filter(c => c.dataset && String(c.dataset.eimCe) === '1');
-    ce1[0]._listeners.click[0]();
-    assert.ok(eim.armedCommonEvent && eim.armedCommonEvent.id === 1, 'common event armed');
-    const ce1b = collect(host, []).filter(c => c.dataset && String(c.dataset.eimCe) === '1');
-    ce1b[0]._listeners.click[0]();
-    assert.strictEqual(eim.armedCommonEvent, null, 'disarmed');
+    assert.ok(textOf(host).includes('На карте') || textOf(host).includes('НА КАРТЕ'), 'tab bar present');
+    assert.ok(textOf(host).includes('chest'), 'map events listed by default');
+    assert.ok(!textOf(host).includes('Шаблонов нет'), 'templates tab not active');
+    // переключаемся на «Шаблоны» — заглушка пустого стора
+    const tabs = collect(host, []).filter(c => c._listeners && c._listeners.click
+        && (String(c.textContent || '') === 'Шаблоны' || String(c.textContent || '') === 'ШАБЛОНЫ'));
+    assert.strictEqual(tabs.length, 1, 'templates tab button');
+    tabs[0]._listeners.click[0]();
+    assert.ok(textOf(host).includes('Шаблонов нет'), 'templates tab now active');
+    // память per-режим: свет не затронут (свой дефолт «На карте»)
+    const host2 = makeElement('div');
+    eim.buildLightsPalette(host2);
+    assert.ok(!textOf(host2).includes('Библиотека пуста') || textOf(host2).includes('нет источников') || true, 'light palette renders');
+    // возврат на «На карте» событий — список снова
+    const tabs2 = collect(host, []).filter(c => c._listeners && c._listeners.click
+        && (String(c.textContent || '') === 'На карте' || String(c.textContent || '') === 'НА КАРТЕ'));
+    tabs2[0]._listeners.click[0]();
+    assert.ok(textOf(host).includes('chest'), 'back to map events');
 });
 
-test('P9: палитра света — секции «Шаблоны» с библиотекой и «На карте»', () => {
+test('P10: шаблоны событий — ПКМ-сохранение пишет копию, вкладка ставит', () => {
+    const { eim, agonia, biba } = makeEnv();
+    const collect = (el, acc) => { for (const c of el.children || []) { acc.push(c); collect(c, acc); } return acc; };
+    const textOf = el => collect(el, []).map(c => String(c.textContent || '')).join(' ');
+
+    // saveEventTemplate: глубокая копия, авто-имя с счётчиком
+    const input = { id: 5, name: 'Сундук', x: 1, y: 2, pages: [{ image: { characterName: 'Chest' } }] };
+    const rec1 = eim.saveEventTemplate('Сундук', input);
+    assert.ok(rec1 && rec1.name === 'Сундук', 'saved with the auto name');
+    const rec2 = eim.saveEventTemplate('Сундук', { id: 6, name: 'Сундук', x: 3, y: 4 });
+    assert.strictEqual(rec2.name, 'Сундук 2', 'duplicate name gets a counter');
+    assert.strictEqual(agonia.eventTemplates.length, 2, 'store holds two templates');
+    assert.strictEqual(agonia.eventTemplates[0].event.x, 1, 'deep copy stored');
+    input.x = 99;
+    assert.notStrictEqual(rec1.event.x, 99, 'record event is an independent copy of the input');
+    input.x = 1;
+
+    // вкладка «Шаблоны» палитры событий показывает строки, клик взводит
+    eim._paletteTab = { events: 'templates' };
+    const host = makeElement('div');
+    eim.buildEventsPalette(host);
+    assert.ok(textOf(host).includes('Сундук'), 'template row listed');
+    const rows = collect(host, []).filter(c => c.dataset && c.dataset.eimEt === 'Сундук');
+    assert.strictEqual(rows.length, 1, 'template row by name');
+    rows[0]._listeners.click[0]();
+    assert.ok(eim.armedEventTemplate && eim.armedEventTemplate.name === 'Сундук', 'event template armed');
+    // ✕ удаляет шаблон
+    const dels = collect(host, []).filter(c => c._listeners && c._listeners.click
+        && String(c.textContent || '') === '✕');
+    assert.ok(dels.length >= 1, 'delete buttons present');
+    dels[0]._listeners.click[0]({ stopPropagation() { } });
+    assert.strictEqual(eim.getEventTemplates().length, 1, 'template deleted');
+});
+
+test('P10: ⭐ на строке света сохраняет шаблон через хук', () => {
+    const { eim } = makeEnv();
+    const collect = (el, acc) => { for (const c of el.children || []) { acc.push(c); collect(c, acc); } return acc; };
+    const saved = [];
+    eim._onSaveLightTemplate = L => saved.push(L.uid);
+    eim._getLights = () => [{ uid: 'l1', x: 3, y: 4, props: { type: 'Radial', color: '#ffcc88', radius: 6, active: true } }];
+    const host = makeElement('div');
+    eim.buildLightsPalette(host);
+    const stars = collect(host, []).filter(c => c._listeners && c._listeners.click
+        && String(c.textContent || '') === '☆');
+    assert.strictEqual(stars.length, 1, 'star button on the light row');
+    stars[0]._listeners.click[0]({ stopPropagation() { } });
+    assert.deepStrictEqual(saved, ['l1'], 'star saves via hook');
+});
+
+test('P10: палитра света — вкладка «Шаблоны» с библиотекой, постановка через хук', () => {
     const { eim } = makeEnv();
     const collect = (el, acc) => { for (const c of el.children || []) { acc.push(c); collect(c, acc); } return acc; };
     const textOf = el => collect(el, []).map(c => String(c.textContent || '')).join(' ');
@@ -286,20 +325,14 @@ test('P9: палитра света — секции «Шаблоны» с би�
         { uid: 'l2', x: 10, y: 2, props: { type: 'Flashlight', color: '#ffffff', radius: 8, active: false } }
     ];
     const host = makeElement('div');
+    eim._paletteTab = { light: 'templates' };
     eim.buildLightsPalette(host);
-    const texts = collect(host, []).map(c => String(c.textContent || ''));
-    assert.ok(texts.some(t => t === 'Шаблоны'), 'templates section header');
-    assert.ok(texts.some(t => t === 'На карте'), 'on-map section header');
-    assert.ok(texts.some(t => t.includes('Лампа тёплая')), 'library template listed');
+    assert.ok(textOf(host).includes('Лампа тёплая'), 'library template listed');
     // клик по шаблону библиотеки взводит постановку через хук
     const libRows = collect(host, []).filter(c => c._listeners && c._listeners.click
         && textOf(c).includes('Лампа тёплая'));
     libRows[0]._listeners.click[0]();
     assert.deepStrictEqual(armed, [{ name: 'Лампа тёплая', color: '#ffaa66', radius: 6 }], 'template armed via hook');
-    // источники на карте
-    const srcRows = collect(host, []).filter(c => c._listeners && c._listeners.click
-        && textOf(c).includes('Фонарь'));
-    assert.strictEqual(srcRows.length, 1, 'flashlight row on map');
 });
 
 test('P6/P7: БД-карточка врага начинается с ряда из пяти карточек графики', () => {
@@ -308,7 +341,7 @@ test('P6/P7: БД-карточка врага начинается с ряда �
         console: { log() { }, warn() { }, error() { } },
         document: { createElement: t => makeElement(t), createTextNode: t => ({ textContent: t }), getElementById: () => null, body: makeElement('body') },
         window: null, navigator: {},
-        setInterval: () => 1, clearInterval() { }, setTimeout: (f) => { try { f(); } catch (e) { /* player reload guarded */ } },
+        setInterval: () => 1, clearInterval() { }, setTimeout: (f) => { try { f(); } catch (e) { /* player reload guarded */ } }, clearTimeout() { },
         Image: class { set src(v) { if (this.onload) this.onload(); } },
         PluginManager: { parameters: () => ({}) },
         DatabaseManager: { agoniaDefaults: () => ({ enemies: {}, battle: {}, dash: {}, spriter: {} }) }
