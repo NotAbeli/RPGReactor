@@ -548,6 +548,8 @@ class LightManager {
         }
 
         this.tilemapManager = tilemapManager;
+        // P13: контейнер пересоздан (смена карты/проекта) — превью пересобрать
+        if (this.previewOn && this.currentMap) this.renderPreview();
     }
 
     setCurrentMap(map) {
@@ -560,6 +562,10 @@ class LightManager {
         // Canvas size changes per map → drop the stale preview sprite so it
         // rebuilds at the new dimensions.
         this._destroyPreviewSprite();
+        // P13: смена карты в режиме света/превью — маска обязана
+        // пересоздаться под новые размеры немедленно, иначе previewOn
+        // висит без спрайта и тьма пропадает до следующего toggle.
+        if (this.previewOn) this.renderPreview();
         // Wall-tile canvases are keyed by ts+softness — different maps may have
         // different sizes, so clear the cache to avoid stale mismatched tiles.
         this._wallTileCache.clear();
@@ -578,6 +584,10 @@ class LightManager {
         if (this.lightContainer) this.lightContainer.visible = enabled || this.previewOn;
         if (enabled) {
             this.setupLightInteraction();
+            // P13: восстановление после загрузки карты идёт через прямой
+            // setLightMode(true) (минуя setEditingMode) — превью обязано
+            // пересоздаться, иначе тьма пропадает до следующего toggle.
+            if (this.previewOn) this.renderPreview();
         } else {
             this.removeLightInteraction();
             if (this.selectionHighlight) this.selectionHighlight.visible = false;
