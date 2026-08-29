@@ -127,7 +127,7 @@ class DatabaseEnemiesEditor {
         form.section(this._tt('База'));
         form.fields([
             { key: 'match', label: 'match-тег', type: 'text', hint: 'тег в Note события — события с ним получают поведение' },
-            { key: 'hp', label: 'HP', type: 'slider', min: 1, max: 999, step: 1 },
+            { key: 'hp', label: 'HP', type: 'number', min: 1 },
             { key: 'id', label: 'ID', type: 'number' },
             { key: 'template', label: 'Шаблон врага', type: 'check', hint: 'карточка разворачивается в полный автомат (17 страниц) на карте' }
         ], entry, { commit: () => api.changed() });
@@ -147,14 +147,15 @@ class DatabaseEnemiesEditor {
                 { key: 'stepVolume', label: 'Громкость шагов %', type: 'number', min: 0, max: 150, hint: 'пишется в заглушку как <step_se:VOL>' }
             ], entry, { commit: () => api.changed() });
 
-            form.section(this._tt('Внешний вид'));
+            // P27: редко правимые секции сворачиваемы — карточка короче
+            form.section(this._tt('Внешний вид'), { collapsed: true });
             form.fields([
                 { key: 'spriteName', label: 'Спрайт (файл)', type: 'text', hint: 'img/characters — показывается на карте и в редакторе' },
                 { key: 'spriteIndex', label: 'Индекс персонажа', type: 'number', min: 0, max: 7 },
                 { key: 'collider', label: 'Коллайдер (XML)', type: 'text', hint: "например <circle cx='0.5' cy='0.7' r='0.25' />" }
             ], entry, { commit: () => api.changed() });
 
-            form.section(this._tt('Атаки'));
+            form.section(this._tt('Атаки'), { collapsed: true });
             form.fields([
                 { key: 'tracerId', label: 'Трассер №', type: 'number', min: 0, hint: 'карточка из Бой → Трассеры; 0 = без выстрела' },
                 { key: 'meleeId', label: 'Ближний бой №', type: 'number', min: 0, hint: 'карточка из Бой → Ближний бой' },
@@ -163,14 +164,14 @@ class DatabaseEnemiesEditor {
                 { key: 'cowerThreshold', label: 'Приседание от скольких врагов в бою', type: 'number', min: 1 }
             ], entry, { commit: () => api.changed() });
 
-            form.section(this._tt('Урон по врагу'));
+            form.section(this._tt('Урон по врагу'), { collapsed: true });
             form.fields([
                 { key: 'damageFists', label: 'Урон без оружия', type: 'number', hint: 'кулаки, когда var ГГ не совпал ни с одним оружием Арсенала' },
                 { key: 'damageSE', label: 'Звук урона', type: 'text' }
             ], entry, { commit: () => api.changed() });
         }
 
-        form.section(this._tt('Сенсоры (тайлы)'));
+        form.section(this._tt('Сенсоры (тайлы)'), { collapsed: !isTpl ? false : true });
         form.fields([
             { key: 'attackRadius', label: 'Радиус атаки', type: 'slider', min: 0, max: 15, step: 0.5, unit: 'т' },
             { key: 'calmRadius', label: 'Радиус спокойствия', type: 'slider', min: 0, max: 20, step: 0.5, unit: 'т' },
@@ -180,7 +181,7 @@ class DatabaseEnemiesEditor {
             { key: 'scope', label: 'Область видимости', type: 'slider', min: 0, max: 10, step: 1, unit: 'т' }
         ], entry, { commit: () => api.changed() });
 
-        form.section(this._tt('Паника'));
+        form.section(this._tt('Паника'), { collapsed: true });
         form.fields([
             { key: 'panicContactTime', label: 'Контакт → паника', type: 'slider', min: 0, max: 600, step: 10, unit: 'f' },
             { key: 'panicTotalTime', label: 'Полная паника', type: 'slider', min: 0, max: 600, step: 10, unit: 'f' }
@@ -188,17 +189,30 @@ class DatabaseEnemiesEditor {
 
         form.mount(formCol);
 
-        // P26: карточки-состояния — ГЛАВНЫЙ редактор графики и звука вида.
-        // Восемь состояний скелета; превью живое (геттер перечитывает
-        // stateGraphics — правки видны сразу), клик = пикер Спрайтера.
-        // Звук состояния: тип SE/BGS, файл (пикер по audio/<kind>),
-        // громкость и радиус слышимости (позиционный OcRam AEX через 728).
+        // P27: карточки-состояния — ОДНА ЛИНИЯ, карусель (стрелки листают).
+        // Звук состояния — ТОЛЬКО BGS: кнопка с именем файла открывает меню
+        // выбора музыки, там же громкость и радиус слышимости.
         if (String(entry.template) === 'true') {
             const spriter = this._spriterPicker();
             if (spriter && typeof spriter._renderPlayer === 'function') {
                 spriter._players = (spriter._players || []).filter(p => p._tag !== 'spriterForm');
-                const row = document.createElement('div');
-                row.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:4px;';
+                const wrap = document.createElement('div');
+                wrap.style.cssText = 'position:relative;margin-bottom:4px;';
+                const strip = document.createElement('div');
+                strip.style.cssText = 'display:flex;gap:10px;overflow-x:auto;scroll-behavior:smooth;padding:2px 22px 6px 2px;';
+                const navBtn = (label, css) => {
+                    const b = document.createElement('button');
+                    b.className = 'agonia-btn';
+                    b.textContent = label;
+                    b.style.cssText = 'position:absolute;top:40%;' + css + 'z-index:2;padding:4px 6px;font-size:14px;line-height:1;';
+                    b.addEventListener('click', () => {
+                        strip.scrollLeft += (label === '◀' ? -160 : 160);
+                    });
+                    wrap.appendChild(b);
+                };
+                navBtn('◀', 'left:-2px;');
+                navBtn('▶', 'right:-2px;');
+                wrap.appendChild(strip);
                 const cards = [
                     ['rest', this._tt('Основная')],
                     ['alert', this._tt('Тревога')],
@@ -220,10 +234,12 @@ class DatabaseEnemiesEditor {
                     const hasOwn = !!(g && g.name);
                     const rawSnd = readSnd()[key];
                     const snd = (typeof rawSnd === 'string')
-                        ? { name: rawSnd, kind: 'se', volume: 90, radius: 0 }
-                        : Object.assign({ name: '', kind: 'se', volume: 90, radius: 0 }, rawSnd || {});
+                        ? { name: rawSnd, kind: 'bgs', volume: 90, radius: 0 }
+                        : Object.assign({ name: '', kind: 'bgs', volume: 90, radius: 0 }, rawSnd || {});
+                    snd.kind = 'bgs';
                     const card = document.createElement('div');
                     card.style.cssText = `
+                        flex: 0 0 150px;
                         border: 1px solid ${hasOwn ? 'var(--color-accent-border-mid, #5a8ad4)' : 'var(--color-border)'};
                         border-radius: 6px; padding: 6px; cursor: pointer;
                         background-color: var(--color-bg-deep); text-align: center;
@@ -248,71 +264,31 @@ class DatabaseEnemiesEditor {
                     marker.textContent = hasOwn ? '' : this._tt('по умолчанию');
                     card.appendChild(marker);
 
-                    // --- звук состояния: тип / файл / громкость / радиус ---
-                    const sndBox = document.createElement('div');
-                    sndBox.style.cssText = 'margin-top:4px;display:flex;flex-direction:column;gap:3px;';
-                    sndBox.addEventListener('click', e => e.stopPropagation());
-                    const kindRow = document.createElement('div');
-                    kindRow.style.cssText = 'display:flex;gap:3px;align-items:center;';
-                    const kindSel = document.createElement('select');
-                    kindSel.style.cssText = 'flex:1;min-width:0;font-size:10.5px;box-sizing:border-box;';
-                    for (const [v, lbl] of [['se', 'SE'], ['bgs', 'BGS']]) {
-                        const o = document.createElement('option');
-                        o.value = v; o.textContent = lbl;
-                        kindSel.appendChild(o);
-                    }
-                    kindSel.value = snd.kind;
-                    kindRow.appendChild(kindSel);
-                    const pickBtn = document.createElement('button');
-                    pickBtn.className = 'agonia-btn';
-                    pickBtn.textContent = '…';
-                    pickBtn.style.cssText = 'flex:none;font-size:10.5px;padding:1px 7px;';
-                    pickBtn.addEventListener('click', () => {
-                        this._audioPicker(snd.kind, snd.name, name => {
-                            snd.name = String(name || '');
-                            nameInp.value = snd.name;
+                    // --- звук состояния: одна кнопка, меню = выбор BGS ---
+                    const sndBtn = document.createElement('button');
+                    sndBtn.className = 'agonia-btn';
+                    sndBtn.style.cssText = 'width:100%;box-sizing:border-box;font-size:10.5px;margin-top:4px;padding:2px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+                    const paintBtn = () => { sndBtn.textContent = snd.name || '—'; };
+                    paintBtn();
+                    sndBtn.addEventListener('click', e => {
+                        if (e && e.stopPropagation) e.stopPropagation();
+                        this._audioPicker(snd, applied => {
+                            snd.name = applied.name;
+                            snd.volume = applied.volume;
+                            snd.radius = applied.radius;
                             persist();
+                            paintBtn();
                         });
                     });
-                    kindRow.appendChild(pickBtn);
-                    sndBox.appendChild(kindRow);
-                    const nameInp = document.createElement('input');
-                    nameInp.type = 'text';
-                    nameInp.placeholder = '—';
-                    nameInp.value = snd.name;
-                    nameInp.style.cssText = 'width:100%;box-sizing:border-box;font-size:10.5px;';
-                    nameInp.addEventListener('change', () => {
-                        snd.name = String(nameInp.value || '').trim();
-                        persist();
-                    });
-                    sndBox.appendChild(nameInp);
-                    const numRow = document.createElement('div');
-                    numRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:3px;';
-                    const volInp = document.createElement('input');
-                    volInp.type = 'number'; volInp.min = 0; volInp.max = 100;
-                    volInp.value = snd.volume;
-                    volInp.title = this._tt('Громкость');
-                    volInp.style.cssText = 'width:100%;box-sizing:border-box;font-size:10.5px;min-width:0;';
-                    volInp.addEventListener('change', () => { snd.volume = Math.max(0, Math.min(100, Number(volInp.value) || 0)); persist(); });
-                    numRow.appendChild(volInp);
-                    const radInp = document.createElement('input');
-                    radInp.type = 'number'; radInp.min = 0; radInp.max = 99;
-                    radInp.value = snd.radius;
-                    radInp.title = this._tt('Радиус слышимости');
-                    radInp.style.cssText = 'width:100%;box-sizing:border-box;font-size:10.5px;min-width:0;';
-                    radInp.addEventListener('change', () => { snd.radius = Math.max(0, Math.min(99, Number(radInp.value) || 0)); persist(); });
-                    numRow.appendChild(radInp);
-                    sndBox.appendChild(numRow);
-                    card.appendChild(sndBox);
+                    card.appendChild(sndBtn);
 
                     const persist = () => {
                         const cur = readSnd();
                         if (!snd.name) delete cur[key];
-                        else cur[key] = { name: snd.name, kind: snd.kind, volume: snd.volume, radius: snd.radius };
+                        else cur[key] = { name: snd.name, kind: 'bgs', volume: snd.volume, radius: snd.radius };
                         entry.stateSounds = JSON.stringify(cur);
                         api.changed();
                     };
-                    kindSel.addEventListener('change', () => { snd.kind = kindSel.value; persist(); });
 
                     card.addEventListener('click', () => {
                         spriter._showFilePicker('', (name, index) => {
@@ -324,9 +300,9 @@ class DatabaseEnemiesEditor {
                             marker.textContent = '';
                         }, 'characters', { pickCharacterIndex: true });
                     });
-                    row.appendChild(card);
+                    strip.appendChild(card);
                 }
-                formCol.insertBefore(row, formCol.firstChild);
+                formCol.insertBefore(wrap, formCol.firstChild);
             }
         }
 
@@ -464,8 +440,8 @@ class DatabaseEnemiesEditor {
         }
     }
 
-    /** P26: список аудиофайлов проекта для типа звука (se|bgs). */
-    _listAudioFiles(kind) {
+    /** P26: список аудиофайлов проекта (bgs). */
+    _listAudioFiles() {
         try {
             const proj = this.projectManager && this.projectManager.getCurrentProject
                 ? this.projectManager.getCurrentProject() : null;
@@ -475,7 +451,7 @@ class DatabaseEnemiesEditor {
                 fsMod = (typeof require === 'function') ? require('fs') : window.require('fs');
                 path = (typeof require === 'function') ? require('path') : window.require('path');
             } catch (e) { return []; }
-            const dir = path.join(proj.path, 'audio', kind === 'bgs' ? 'bgs' : 'se');
+            const dir = path.join(proj.path, 'audio', 'bgs');
             if (!fsMod.existsSync(dir)) return [];
             return fsMod.readdirSync(dir)
                 .filter(f => /\.(ogg|m4a|mp3|wav)$/i.test(f))
@@ -486,8 +462,12 @@ class DatabaseEnemiesEditor {
         }
     }
 
-    /** P26: пикер аудиофайла — список audio/<kind> проекта, клик выбирает. */
-    _audioPicker(kind, currentName, onSelect) {
+    /**
+     * P27: меню выбора музыки состояния — список audio/bgs, здесь же
+     * громкость и радиус слышимости; клик по файлу применяет всё разом.
+     * apply({name, volume, radius}); «Убрать» применяет пустое имя.
+     */
+    _audioPicker(snd, apply) {
         const modal = document.createElement('div');
         modal.style.cssText = `
             position: fixed; inset: 0;
@@ -499,7 +479,7 @@ class DatabaseEnemiesEditor {
         win.style.cssText = `
             background-color: var(--color-bg-surface);
             border: 1px solid var(--color-border); border-radius: 8px;
-            width: 420px; max-height: 70%;
+            width: 440px; max-height: 70%;
             display: flex; flex-direction: column;
         `;
         const header = document.createElement('div');
@@ -510,7 +490,7 @@ class DatabaseEnemiesEditor {
             display: flex; justify-content: space-between; align-items: center; gap: 10px;
         `;
         const lbl = document.createElement('span');
-        lbl.textContent = (kind === 'bgs' ? 'BGS — ' : 'SE — ') + this._tt('выбор файла');
+        lbl.textContent = 'BGS';
         header.appendChild(lbl);
         const close = document.createElement('button');
         close.className = 'agonia-btn';
@@ -518,13 +498,38 @@ class DatabaseEnemiesEditor {
         close.addEventListener('click', () => modal.remove());
         header.appendChild(close);
         win.appendChild(header);
+
+        // громкость + радиус — применяются вместе с выбором файла
+        const ctrl = document.createElement('div');
+        ctrl.style.cssText = `
+            display:grid;grid-template-columns:1fr 1fr;gap:8px;
+            padding:10px 16px;border-bottom:1px solid var(--color-border);
+        `;
+        const mkNum = (title, val, min, max) => {
+            const f = document.createElement('label');
+            f.style.cssText = 'display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--color-text-dim);';
+            const s = document.createElement('span');
+            s.textContent = title;
+            f.appendChild(s);
+            const inp = document.createElement('input');
+            inp.type = 'number'; inp.min = min; inp.max = max;
+            inp.value = val;
+            inp.style.cssText = 'box-sizing:border-box;font-size:12px;';
+            f.appendChild(inp);
+            ctrl.appendChild(f);
+            return inp;
+        };
+        const volInp = mkNum(this._tt('Громкость'), snd.volume, 0, 100);
+        const radInp = mkNum(this._tt('Радиус слышимости'), snd.radius, 0, 99);
+        win.appendChild(ctrl);
+
         const body = document.createElement('div');
         body.style.cssText = 'flex:1;overflow-y:auto;min-height:0;padding:8px;';
-        const files = this._listAudioFiles(kind);
+        const files = this._listAudioFiles();
         if (!files.length) {
             const n = document.createElement('div');
             n.style.cssText = 'font-size:11.5px;color:var(--color-text-muted);padding:8px;';
-            n.textContent = this._tt('Папка пуста') + ' — audio/' + (kind === 'bgs' ? 'bgs' : 'se');
+            n.textContent = this._tt('Папка пуста') + ' — audio/bgs';
             body.appendChild(n);
         } else {
             const list = document.createElement('div');
@@ -533,10 +538,14 @@ class DatabaseEnemiesEditor {
                 const b = document.createElement('button');
                 b.className = 'agonia-btn';
                 b.style.cssText = 'text-align:left;font-size:11.5px;padding:4px 8px;' +
-                    (f === currentName ? 'border-color:var(--color-accent-border-mid, #5a8ad4);font-weight:700;' : '');
+                    (f === snd.name ? 'border-color:var(--color-accent-border-mid, #5a8ad4);font-weight:700;' : '');
                 b.textContent = f;
                 b.addEventListener('click', () => {
-                    onSelect(f);
+                    apply({
+                        name: f,
+                        volume: Math.max(0, Math.min(100, Number(volInp.value) || 0)),
+                        radius: Math.max(0, Math.min(99, Number(radInp.value) || 0))
+                    });
                     modal.remove();
                 });
                 list.appendChild(b);
@@ -544,6 +553,17 @@ class DatabaseEnemiesEditor {
             body.appendChild(list);
         }
         win.appendChild(body);
+        const foot = document.createElement('div');
+        foot.style.cssText = 'padding:8px 16px;border-top:1px solid var(--color-border);display:flex;justify-content:flex-end;';
+        const rm = document.createElement('button');
+        rm.className = 'agonia-btn';
+        rm.textContent = this._tt('Убрать звук');
+        rm.addEventListener('click', () => {
+            apply({ name: '', volume: Math.max(0, Math.min(100, Number(volInp.value) || 0)), radius: 0 });
+            modal.remove();
+        });
+        foot.appendChild(rm);
+        win.appendChild(foot);
         modal.appendChild(win);
         modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
         document.body.appendChild(modal);

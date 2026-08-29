@@ -510,19 +510,21 @@ class InspectorForm {
     }
     _flush() {
         if (!this._pending.length) return;
-        if (this._pending.length >= 4) {
+        const host = this._collapseHost || this.root;
+        if (this._pending.length >= 4 && !this._collapseHost) {
             // Wide section: flow the rows into 2 columns (shorter scroll).
             const cols = document.createElement('div');
             cols.className = 'agn-insp-cols';
             for (const r of this._pending) cols.appendChild(r);
             this.root.appendChild(cols);
         } else {
-            for (const r of this._pending) this.root.appendChild(r);
+            for (const r of this._pending) host.appendChild(r);
         }
         this._pending = [];
     }
     head(title, sub) {
         this._flush();
+        this._collapseHost = null;
         const h = document.createElement('div');
         h.className = 'agn-insp-head';
         const t = document.createElement('div');
@@ -545,8 +547,22 @@ class InspectorForm {
         if (this._headTitleEl) this._headTitleEl.textContent = text;
         return this;
     }
-    section(caption) {
+    section(caption, opts) {
         this._flush();
+        if (opts && opts.collapsed) {
+            // P27: сворачиваемая секция — компактный режим длинных карточек
+            const s = document.createElement('details');
+            s.className = 'agn-insp-section';
+            s.open = false;
+            const c = document.createElement('summary');
+            c.className = 'agn-insp-caption';
+            c.textContent = caption;
+            c.style.cursor = 'pointer';
+            s.appendChild(c);
+            this.root.appendChild(s);
+            this._collapseHost = s;
+            return this;
+        }
         const s = document.createElement('div');
         s.className = 'agn-insp-section';
         const c = document.createElement('span');
@@ -554,6 +570,7 @@ class InspectorForm {
         c.textContent = caption;
         s.appendChild(c);
         this.root.appendChild(s);
+        this._collapseHost = null;
         return this;
     }
     row(label, control, hint) {
