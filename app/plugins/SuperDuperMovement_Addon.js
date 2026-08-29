@@ -1355,23 +1355,44 @@
             }
         }
 
+        // P17b: спрайт-подкласс с СОБСТВЕННЫМ update() — ядро MV зовёт
+        // update() у детей сцены каждый кадр (Scene_Base.update → children),
+        // независимо от алиас-цепочек Scene_Map.update других плагинов;
+        // рисование и заливка текстуры (checkDirty — у простых Sprite его
+        // никто не вызывает, WebGL-текстура оставалась пустой) живут здесь.
+        function Sprite_PathDebug() {
+            this.initialize.apply(this, arguments);
+        }
+        Sprite_PathDebug.prototype = Object.create(Sprite.prototype);
+        Sprite_PathDebug.prototype.constructor = Sprite_PathDebug;
+        Sprite_PathDebug.prototype.initialize = function() {
+            Sprite.prototype.initialize.call(this, new Bitmap(Graphics.width, Graphics.height));
+            // MV Sprite.opacity — шкала 0–255 (НЕ 0–1): старое `= 0.9`
+            // давало worldAlpha 0.0035 — спрайт был всегда невидим.
+            this.opacity = 230;
+            this._sdaLastDrawn = -1;
+        };
+        Sprite_PathDebug.prototype.update = function() {
+            Sprite.prototype.update.call(this);
+            try {
+                var f = Graphics.frameCount;
+                if (f % 10 === 0 && f !== this._sdaLastDrawn) {
+                    this._sdaLastDrawn = f;
+                    redrawPathDebug(this.bitmap);
+                    if (this.bitmap.checkDirty) this.bitmap.checkDirty();
+                    if (this.bitmap._baseTexture && this.bitmap._baseTexture.update) {
+                        this.bitmap._baseTexture.update();
+                    }
+                }
+            } catch (e) { /* дебаг не должен ронять сцену */ }
+        };
+
         const _SDAP_Scene_Map_createDisplayObjects = Scene_Map.prototype.createDisplayObjects;
         Scene_Map.prototype.createDisplayObjects = function() {
             _SDAP_Scene_Map_createDisplayObjects.call(this);
             try {
-                this._sdaPathDebugSprite = new Sprite(new Bitmap(Graphics.width, Graphics.height));
-                this._sdaPathDebugSprite.opacity = 0.9;
+                this._sdaPathDebugSprite = new Sprite_PathDebug();
                 this.addChild(this._sdaPathDebugSprite);
-            } catch (e) { /* дебаг не должен ронять сцену */ }
-        };
-
-        const _SDAP_Scene_Map_update = Scene_Map.prototype.update;
-        Scene_Map.prototype.update = function() {
-            _SDAP_Scene_Map_update.call(this);
-            try {
-                if (this._sdaPathDebugSprite && Graphics.frameCount % 10 === 0) {
-                    redrawPathDebug(this._sdaPathDebugSprite.bitmap);
-                }
             } catch (e) { /* дебаг не должен ронять сцену */ }
         };
     }
