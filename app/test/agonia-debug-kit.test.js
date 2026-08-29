@@ -77,3 +77,24 @@ test('P18: AgoniaDebugKit спит без env и просыпается от env
     const viaUrl = make({}, '?debug');
     assert.strictEqual(viaUrl.window.__DebugKitActive, true, '?debug in URL wakes the kit');
 });
+
+test('P19: pathDebugXform — зум-трансформация спрайтсета для оверлея маршрутов', () => {
+    const { sda } = addonEnv({ process: { env: {} } });
+    const xf = sda.pathDebugXform;
+    assert.strictEqual(typeof xf, 'function', 'xform helper exposed');
+    // без спрайтсета — идентичность (по полям: объект из vm-рейлма)
+    const id = xf(null);
+    assert.strictEqual(id.kx, 1); assert.strictEqual(id.ky, 1);
+    assert.strictEqual(id.ox, 0); assert.strictEqual(id.oy, 0);
+    // Spriteset_Map-подобный объект: scale = zoomScale, сдвиг = -zoomX*(scale-1) + shake
+    const spriteset = { scale: { x: 1.5, y: 1.5 }, x: -204, y: -112 };
+    const t = xf(spriteset);
+    assert.strictEqual(t.kx, 1.5, 'zoom X scale');
+    assert.strictEqual(t.ky, 1.5, 'zoom Y scale');
+    assert.strictEqual(t.ox, -204, 'origin X (zoom pan + shake)');
+    assert.strictEqual(t.oy, -112, 'origin Y');
+    // спрайтсет с нулевым scale не должен обнулять координаты (|| 1 fallback)
+    const weird = { scale: { x: 0, y: 0 }, x: 10, y: 10 };
+    const tw2 = xf(weird);
+    assert.strictEqual(tw2.kx, 1, 'zero scale falls back to 1');
+});

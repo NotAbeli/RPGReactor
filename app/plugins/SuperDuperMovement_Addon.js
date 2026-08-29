@@ -1302,6 +1302,21 @@
     // P1: ВИЗУАЛЬНЫЙ ДЕБАГ МАРШРУТОВ (только при Debug Mode)
     // Точки пути всех умных ИИ поверх карты; цвет — по типу поведения.
     // ======================================================================
+    // P19: Spriteset_Map масштабируется зумом камеры (scale = zoomScale,
+    // сдвиг -zoomX*(scale-1) + shake) — оверлей живёт на сцене мимо
+    // спрайтсета, поэтому координаты мира обязаны проходить ту же
+    // трансформацию, иначе при зуме точки «уплывают». Объявлена ДО
+    // дебаг-блока: тест-хук проверяет математику и без Debug Mode.
+    function pathDebugXform(spriteset) {
+        if (!spriteset || !spriteset.scale) return { kx: 1, ky: 1, ox: 0, oy: 0 };
+        return {
+            kx: spriteset.scale.x || 1,
+            ky: spriteset.scale.y || 1,
+            ox: spriteset.x || 0,
+            oy: spriteset.y || 0
+        };
+    }
+
     if (debugMode && typeof Sprite !== 'undefined' && typeof Bitmap !== 'undefined'
         && typeof Scene_Map !== 'undefined' && typeof Graphics !== 'undefined') {
 
@@ -1328,11 +1343,16 @@
             }
         }
 
-        function redrawPathDebug(bitmap) {
+        function redrawPathDebug(bitmap, xform) {
             bitmap.clear();
             if (typeof $gameMap === 'undefined' || !$gameMap) return;
+            const xf = xform || { kx: 1, ky: 1, ox: 0, oy: 0 };
             const tw = $gameMap.tileWidth();
             const th = $gameMap.tileHeight();
+            const toScreen = (wx, wy) => ({
+                x: Math.round((Math.round($gameMap.adjustX(wx) * tw + tw / 2)) * xf.kx + xf.ox),
+                y: Math.round((Math.round($gameMap.adjustY(wy) * th + th / 2)) * xf.ky + xf.oy)
+            });
             const movers = [];
             if ($gameMap.events) movers.push.apply(movers, $gameMap.events());
             if (typeof $gamePlayer !== 'undefined' && $gamePlayer) movers.push($gamePlayer);
@@ -1342,23 +1362,20 @@
                 const path = m._amsSmartPath;
                 if (!t || !path || path.length === 0) continue;
                 const color = PATH_COLORS[t.type] || '#ffffff';
-                const px = (wp) => Math.round($gameMap.adjustX(wp.x) * tw + tw / 2);
-                const py = (wp) => Math.round($gameMap.adjustY(wp.y) * th + th / 2);
+                const pt = (wp) => toScreen(wp.x, wp.y);
                 // линия от врага к первому вейпоинту
-                debugLine(bitmap,
-                    Math.round($gameMap.adjustX(m._x) * tw + tw / 2),
-                    Math.round($gameMap.adjustY(m._y) * th + th / 2),
-                    px(path[0]), py(path[0]), color);
+                const from = toScreen(m._x, m._y);
+                const first = pt(path[0]);
+                debugLine(bitmap, from.x, from.y, first.x, first.y, color);
+                let prev = first;
                 for (let j = 0; j < path.length; j++) {
-                    if (j > 0) debugLine(bitmap, px(path[j - 1]), py(path[j - 1]), px(path[j]), py(path[j]), color);
-                    const sx = px(path[j]);
-                    const sy = py(path[j]);
-                    bitmap.fillRect(sx - 2, sy - 2, 5, 5, color);
+                    const p = pt(path[j]);
+                    if (j > 0) debugLine(bitmap, prev.x, prev.y, p.x, p.y, color);
+                    bitmap.fillRect(p.x - 2, p.y - 2, 5, 5, color);
+                    prev = p;
                 }
-                const last = path[path.length - 1];
-                const lx = px(last);
-                const ly = py(last);
-                bitmap.drawCircle(lx, ly, 6, color);
+                const lastP = prev;
+                bitmap.drawCircle(lastP.x, lastP.y, 6, color);
             }
         }
 
@@ -1385,7 +1402,8 @@
                 var f = Graphics.frameCount;
                 if (f % 10 === 0 && f !== this._sdaLastDrawn) {
                     this._sdaLastDrawn = f;
-                    redrawPathDebug(this.bitmap);
+                    // P19: зум-трансформация из спрайтсета сцены (камера)
+                    redrawPathDebug(this.bitmap, pathDebugXform(this.parent && this.parent._spriteset));
                     if (this.bitmap.checkDirty) this.bitmap.checkDirty();
                     if (this.bitmap._baseTexture && this.bitmap._baseTexture.update) {
                         this.bitmap._baseTexture.update();
@@ -1421,7 +1439,8 @@
                 softCost: () => CONF_SOFT_COST,
                 goalExempt: () => CONF_GOAL_EXEMPT
             },
-            debugActive: () => debugMode
+            debugActive: () => debugMode,
+            pathDebugXform: (typeof pathDebugXform === 'function') ? pathDebugXform : null
         };
     }
 
