@@ -285,7 +285,7 @@
         return deadZoneRegions.contains(regionId);
     }
 
-    function checkLineOfSight(char, startX, startY, endX, endY, ignoredZones) {
+    function checkLineOfSight(char, startX, startY, endX, endY, ignoredZones, hardObstacles, box) {
         const mapMesh = $gameMap.collisionMesh(char._collisionType);
         const dist = Math.hypot(endX - startX, endY - startY);
         if (dist > 20) return false;
@@ -297,13 +297,42 @@
         const dx = (endX - startX) / steps;
         const dy = (endY - startY) / steps;
 
+        // P21: canMoveOn НЕ ВИДИТ коллайдеры событий впереди (проверяет их
+        // в ТЕКУЩЕЙ позиции персонажа, SuperDuperMovement.js:2441) — стул-ивент
+        // на прямой был невидим для LOS, и прямая ветка погони вечно
+        // долбилась в мебель, не доходя до A*. Слой-3: инфляционные AABB
+        // из buildPathContext (та же формула, что cellPenalty).
+        const obs = (hardObstacles && hardObstacles.length > 0) ? hardObstacles : null;
+
         for (let i = 1; i < steps; i++) {
             const cx = startX + dx * i;
             const cy = startY + dy * i;
             if (isDeadZone(cx, cy, ignoredZones)) return false;
             if (!$gameMap.canMoveOn(char, cx, cy, mapMesh)) return false;
+            if (obs) {
+                for (let j = 0; j < obs.length; j++) {
+                    const ob = obs[j];
+                    if (!ob.hard) continue;
+                    // P22: центр-в-интервале (см. cellPenalty)
+                    if (cx > ob.x1 && cx < ob.x2 && cy > ob.y1 && cy < ob.y2) return false;
+                }
+            }
         }
         return true;
+    }
+
+    // P21: точка (центр ищущего) против жёстких инфляционных AABB — для
+    // сенсоров steering: canMoveOn слеп к событиям впереди (см. выше).
+    // P22: центр-в-интервале (см. cellPenalty).
+    function hardPointBlocked(ctx, cx, cy) {
+        if (!ctx || !ctx.obstacles) return false;
+        const obs = ctx.obstacles;
+        for (let j = 0; j < obs.length; j++) {
+            const ob = obs[j];
+            if (!ob.hard) continue;
+            if (cx > ob.x1 && cx < ob.x2 && cy > ob.y1 && cy < ob.y2) return true;
+        }
+        return false;
     }
 
     // --- Octile-эвристика: admissible для 8 направлений со стоимостями {1, √2}
@@ -373,7 +402,9 @@
     }
 
     // P20: реальные хитбоксы персонажей карты (сырые AABB, без инфляции) —
-    // для дебаг-оверлея: статика = жёсткие стены для A*, динамика = мягкая цена.
+    // для дебаг-оверлея. P22: предикат зеркалит buildPathContext — рисуем
+    // только навигационно значимые тела (динамика; статик физический или
+    // с явным кастомным коллайдером), а не sharedTile-фоллбек всего подряд.
     function collectHitboxes() {
         const chars = (typeof $gameMap !== 'undefined' && $gameMap && $gameMap.characters) ? $gameMap.characters() : [];
         const boxes = [];
@@ -383,10 +414,13 @@
             let ab = null;
             try { const col = c.collider(); ab = col ? col.aabbox : null; } catch (e) { ab = null; }
             if (!ab) continue;
+            const dynamic = isDynamicMover(c);
+            const phys = c.isNormalPriority ? c.isNormalPriority() : true;
+            if (!dynamic && !phys && !hasCustomCollider(c)) continue;
             const x1 = c._x + ab.left, y1 = c._y + ab.top;
             const x2 = c._x + ab.right, y2 = c._y + ab.bottom;
             if (!(x2 > x1) || !(y2 > y1)) continue;
-            boxes.push({ hard: !isDynamicMover(c), x1: x1, y1: y1, x2: x2, y2: y2 });
+            boxes.push({ hard: !dynamic, x1: x1, y1: y1, x2: x2, y2: y2 });
         }
         return boxes;
     }
@@ -410,12 +444,28 @@
             for (let j = 0; j < obs.length; j++) {
                 const ob = obs[j];
                 if (!ob.hard) continue;
-                if (cx + ctx.sr > ob.x1 && cx + ctx.sl < ob.x2 && cy + ctx.sb > ob.y1 && cy + ctx.st < ob.y2) {
+                // P22: центр-в-интервале (см. cellPenalty)
+                if (cx > ob.x1 && cx < ob.x2 && cy > ob.y1 && cy < ob.y2) {
                     if (outCells) outCells.push(Math.round(cx) + ',' + Math.round(cy));
                     return true;
                 }
             }
         }
+        return false;
+    }
+
+    // P22: ЯВНОЕ тело события — кастомный коллайдер страницы (<collider>).
+    // Такие статики — навигационная стена даже при приоритете «ниже игрока»
+    // (физика их не толкает, но сквозь стул враг визуально проходить не
+    // должен). События БЕЗ кастомного коллайдера получают sharedTile-фоллбек
+    // — их видит обычный collidableWith.
+    function hasCustomCollider(entry) {
+        try {
+            if (typeof Game_Event !== 'undefined' && entry instanceof Game_Event && entry.page) {
+                const pg = entry.page();
+                return !!(pg && pg._collider);
+            }
+        } catch (e) {}
         return false;
     }
 
@@ -449,9 +499,11 @@
         for (let i = 0; i < characters.length; i++) {
             const entry = characters[i];
             if (!entry || entry === char) continue;
-            if (char.collidableWith && !char.collidableWith(entry)) continue;
-            if (entry === goalEntity) continue; // цель погони — не препятствие для своего преследователя
             const hard = !isDynamicMover(entry);
+            // P22: статик с явным телом — стена даже без физической коллизии
+            const physical = !(char.collidableWith && !char.collidableWith(entry));
+            if (!physical && !(hard && hasCustomCollider(entry))) continue;
+            if (entry === goalEntity) continue; // цель погони — не препятствие для своего преследователя
             // Освобождение цели (P16): радиус снимает ТОЛЬКО мягкую толпу
             // (другие ИИ, фолловеры) — мебель у игрока остаётся стеной,
             // иначе путь строится сквозь стул и враг буксует рядом.
@@ -503,7 +555,12 @@
             if (penalty !== Infinity) {
                 for (let i = 0; i < ctx.obstacles.length; i++) {
                     const ob = ctx.obstacles[i];
-                    if (x + ctx.sr > ob.x1 && x + ctx.sl < ob.x2 && y + ctx.sb > ob.y1 && y + ctx.st < ob.y2) {
+                    // P22: интервал уже Минковски-раздут под ЦЕНТР ищущего —
+                    // проверка «центр ∈ (x1,x2)×(y1,y2)». Прежняя бокс-против-
+                    // бокса проверка сдвигала блок на полклетки влево-вверх:
+                    // маленькие/высокие коллайдеры не блокировали свою клетку,
+                    // вместо неё блокировалась клетка сверху.
+                    if (x > ob.x1 && x < ob.x2 && y > ob.y1 && y < ob.y2) {
                         if (ob.hard) { penalty = Infinity; break; }
                         penalty += CONF_SOFT_COST;
                     }
@@ -1206,14 +1263,19 @@
             if (this._amsSmartRefreshTimer > 0) this._amsSmartRefreshTimer--;
             
             if (target.type !== 'wander' && (!this._amsSmartPath || this._amsSmartPath.length === 0 || this._amsSmartRefreshTimer <= 0)) {
-                if (checkLineOfSight(this, this._x, this._y, tx, ty, ignoredZones)) {
+                const goalEntity = target.type === 'player' ? $gamePlayer
+                    : (target.type === 'event' && $gameMap.event(target.id)) ? $gameMap.event(target.id)
+                    : null;
+                // P21: прямая ветка обязана видеть стул-ивент на линии —
+                // иначе погоня вечно долбится в мебель мимо A*. Контекст
+                // строится и здесь (раз в ~20 кадров, дёшево).
+                const losCtx = CONF_HITBOX ? buildPathContext(this, goalEntity, ignoredZones) : null;
+                if (checkLineOfSight(this, this._x, this._y, tx, ty, ignoredZones,
+                    losCtx ? losCtx.obstacles : null, losCtx)) {
                     this._amsSmartPath = [{x: tx, y: ty}];
                     this._amsPathCtx = null; // прямой путь — контекст поиска неактуален
                     this._amsSmartRefreshTimer = 20;
                 } else {
-                    const goalEntity = target.type === 'player' ? $gamePlayer
-                        : (target.type === 'event' && $gameMap.event(target.id)) ? $gameMap.event(target.id)
-                        : null;
                     this._amsSmartPath = AStar.findPath(this, tx, ty, ignoredZones, goalEntity);
                     this._amsSmartRefreshTimer = CONF_REFRESH_RATE + Math.randomInt(10);
                 }
@@ -1224,10 +1286,15 @@
 
         let targetNode = this._amsSmartPath[0];
         const lookAhead = Math.min(this._amsSmartPath.length, 5);
+        // P21: срезка видит твёрдые хитбоксы из контекста поиска (мебель) —
+        // иначе она выпрямляла A*-обход обратно в прямую через стул.
+        // У прямого пути длина 1 — цикл не исполняется, ctx не нужен.
+        const spliceCtx = (CONF_HITBOX && this._amsPathCtx) ? this._amsPathCtx : null;
         for (let i = lookAhead - 1; i > 0; i--) {
             const node = this._amsSmartPath[i];
-            if (checkLineOfSight(this, this._x, this._y, node.x, node.y, ignoredZones)) {
-                this._amsSmartPath.splice(0, i); 
+            if (checkLineOfSight(this, this._x, this._y, node.x, node.y, ignoredZones,
+                spliceCtx ? spliceCtx.obstacles : null, spliceCtx)) {
+                this._amsSmartPath.splice(0, i);
                 targetNode = this._amsSmartPath[0];
                 break;
             }
@@ -1245,8 +1312,9 @@
             for (let oi = 0; oi < obs.length; oi++) {
                 const ob = obs[oi];
                 if (!ob.hard) continue;
-                if (Math.abs(targetNode.x - 0.5 - (ob.x1 + ob.x2) / 2) < (ob.x2 - ob.x1) / 2 + 1.05 &&
-                    Math.abs(targetNode.y - 0.5 - (ob.y1 + ob.y2) / 2) < (ob.y2 - ob.y1) / 2 + 1.05) { near = true; break; }
+                // P22: интервал центров + запас 1.05 (узел рядом с зоной)
+                if (targetNode.x > ob.x1 - 1.05 && targetNode.x < ob.x2 + 1.05 &&
+                    targetNode.y > ob.y1 - 1.05 && targetNode.y < ob.y2 + 1.05) { near = true; break; }
             }
             this._amsNearHard = near;
         }
@@ -1285,6 +1353,10 @@
             const sensorCount = 8;
             let bestDirX = 0, bestDirY = 0;
             const mapMesh = $gameMap.collisionMesh(this._collisionType);
+            // P21: сенсоры видят твёрдые хитбоксы событий (мебель) из
+            // контекста поиска — canMoveOn их не видит, steering упирался
+            // в стул. Для flee/orbit контекста нет — поведение прежнее.
+            const steerCtx = (CONF_HITBOX && this._amsPathCtx) ? this._amsPathCtx : null;
 
             for (let i = 0; i < sensorCount; i++) {
                 const angle = (i / sensorCount) * Math.PI * 2;
@@ -1292,13 +1364,14 @@
                 const dirY = Math.sin(angle);
                 let interest = Math.max(0, (dirX * desireX) + (dirY * desireY));
 
-                let steps = 2, safety = 1.0; 
+                let steps = 2, safety = 1.0;
                 for (let s = 1; s <= steps; s++) {
                     const cx = this._x + (dirX * 0.7) * (s/steps);
                     const cy = this._y + (dirY * 0.7) * (s/steps);
-                    if (isDeadZone(cx, cy, ignoredZones) || !$gameMap.canMoveOn(this, cx, cy, mapMesh)) { 
-                        safety = (s-1)/steps; 
-                        break; 
+                    if (isDeadZone(cx, cy, ignoredZones) || !$gameMap.canMoveOn(this, cx, cy, mapMesh)
+                        || hardPointBlocked(steerCtx, cx, cy)) {
+                        safety = (s-1)/steps;
+                        break;
                     }
                 }
 
@@ -1502,7 +1575,9 @@
             Sprite.prototype.update.call(this);
             try {
                 var f = Graphics.frameCount;
-                if (f % 10 === 0 && f !== this._sdaLastDrawn) {
+                // P22: каждый кадр — редроу раз в 10 кадров заметно лагал
+                // за двигающимися персонажами (точки «отставали»)
+                if (f !== this._sdaLastDrawn) {
                     this._sdaLastDrawn = f;
                     // P19: зум-трансформация из спрайтсета сцены (камера)
                     redrawPathDebug(this.bitmap, pathDebugXform(this.parent && this.parent._spriteset));

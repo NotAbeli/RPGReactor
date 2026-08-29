@@ -326,35 +326,32 @@ test('P20: hardSegmentBlocked — сегмент против жёстких и�
     assert.strictEqual(sda.hardSegmentBlocked(clearCtx, 0, 0, 3, 0, []), false, 'clear segment passes');
 });
 
-test('P20: findPath — путь сквозь тонкий AABB на диагонали пересобирается в обход', () => {
-    // «нитка»: событие с нулевой шириной, инфляционный AABB [1.75,2.25]x[2.0,3.0]
-    // ровно в щели между боксами клеток (1,1),(2,1),(1,2),(2,2) — клетки A*
-    // свободны, но семплы сегмента (1,1)->(2,2) пересекают зону.
-    const threader = new Game_Event();
-    threader._x = 2.5; threader._y = 2.45;
-    threader.collider = () => ({ x: 0, y: 0, radius: 0, aabbox: { left: 0, right: 0, top: 0.5, bottom: 1.0 } });
-    threader.collidableWith = () => true;
-    const { sda } = makeEnv({}, { w: 9, h: 9, characters: [threader] });
-    const seek = makeSeeker(0, 0);
+test('P22: маленький высокий коллайдер блокирует СВОЮ клетку, а не клетку сверху', () => {
+    // регресс юзера: стул с боксом во весь тайл по X, но верхней половине по Y
+    // (top .45, bottom .75). Старая бокс-против-бокса проверка сдвигала
+    // интервал: клетка стула была СВОБОДНА (вейпоинты в центре твёрдых
+    // ивентов, враг долбился сквозь), а фантомно блокировалась клетка сверху.
+    const chair = new Game_Event();
+    chair._x = 3; chair._y = 3;
+    chair.collider = () => ({ x: 0.5, y: 0.6, radius: 0.3, aabbox: { left: 0, top: 0.45, right: 1, bottom: 0.75 } });
+    chair.collidableWith = () => true;
+    const { sda } = makeEnv({}, { w: 9, h: 9, characters: [chair] });
+    const seek = makeSeeker(0, 3);
 
-    // предусловия сценария (документируют геометрию)
     const ctx = sda.buildPathContext(seek, null, []);
-    assert.strictEqual(ctx.obstacles.length, 1, 'one inflated obstacle');
+    assert.strictEqual(ctx.obstacles.length, 1, 'chair is an obstacle');
+    // Минковски-интервал центров: x [2.25, 3.75], y [3+0.45-0.95, 3+0.75-0.45] = [2.5, 3.3]
     const ob = ctx.obstacles[0];
-    assert.ok(Math.abs(ob.x1 - 1.75) < 1e-9 && Math.abs(ob.x2 - 2.25) < 1e-9, 'x range threads the corner gap');
-    for (const [cx, cy] of [[1, 1], [2, 1], [1, 2], [2, 2]]) {
-        assert.notStrictEqual(sda.cellPenalty(ctx, cx, cy), Infinity, `cell ${cx},${cy} individually free`);
-    }
-    assert.strictEqual(sda.hardSegmentBlocked(ctx, 1, 1, 2, 2, []), true, 'diagonal segment crosses the zone');
+    assert.ok(Math.abs(ob.x1 - 2.25) < 1e-9 && Math.abs(ob.x2 - 3.75) < 1e-9, 'inflated x interval');
+    assert.ok(Math.abs(ob.y1 - 2.5) < 1e-9 && Math.abs(ob.y2 - 3.3) < 1e-9, 'inflated y interval');
+    assert.strictEqual(sda.cellPenalty(ctx, 3, 3), Infinity, 'chair cell is hard-blocked');
+    assert.strictEqual(sda.cellPenalty(ctx, 3, 2), 0, 'cell above the chair is free (no phantom block)');
 
-    // прямой A* без валидации пошёл бы через (1,1): валидация обязана
-    // занести клетку пересечения в жёсткий блок и пересобрать в обход
-    const p = sda.AStar.findPath(seek, 3, 3, []);
+    // путь (0,3)->(6,3) обязан обойти клетку стула
+    const p = sda.AStar.findPath(seek, 6, 3, []);
     assert.ok(p, 'path exists');
-    assert.ok(!p.some(wp => wp.x === 1 && wp.y === 1), 'threaded cell avoided after rebuild');
-    assert.ok(pathCost(0, 0, p) > 3 * Math.SQRT2 + 0.2, 'detour is longer than the pure diagonal');
-    assert.ok(seek._amsPathCtx && seek._amsPathCtx.extraBlocks && seek._amsPathCtx.extraBlocks.has('1,1'),
-        'final context carries the hard cell block');
+    assert.ok(!p.some(wp => wp.x === 3 && wp.y === 3), 'no waypoint on the chair cell');
+    assert.ok(p.length > 1, 'detour built');
 });
 
 test('P20: collectHitboxes — сырые AABB с классификацией статика/динамика', () => {
@@ -424,4 +421,101 @@ test('P20: overlayDraw — хитбоксы рисуются с зум-тран�
     assert.deepStrictEqual([softStroke[1], softStroke[2]],
         [Math.round(Math.round(5.3 * 48) * 1.5 - 100), Math.round(Math.round(5.3 * 48) * 1.5 - 60)],
         'dynamic box zoom-transformed');
+});
+
+// ============================================================================
+// P21: LOS/steering видят коллайдеры событий (стул-ивент на прямой)
+// ============================================================================
+
+// MV-функции, отсутствующие в vanilla Math/Array vm-контекста
+function patchVmMath(ctx) {
+    vm.runInContext('Math.randomInt = function(n) { return Math.floor(Math.random() * n); };'
+        + 'if (!Array.prototype.contains) Array.prototype.contains = function(e) { return this.indexOf(e) >= 0; };', ctx);
+}
+
+test('P21: LOS видит твёрдый хитбокс события на линии (canMoveOn слеп к событиям)', () => {
+    const { sda, ctx } = makeEnv({}, { characters: [makeStaticEvent(3, 0)] });
+    ctx.$gameMap.canMoveOn = () => true; // mesh «чист» — блокирует только слой-3
+    const seek = makeSeeker(0, 0);
+    const pathCtx = sda.buildPathContext(seek, null, []);
+    assert.strictEqual(pathCtx.obstacles.length, 1, 'chair is an obstacle');
+    // легаси-вызов (5 аргументов): mesh-чистая линия — «видна»
+    assert.strictEqual(sda.checkLineOfSight(seek, 0, 0, 6, 0, []), true,
+        'legacy LOS (mesh-only) is blind to the event collider');
+    // P21: с препятствиями контекста — стул блокирует прямую
+    assert.strictEqual(sda.checkLineOfSight(seek, 0, 0, 6, 0, [], pathCtx.obstacles, pathCtx), false,
+        'LOS with hard obstacles sees the chair');
+    // мягкая динамика LOS не блокирует
+    const softCtx = { obstacles: [{ hard: false, x1: -5, x2: 5, y1: -5, y2: 5 }], sl: 0.25, st: 0.45, sr: 0.75, sb: 0.95 };
+    assert.strictEqual(sda.checkLineOfSight(seek, 0, 0, 6, 0, [], softCtx.obstacles, softCtx), true,
+        'soft movers do not block LOS');
+});
+
+test('P21: сенсоры steering отталкиваются от мебели (hardPointBlocked из контекста пути)', () => {
+    const { sda, ctx } = makeEnv();
+    ctx.$gameMap.canMoveOn = () => true;
+    patchVmMath(ctx);
+    function steerChar() {
+        return Object.assign(Object.create(ctx.Game_CharacterBase.prototype), {
+            _x: 0, _y: 0, _realX: 0, _realY: 0, _collisionType: 0,
+            collider: () => SEEKER_COLLIDER, collidableWith: () => true,
+            distancePerFrame: () => 0.0625, moveVector: function() {},
+            isDirectionFixed: () => false, setDirection: function() {},
+            _amsSteerTimer: 0,
+            _amsVelocityX: 0, _amsVelocityY: 0
+        });
+    }
+    // контроль: без контекста — сенсоры чисты, рулит прямо к цели (1,0)
+    const plain = steerChar();
+    plain.applyContextSteering(5, 0, [], false);
+    assert.ok(Math.abs(plain._amsTargetSteerX - 1) < 1e-9 && Math.abs(plain._amsTargetSteerY) < 1e-9,
+        'no ctx -> straight desire');
+    // со стулом прямо по курсу и чуть выше — отворачивает ВНИЗ: интервал
+    // центров накрывает прямой и верхне-диагональный сенсоры, нижний свободен
+    // (старая формула «поворачивала» фантомной асимметрией — регресс-тест
+    // честной геометрии)
+    const blocked = steerChar();
+    blocked._amsPathCtx = {
+        obstacles: [{ hard: true, x1: 0.2, x2: 0.9, y1: -0.05, y2: 0.3 }],
+        sl: 0.25, st: 0.45, sr: 0.75, sb: 0.95
+    };
+    blocked.applyContextSteering(5, 0, [], false);
+    assert.ok(blocked._amsTargetSteerX < 0.99 || Math.abs(blocked._amsTargetSteerY) > 0.05,
+        'steering turns away from the hard box ahead');
+});
+
+function makeSmartEnemy(ctx) {
+    return Object.assign(Object.create(ctx.Game_CharacterBase.prototype), {
+        _x: 0, _y: 2, _realX: 0, _realY: 2, _collisionType: 0,
+        collider: () => SEEKER_COLLIDER, collidableWith: () => true,
+        distancePerFrame: () => 0.0625, moveVector: function() {},
+        isDirectionFixed: () => false, setDirection: function() {},
+        _amsVelocityX: 0, _amsVelocityY: 0,
+        _amsSmartTarget: { type: 'player' }, _amsSmartRefreshTimer: 0
+    });
+}
+
+test('P21: прямая ветка погони строит обход, а не прямой путь через стул', () => {
+    // враг (0,2) -> герой (6,2), стул (3,2) на прямой
+    const player = makePlayer(6, 2);
+    const { sda, ctx } = makeEnv({}, { w: 9, h: 5, characters: [makeStaticEvent(3, 2), player] });
+    ctx.$gamePlayer = player;
+    ctx.$gameMap.canMoveOn = () => true;
+    patchVmMath(ctx);
+    const enemy = makeSmartEnemy(ctx);
+    enemy.updateSmartPathLogic();
+    assert.ok(enemy._amsSmartPath && enemy._amsSmartPath.length > 1,
+        'path is a detour, not the direct single waypoint');
+    assert.ok(!enemy._amsSmartPath.some(wp => wp.x === 3 && wp.y === 2), 'no waypoint inside the chair cell');
+    assert.ok(enemy._amsPathCtx, 'path context lives with the detour');
+
+    // регресс-контраст: Hitbox Avoidance off -> прежнее поведение (прямой путь)
+    const { sda: s2, ctx: c2 } = makeEnv({ 'Hitbox Avoidance': 'false' }, { w: 9, h: 5, characters: [makeStaticEvent(3, 2), player] });
+    c2.$gamePlayer = player;
+    c2.$gameMap.canMoveOn = () => true;
+    patchVmMath(c2);
+    const enemy2 = makeSmartEnemy(c2);
+    enemy2.updateSmartPathLogic();
+    assert.ok(enemy2._amsSmartPath && enemy2._amsSmartPath.length === 1,
+        'legacy mode keeps the direct path (regression contract)');
 });

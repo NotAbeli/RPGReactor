@@ -745,4 +745,27 @@
 
     window.Scene_Gameover = Scene_SuperDuperGameOver;
 
+    //-----------------------------------------------------------------------------
+    // ВАТЧЕР СМЕРТИ НА КАРТЕ (P22)
+    // Проект — экшен-РПГ без стандартного боя: раньше смерть триггерил
+    // BattleManager.processDefeat, ампутированный вместе с боем. HP<=0 лидера
+    // на карте теперь запускает эту же красивую смерть (перехват goto ниже
+    // по файлу разворачивает помехи, а сцена — менюшку чекпоинт/сейв/титул).
+    //-----------------------------------------------------------------------------
+    var _SDGO_Game_Player_update = Game_Player.prototype.update;
+    Game_Player.prototype.update = function(sceneActive) {
+        _SDGO_Game_Player_update.call(this, sceneActive);
+        try {
+            if (SceneManager._sdGameOverTransition) return;
+            var leader = ($gameParty && $gameParty.leader) ? $gameParty.leader() : null;
+            if (!leader) return;
+            if (leader.hp <= 0 && !leader._sdDeathHandled) {
+                leader._sdDeathHandled = true;
+                SceneManager.goto(Scene_Gameover);
+            } else if (leader.hp > 0) {
+                leader._sdDeathHandled = false;
+            }
+        } catch (e) { /* смерть не должна ронять кадр */ }
+    };
+
 })();
