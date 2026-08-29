@@ -64,6 +64,17 @@
         circle = parameters['circle'],
         list = []; // хранение событий, которые следят за героем
 
+    // P24: вотчеры привязаны к событиям КОНКРЕТНОЙ карты — при переносе
+    // героя список обязан сбрасываться, иначе $gameMap.event(id) со старой
+    // карты = undefined и чтение _x роняло Scene_Map.update каждый кадр.
+    if (typeof Game_Map !== 'undefined' && Game_Map.prototype) {
+        var _YurS_Game_Map_setup = Game_Map.prototype.setup;
+        Game_Map.prototype.setup = function(mapId) {
+            list.length = 0;
+            return _YurS_Game_Map_setup.apply(this, arguments);
+        };
+    }
+
     //апдейт
     var YuryolStealthUpdate = Scene_Map.prototype.update;
     Scene_Map.prototype.update = function() {
@@ -71,8 +82,16 @@
         if (list) this.YuryolStealthCoordinate();
     };
 
-    //добавление события
+    //добавление события (P24: перерегистрация того же id заменяет запись —
+    // повторные вызовы скелета больше не раздувают список)
     Game_Character.prototype.YurStealth = function(dist, sw) {
+        for (var i = 0; i < list.length; i++) {
+            if (list[i].id === this._eventId) {
+                list[i].dist = dist;
+                list[i].sw = sw;
+                return;
+            }
+        }
         list.push({
             id: this._eventId, 
             dist: dist,
@@ -89,8 +108,18 @@
                 dist = list[i].dist,
                 sw = (list[i].sw) ? list[i].sw : 'A';
 
-            let distX = $gameMap.event(id)._x - $gamePlayer.x,
-                distY = $gameMap.event(id)._y - $gamePlayer.y;
+            // P24: события больше нет на карте (перенос/стёрт) — убрать
+            // вотчера, а не ронять кадр
+            let ev = null;
+            try { ev = $gameMap.event(id); } catch (e) { ev = null; }
+            if (!ev) {
+                list.splice(i, 1);
+                i--;
+                continue;
+            }
+
+            let distX = ev._x - $gamePlayer.x,
+                distY = ev._y - $gamePlayer.y;
             
             //проверка расстояния от события до героя
             if (circle) {
@@ -102,7 +131,7 @@
             
         
             //проверка стоит ли событие спиной к герою
-            switch($gameMap.event(id).direction()) {
+            switch(ev.direction()) {
                 case 2:
                     if (distY > 0) continue;
                     break;
