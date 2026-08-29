@@ -967,6 +967,11 @@ class UIManager {
             case 'playtest':
                 this.callbacks.playtest();
                 break;
+            case 'debug-playtest':
+                if (this.callbacks.debugPlaytest) {
+                    this.callbacks.debugPlaytest();
+                }
+                break;
             case 'open-database':
                 // Open database with the Spriter tab as default (S14)
                 this.callbacks.openDatabase('spriter');

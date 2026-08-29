@@ -73,6 +73,7 @@ class RPGReactor {
             saveProject: () => this.projectController.saveProject(),
             saveAll: () => this.projectController.saveAll(),
             playtest: () => this.playtest(),
+            debugPlaytest: () => this.debugPlaytest(),
             getGrid: () => (this.mapEditor ? this.mapEditor.snapGrid : 48),
             cycleGrid: () => this.cycleGrid(),
             isGridLockedTileset: () => (this.mapEditor ? this.mapEditor.isGridLockedTileset() : true),
@@ -541,6 +542,34 @@ class RPGReactor {
         const success = this.playtestManager.playtest(project.path);
         if (!success) {
             this.uiManager.updateStatus(window.I18n ? window.I18n.t('status.playtestNotImplemented') : 'Playtest mode not yet implemented');
+        }
+    }
+
+    // P18: дебаг-запуск — вся подготовка playtest, но с env RPGREACTOR_DEBUG=1
+    // (AgoniaDebugKit: автостарт без меню, F8 погоня, F9 дамп, F10 маршруты).
+    async debugPlaytest() {
+        const project = this.projectController.getCurrentProject();
+        if (!project) {
+            this.uiManager.updateStatus(window.I18n ? window.I18n.t('status.noProjectLoaded') : 'No project loaded');
+            return;
+        }
+        if (this.projectController.repairInvalidSystemMapReferences) {
+            try {
+                await this.projectController.repairInvalidSystemMapReferences();
+            } catch (e) {
+                console.warn('repairInvalidSystemMapReferences failed:', e);
+            }
+        }
+        const saved = await this.projectController.saveAll();
+        if (!saved) {
+            this.uiManager.updateStatus(window.I18n ? window.I18n.t('status.playtestSaveFailed') : 'Debug run cancelled: project could not be saved');
+            return;
+        }
+        if (this.audioPlayer) this.audioPlayer.stopExternal();
+        if (this.audioStudio) this.audioStudio.close();
+        const success = this.playtestManager.debugPlaytest(project.path);
+        if (!success) {
+            this.uiManager.updateStatus(window.I18n ? window.I18n.t('status.playtestNotImplemented') : 'Debug run not available');
         }
     }
 

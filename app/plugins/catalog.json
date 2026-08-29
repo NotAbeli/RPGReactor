@@ -9,6 +9,13 @@
       "description": "Auto-start audio rules per map (engine system module, Audio Studio)"
     },
     {
+      "name": "AgoniaDebugKit",
+      "file": "AgoniaDebugKit.js",
+      "version": "",
+      "author": "Agonia Engine",
+      "description": "Отладочный кит Agonia: автостарт без меню, принудительная погоня, дамп диагностики, тумблер маршрутов. Активен только при дебаг-запуске (env RPGREACTOR_DEBUG=1 или ?debug в URL)."
+    },
+    {
       "name": "AltimitMovementDebug",
       "file": "AltimitMovementDebug.js",
       "version": "",

@@ -23,14 +23,29 @@ class PlaytestManager {
         }
 
         if (typeof nw !== 'undefined') {
-            return this.launchPlaytestWindow(projectPath);
+            return this.launchPlaytestWindow(projectPath, 'test');
         } else {
             console.error('NW.js not available - cannot launch playtest window');
             return false;
         }
     }
 
-    async launchPlaytestWindow(projectPath, mode) {
+    // P18: дебаг-запуск — та же игра, но с env RPGREACTOR_DEBUG=1:
+    // AgoniaDebugKit просыпается (автостарт без меню, F8/F9/F10),
+    // оверлей маршрутов включается без правки конфига проекта.
+    debugPlaytest(projectPath) {
+        if (typeof window !== 'undefined' && window.RPGReactorHost?.mode === 'web') {
+            window.RPGReactorHost.openPlaytest('test');
+            return true;
+        }
+        if (typeof nw !== 'undefined') {
+            return this.launchPlaytestWindow(projectPath, 'test', { debug: true });
+        }
+        console.error('NW.js not available - cannot launch debug playtest');
+        return false;
+    }
+
+    async launchPlaytestWindow(projectPath, mode, opts) {
         if (mode === undefined) mode = 'test';
 
         this.lastLaunchError = null;
@@ -105,6 +120,11 @@ class PlaytestManager {
         if (enginePluginsDir) {
             spawnEnv.RPGREACTOR_PLUGINS_DIR = enginePluginsDir;
             console.log('Playtest engine plugin catalog:', enginePluginsDir);
+        }
+        // P18: дебаг-запуск — кит и оверлей маршрутов читают этот env
+        if (opts && opts.debug) {
+            spawnEnv.RPGREACTOR_DEBUG = '1';
+            console.log('Playtest DEBUG mode: AgoniaDebugKit active (F8/F9/F10)');
         }
 
         const child = spawn(nwPath, launchArgs, {

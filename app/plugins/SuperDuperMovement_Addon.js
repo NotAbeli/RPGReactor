@@ -212,7 +212,14 @@
     const pluginName = 'SuperDuperMovement_Addon';
     
     const params = PluginManager.parameters(pluginName);
-    const debugMode = params['Debug Mode'] === 'true';
+    // P18: дебаг-режим включается параметром ИЛИ env RPGREACTOR_DEBUG=1
+    // (кнопка 🐞 в редакторе запускает игру с этим env — маршруты видны
+    // без правки конфига проекта).
+    let debugMode = params['Debug Mode'] === 'true';
+    try {
+        if (!debugMode && typeof process !== 'undefined' && process.env
+            && process.env.RPGREACTOR_DEBUG === '1') debugMode = true;
+    } catch (e) { /* не NW — только параметр */ }
     const ALTIMIT_PRECISION = 128;
 
     // --- КОНФИГУРАЦИЯ БОЕВЫХ РЫВКОВ ---
@@ -1413,7 +1420,8 @@
                 hitbox: () => CONF_HITBOX,
                 softCost: () => CONF_SOFT_COST,
                 goalExempt: () => CONF_GOAL_EXEMPT
-            }
+            },
+            debugActive: () => debugMode
         };
     }
 

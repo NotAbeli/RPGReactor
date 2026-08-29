@@ -111,11 +111,13 @@ test('system module: retired SDLight loads from snapshot + DB overrides, before 
 
         // The system scripts load FIRST (before plugin scripts); every
         // registered module fires (Spriter, SDLight, Movement, Addon,
-        // Camera, Inventory, Battle, Enemies, AudioRules) in registry order.
-        assert.strictEqual(scriptTags.length, 10);
+        // Camera, Inventory, Battle, Enemies, AudioRules, DebugKit) in
+        // registry order.
+        assert.strictEqual(scriptTags.length, 11);
         assert.strictEqual(scriptTags[0].src, 'js/plugins/SuperDuperSpriter.js');
         assert.ok(scriptTags[0].src.indexOf('SuperDuperMovement') === -1, 'Spriter leads');
-        assert.strictEqual(scriptTags[9].src, 'js/plugins/WaitAsync.js');
+        assert.strictEqual(scriptTags[9].src, 'js/plugins/AgoniaDebugKit.js');
+        assert.strictEqual(scriptTags[10].src, 'js/plugins/WaitAsync.js');
 
         // _scripts tracks the system module (no double-load if it returns
         // to the manifest later).
@@ -195,8 +197,8 @@ test('system module: no DB, no snapshot -> module still loads with empty params'
         writeProject(dir, {});
         const { sandbox, scriptTags } = makeSandbox(dir);
         vm.runInContext('$plugins = []; PluginManager.setup($plugins);', sandbox);
-        // All nine registered modules load with file defaults.
-        assert.strictEqual(scriptTags.length, 9, 'Spriter + SDLight + Movement + Addon + Camera + Inventory + Battle + Enemies + AudioRules');
+        // All ten registered modules load with file defaults.
+        assert.strictEqual(scriptTags.length, 10, 'Spriter + SDLight + Movement + Addon + Camera + Inventory + Battle + Enemies + AudioRules + DebugKit');
     } finally {
         cleanupTemp(dir);
     }
