@@ -372,6 +372,53 @@
         return null;
     }
 
+    // P20: реальные хитбоксы персонажей карты (сырые AABB, без инфляции) —
+    // для дебаг-оверлея: статика = жёсткие стены для A*, динамика = мягкая цена.
+    function collectHitboxes() {
+        const chars = (typeof $gameMap !== 'undefined' && $gameMap && $gameMap.characters) ? $gameMap.characters() : [];
+        const boxes = [];
+        for (let i = 0; i < chars.length; i++) {
+            const c = chars[i];
+            if (!c || !c.collider) continue;
+            let ab = null;
+            try { const col = c.collider(); ab = col ? col.aabbox : null; } catch (e) { ab = null; }
+            if (!ab) continue;
+            const x1 = c._x + ab.left, y1 = c._y + ab.top;
+            const x2 = c._x + ab.right, y2 = c._y + ab.bottom;
+            if (!(x2 > x1) || !(y2 > y1)) continue;
+            boxes.push({ hard: !isDynamicMover(c), x1: x1, y1: y1, x2: x2, y2: y2 });
+        }
+        return boxes;
+    }
+
+    // P20: сегментная проверка против ЖЁСТКИХ инфляционных AABB контекста
+    // (та же формула, что cellPenalty). Возвращает true + клетки пересечения —
+    // findPath использует это для инварианта «путь не пересекает твёрдое».
+    function hardSegmentBlocked(ctx, ax, ay, bx, by, outCells) {
+        const obs = ctx.obstacles;
+        if (!obs) return false;
+        let anyHard = false;
+        for (let i = 0; i < obs.length; i++) if (obs[i].hard) { anyHard = true; break; }
+        if (!anyHard) return false;
+        const dist = Math.hypot(bx - ax, by - ay);
+        if (dist < 0.001) return false;
+        const steps = Math.ceil(dist / 0.25);
+        for (let i = 1; i <= steps; i++) {
+            const t = i / steps;
+            const cx = ax + (bx - ax) * t;
+            const cy = ay + (by - ay) * t;
+            for (let j = 0; j < obs.length; j++) {
+                const ob = obs[j];
+                if (!ob.hard) continue;
+                if (cx + ctx.sr > ob.x1 && cx + ctx.sl < ob.x2 && cy + ctx.sb > ob.y1 && cy + ctx.st < ob.y2) {
+                    if (outCells) outCells.push(Math.round(cx) + ',' + Math.round(cy));
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     /**
      * Контекст одного поиска: кэш проходимости + препятствия из реальных
      * коллайдеров. AABB препятствия раздувается на AABB ищущего (Минковски):
@@ -440,6 +487,9 @@
         let penalty = 0;
         if (isDeadZone(x, y, ctx.ignoredZones)) {
             penalty = Infinity;
+        } else if (ctx.extraBlocks && ctx.extraBlocks.has(key)) {
+            // P20: жёсткий блок клеток пересечения — пересбор пути в обход
+            penalty = Infinity;
         } else if (!$gameMap.checkPassage(x, y, 0x0f)) {
             penalty = Infinity;
         } else {
@@ -466,7 +516,7 @@
 
     const AStar = {
         heuristic: octile,
-        findPath: function(char, targetX, targetY, ignoredZones, goalEntity) {
+        findPath: function(char, targetX, targetY, ignoredZones, goalEntity, extraBlocks) {
             const startX = Math.round(char._realX !== undefined ? char._realX : char._x);
             const startY = Math.round(char._realY !== undefined ? char._realY : char._y);
             const endX = Math.round(targetX);
@@ -478,6 +528,8 @@
             }
 
             const ctx = buildPathContext(char, goalEntity, ignoredZones);
+            // P20: жёсткий блэклист клеток от сегментной валидации (пересбор)
+            if (extraBlocks) ctx.extraBlocks = extraBlocks;
             // P16: блэклист уже в ctx (buildPathContext) — путь обязан обойти
             const open = new MinHeap();
             const closed = {};
@@ -540,6 +592,24 @@
             path.reverse();
             path.shift(); // стартовая клетка не нужна
             if (reached && path.length > 0) path[path.length - 1] = {x: targetX, y: targetY};
+
+            // P20: ИНВАРИАНТ — путь не пересекает жёсткие хитбоксы. Клеточный
+            // A* не срезает углы, но тонкий AABB может «прошить» диагональ
+            // между центрами свободных клеток, а финальная дробная точка —
+            // чиркнуть инфляционную зону у мебели. Пересечение → жёсткий блок
+            // клеток пересечения + ОДИН пересбор (дальше — best-effort,
+            // anti-stuck догонит остатки физикой).
+            if (CONF_HITBOX && path.length > 0 && ctx.obstacles.length > 0) {
+                const crossed = [];
+                let px = startX, py = startY, blocked = false;
+                for (let i = 0; i < path.length; i++) {
+                    if (hardSegmentBlocked(ctx, px, py, path[i].x, path[i].y, crossed)) { blocked = true; break; }
+                    px = path[i].x; py = path[i].y;
+                }
+                if (blocked && crossed.length > 0 && !extraBlocks) {
+                    return this.findPath(char, targetX, targetY, ignoredZones, goalEntity, new Set(crossed));
+                }
+            }
             char._amsStuckBlacklist = null; // блэклист одноразовый — потреблён
             // P16: контекст поиска живёт с путём — порог прибытия консультирует
             // жёсткие препятствия у вейпоинта (см. updateSmartPathLogic)
@@ -1317,6 +1387,10 @@
         };
     }
 
+    // P20: мостик из дебаг-блока наружу (redrawPathDebug блочно-скоуплен) —
+    // тест-хук отдаёт его как overlayDraw, если блок исполнился.
+    let sdaOverlayDraw = null;
+
     if (debugMode && typeof Sprite !== 'undefined' && typeof Bitmap !== 'undefined'
         && typeof Scene_Map !== 'undefined' && typeof Graphics !== 'undefined') {
 
@@ -1349,6 +1423,34 @@
             const xf = xform || { kx: 1, ky: 1, ox: 0, oy: 0 };
             const tw = $gameMap.tileWidth();
             const th = $gameMap.tileHeight();
+            // P20: угол хитбокса — абсолютные тайловые координаты (без +tw/2):
+            // та же зум-трансформация, что у вейпоинтов (P19).
+            const corner = (tx, ty) => ({
+                x: Math.round(Math.round($gameMap.adjustX(tx) * tw) * xf.kx + xf.ox),
+                y: Math.round(Math.round($gameMap.adjustY(ty) * th) * xf.ky + xf.oy)
+            });
+            // P20: у MV Bitmap НЕТ strokeRect — рамка = 4 fillRect по 1px
+            function strokeBox(bmp, x, y, w, h, color) {
+                bmp.fillRect(x, y, w, 1, color);
+                bmp.fillRect(x, y + h - 1, w, 1, color);
+                bmp.fillRect(x, y, 1, h, color);
+                bmp.fillRect(x + w - 1, y, 1, h, color);
+            }
+            // P20: твёрдые предметы (статик, красный) и динамика (синяя рамка)
+            // — ровно те хитбоксы, которые видит A* (слой 3, cellPenalty).
+            const hitboxes = (typeof collectHitboxes === 'function') ? collectHitboxes() : [];
+            for (let i = 0; i < hitboxes.length; i++) {
+                const hb = hitboxes[i];
+                const p1 = corner(hb.x1, hb.y1);
+                const p2 = corner(hb.x2, hb.y2);
+                const w = Math.max(1, p2.x - p1.x), h = Math.max(1, p2.y - p1.y);
+                if (hb.hard) {
+                    bitmap.fillRect(p1.x, p1.y, w, h, 'rgba(255,72,72,0.20)');
+                    strokeBox(bitmap, p1.x, p1.y, w, h, '#ff4848');
+                } else {
+                    strokeBox(bitmap, p1.x, p1.y, w, h, '#4d9dff');
+                }
+            }
             const toScreen = (wx, wy) => ({
                 x: Math.round((Math.round($gameMap.adjustX(wx) * tw + tw / 2)) * xf.kx + xf.ox),
                 y: Math.round((Math.round($gameMap.adjustY(wy) * th + th / 2)) * xf.ky + xf.oy)
@@ -1420,6 +1522,9 @@
                 this.addChild(this._sdaPathDebugSprite);
             } catch (e) { /* дебаг не должен ронять сцену */ }
         };
+
+        // P20: экспорт отрисовки наружу (для тестов движка)
+        sdaOverlayDraw = redrawPathDebug;
     }
 
     // ======================================================================
@@ -1440,7 +1545,10 @@
                 goalExempt: () => CONF_GOAL_EXEMPT
             },
             debugActive: () => debugMode,
-            pathDebugXform: (typeof pathDebugXform === 'function') ? pathDebugXform : null
+            pathDebugXform: (typeof pathDebugXform === 'function') ? pathDebugXform : null,
+            collectHitboxes: (typeof collectHitboxes === 'function') ? collectHitboxes : null,
+            hardSegmentBlocked: (typeof hardSegmentBlocked === 'function') ? hardSegmentBlocked : null,
+            overlayDraw: sdaOverlayDraw
         };
     }
 

@@ -301,3 +301,127 @@ test('P16: LOS-шаг 0.25 — семплы вдвое плотнее, узки�
     sda.checkLineOfSight(seek, 0, 0, 6, 6, []);
     assert.ok(blockedSample, 'a diagonal sample lands inside the chair zone');
 });
+
+// ============================================================================
+// P20: хитбоксы в дебаге + инвариант «путь не пересекает твёрдое»
+// ============================================================================
+
+test('P20: hardSegmentBlocked — сегмент против жёстких инфляционных AABB', () => {
+    const { sda } = makeEnv();
+    const ctx = {
+        obstacles: [
+            { hard: true, x1: 1.4, x2: 1.6, y1: -0.5, y2: 0.5 },
+            { hard: false, x1: -5, x2: 5, y1: -5, y2: 5 } // софт не считается
+        ],
+        sl: 0.25, st: 0.45, sr: 0.75, sb: 0.95
+    };
+    const cells = [];
+    assert.strictEqual(sda.hardSegmentBlocked(ctx, 0, 0, 3, 0, cells), true, 'wall between points blocks');
+    assert.ok(cells.length > 0 && /^\d+,\d+$/.test(cells[0]), 'crossed cell recorded');
+    // мягкие препятствия игнорируются
+    const softOnly = { obstacles: [{ hard: false, x1: -5, x2: 5, y1: -5, y2: 5 }], sl: 0.25, st: 0.45, sr: 0.75, sb: 0.95 };
+    assert.strictEqual(sda.hardSegmentBlocked(softOnly, 0, 0, 3, 0, []), false, 'soft does not block');
+    // чистый сегмент
+    const clearCtx = { obstacles: [{ hard: true, x1: 10, x2: 11, y1: 10, y2: 11 }], sl: 0.25, st: 0.45, sr: 0.75, sb: 0.95 };
+    assert.strictEqual(sda.hardSegmentBlocked(clearCtx, 0, 0, 3, 0, []), false, 'clear segment passes');
+});
+
+test('P20: findPath — путь сквозь тонкий AABB на диагонали пересобирается в обход', () => {
+    // «нитка»: событие с нулевой шириной, инфляционный AABB [1.75,2.25]x[2.0,3.0]
+    // ровно в щели между боксами клеток (1,1),(2,1),(1,2),(2,2) — клетки A*
+    // свободны, но семплы сегмента (1,1)->(2,2) пересекают зону.
+    const threader = new Game_Event();
+    threader._x = 2.5; threader._y = 2.45;
+    threader.collider = () => ({ x: 0, y: 0, radius: 0, aabbox: { left: 0, right: 0, top: 0.5, bottom: 1.0 } });
+    threader.collidableWith = () => true;
+    const { sda } = makeEnv({}, { w: 9, h: 9, characters: [threader] });
+    const seek = makeSeeker(0, 0);
+
+    // предусловия сценария (документируют геометрию)
+    const ctx = sda.buildPathContext(seek, null, []);
+    assert.strictEqual(ctx.obstacles.length, 1, 'one inflated obstacle');
+    const ob = ctx.obstacles[0];
+    assert.ok(Math.abs(ob.x1 - 1.75) < 1e-9 && Math.abs(ob.x2 - 2.25) < 1e-9, 'x range threads the corner gap');
+    for (const [cx, cy] of [[1, 1], [2, 1], [1, 2], [2, 2]]) {
+        assert.notStrictEqual(sda.cellPenalty(ctx, cx, cy), Infinity, `cell ${cx},${cy} individually free`);
+    }
+    assert.strictEqual(sda.hardSegmentBlocked(ctx, 1, 1, 2, 2, []), true, 'diagonal segment crosses the zone');
+
+    // прямой A* без валидации пошёл бы через (1,1): валидация обязана
+    // занести клетку пересечения в жёсткий блок и пересобрать в обход
+    const p = sda.AStar.findPath(seek, 3, 3, []);
+    assert.ok(p, 'path exists');
+    assert.ok(!p.some(wp => wp.x === 1 && wp.y === 1), 'threaded cell avoided after rebuild');
+    assert.ok(pathCost(0, 0, p) > 3 * Math.SQRT2 + 0.2, 'detour is longer than the pure diagonal');
+    assert.ok(seek._amsPathCtx && seek._amsPathCtx.extraBlocks && seek._amsPathCtx.extraBlocks.has('1,1'),
+        'final context carries the hard cell block');
+});
+
+test('P20: collectHitboxes — сырые AABB с классификацией статика/динамика', () => {
+    const { sda } = makeEnv({}, { characters: [makeStaticEvent(2, 3), makePlayer(5, 5)] });
+    const boxes = sda.collectHitboxes();
+    assert.strictEqual(boxes.length, 2, 'both characters boxed');
+    const hard = boxes.find(b => b.hard);
+    const soft = boxes.find(b => !b.hard);
+    assert.ok(hard, 'static event is hard');
+    assert.ok(soft, 'player is dynamic');
+    assert.ok(Math.abs(hard.x1 - 2) < 1e-9 && Math.abs(hard.x2 - 3) < 1e-9 &&
+        Math.abs(hard.y1 - 3) < 1e-9 && Math.abs(hard.y2 - 4) < 1e-9, 'raw full-tile box (no inflation)');
+    assert.ok(Math.abs(soft.x1 - 5.25) < 1e-9 && Math.abs(soft.x2 - 5.75) < 1e-9, 'raw player box');
+});
+
+test('P20: overlayDraw — хитбоксы рисуются с зум-трансформацией (статик красным, динамика синим)', () => {
+    // окружение с заглушками Sprite/Bitmap/Scene_Map/Graphics — дебаг-блок
+    // исполняется (Debug Mode true) и отдаёт overlayDraw
+    const staticEv = makeStaticEvent(2, 3);
+    const smart = makeSeeker(5, 5, { _amsSmartTarget: { type: 'wander', timer: 1 } });
+    smart.collider = () => ({ x: 0.5, y: 0.5, radius: 0.2, aabbox: { left: 0.3, top: 0.3, right: 0.7, bottom: 0.7 } });
+    const calls = [];
+    class BitmapStub {
+        constructor(w, h) { this.width = w; this.height = h; }
+        clear() { }
+        fillRect(x, y, w, h, c) { calls.push(['fillRect', x, y, w, h, c]); }
+        drawCircle(x, y, r, c) { calls.push(['drawCircle', x, y, r, c]); }
+    }
+    const ctx = {
+        console: { log() { }, error() { }, warn() { } },
+        PluginManager: { parameters: () => ({ 'Debug Mode': 'true' }), registerCommand() { } },
+        Imported: {},
+        Game_Player, Game_Event, Game_Follower, Game_Interpreter, Game_Character, Game_CharacterBase,
+        $gamePlayer: null, $gameMap: null, Collider: ColliderMock,
+        Sprite: class { initialize(b) { this.bitmap = b; } },
+        Bitmap: BitmapStub,
+        Scene_Map: class { },
+        Graphics: { width: 800, height: 600, frameCount: 0 }
+    };
+    ctx.window = ctx;
+    vm.createContext(ctx);
+    vm.runInContext(pluginSrc, ctx, { filename: 'SuperDuperMovement_Addon.js' });
+    const sda = ctx.__SDA_TEST;
+    assert.strictEqual(typeof sda.overlayDraw, 'function', 'overlayDraw exposed when debug block ran');
+    ctx.$gameMap = {
+        width: () => 21, height: () => 21,
+        isValid: () => true, checkPassage: () => true, regionId: () => 0,
+        characters: () => [staticEv, smart],
+        events: () => [], event: () => null, collisionMesh: () => null,
+        adjustX: (x) => x, adjustY: (y) => y, tileWidth: () => 48, tileHeight: () => 48
+    };
+    // зум 1.5 со сдвигом — та же трансформация, что у вейпоинтов (P19).
+    // Рамка = 4 fillRect по 1px (у MV Bitmap нет strokeRect).
+    sda.overlayDraw(new BitmapStub(800, 600), { kx: 1.5, ky: 1.5, ox: -100, oy: -60 });
+    const hardStroke = calls.find(c => c[0] === 'fillRect' && c[5] === '#ff4848');
+    const hardFill = calls.find(c => c[0] === 'fillRect' && c[5] === 'rgba(255,72,72,0.20)');
+    const softStroke = calls.find(c => c[0] === 'fillRect' && c[5] === '#4d9dff');
+    assert.ok(hardStroke, 'hard box outlined red (fillRect frame)');
+    assert.ok(hardFill, 'hard box filled translucent');
+    assert.ok(softStroke, 'dynamic box outlined blue');
+    // статик: raw [2..3]x[3..4] тайлы -> pre-zoom [96..144]x[144..192] ->
+    // верхняя линия рамки: (44,156,72,1); 96*1.5-100=44, 144*1.5-60=156, w=72
+    assert.deepStrictEqual([hardStroke[1], hardStroke[2], hardStroke[3], hardStroke[4]], [44, 156, 72, 1],
+        'hard box frame at zoom-transformed position');
+    // динамика: raw [5.3..5.7] — двойной round плагина: round(5.3*48)=254,
+    // потом 254*1.5-100=281 (внутренний пиксельный round ДО скейла)
+    assert.deepStrictEqual([softStroke[1], softStroke[2]],
+        [Math.round(Math.round(5.3 * 48) * 1.5 - 100), Math.round(Math.round(5.3 * 48) * 1.5 - 60)],
+        'dynamic box zoom-transformed');
+});

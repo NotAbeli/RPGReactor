@@ -121,6 +121,16 @@
                     };
                 }
             }
+            // P20: реальные хитбоксы карты (статика/динамика)
+            if (window.__SDA_TEST && window.__SDA_TEST.collectHitboxes) {
+                try {
+                    var hbs = window.__SDA_TEST.collectHitboxes();
+                    out.hitboxes = {
+                        total: hbs.length,
+                        hard: hbs.filter(function(h) { return h.hard; }).length
+                    };
+                } catch (e) { /* диагностика не должна падать */ }
+            }
             var dir = path.join(process.cwd(), 'debug');
             if (!fs.existsSync(dir)) fs.mkdirSync(dir);
             var file = path.join(dir, 'diagnostics-' + (out.mapId || 0) + '-' + out.frame + '.json');
