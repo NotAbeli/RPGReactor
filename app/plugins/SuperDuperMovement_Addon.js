@@ -111,13 +111,55 @@
   * @desc Препятствия ближе этого радиуса (в клетках) от цели погони не блокируют путь — иначе цель в толпе недостижима.
   * @default 2
   *
-  * @param Debug Mode
- * @text Режим отладки
- * @type boolean
- * @desc Включить логирование в консоль (F8).
- * @default false
- *
- * @help
+   * @param Debug Mode
+  * @text Режим отладки
+  * @type boolean
+  * @desc Включить логирование в консоль (F8).
+  * @default false
+  *
+  * @param --- СКВОЗНАЯ ПОГОНЯ (ЧЕРЕЗ КАРТЫ) ---
+  * @default
+  *
+  * @param Cross-Map Pursuit
+  * @text Сквозная погоня
+  * @parent --- СКВОЗНАЯ ПОГОНЯ (ЧЕРЕЗ КАРТЫ) ---
+  * @type boolean
+  * @desc Враги продолжают преследование после ухода героя с карты: читают двери (ивенты с переходом) и идут за ним.
+  * @default true
+  *
+  * @param Pursuit Limit
+  * @text Лимит преследователей
+  * @parent --- СКВОЗНАЯ ПОГОНЯ (ЧЕРЕЗ КАРТЫ) ---
+  * @type number
+  * @min 1
+  * @desc Максимум врагов, одновременно идущих за героем между картами.
+  * @default 4
+  *
+  * @param Transit Frames
+  * @text Кадры на переход
+  * @parent --- СКВОЗНАЯ ПОГОНЯ (ЧЕРЕЗ КАРТЫ) ---
+  * @type number
+  * @min 0
+  * @desc Сколько кадров враг «идёт через дверь» между картами (плюс время пути до двери).
+  * @default 90
+  *
+  * @param Interest Timeout
+  * @text Интерес погони (сек)
+  * @parent --- СКВОЗНАЯ ПОГОНЯ (ЧЕРЕЗ КАРТЫ) ---
+  * @type number
+  * @min 10
+  * @desc Сколько секунд враг держит интерес без сближения, после чего сдаётся.
+  * @default 120
+  *
+  * @param Door Search Radius
+  * @text Радиус поиска двери
+  * @parent --- СКВОЗНАЯ ПОГОНЯ (ЧЕРЕЗ КАРТЫ) ---
+  * @type number
+  * @min 1
+  * @desc Радиус (клетки) поиска двери, которой воспользовался герой.
+  * @default 3
+  *
+  * @help
  * ============================================================================
  * SuperDuperMovement_Addon (v1.1.2)
  * ============================================================================
@@ -270,6 +312,13 @@
     if (deadZoneRegionsParam.trim() !== '') {
         deadZoneRegions = deadZoneRegionsParam.split(',').map(n => parseInt(n.trim(), 10)).filter(n => !isNaN(n) && n > 0);
     }
+
+    // --- P23: СКВОЗНАЯ ПОГОНЯ (ЧЕРЕЗ КАРТЫ) ---
+    const CONF_XMAP = params['Cross-Map Pursuit'] !== 'false';
+    const XMAP_LIMIT = Math.max(1, Number(params['Pursuit Limit'] || 4));
+    const XMAP_TRANSIT = Math.max(0, Number(params['Transit Frames'] || 90));
+    const XMAP_INTEREST = Math.max(10, Number(params['Interest Timeout'] || 120)) * 60;
+    const XMAP_DOOR_RADIUS = Math.max(1, Number(params['Door Search Radius'] || 3));
 
     // ======================================================================
     // ПОИСК ПУТИ: АЛГОРИТМ A* (PATHFINDING UTILITIES)
@@ -1225,8 +1274,12 @@
 
         // --- PLAYER, EVENT, COORD, PATROL, WANDER ---
         let tx, ty;
+        // P23-урок: в MV симулируется ТОЛЬКО карта игрока ($gameMap всегда
+        // его; _mapId у Game_Player нет). «Враг на карте без игрока» не
+        // существует: при переносе хук performTransfer собирает всех
+        // преследователей в призраки, материализация — тиком.
         if (target.type === 'player') { tx = $gamePlayer._x; ty = $gamePlayer._y; }
-        else if (target.type === 'event') { 
+        else if (target.type === 'event') {
             const ev = $gameMap.event(target.id);
             if (!ev) { this.smartStop(); return; }
             tx = ev._x; ty = ev._y;
@@ -1246,8 +1299,8 @@
             }
 
             const distToGoal = Math.hypot(tx - this._x, ty - this._y);
-            
-            if (distToGoal < Math.max(0.5, speed * 1.5)) { 
+
+            if (distToGoal < Math.max(0.5, speed * 1.5)) {
                 if (target.type === 'patrol') {
                     target.index = (target.index + 1) % target.points.length;
                     this._amsSmartPath = null;
@@ -1255,13 +1308,13 @@
                     target.timer = target.wait;
                     this._amsSmartPath = null;
                 } else {
-                    this.smartStop(); 
+                    this.smartStop();
                 }
-                return; 
+                return;
             }
 
             if (this._amsSmartRefreshTimer > 0) this._amsSmartRefreshTimer--;
-            
+
             if (target.type !== 'wander' && (!this._amsSmartPath || this._amsSmartPath.length === 0 || this._amsSmartRefreshTimer <= 0)) {
                 const goalEntity = target.type === 'player' ? $gamePlayer
                     : (target.type === 'event' && $gameMap.event(target.id)) ? $gameMap.event(target.id)
@@ -1282,6 +1335,13 @@
             }
         }
 
+        this.followSmartPath(target, ignoredZones, speed);
+    };
+
+    // P23: следование по уже построенному _amsSmartPath (срезка look-ahead,
+    // порог прибытия у мебели, steering). Общая для обычной погони и
+    // сквозной (враг идёт к двери тем же механизмом).
+    Game_CharacterBase.prototype.followSmartPath = function(target, ignoredZones, speed) {
         if (!this._amsSmartPath || this._amsSmartPath.length === 0) return;
 
         let targetNode = this._amsSmartPath[0];
@@ -1570,6 +1630,9 @@
             // давало worldAlpha 0.0035 — спрайт был всегда невидим.
             this.opacity = 230;
             this._sdaLastDrawn = -1;
+            // P23: оверлей по умолчанию СКРЫТ (маршруты+хитбоксы мешают игре);
+            // F10 в дебаг-запуске включает/выключает на лету.
+            this.visible = false;
         };
         Sprite_PathDebug.prototype.update = function() {
             Sprite.prototype.update.call(this);
@@ -1603,6 +1666,344 @@
     }
 
     // ======================================================================
+    // P23: СКВОЗНАЯ ПОГОНЯ ЧЕРЕЗ КАРТЫ
+    // MV симулирует только карту игрока: события не могут существовать за её
+    // пределами. Механика: при уходе героя погонящиеся враги «входят в дверь»
+    // (реестр-призрак на $gameSystem, выживает в сейвах), транзит идёт по
+    // таймеру, при совпадении карты призрака с картой героя — материализация
+    // (заглушка того же вида телепортируется к двери прибытия, либо событие
+    // инжектится динамически со скелетом из карточки БД).
+    // Дверь = событие с командой 201 (переход) на триггере 0/1 — назначение
+    // читается точно (mapId/x/y), сюжетные автозапуски (триггер 3) игнорируются.
+    // ======================================================================
+
+    // --- Реестр призраков (персистентный, на $gameSystem) ---
+    function xmapState() {
+        if (typeof $gameSystem === 'undefined' || !$gameSystem) return null;
+        if (!$gameSystem._sdPursuit) $gameSystem._sdPursuit = { seq: 0, ghosts: [] };
+        return $gameSystem._sdPursuit;
+    }
+
+    // --- Парсинг дверей из JSON карты (для статического графа; режим 1
+    // с переменными не резолвится статически — пропускается) ---
+    function xmapParseDoorList(json) {
+        var doors = [];
+        if (!json || !json.events) return doors;
+        for (var i = 1; i < json.events.length; i++) {
+            var ev = json.events[i];
+            if (!ev || !ev.pages) continue;
+            var found = false;
+            for (var p = 0; p < ev.pages.length && !found; p++) {
+                var pg = ev.pages[p];
+                var trig = pg.trigger;
+                if (trig !== 0 && trig !== 1) continue;
+                var list = pg.list || [];
+                for (var c = 0; c < list.length; c++) {
+                    if (list[c].code === 201 && list[c].parameters && list[c].parameters[0] === 0) {
+                        var pr = list[c].parameters;
+                        doors.push({
+                            evId: i, x: ev.x, y: ev.y,
+                            toMap: Number(pr[1]), toX: Number(pr[2]), toY: Number(pr[3])
+                        });
+                        found = true;
+                        break;
+                    }
+                }
+            }
+        }
+        return doors;
+    }
+
+    // --- Статический граф дверей: читаем data/Map*.json напрямую через fs
+    // (игра живёт в NW с node-интеграцией). Кэш на сессию. ---
+    let xmapGraphCache = null;
+    function xmapGraph() {
+        if (xmapGraphCache) return xmapGraphCache;
+        var edges = {};
+        try {
+            if (typeof process === 'undefined' || !process.versions || !process.versions.nw) {
+                throw new Error('no nw');
+            }
+            var fs = require('fs');
+            var path = require('path');
+            var dir = path.join(process.cwd(), 'data');
+            var files = fs.readdirSync(dir);
+            for (var i = 0; i < files.length; i++) {
+                var m = /^Map(\d+)\.json$/.exec(files[i]);
+                if (!m) continue;
+                try {
+                    var json = JSON.parse(fs.readFileSync(path.join(dir, files[i]), 'utf8'));
+                    var doors = xmapParseDoorList(json);
+                    if (doors.length) edges[Number(m[1])] = doors;
+                } catch (e) { /* битая карта — пропускаем */ }
+            }
+        } catch (e) { /* браузерный контекст — сквозной погони нет */ }
+        return (xmapGraphCache = { edges: edges });
+    }
+
+    // --- BFS по графу: маршрут fromMap -> toMap (массив хопов-дверей) ---
+    function xmapRouteOnGraph(graph, fromMap, toMap) {
+        if (fromMap === toMap) return [];
+        if (!graph || !graph.edges) return null;
+        var parent = {};
+        parent[fromMap] = null;
+        var queue = [fromMap];
+        var found = false;
+        while (queue.length && !found) {
+            var cur = queue.shift();
+            var doors = graph.edges[cur] || [];
+            for (var i = 0; i < doors.length; i++) {
+                var d = doors[i];
+                if (!(d.toMap in parent)) {
+                    parent[d.toMap] = { fromMap: cur, door: d };
+                    if (d.toMap === toMap) { found = true; break; }
+                    queue.push(d.toMap);
+                }
+            }
+        }
+        if (!(toMap in parent)) return null;
+        var hops = [];
+        var cur2 = toMap;
+        while (parent[cur2]) {
+            hops.unshift(parent[cur2].door);
+            cur2 = parent[cur2].fromMap;
+        }
+        return hops;
+    }
+    function xmapRoute(fromMap, toMap) {
+        return xmapRouteOnGraph(xmapGraph(), fromMap, toMap);
+    }
+
+    // --- Двери ТЕКУЩЕЙ карты в рантайме. P23-урок: активные страницы событий
+    // в рантайме ПЕРЕЗАПИСЫВАЮТСЯ чужими плагинами (замечено: скелет P2
+    // добавляет свои 201, aex-зоны меняют триггеры) — странице верить
+    // нельзя. Источник истины — статический граф (файлы данных); из рантайма
+    // берём только живые координаты события (если есть) и пропуск erased. ---
+    function xmapDoorsRuntime() {
+        var doors = [];
+        try {
+            var mapId = $gameMap.mapId();
+            var list = (xmapGraph().edges[mapId] || []).slice();
+            for (var i = 0; i < list.length; i++) {
+                var d = list[i];
+                var ev = ($gameMap.event && $gameMap.event(d.evId)) || null;
+                if (ev && ev._erased) continue;
+                doors.push({
+                    evId: d.evId,
+                    x: ev ? ev._x : d.x,
+                    y: ev ? ev._y : d.y,
+                    toMap: d.toMap, toX: d.toX, toY: d.toY
+                });
+            }
+        } catch (e) { /* безопасно */ }
+        return doors;
+    }
+
+    // --- Тег вида врага (match-строка карточки SuperDuperEnemies) ---
+    function xmapTagOf(ev) {
+        try {
+            if (typeof SDE_API !== 'undefined' && SDE_API.getMatchTag) {
+                var t = SDE_API.getMatchTag($gameMap.mapId(), ev._eventId);
+                if (t) return t;
+            }
+        } catch (e) {}
+        var note = (ev.event && ev.event()) ? (ev.event().note || '') : '';
+        var m = /<([^>]+)>/.exec(note);
+        return m ? m[1] : null;
+    }
+
+    // --- Вход в дверь: снимаем состояние врага в реестр-призрак ---
+    function xmapEnterTransit(ev, door, extraFrames) {
+        var st = xmapState();
+        if (!st) return false;
+        if (st.ghosts.length >= XMAP_LIMIT) return false;
+        var tag = xmapTagOf(ev);
+        if (!tag) return false;
+        var selfSwitches = {};
+        try {
+            var letters = ['A', 'B', 'C', 'D'];
+            for (var i = 0; i < letters.length; i++) {
+                var v = $gameSelfSwitches.value([$gameMap.mapId(), ev._eventId, letters[i]]);
+                if (v) selfSwitches[letters[i]] = true;
+            }
+        } catch (e) {}
+        var hp = null;
+        try {
+            if (typeof SDE_API !== 'undefined' && SDE_API.getEventData) {
+                var d = SDE_API.getEventData($gameMap.mapId(), ev._eventId);
+                if (d) hp = d.hp;
+            }
+        } catch (e) {}
+        st.ghosts.push({
+            key: 'p' + (++st.seq),
+            tag: tag,
+            selfSwitches: selfSwitches,
+            hp: hp,
+            leg: { toMap: door.toMap, toX: door.toX, toY: door.toY },
+            etaFrames: XMAP_TRANSIT + Math.max(0, extraFrames | 0),
+            interest: XMAP_INTEREST,
+            waiting: false
+        });
+        try { ev.smartStop(); } catch (e) {}
+        try { ev.erase(); } catch (e) {}
+        return true;
+    }
+
+    // --- Материализация призрака на карте игрока ---
+    function xmapMaterialize(g) {
+        try {
+            var mapId = $gameMap.mapId();
+            if (g.leg.toMap !== mapId) return false;
+            // 1) заглушка того же вида на карте -> телепортируем к точке прибытия
+            var evs = $gameMap.events();
+            var target = null;
+            for (var i = 0; i < evs.length; i++) {
+                var ev = evs[i];
+                if (!ev || ev._erased) continue;
+                if (xmapTagOf(ev) === g.tag) { target = ev; break; }
+            }
+            if (target) {
+                target.locate(g.leg.toX, g.leg.toY);
+            } else {
+                // 2) заглушки нет — инжект события со скелетом из карточки
+                if (typeof SDE_API === 'undefined' || !SDE_API.buildTemplatePages) return false;
+                var pages = SDE_API.buildTemplatePages(g.tag);
+                if (!pages || !pages.length) return false;
+                var id = $dataMap.events.length;
+                var evData = {
+                    id: id, name: 'PURSUIT ' + g.tag, note: '<' + g.tag + '>',
+                    x: g.leg.toX, y: g.leg.toY, pages: pages
+                };
+                // MV-контракт: meta обязателен (SuperDuperMovement читает
+                // dataEvent.meta.collider на setupPageSettings)
+                try {
+                    if (typeof DataManager !== 'undefined' && DataManager.extractMetadata) {
+                        DataManager.extractMetadata(evData);
+                    } else {
+                        evData.meta = {};
+                    }
+                } catch (e) { evData.meta = {}; }
+                $dataMap.events[id] = evData;
+                target = new Game_Event(mapId, id);
+                $gameMap._events[id] = target;
+                if (SDE_API.registerInjectedEvent) SDE_API.registerInjectedEvent(mapId, id, g.tag);
+                // спрайт для события, добавленного после старта сцены
+                var scene = (typeof SceneManager !== 'undefined') && SceneManager._scene;
+                var set = scene && scene._spriteset;
+                if (set && set._characterSprites && typeof Sprite_Character !== 'undefined') {
+                    try {
+                        var sp = new Sprite_Character(target);
+                        set._characterSprites.push(sp);
+                        if (set._tilemap) set._tilemap.addChild(sp);
+                    } catch (e) { /* спрайт добавится при следующем рендере */ }
+                }
+            }
+            // восстановить фазу боя (селф-свитчи) и HP
+            try {
+                var letters2 = ['A', 'B', 'C', 'D'];
+                for (var k = 0; k < letters2.length; k++) {
+                    $gameSelfSwitches.setValue([mapId, target._eventId, letters2[k]], !!g.selfSwitches[letters2[k]]);
+                }
+            } catch (e) {}
+            if (g.hp !== null && g.hp !== undefined && SDE_API.setEventDataHp) {
+                SDE_API.setEventDataHp(mapId, target._eventId, g.hp);
+            }
+            try { target.refresh(); } catch (e) {}
+            try { target.smartMoveToPlayer(); } catch (e) {}
+            return true;
+        } catch (e) {
+            if (typeof window !== 'undefined') window.__p23MatErr = String(e && e.message ? e.message : e);
+            return false;
+        }
+    }
+
+    // --- Тик реестра (каждый кадр активной карты) ---
+    function xmapTick() {
+        var st = xmapState();
+        if (!st || st.ghosts.length === 0) return;
+        var playerMap = $gameMap.mapId(); // P23-урок: карта игрока == текущая
+        for (var i = st.ghosts.length - 1; i >= 0; i--) {
+            var g = st.ghosts[i];
+            g.interest--;
+            if (g.interest <= 0) { st.ghosts.splice(i, 1); continue; }
+            if (g.leg.toMap === playerMap) {
+                g.etaFrames--;
+                if (g.etaFrames <= 0 && xmapMaterialize(g)) st.ghosts.splice(i, 1);
+            } else {
+                // игрок ушёл дальше: призрак стоит у двери (waiting) или едет
+                if (g.etaFrames > 0) { g.etaFrames--; continue; }
+                var route = xmapRoute(g.leg.toMap, playerMap);
+                if (route && route.length > 0) {
+                    g.leg = { toMap: route[0].toMap, toX: route[0].toX, toY: route[0].toY };
+                    g.etaFrames = XMAP_TRANSIT;
+                    g.waiting = false;
+                } else {
+                    g.waiting = true; // тупик — ждёт у двери возвращения героя
+                }
+            }
+        }
+    }
+
+    // P23: тик реестра — только когда Game_Map есть (vm-тесты его не дают)
+    if (typeof Game_Map !== 'undefined' && Game_Map.prototype) {
+        const _SDAP_Game_Map_update = Game_Map.prototype.update;
+        Game_Map.prototype.update = function(isActive) {
+            _SDAP_Game_Map_update.call(this, isActive);
+            if (CONF_XMAP) {
+                try { xmapTick(); } catch (e) { /* погоня не должна ронять кадр */ }
+            }
+        };
+    }
+
+    // --- Уход героя с карты: все погонящиеся враги «видели» дверь и входят ---
+    const _SDAP_Game_Player_performTransfer = Game_Player.prototype.performTransfer;
+    Game_Player.prototype.performTransfer = function() {
+        if (typeof window !== 'undefined') window.__p23HookRan = true;
+        if (CONF_XMAP && this._transferring && typeof $gameMap !== 'undefined' && $gameMap) {
+            try {
+                var toMap = this._newMapId;
+                var px = this._x, py = this._y;
+                var chasers = [];
+                var evs = $gameMap.events();
+                for (var i = 0; i < evs.length; i++) {
+                    var ev = evs[i];
+                    if (ev && ev._amsSmartTarget && ev._amsSmartTarget.type === 'player' && !ev._erased) chasers.push(ev);
+                }
+                for (var c = 0; c < chasers.length; c++) {
+                    var ch = chasers[c];
+                    // дверь, которой воспользовался герой: рядом с точкой ухода
+                    // и ведущая на целевую карту
+                    var doors = xmapDoorsRuntime();
+                    var door = null;
+                    for (var d = 0; d < doors.length; d++) {
+                        if (doors[d].toMap === toMap &&
+                            Math.hypot(doors[d].x - px, doors[d].y - py) <= XMAP_DOOR_RADIUS) { door = doors[d]; break; }
+                    }
+                    if (!door) {
+                        // герой ушёл «скриптом» — идём по графу
+                        var route = xmapRoute($gameMap.mapId(), toMap);
+                        if (route && route.length > 0) {
+                            var rt = xmapDoorsRuntime();
+                            for (var d2 = 0; d2 < rt.length; d2++) {
+                                if (rt[d2].toMap === route[0].toMap) { door = rt[d2]; break; }
+                            }
+                        }
+                    }
+                    if (door) {
+                        var dist = Math.hypot(door.x - ch._x, door.y - ch._y);
+                        xmapEnterTransit(ch, door, Math.round(dist * 16)); // ~16 кадров на клетку
+                    } else {
+                        try { ch.smartStop(); } catch (e) {} // некуда идти
+                    }
+                }
+            } catch (e) {
+                if (typeof window !== 'undefined') window.__p23Err = String(e && e.message ? e.message : e);
+            }
+        }
+        return _SDAP_Game_Player_performTransfer.call(this);
+    };
+
+    // ======================================================================
     // ТЕСТ-ХУК (виден только вне игры тестам движка; на поведение не влияет)
     // ======================================================================
     if (typeof window !== 'undefined' && !window.__SDA_TEST) {
@@ -1623,7 +2024,20 @@
             pathDebugXform: (typeof pathDebugXform === 'function') ? pathDebugXform : null,
             collectHitboxes: (typeof collectHitboxes === 'function') ? collectHitboxes : null,
             hardSegmentBlocked: (typeof hardSegmentBlocked === 'function') ? hardSegmentBlocked : null,
-            overlayDraw: sdaOverlayDraw
+            overlayDraw: sdaOverlayDraw,
+            // P23: сквозная погоня
+            xmap: {
+                parseDoorList: (typeof xmapParseDoorList === 'function') ? xmapParseDoorList : null,
+                routeOnGraph: (typeof xmapRouteOnGraph === 'function') ? xmapRouteOnGraph : null,
+                doorsRuntime: (typeof xmapDoorsRuntime === 'function') ? xmapDoorsRuntime : null,
+                enterTransit: (typeof xmapEnterTransit === 'function') ? xmapEnterTransit : null,
+                materialize: (typeof xmapMaterialize === 'function') ? xmapMaterialize : null,
+                tick: (typeof xmapTick === 'function') ? xmapTick : null,
+                state: (typeof xmapState === 'function') ? xmapState : null,
+                enabled: () => CONF_XMAP,
+                setGraphCache: function(fake) { xmapGraphCache = fake; },
+                clearGraphCache: function() { xmapGraphCache = null; }
+            }
         };
     }
 

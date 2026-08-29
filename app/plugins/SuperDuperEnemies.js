@@ -1716,6 +1716,53 @@
           CLASSIC_FLAGS.forEach(function(f) { set[f] = true; });
           VALID_FLAGS.forEach(function(f) { set[f] = true; });
           return Object.keys(set);
+      },
+
+      // P23 (сквозная погоня): match-тег карточки, по которому событие
+      // зарегистрировано как враг/НПС ('biba' и т.п.). null — не враг.
+      getMatchTag: function(mapId, evId) {
+          var data = getEventData(mapId, evId);
+          if (!data) return null;
+          for (var i = 0; i < MEHP_DB.length; i++) {
+              if (MEHP_DB[i] && MEHP_DB[i].id === data.enemyId) return MEHP_DB[i].match;
+          }
+          return null;
+      },
+
+      // P23: страницы-скелет по тегу карточки-шаблона (для инжекта врага
+      // на карту без заглушки). null — карточка не найдена/не шаблон.
+      buildTemplatePages: function(tag) {
+          if (!tag) return null;
+          for (var i = 0; i < MEHP_DB.length; i++) {
+              var r = MEHP_DB[i];
+              if (r && r.match === tag) return sdeBuildEnemyPages(r);
+          }
+          return null;
+      },
+
+      // P23: регистрация события, добавленного на карту ПОСЛЕ setup
+      // (инжект преследователя). true — успешно.
+      registerInjectedEvent: function(mapId, evId) {
+          try {
+              var data = $dataMap && $dataMap.events ? $dataMap.events[evId] : null;
+              if (!data) return false;
+              var rule = findRuleByNote(data.note);
+              if (!rule) return false;
+              createEventData(mapId, evId, rule);
+              CentralizedManager.register(evId);
+              CentralizedManager.updateCombatTracking();
+              return true;
+          } catch (e) { return false; }
+      },
+
+      // P23: восстановление HP преследователя после межкарточного транзита.
+      setEventDataHp: function(mapId, evId, hp) {
+          var data = getEventData(mapId, evId);
+          if (!data) return false;
+          data.hp = Number(hp);
+          if (data.hp > data.maxHp) data.hp = data.maxHp;
+          if (data.hp <= 0) data.hp = 1; // живой преследователь
+          return true;
       }
   };
 
