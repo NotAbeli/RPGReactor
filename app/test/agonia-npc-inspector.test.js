@@ -335,7 +335,7 @@ test('P10: палитра света — вкладка «Шаблоны» с б
     assert.deepStrictEqual(armed, [{ name: 'Лампа тёплая', color: '#ffaa66', radius: 6 }], 'template armed via hook');
 });
 
-test('P6/P7: БД-карточка врага начинается с ряда из пяти карточек графики', () => {
+test('P25: БД-карточка врага — восемь карточек-состояний с SE-полями', () => {
     const src = p => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
     const ctx = {
         console: { log() { }, warn() { }, error() { } },
@@ -351,27 +351,38 @@ test('P6/P7: БД-карточка врага начинается с ряда �
     vm.runInContext(src('src/database/DatabaseShells.js'), ctx, { filename: 'DatabaseShells.js' });
     vm.runInContext(src('src/database/DatabaseSpriterEditor.js') + '\nthis.DatabaseSpriterEditor = DatabaseSpriterEditor;', ctx, { filename: 'DatabaseSpriterEditor.js' });
     vm.runInContext(src('src/database/DatabaseEnemiesEditor.js') + '\nthis.DatabaseEnemiesEditor = DatabaseEnemiesEditor;', ctx, { filename: 'DatabaseEnemiesEditor.js' });
-    const dbm = {
-        data: { agonia: { enemies: { EnemyDatabase: JSON.stringify([JSON.stringify({ id: '3', match: '<biba>', hp: '100', template: 'true', spriteName: 'Enemy 1', customRules: '[]' })]) }, battle: {}, dash: {}, spriter: {} } }
+    const ed = new ctx.DatabaseEnemiesEditor({ data: { agonia: { enemies: {}, battle: {}, dash: {}, spriter: {} } } },
+        { getCurrentProject: () => ({ path: 'X:/proj' }) }, {}, {});
+    const entry = {
+        id: '3', match: '<biba>', hp: '100', template: 'true', spriteName: 'Enemy 1', customRules: '[]',
+        // рантайм-формат: {key:{name,index}} — P25-фикс полей
+        stateGraphics: JSON.stringify({ alert: { name: 'Monster', index: 2 } })
     };
-    const ed = new ctx.DatabaseEnemiesEditor(dbm, { getCurrentProject: () => ({ path: 'X:/proj' }) }, {}, {});
     const host = makeElement('div');
-    ed.classicApi().renderDetail(host, JSON.parse(JSON.stringify({ id: '3', match: '<biba>', hp: '100', template: 'true', spriteName: 'Enemy 1', customRules: '[]' })), 0, () => {});
+    ed.classicApi().renderDetail(host, entry, 0, () => {});
     const collect = (el, acc) => { for (const c of el.children || []) { acc.push(c); collect(c, acc); } return acc; };
     const all = collect(host, []);
     const texts = all.map(c => String(c.textContent || ''));
-    // ряд из пяти карточек — первая секция
-    assert.strictEqual(host.children.length > 0, true, 'card rendered');
-    const first = host.children[0];
-    assert.ok(collect(first, []).length > 10, 'five-card row is the first block');
-    for (const label of ['Основная', 'Тревога', 'Атака', 'Урон', 'Смерть']) {
+    for (const label of ['Основная', 'Тревога', 'Бой', 'Паника', 'Бегство', 'Атака', 'Урон', 'Смерть']) {
         assert.ok(texts.some(t => t.includes(label)), 'card caption: ' + label);
     }
-    assert.ok(texts.some(t => t.includes('по умолчанию')), 'default marker for unset states');
+    // восемь SE-полей (по одному на карточку)
+    const seInputs = all.filter(c => c.tagName === 'input' && c.placeholder === 'SE');
+    assert.strictEqual(seInputs.length, 8, 'one SE input per state card');
     assert.ok(all.some(c => c.tagName === 'canvas'), 'animated canvases present');
-    // у заданного состояния нет пометки «по умолчанию» в его подписи
-    const attackCap = texts.find(t => t.includes('рывок и удар'));
-    assert.ok(attackCap, 'attack usage caption');
+    // у заданного состояния НЕТ пометки «по умолчанию», у незаданных — есть
+    assert.ok(texts.some(t => t.includes('по умолчанию')), 'default markers for unset states');
+    const markers = all.filter(c => String(c.textContent || '').includes('по умолчанию'));
+    assert.strictEqual(markers.length, 7, 'exactly one set state (alert) hides its marker');
+    // юзейдж-подписи-инструкции вырезаны (P12/P25)
+    assert.ok(!texts.some(t => t.includes('рывок и удар')), 'no usage instruction captions');
+    // нижней секции «Состояния (графика + звук)» больше нет
+    assert.ok(!texts.some(t => t.includes('Состояния (графика')), 'bottom states section removed');
+    // SE-коммит персистит stateSounds
+    const deathSe = seInputs[7];
+    deathSe.value = 'Scream1';
+    (deathSe._listeners.change || []).forEach(f => f());
+    assert.strictEqual(JSON.parse(entry.stateSounds).death, 'Scream1', 'SE input persists into stateSounds');
 });
 
 test('P7: палитра света — список источников, клик выбирает uid', () => {

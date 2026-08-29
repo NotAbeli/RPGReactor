@@ -188,9 +188,12 @@ class DatabaseEnemiesEditor {
 
         form.mount(formCol);
 
-        // P7: ряд из ПЯТИ карточек графики — первая секция карточки.
-        // Основная/Тревога/Атака/Урон/Смерть; у незаданных — дефолтная
-        // графика карточки с пометкой; клик по карточке = пикер состояния.
+        // P25: карточки-состояния — ГЛАВНЫЙ редактор графики и звука вида.
+        // Восемь состояний скелета; превью живое (геттер перечитывает
+        // stateGraphics — правки видны сразу), клик = пикер Спрайтера,
+        // SE-поле под превью пишет stateSounds. P25-фикс: карточки P7
+        // читали gfx[key].spriteName при формате рантайма {name,index} —
+        // своя графика рендерилась пустой и выглядело как «менять нельзя».
         if (String(entry.template) === 'true') {
             const spriter = this._spriterPicker();
             if (spriter && typeof spriter._renderPlayer === 'function') {
@@ -198,16 +201,22 @@ class DatabaseEnemiesEditor {
                 const row = document.createElement('div');
                 row.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;margin-bottom:4px;';
                 const cards = [
-                    ['rest', this._tt('Основная'), this._tt('покой, ходьба, бой — если для состояния нет своей графики')],
-                    ['alert', this._tt('Тревога'), this._tt('услышал шум игрока')],
-                    ['attack', this._tt('Атака'), this._tt('рывок и удар / выстрел по игроку')],
-                    ['hurt', this._tt('Урон'), this._tt('при получении удара или пули')],
-                    ['death', this._tt('Смерть'), this._tt('когда HP на нуле')]
+                    ['rest', this._tt('Основная')],
+                    ['alert', this._tt('Тревога')],
+                    ['combat', this._tt('Бой')],
+                    ['panic', this._tt('Паника')],
+                    ['flee', this._tt('Бегство')],
+                    ['attack', this._tt('Атака')],
+                    ['hurt', this._tt('Урон')],
+                    ['death', this._tt('Смерть')]
                 ];
-                let gfx = {};
-                try { if (entry.stateGraphics) gfx = JSON.parse(entry.stateGraphics) || {}; } catch (e) { gfx = {}; }
-                for (const [key, label, usage] of cards) {
-                    const g = gfx[key];
+                let snd = {};
+                try { if (entry.stateSounds) snd = JSON.parse(entry.stateSounds) || {}; } catch (e) { snd = {}; }
+                const readGfx = () => {
+                    try { return (entry.stateGraphics ? JSON.parse(entry.stateGraphics) : null) || {}; } catch (e) { return {}; }
+                };
+                for (const [key, label] of cards) {
+                    const g = readGfx()[key];
                     const hasOwn = !!(g && g.name);
                     const card = document.createElement('div');
                     card.style.cssText = `
@@ -215,11 +224,15 @@ class DatabaseEnemiesEditor {
                         border-radius: 6px; padding: 5px; cursor: pointer;
                         background-color: var(--color-bg-deep); text-align: center;
                     `;
-                    card.title = this._tt('Клик — выбрать графику: ') + usage;
                     const live = {
                         get Visuals() {
-                            const src = (hasOwn && gfx[key]) ? gfx[key] : entry;
-                            return { CharacterName: src.spriteName || '', CharacterIndex: Number(src.spriteIndex) || 0 };
+                            const cur = readGfx();
+                            const own = cur[key];
+                            const src = (own && own.name) ? own : entry;
+                            return {
+                                CharacterName: (own && own.name) ? String(own.name) : (src.spriteName || ''),
+                                CharacterIndex: (own && own.name) ? (Number(own.index) || 0) : (Number(src.spriteIndex) || 0)
+                            };
                         }
                     };
                     card.appendChild(spriter._renderPlayer(live, 'skins', { mini: true }));
@@ -227,22 +240,34 @@ class DatabaseEnemiesEditor {
                     cap.style.cssText = 'font-size:10.5px;font-weight:700;color:var(--color-text-strong);margin-top:3px;';
                     cap.textContent = label;
                     card.appendChild(cap);
-                    const use = document.createElement('div');
-                    use.style.cssText = 'font-size:9px;color:var(--color-text-dim);line-height:1.25;margin-top:1px;';
-                    use.textContent = hasOwn ? usage : (usage + ' · ' + this._tt('по умолчанию'));
-                    card.appendChild(use);
+                    const marker = document.createElement('div');
+                    marker.style.cssText = 'font-size:9px;color:var(--color-text-dim);line-height:1.25;margin-top:1px;';
+                    marker.textContent = hasOwn ? '' : this._tt('по умолчанию');
+                    card.appendChild(marker);
+                    const sinp = document.createElement('input');
+                    sinp.type = 'text';
+                    sinp.placeholder = 'SE';
+                    sinp.value = String(snd[key] || '');
+                    sinp.style.cssText = 'width:100%;box-sizing:border-box;font-size:10.5px;margin-top:3px;';
+                    sinp.addEventListener('click', e => e.stopPropagation());
+                    sinp.addEventListener('change', () => {
+                        if (String(sinp.value || '').trim() === '') delete snd[key];
+                        else snd[key] = String(sinp.value).trim();
+                        entry.stateSounds = JSON.stringify(snd);
+                        api.changed();
+                    });
+                    card.appendChild(sinp);
                     card.addEventListener('click', () => {
                         spriter._showFilePicker('', (name, index) => {
-                            let cur = {};
-                            try { if (entry.stateGraphics) cur = JSON.parse(entry.stateGraphics) || {}; } catch (e) { cur = {}; }
+                            const cur = readGfx();
                             cur[key] = { name: String(name), index: Number(index) || 0 };
                             entry.stateGraphics = JSON.stringify(cur);
                             api.changed();
-                            // живое обновление карточки ряда: картинку перезагрузит
-                            // снапшот-детектор плеера (геттер читает gfx[key]),
-                            // рамку и подпись правим на месте
+                            // живое обновление: превью перезагрузит снапшот-
+                            // детектор плеера (геттер перечитывает stateGraphics),
+                            // рамку и маркер правим на месте
                             card.style.borderColor = 'var(--color-accent-border-mid, #5a8ad4)';
-                            use.textContent = usage;
+                            marker.textContent = '';
                         }, 'characters', { pickCharacterIndex: true });
                     });
                     row.appendChild(card);
@@ -366,69 +391,8 @@ class DatabaseEnemiesEditor {
         hint.style.cssText = 'font-size:10px;color:var(--color-text-muted);margin-top:2px;';
         hint.textContent = this._tt('Значение как в Арсенале = без оверрайда; измени — у этого врага свой урон.');
         host.appendChild(hint);
-
-        // --- Состояния: графика + звук (+ превью) ---
-        this._sectionLabel(host, 'Состояния (графика + звук)');
-        let gfx = {}, snd = {};
-        try { if (entry.stateGraphics) gfx = JSON.parse(entry.stateGraphics) || {}; } catch (e) { gfx = {}; }
-        try { if (entry.stateSounds) snd = JSON.parse(entry.stateSounds) || {}; } catch (e) { snd = {}; }
-        const states = [
-            ['rest', 'Покой'], ['alert', 'Тревога'], ['combat', 'Бой'], ['panic', 'Паника'],
-            ['flee', 'Бегство'], ['attack', 'Атака'], ['hurt', 'Урон'], ['death', 'Смерть']
-        ];
-        const grid = document.createElement('div');
-        grid.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px 14px;';
-        for (const [key, label] of states) {
-            const row = document.createElement('div');
-            row.style.cssText = 'display:flex;align-items:center;gap:6px;min-width:0;margin:2px 0;';
-            const lb = document.createElement('span');
-            lb.style.cssText = 'flex:none;width:56px;font-size:11.5px;color:var(--color-text-dim);';
-            lb.textContent = this._tt(label);
-            row.appendChild(lb);
-            // превью + имя графика + пикер
-            const gbtn = document.createElement('button');
-            gbtn.className = 'agonia-btn';
-            gbtn.style.cssText = 'flex:1;min-width:0;display:flex;align-items:center;gap:6px;padding:2px 6px;font-size:11px;text-align:left;';
-            const g = gfx[key] || {};
-            const img = document.createElement('img');
-            img.style.cssText = 'flex:none;width:24px;height:32px;image-rendering:pixelated;object-fit:none;object-position:0 0;border:1px solid var(--color-border);display:' + (g.name ? 'block' : 'none') + ';';
-            if (g.name) {
-                img.src = this._charUrl(g.name, Number(g.index) || 0);
-            }
-            const gtxt = document.createElement('span');
-            gtxt.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-            gtxt.textContent = g.name ? (String(g.name) + ' #' + (Number(g.index) || 0)) : '—';
-            gbtn.appendChild(img);
-            gbtn.appendChild(gtxt);
-            gbtn.addEventListener('click', () => {
-                const picker = this._spriterPicker();
-                if (!picker) return;
-                picker._showFilePicker('', (name, index) => {
-                    gfx[key] = { name: String(name), index: Number(index) || 0 };
-                    entry.stateGraphics = JSON.stringify(gfx);
-                    img.src = this._charUrl(name, Number(index) || 0);
-                    img.style.display = 'block';
-                    gtxt.textContent = String(name) + ' #' + (Number(index) || 0);
-                    changed();
-                }, 'characters', { pickCharacterIndex: true });
-            });
-            row.appendChild(gbtn);
-            // SE
-            const sinp = document.createElement('input');
-            sinp.type = 'text';
-            sinp.placeholder = 'SE';
-            sinp.value = String(snd[key] || '');
-            sinp.style.cssText = 'flex:none;width:88px;min-width:52px;box-sizing:border-box;font-size:11px;';
-            sinp.addEventListener('change', () => {
-                if (String(sinp.value || '').trim() === '') delete snd[key];
-                else snd[key] = String(sinp.value).trim();
-                entry.stateSounds = JSON.stringify(snd);
-                changed();
-            });
-            row.appendChild(sinp);
-            grid.appendChild(row);
-        }
-        host.appendChild(grid);
+        // P25: секция «Состояния (графика + звук)» перенесена НАВЕРХ —
+        // карточки-состояния в начале карточки врага (превью + пикер + SE)
     }
 
     /** Мини-превью ячейки листа персонажа (24×32, сдвиг по индексу). */
@@ -445,6 +409,7 @@ class DatabaseEnemiesEditor {
             return '';
         }
     }
+    // P25: _charUrl остаётся как общий хелпер превью листа персонажа
 
     _renderRules(host, entry, commitOuter) {
         const K = DatabaseEnemiesEditor;
