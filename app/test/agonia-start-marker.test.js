@@ -272,3 +272,30 @@ test('P10: placeEventFromTemplate — копия с новым id, saveEventAsTe
     assert.strictEqual(placed.x, 8, 'position applied');
     assert.strictEqual(em.currentMap.events[placed.id], placed, 'added to the map');
 });
+
+test('P15: клик по пустой клетке оставляет подсветку видимой, по событию — гасит', () => {
+    const EventManager = loadEventManager();
+    const em = new EventManager({}, {});
+    const tm = makeTilemapManager();
+    em.initializeEventLayer(tm);
+    em.currentMap = { id: 45, width: 40, height: 30, events: [null,
+        { id: 7, name: 'chest', note: '', pages: [{ image: { characterName: '' } }], x: 5, y: 5 }
+    ] };
+    em.eventMode = true;
+    em.updateEventSpriteBorder = () => {}; // шим: без PIXI-спрайтов
+    em.notifyEventSelected = () => {};
+    em.updateEventListSelection = () => {};
+
+    const click = (x, y) => em.handleMapPointerDown({
+        data: { button: 0, originalEvent: {}, getLocalPosition: () => ({ x: (x + 0.5) * 48, y: (y + 0.5) * 48 }) }
+    }, tm.container);
+
+    click(10, 10);
+    assert.strictEqual(em.selectedTileX, 10, 'tile selected');
+    assert.ok(em.selectionHighlight.visible, 'cell highlight STAYS VISIBLE on an empty tile');
+    assert.ok(em.selectionHighlight.ops.some(o => o[0] === 'fill'), 'highlight drew');
+
+    click(5, 5);
+    assert.strictEqual(em.selectedEvent && em.selectedEvent.id, 7, 'event selected');
+    assert.strictEqual(em.selectionHighlight.visible, false, 'highlight yields to the sprite border on an event');
+});

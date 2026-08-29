@@ -255,18 +255,24 @@ class LightManager {
         const proj = this.projectController?.getCurrentProject?.();
         if (!proj?.path) return;
         try {
+            // P15: у мостовых проектов манифест plugins.js ПУСТ — SDLight
+            // живёт в project.rpgreactor (engineModules/retiredPlugins).
             const pluginsPath = this.path.join(proj.path, 'js', 'plugins.js');
-            if (!this.fs.existsSync(pluginsPath)) return;
-            const content = this.fs.readFileSync(pluginsPath, 'utf-8');
-            // plugins.js is `var $plugins = [ {...}, ... ];` — extract the array.
-            const match = content.match(/\$plugins\s*=\s*(\[[\s\S]*\]);?/);
-            if (!match) return;
-            const plugins = JSON.parse(match[1]);
-            // Prefer the enabled SDLight; fall back to SuperDuperLight.
-            let entry = plugins.find(p => p && p.name === 'SDLight' && p.status !== false);
-            if (!entry) entry = plugins.find(p => p && p.name === 'SDLight');
-            if (!entry) return;
-            const params = entry.parameters || {};
+            let params = null;
+            if (this.fs.existsSync(pluginsPath)) {
+                const content = this.fs.readFileSync(pluginsPath, 'utf8');
+                const match = content.match(/\$plugins\s*=\s*(\[[\s\S]*\]);?/);
+                if (match) {
+                    const plugins = JSON.parse(match[1]);
+                    const entry = plugins.find(p => p && p.name === 'SDLight' && p.status !== false)
+                        || plugins.find(p => p && p.name === 'SDLight');
+                    if (entry) params = entry.parameters || {};
+                }
+            }
+            if (!params) {
+                params = this._loadSDLightParamsFromRpgReactor(proj.path) || null;
+            }
+            if (!params) return;
 
             const resolveParam = (key) => {
                 const v = params[key];
@@ -292,6 +298,27 @@ class LightManager {
             if (ws) this._wallSoftness = Math.min(Number(ws) || 16, 24);
         } catch (e) {
             console.warn('[LightManager] _loadBlockedRegions error:', e);
+        }
+    }
+
+    /** P15: параметры SDLight из project.rpgreactor (мостовые проекты с
+     *  пустым манифестом) — engineModules, затем retiredPlugins. */
+    _loadSDLightParamsFromRpgReactor(projectPath) {
+        try {
+            const metaPath = this.path.join(projectPath, 'project.rpgreactor');
+            if (!this.fs.existsSync(metaPath)) return null;
+            const meta = JSON.parse(this.fs.readFileSync(metaPath, 'utf8'));
+            const mods = meta.engineModules || [];
+            let entry = mods.find ? mods.find(m => m && m.name === 'SDLight') : null;
+            if (!entry) {
+                const retired = meta.retiredPlugins || [];
+                entry = Array.isArray(retired)
+                    ? retired.find(r => r && r.name === 'SDLight')
+                    : (retired.SDLight || null);
+            }
+            return entry ? (entry.parameters || {}) : null;
+        } catch (e) {
+            return null;
         }
     }
 

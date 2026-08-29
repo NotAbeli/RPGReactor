@@ -832,9 +832,10 @@ class EventManager {
             this.selectedTileY = event.y;
         }
 
-        // Hide tile-cell highlight when an event is selected — the sprite
-        // border is the selection visual now.
-        if (this.selectionHighlight) this.selectionHighlight.visible = false;
+        // Hide tile-cell highlight when an EVENT is selected — the sprite
+        // border is the selection visual. P15: на пустой клетке подсветка
+        // остаётся (selectEvent зовётся и с null после selectTile).
+        if (event && this.selectionHighlight) this.selectionHighlight.visible = false;
 
         // Update only the border color on affected sprites instead of full re-render
         if (previousEvent && previousEvent.id !== (event && event.id)) {
