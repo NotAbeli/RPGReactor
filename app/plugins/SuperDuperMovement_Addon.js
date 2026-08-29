@@ -1304,6 +1304,23 @@
             back_away: '#d45aff', orbit: '#d4ff5a'
         };
 
+        // P17: тонкая линия между вейпоинтами (Брезенхэм fillRect 1px —
+        // у MV Bitmap нет drawLine) + линия от врага к первому вейпоинту.
+        function debugLine(bitmap, x0, y0, x1, y1, color) {
+            let x = Math.round(x0), y = Math.round(y0);
+            const ex = Math.round(x1), ey = Math.round(y1);
+            const dx = Math.abs(ex - x), dy = Math.abs(ey - y);
+            const sx = x < ex ? 1 : -1, sy = y < ey ? 1 : -1;
+            let err = dx - dy;
+            for (var guard = 0; guard < 2048; guard++) {
+                bitmap.fillRect(x, y, 1, 1, color);
+                if (x === ex && y === ey) break;
+                const e2 = 2 * err;
+                if (e2 > -dy) { err -= dy; x += sx; }
+                if (e2 < dx) { err += dx; y += sy; }
+            }
+        }
+
         function redrawPathDebug(bitmap) {
             bitmap.clear();
             if (typeof $gameMap === 'undefined' || !$gameMap) return;
@@ -1318,14 +1335,22 @@
                 const path = m._amsSmartPath;
                 if (!t || !path || path.length === 0) continue;
                 const color = PATH_COLORS[t.type] || '#ffffff';
+                const px = (wp) => Math.round($gameMap.adjustX(wp.x) * tw + tw / 2);
+                const py = (wp) => Math.round($gameMap.adjustY(wp.y) * th + th / 2);
+                // линия от врага к первому вейпоинту
+                debugLine(bitmap,
+                    Math.round($gameMap.adjustX(m._x) * tw + tw / 2),
+                    Math.round($gameMap.adjustY(m._y) * th + th / 2),
+                    px(path[0]), py(path[0]), color);
                 for (let j = 0; j < path.length; j++) {
-                    const sx = Math.round($gameMap.adjustX(path[j].x) * tw + tw / 2);
-                    const sy = Math.round($gameMap.adjustY(path[j].y) * th + th / 2);
+                    if (j > 0) debugLine(bitmap, px(path[j - 1]), py(path[j - 1]), px(path[j]), py(path[j]), color);
+                    const sx = px(path[j]);
+                    const sy = py(path[j]);
                     bitmap.fillRect(sx - 2, sy - 2, 5, 5, color);
                 }
                 const last = path[path.length - 1];
-                const lx = Math.round($gameMap.adjustX(last.x) * tw + tw / 2);
-                const ly = Math.round($gameMap.adjustY(last.y) * th + th / 2);
+                const lx = px(last);
+                const ly = py(last);
                 bitmap.drawCircle(lx, ly, 6, color);
             }
         }
