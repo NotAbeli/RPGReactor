@@ -188,18 +188,17 @@ class DatabaseEnemiesEditor {
 
         form.mount(formCol);
 
-        // P25: карточки-состояния — ГЛАВНЫЙ редактор графики и звука вида.
+        // P26: карточки-состояния — ГЛАВНЫЙ редактор графики и звука вида.
         // Восемь состояний скелета; превью живое (геттер перечитывает
-        // stateGraphics — правки видны сразу), клик = пикер Спрайтера,
-        // SE-поле под превью пишет stateSounds. P25-фикс: карточки P7
-        // читали gfx[key].spriteName при формате рантайма {name,index} —
-        // своя графика рендерилась пустой и выглядело как «менять нельзя».
+        // stateGraphics — правки видны сразу), клик = пикер Спрайтера.
+        // Звук состояния: тип SE/BGS, файл (пикер по audio/<kind>),
+        // громкость и радиус слышимости (позиционный OcRam AEX через 728).
         if (String(entry.template) === 'true') {
             const spriter = this._spriterPicker();
             if (spriter && typeof spriter._renderPlayer === 'function') {
                 spriter._players = (spriter._players || []).filter(p => p._tag !== 'spriterForm');
                 const row = document.createElement('div');
-                row.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;margin-bottom:4px;';
+                row.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:4px;';
                 const cards = [
                     ['rest', this._tt('Основная')],
                     ['alert', this._tt('Тревога')],
@@ -210,62 +209,117 @@ class DatabaseEnemiesEditor {
                     ['hurt', this._tt('Урон')],
                     ['death', this._tt('Смерть')]
                 ];
-                let snd = {};
-                try { if (entry.stateSounds) snd = JSON.parse(entry.stateSounds) || {}; } catch (e) { snd = {}; }
                 const readGfx = () => {
                     try { return (entry.stateGraphics ? JSON.parse(entry.stateGraphics) : null) || {}; } catch (e) { return {}; }
+                };
+                const readSnd = () => {
+                    try { return (entry.stateSounds ? JSON.parse(entry.stateSounds) : null) || {}; } catch (e) { return {}; }
                 };
                 for (const [key, label] of cards) {
                     const g = readGfx()[key];
                     const hasOwn = !!(g && g.name);
+                    const rawSnd = readSnd()[key];
+                    const snd = (typeof rawSnd === 'string')
+                        ? { name: rawSnd, kind: 'se', volume: 90, radius: 0 }
+                        : Object.assign({ name: '', kind: 'se', volume: 90, radius: 0 }, rawSnd || {});
                     const card = document.createElement('div');
                     card.style.cssText = `
                         border: 1px solid ${hasOwn ? 'var(--color-accent-border-mid, #5a8ad4)' : 'var(--color-border)'};
-                        border-radius: 6px; padding: 5px; cursor: pointer;
+                        border-radius: 6px; padding: 6px; cursor: pointer;
                         background-color: var(--color-bg-deep); text-align: center;
                     `;
                     const live = {
                         get Visuals() {
                             const cur = readGfx();
                             const own = cur[key];
-                            const src = (own && own.name) ? own : entry;
                             return {
-                                CharacterName: (own && own.name) ? String(own.name) : (src.spriteName || ''),
-                                CharacterIndex: (own && own.name) ? (Number(own.index) || 0) : (Number(src.spriteIndex) || 0)
+                                CharacterName: (own && own.name) ? String(own.name) : (entry.spriteName || ''),
+                                CharacterIndex: (own && own.name) ? (Number(own.index) || 0) : (Number(entry.spriteIndex) || 0)
                             };
                         }
                     };
                     card.appendChild(spriter._renderPlayer(live, 'skins', { mini: true }));
                     const cap = document.createElement('div');
-                    cap.style.cssText = 'font-size:10.5px;font-weight:700;color:var(--color-text-strong);margin-top:3px;';
+                    cap.style.cssText = 'font-size:11px;font-weight:700;color:var(--color-text-strong);margin-top:3px;';
                     cap.textContent = label;
                     card.appendChild(cap);
                     const marker = document.createElement('div');
                     marker.style.cssText = 'font-size:9px;color:var(--color-text-dim);line-height:1.25;margin-top:1px;';
                     marker.textContent = hasOwn ? '' : this._tt('по умолчанию');
                     card.appendChild(marker);
-                    const sinp = document.createElement('input');
-                    sinp.type = 'text';
-                    sinp.placeholder = 'SE';
-                    sinp.value = String(snd[key] || '');
-                    sinp.style.cssText = 'width:100%;box-sizing:border-box;font-size:10.5px;margin-top:3px;';
-                    sinp.addEventListener('click', e => e.stopPropagation());
-                    sinp.addEventListener('change', () => {
-                        if (String(sinp.value || '').trim() === '') delete snd[key];
-                        else snd[key] = String(sinp.value).trim();
-                        entry.stateSounds = JSON.stringify(snd);
-                        api.changed();
+
+                    // --- звук состояния: тип / файл / громкость / радиус ---
+                    const sndBox = document.createElement('div');
+                    sndBox.style.cssText = 'margin-top:4px;display:flex;flex-direction:column;gap:3px;';
+                    sndBox.addEventListener('click', e => e.stopPropagation());
+                    const kindRow = document.createElement('div');
+                    kindRow.style.cssText = 'display:flex;gap:3px;align-items:center;';
+                    const kindSel = document.createElement('select');
+                    kindSel.style.cssText = 'flex:1;min-width:0;font-size:10.5px;box-sizing:border-box;';
+                    for (const [v, lbl] of [['se', 'SE'], ['bgs', 'BGS']]) {
+                        const o = document.createElement('option');
+                        o.value = v; o.textContent = lbl;
+                        kindSel.appendChild(o);
+                    }
+                    kindSel.value = snd.kind;
+                    kindRow.appendChild(kindSel);
+                    const pickBtn = document.createElement('button');
+                    pickBtn.className = 'agonia-btn';
+                    pickBtn.textContent = '…';
+                    pickBtn.style.cssText = 'flex:none;font-size:10.5px;padding:1px 7px;';
+                    pickBtn.addEventListener('click', () => {
+                        this._audioPicker(snd.kind, snd.name, name => {
+                            snd.name = String(name || '');
+                            nameInp.value = snd.name;
+                            persist();
+                        });
                     });
-                    card.appendChild(sinp);
+                    kindRow.appendChild(pickBtn);
+                    sndBox.appendChild(kindRow);
+                    const nameInp = document.createElement('input');
+                    nameInp.type = 'text';
+                    nameInp.placeholder = '—';
+                    nameInp.value = snd.name;
+                    nameInp.style.cssText = 'width:100%;box-sizing:border-box;font-size:10.5px;';
+                    nameInp.addEventListener('change', () => {
+                        snd.name = String(nameInp.value || '').trim();
+                        persist();
+                    });
+                    sndBox.appendChild(nameInp);
+                    const numRow = document.createElement('div');
+                    numRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:3px;';
+                    const volInp = document.createElement('input');
+                    volInp.type = 'number'; volInp.min = 0; volInp.max = 100;
+                    volInp.value = snd.volume;
+                    volInp.title = this._tt('Громкость');
+                    volInp.style.cssText = 'width:100%;box-sizing:border-box;font-size:10.5px;min-width:0;';
+                    volInp.addEventListener('change', () => { snd.volume = Math.max(0, Math.min(100, Number(volInp.value) || 0)); persist(); });
+                    numRow.appendChild(volInp);
+                    const radInp = document.createElement('input');
+                    radInp.type = 'number'; radInp.min = 0; radInp.max = 99;
+                    radInp.value = snd.radius;
+                    radInp.title = this._tt('Радиус слышимости');
+                    radInp.style.cssText = 'width:100%;box-sizing:border-box;font-size:10.5px;min-width:0;';
+                    radInp.addEventListener('change', () => { snd.radius = Math.max(0, Math.min(99, Number(radInp.value) || 0)); persist(); });
+                    numRow.appendChild(radInp);
+                    sndBox.appendChild(numRow);
+                    card.appendChild(sndBox);
+
+                    const persist = () => {
+                        const cur = readSnd();
+                        if (!snd.name) delete cur[key];
+                        else cur[key] = { name: snd.name, kind: snd.kind, volume: snd.volume, radius: snd.radius };
+                        entry.stateSounds = JSON.stringify(cur);
+                        api.changed();
+                    };
+                    kindSel.addEventListener('change', () => { snd.kind = kindSel.value; persist(); });
+
                     card.addEventListener('click', () => {
                         spriter._showFilePicker('', (name, index) => {
                             const cur = readGfx();
                             cur[key] = { name: String(name), index: Number(index) || 0 };
                             entry.stateGraphics = JSON.stringify(cur);
                             api.changed();
-                            // живое обновление: превью перезагрузит снапшот-
-                            // детектор плеера (геттер перечитывает stateGraphics),
-                            // рамку и маркер правим на месте
                             card.style.borderColor = 'var(--color-accent-border-mid, #5a8ad4)';
                             marker.textContent = '';
                         }, 'characters', { pickCharacterIndex: true });
@@ -408,6 +462,91 @@ class DatabaseEnemiesEditor {
         } catch (e) {
             return '';
         }
+    }
+
+    /** P26: список аудиофайлов проекта для типа звука (se|bgs). */
+    _listAudioFiles(kind) {
+        try {
+            const proj = this.projectManager && this.projectManager.getCurrentProject
+                ? this.projectManager.getCurrentProject() : null;
+            if (!proj || !proj.path) return [];
+            let fsMod = null, path = null;
+            try {
+                fsMod = (typeof require === 'function') ? require('fs') : window.require('fs');
+                path = (typeof require === 'function') ? require('path') : window.require('path');
+            } catch (e) { return []; }
+            const dir = path.join(proj.path, 'audio', kind === 'bgs' ? 'bgs' : 'se');
+            if (!fsMod.existsSync(dir)) return [];
+            return fsMod.readdirSync(dir)
+                .filter(f => /\.(ogg|m4a|mp3|wav)$/i.test(f))
+                .map(f => f.replace(/\.[^.]+$/, ''))
+                .sort();
+        } catch (e) {
+            return [];
+        }
+    }
+
+    /** P26: пикер аудиофайла — список audio/<kind> проекта, клик выбирает. */
+    _audioPicker(kind, currentName, onSelect) {
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            position: fixed; inset: 0;
+            background-color: rgba(0,0,0,0.8);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 21000;
+        `;
+        const win = document.createElement('div');
+        win.style.cssText = `
+            background-color: var(--color-bg-surface);
+            border: 1px solid var(--color-border); border-radius: 8px;
+            width: 420px; max-height: 70%;
+            display: flex; flex-direction: column;
+        `;
+        const header = document.createElement('div');
+        header.style.cssText = `
+            padding: 10px 16px; font-weight: 600; font-size: 13px;
+            color: var(--color-text-strong);
+            border-bottom: 1px solid var(--color-border);
+            display: flex; justify-content: space-between; align-items: center; gap: 10px;
+        `;
+        const lbl = document.createElement('span');
+        lbl.textContent = (kind === 'bgs' ? 'BGS — ' : 'SE — ') + this._tt('выбор файла');
+        header.appendChild(lbl);
+        const close = document.createElement('button');
+        close.className = 'agonia-btn';
+        close.textContent = '✕';
+        close.addEventListener('click', () => modal.remove());
+        header.appendChild(close);
+        win.appendChild(header);
+        const body = document.createElement('div');
+        body.style.cssText = 'flex:1;overflow-y:auto;min-height:0;padding:8px;';
+        const files = this._listAudioFiles(kind);
+        if (!files.length) {
+            const n = document.createElement('div');
+            n.style.cssText = 'font-size:11.5px;color:var(--color-text-muted);padding:8px;';
+            n.textContent = this._tt('Папка пуста') + ' — audio/' + (kind === 'bgs' ? 'bgs' : 'se');
+            body.appendChild(n);
+        } else {
+            const list = document.createElement('div');
+            list.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+            for (const f of files) {
+                const b = document.createElement('button');
+                b.className = 'agonia-btn';
+                b.style.cssText = 'text-align:left;font-size:11.5px;padding:4px 8px;' +
+                    (f === currentName ? 'border-color:var(--color-accent-border-mid, #5a8ad4);font-weight:700;' : '');
+                b.textContent = f;
+                b.addEventListener('click', () => {
+                    onSelect(f);
+                    modal.remove();
+                });
+                list.appendChild(b);
+            }
+            body.appendChild(list);
+        }
+        win.appendChild(body);
+        modal.appendChild(win);
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+        document.body.appendChild(modal);
     }
     // P25: _charUrl остаётся как общий хелпер превью листа персонажа
 

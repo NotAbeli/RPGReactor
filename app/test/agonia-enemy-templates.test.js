@@ -277,6 +277,35 @@ test('P5: звуки состояний — на входе однократны
     assert.ok(JSON.stringify(legacy[14].list).includes('LegacyHit'), 'legacy damageSE keeps working');
 });
 
+test('P26: звук состояния-объект — натив 728 с типом/громкостью/радиусом', () => {
+    const { sde } = makeEnv();
+    const pages = sde.buildEnemyPages(Object.assign({}, BIBA, {
+        stateSounds: JSON.stringify({
+            alert: { name: 'GrowlLoop', kind: 'bgs', volume: 70, radius: 8 },
+            attack: { name: 'SwingLoud', kind: 'se', volume: 55, radius: 0 },
+            death: { name: '', kind: 'se', volume: 90, radius: 0 }
+        })
+    }));
+    const flat = p => JSON.stringify(p.list);
+    // позиционный BGS: 728 [mode=0(bgs), anchor=0, evId=0, name, '', vol, 100, dist, rad, fade, 0]
+    assert.ok(flat(pages[1]).includes('"code":728') && flat(pages[1]).includes('GrowlLoop'),
+        'alert BGS goes through native 728');
+    assert.ok(flat(pages[1]).includes('70') && flat(pages[1]).includes(',8,8,'),
+        'volume and radius substituted');
+    // SE без радиуса: обычный 250 с громкостью
+    assert.ok(flat(pages[2]).includes('"code":250') && flat(pages[2]).includes('SwingLoud') && flat(pages[2]).includes('55'),
+        'radiusless SE plays plain 250 with volume');
+    // пустое имя — звука нет вообще
+    assert.ok(!flat(pages[15]).includes('"code":250') && !flat(pages[15]).includes('"code":728'),
+        'empty-name sound emits nothing');
+    // легаси-строка остаётся SE@90 (бит-в-бит с P5)
+    const legacy = sde.buildEnemyPages(Object.assign({}, BIBA, {
+        stateSounds: JSON.stringify({ attack: 'Swing2' })
+    }));
+    const atk = JSON.parse(JSON.stringify(legacy[2].list)).filter(c => c.code === 250);
+    assert.ok(atk.length === 1 && atk[0].parameters[0].volume === 90, 'plain string keeps SE@90');
+});
+
 test('findTemplateByNote: только template-карточки, по тем же тегам, что и правила', () => {
     const box = { match: '<box>', hp: '50' };
     const { sde } = makeEnv();

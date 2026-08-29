@@ -666,8 +666,32 @@
           }
           return emptyDefault ? _sdeImg(tpl, true) : _sdeImg(tpl);
       };
-      var sdeSound = function (name, ind) {
-          return _sdeCmd(250, ind || 0, [{ name: String(name), volume: 90, pitch: 100, pan: 0 }]);
+      var       // P26: звук состояния. Легаси-строка = SE 90 (бит-в-бит с P5).
+      // Объект {name, kind:'se'|'bgs', volume, radius}:
+      //  - radius > 0 → натив 728 (позиционный на якоре-событии: дистанция/
+      //    радиус/фейд/автопан OcRam AEX) — SE или BGS;
+      //  - radius 0 → SE (250) или BGS (261) на всю карту.
+      sdeSound = function (val) {
+          if (val === undefined || val === null || val === '') return null;
+          if (typeof val === 'string') {
+              return _sdeCmd(250, 0, [{ name: String(val), volume: 90, pitch: 100, pan: 0 }]);
+          }
+          var name = String(val.name || '').trim();
+          if (!name) return null;
+          var kind = (String(val.kind) === 'bgs') ? 'bgs' : 'se';
+          var vol = Math.max(0, Math.min(100, _sdeNum(val.volume, 90)));
+          var radius = Math.max(0, _sdeNum(val.radius, 0));
+          if (radius > 0) {
+              // 728: [mode(0=bgs,1=se), anchor(0=this), eventId, bgsName, seName,
+              //       volume, pitch, distance, radius, fade, type(0=d)]
+              return _sdeCmd(728, 0, [
+                  kind === 'bgs' ? 0 : 1, 0, 0,
+                  kind === 'bgs' ? name : '', kind === 'se' ? name : '',
+                  vol, 100, radius, radius, 2, 0
+              ]);
+          }
+          var audio = { name: name, volume: vol, pitch: 100, pan: 0 };
+          return kind === 'bgs' ? _sdeCmd(261, 0, [audio]) : _sdeCmd(250, 0, [audio]);
       };
 
       // S52: поведенческий конструктор — характер, способности, скорости.
@@ -703,7 +727,7 @@
       pages.push(_sdePage({ cond: _sdeCond('A', false), image: sdeImgFor('alert'), freq: 4,
           speed: speedCalm, moveType: 3, prio: 1, trigger: 0,
           list: [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Warning>')]
-              .concat(_sdeColliderComments(tpl), stateSounds.alert ? [sdeSound(stateSounds.alert)] : [], [_sdeEnd()]),
+              .concat(_sdeColliderComments(tpl), stateSounds.alert ? [sdeSound(stateSounds.alert)].filter(Boolean) : [], [_sdeEnd()]),
           route: [_sdeMr(9), _sdeMr(45, ["this.YurStealth(8, 'A')"]), _sdeMrEnd()] }));
 
       // P2: (A) выстрел трассером, лач A — только злому с трассером
@@ -711,7 +735,7 @@
       pages.push(_sdePage({ cond: _sdeCond('A', true), image: sdeImgFor('attack'), freq: 5,
           speed: speedCalm, moveType: 0, prio: 1, trigger: 4,
           list: [_sdeTagCmd('<projEffect>')].concat(_sdeColliderComments(tpl),
-              stateSounds.attack ? [sdeSound(stateSounds.attack)] : [], [
+              stateSounds.attack ? [sdeSound(stateSounds.attack)].filter(Boolean) : [], [
               _sdeCmd(355, 0, ['this.performTracer(' + tracer + ');']),
               _sdeCmd(123, 0, ['A', 1]), _sdeEnd()]),
           route: [_sdeMr(15, [40]), _sdeMr(9), _sdeMrEnd()] }));
@@ -847,7 +871,7 @@
       if (hasAttack) {
       var p12list = [_sdeTagCmd('<projEffect>'), _sdeTagCmd('<Condition: AND>'), _sdeTagCmd('<Zona>'),
           _sdeTagCmd('<Combat>')]
-          .concat(_sdeColliderComments(tpl), stateSounds.attack ? [sdeSound(stateSounds.attack)] : []);
+          .concat(_sdeColliderComments(tpl), stateSounds.attack ? [sdeSound(stateSounds.attack)].filter(Boolean) : []);
       if (dashName !== '') {
           p12list.push(_sdeCmd(726, 0, [0, 0, dashName]));
           p12list.push(_sdeCmd(230, 0, [8]));
@@ -931,7 +955,7 @@
           route: [{ code: 0, parameters: [] }] }));
 
       // P15: <OnDeath> — смерть (+ звук смерти, P5)
-      var deathSnd = stateSounds.death ? [sdeSound(stateSounds.death)] : [];
+      var deathSnd = stateSounds.death ? [sdeSound(stateSounds.death)].filter(Boolean) : [];
       pages.push(_sdePage({ cond: _sdeCond('A', false), image: sdeImgFor('death', true), freq: 3,
           speed: 3, moveType: 0, prio: 0, trigger: 0,
           list: [_sdeTagCmd('<OnDeath>')].concat(deathSnd, [_sdeEnd()]),

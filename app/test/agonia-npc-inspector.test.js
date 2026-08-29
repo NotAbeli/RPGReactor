@@ -366,23 +366,48 @@ test('P25: БД-карточка врага — восемь карточек-с
     for (const label of ['Основная', 'Тревога', 'Бой', 'Паника', 'Бегство', 'Атака', 'Урон', 'Смерть']) {
         assert.ok(texts.some(t => t.includes(label)), 'card caption: ' + label);
     }
-    // восемь SE-полей (по одному на карточку)
-    const seInputs = all.filter(c => c.tagName === 'input' && c.placeholder === 'SE');
-    assert.strictEqual(seInputs.length, 8, 'one SE input per state card');
-    assert.ok(all.some(c => c.tagName === 'canvas'), 'animated canvases present');
+    // восемь звуковых блоков: тип SE/BGS + файл + громкость + радиус.
+    // Выборки — ТОЛЬКО внутри ряда карточек (в форме инспектора свои поля)
+    const row = host.children.find(c => (c.children || []).length === 8);
+    assert.ok(row, 'eight-card row found');
+    const inRow = collect(row, []);
+    const kindSels = inRow.filter(c => c.tagName === 'select'
+        && (c.children || []).length === 2 && (c.children[0] || {}).value === 'se' && (c.children[1] || {}).value === 'bgs');
+    assert.strictEqual(kindSels.length, 8, 'one SE/BGS kind select per state card');
+    assert.ok(inRow.some(c => c.tagName === 'canvas'), 'animated canvases present');
     // у заданного состояния НЕТ пометки «по умолчанию», у незаданных — есть
     assert.ok(texts.some(t => t.includes('по умолчанию')), 'default markers for unset states');
-    const markers = all.filter(c => String(c.textContent || '').includes('по умолчанию'));
+    const markers = inRow.filter(c => String(c.textContent || '').includes('по умолчанию'));
     assert.strictEqual(markers.length, 7, 'exactly one set state (alert) hides its marker');
     // юзейдж-подписи-инструкции вырезаны (P12/P25)
     assert.ok(!texts.some(t => t.includes('рывок и удар')), 'no usage instruction captions');
     // нижней секции «Состояния (графика + звук)» больше нет
     assert.ok(!texts.some(t => t.includes('Состояния (графика')), 'bottom states section removed');
-    // SE-коммит персистит stateSounds
-    const deathSe = seInputs[7];
-    deathSe.value = 'Scream1';
-    (deathSe._listeners.change || []).forEach(f => f());
-    assert.strictEqual(JSON.parse(entry.stateSounds).death, 'Scream1', 'SE input persists into stateSounds');
+    // карточки стали крупнее (сетка 150px, P26)
+    assert.ok(String(row.style.cssText || '').includes('150px'), 'cards enlarged to 150px grid');
+    // P26: звук-коммит персистит объект {name,kind,volume,radius}
+    const nameInputs = inRow.filter(c => c.tagName === 'input' && c.placeholder === '—');
+    assert.strictEqual(nameInputs.length, 8, 'one file input per card');
+    nameInputs[1].value = 'Growl2';
+    (nameInputs[1]._listeners.change || []).forEach(f => f());
+    const alertSel = kindSels[1];
+    alertSel.value = 'bgs';
+    (alertSel._listeners.change || []).forEach(f => f());
+    let snd1 = JSON.parse(entry.stateSounds);
+    assert.strictEqual(snd1.alert.name, 'Growl2', 'file input persists');
+    assert.strictEqual(snd1.alert.kind, 'bgs', 'kind select persists');
+    nameInputs[7].value = 'Scream1';
+    (nameInputs[7]._listeners.change || []).forEach(f => f());
+    snd1 = JSON.parse(entry.stateSounds);
+    assert.strictEqual(snd1.death.name, 'Scream1', 'file input persists');
+    assert.strictEqual(snd1.death.kind, 'se', 'normalized kind');
+    assert.strictEqual(snd1.death.volume, 90, 'default volume normalized');
+    const nums = inRow.filter(c => c.tagName === 'input' && c.type === 'number');
+    assert.strictEqual(nums.length, 16, 'volume+radius inputs per card');
+    nums[15].value = '8';
+    (nums[15]._listeners.change || []).forEach(f => f());
+    snd1 = JSON.parse(entry.stateSounds);
+    assert.strictEqual(snd1.death.radius, 8, 'radius persists');
 });
 
 test('P7: палитра света — список источников, клик выбирает uid', () => {
