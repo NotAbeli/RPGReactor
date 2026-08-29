@@ -283,7 +283,9 @@
         const dist = Math.hypot(endX - startX, endY - startY);
         if (dist > 20) return false;
 
-        const stepSize = 0.5;
+        // P16: шаг 0.25 — 0.5 перепрыгивала узкие коллайдеры мебели на
+        // диагоналях (сплайн вейпоинтов чиркал угол, физика блокировала).
+        const stepSize = 0.25;
         const steps = Math.ceil(dist / stepSize);
         const dx = (endX - startX) / steps;
         const dy = (endY - startY) / steps;
@@ -395,18 +397,27 @@
             if (!entry || entry === char) continue;
             if (char.collidableWith && !char.collidableWith(entry)) continue;
             if (entry === goalEntity) continue; // цель погони — не препятствие для своего преследователя
-            // Освобождение цели: толпа в радиусе Goal Exempt Radius от цели не запирает конец пути
-            if (goalEntity && Math.hypot(entry._x - gx, entry._y - gy) <= CONF_GOAL_EXEMPT + 0.5) continue;
+            const hard = !isDynamicMover(entry);
+            // Освобождение цели (P16): радиус снимает ТОЛЬКО мягкую толпу
+            // (другие ИИ, фолловеры) — мебель у игрока остаётся стеной,
+            // иначе путь строится сквозь стул и враг буксует рядом.
+            if (goalEntity && !hard && Math.hypot(entry._x - gx, entry._y - gy) <= CONF_GOAL_EXEMPT + 0.5) continue;
             const eCol = (entry.collider && entry.collider()) || null;
             const eAb = eCol ? eCol.aabbox : null;
             if (!eAb) continue;
             ctx.obstacles.push({
-                hard: !isDynamicMover(entry),
+                hard: hard,
                 x1: entry._x + eAb.left - ctx.sr,
                 x2: entry._x + eAb.right - ctx.sl,
                 y1: entry._y + eAb.top - ctx.sb,
                 y2: entry._y + eAb.bottom - ctx.st
             });
+        }
+        // P16: одноразовый блэклист клетки-блокировщика после застревания
+        // (взводится anti-stuck в updateSmartPathLogic, потребляется findPath)
+        if (char._amsStuckBlacklist) {
+            const bl = char._amsStuckBlacklist;
+            ctx.obstacles.push({ hard: true, x1: bl.x - 0.5, x2: bl.x + 0.5, y1: bl.y - 0.5, y2: bl.y + 0.5 });
         }
         return ctx;
     }
@@ -454,9 +465,13 @@
             const endX = Math.round(targetX);
             const endY = Math.round(targetY);
 
-            if (startX === endX && startY === endY) return [{x: targetX, y: targetY}];
+            if (startX === endX && startY === endY) {
+                char._amsStuckBlacklist = null; // одноразовый — цель достигнута
+                return [{x: targetX, y: targetY}];
+            }
 
             const ctx = buildPathContext(char, goalEntity, ignoredZones);
+            // P16: блэклист уже в ctx (buildPathContext) — путь обязан обойти
             const open = new MinHeap();
             const closed = {};
             const bestG = {};
@@ -506,8 +521,11 @@
             }
 
             // Best-effort: недостижимая цель -> путь к ближайшей достигнутой точке
-            if (!bestNode) return null;
-            if (bestNode.x === startX && bestNode.y === startY && !reached) return null; // не сдвинулись ни на шаг
+            if (!bestNode) { char._amsStuckBlacklist = null; return null; }
+            if (bestNode.x === startX && bestNode.y === startY && !reached) {
+                char._amsStuckBlacklist = null; // не сдвинулись ни на шаг
+                return null;
+            }
 
             const path = [];
             let curr = bestNode;
@@ -515,6 +533,10 @@
             path.reverse();
             path.shift(); // стартовая клетка не нужна
             if (reached && path.length > 0) path[path.length - 1] = {x: targetX, y: targetY};
+            char._amsStuckBlacklist = null; // блэклист одноразовый — потреблён
+            // P16: контекст поиска живёт с путём — порог прибытия консультирует
+            // жёсткие препятствия у вейпоинта (см. updateSmartPathLogic)
+            char._amsPathCtx = ctx;
             return path.length > 0 ? path : [{x: targetX, y: targetY}];
         }
     };
@@ -941,7 +963,7 @@
             if (target.type === 'wander') {
                 target.timer = target.wait; // Сдаемся, ждем и выбираем новую точку
                 this._amsSmartPath = null;
-                this._amsVelocityX = 0; 
+                this._amsVelocityX = 0;
                 this._amsVelocityY = 0;
                 return;
             } else if (target.type === 'patrol') {
@@ -952,11 +974,27 @@
                 this.smartStop(); // Отменяем команду движения
                 return;
             } else if (target.type !== 'orbit') {
-                // Для преследования и отступления - сбрасываем путь и даем случайный импульс (пинок) в сторону
+                // P16: умный выход из застревания — немедленный re-plan,
+                // блэклист буксующей клетки (жёсткая в следующем поиске)
+                // и пинок ПЕРПЕНДИКУЛЯРНО желаемому направлению (скольжение
+                // вдоль препятствия) вместо чистого рандома.
                 this._amsSmartPath = null;
                 this._amsSmartRefreshTimer = 0;
-                this._amsVelocityX = (Math.random() - 0.5) * 2;
-                this._amsVelocityY = (Math.random() - 0.5) * 2;
+                this._amsStuckBlacklist = {
+                    x: Math.round(this._x + (this._amsVelocityX || 0) * 2),
+                    y: Math.round(this._y + (this._amsVelocityY || 0) * 2)
+                };
+                const vLen2 = Math.hypot(this._amsVelocityX, this._amsVelocityY);
+                if (vLen2 > 0.05) {
+                    const nx = -this._amsVelocityY / vLen2;
+                    const ny = this._amsVelocityX / vLen2;
+                    const side = (Math.random() < 0.5) ? 1 : -1;
+                    this._amsVelocityX = nx * side;
+                    this._amsVelocityY = ny * side;
+                } else {
+                    this._amsVelocityX = (Math.random() - 0.5) * 2;
+                    this._amsVelocityY = (Math.random() - 0.5) * 2;
+                }
             }
         }
 
@@ -1093,6 +1131,7 @@
             if (target.type !== 'wander' && (!this._amsSmartPath || this._amsSmartPath.length === 0 || this._amsSmartRefreshTimer <= 0)) {
                 if (checkLineOfSight(this, this._x, this._y, tx, ty, ignoredZones)) {
                     this._amsSmartPath = [{x: tx, y: ty}];
+                    this._amsPathCtx = null; // прямой путь — контекст поиска неактуален
                     this._amsSmartRefreshTimer = 20;
                 } else {
                     const goalEntity = target.type === 'player' ? $gamePlayer
@@ -1118,7 +1157,24 @@
         }
 
         const distToNode = Math.hypot(targetNode.x - this._x, targetNode.y - this._y);
-        if (distToNode < Math.max(0.5, speed * 2.0)) {
+        // P16: у клетки, соседней с жёстким препятствием (мебель), порог
+        // прибытия жёстче — полклетки «досчитано» оставляло врага внутри
+        // инфляционной зоны, физика блокировала, он буксовал у стула.
+        let arrival = Math.max(0.5, speed * 2.0);
+        if (CONF_HITBOX && this._amsNearHard === undefined) this._amsNearHard = false;
+        if (CONF_HITBOX && this._amsPathCtx && this._amsPathCtx.obstacles) {
+            const obs = this._amsPathCtx.obstacles;
+            let near = false;
+            for (let oi = 0; oi < obs.length; oi++) {
+                const ob = obs[oi];
+                if (!ob.hard) continue;
+                if (Math.abs(targetNode.x - 0.5 - (ob.x1 + ob.x2) / 2) < (ob.x2 - ob.x1) / 2 + 1.05 &&
+                    Math.abs(targetNode.y - 0.5 - (ob.y1 + ob.y2) / 2) < (ob.y2 - ob.y1) / 2 + 1.05) { near = true; break; }
+            }
+            this._amsNearHard = near;
+        }
+        if (CONF_HITBOX && this._amsNearHard) arrival = Math.min(arrival, 0.3);
+        if (distToNode < arrival) {
             this._amsSmartPath.shift();
             if (this._amsSmartPath.length === 0) {
                 if (target.type === 'wander') target.timer = target.wait;
@@ -1306,6 +1362,7 @@
             isDynamicMover: isDynamicMover,
             buildPathContext: buildPathContext,
             cellPenalty: cellPenalty,
+            checkLineOfSight: checkLineOfSight,
             config: {
                 hitbox: () => CONF_HITBOX,
                 softCost: () => CONF_SOFT_COST,

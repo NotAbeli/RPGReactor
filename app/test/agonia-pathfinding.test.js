@@ -174,19 +174,27 @@ test('мягкая цена не жёсткая: единственный кор
     assert.strictEqual(p[p.length - 1].x, 10);
 });
 
-test('цель погони освобождена: препятствия у цели не запирают конец пути', () => {
+test('P16: цель погони — динамика exempt, мебель у цели остаётся стеной', () => {
     const goal = makePlayer(9, 1);
-    const crowd = makeStaticEvent(8, 1); // в 1 клетке от цели — внутри Goal Exempt Radius
-    const { sda } = makeEnv({}, { w: 13, h: 5, characters: [crowd, goal] });
+    // СТАТИЧНАЯ мебель в 1 клетке от цели — внутри Goal Exempt Radius.
+    // P16: статик больше НЕ исключается радиусом — иначе путь строился
+    // сквозь стул и враг буксовал рядом с ним.
+    const chair = makeStaticEvent(8, 1);
+    const { sda } = makeEnv({}, { w: 13, h: 5, characters: [chair, goal] });
     const seek = makeSeeker(0, 1);
-    // БЕЗ цели: статик жёстко блокирует (8,1)/(7,1) — путь обязан обогнуть
-    const pNoExempt = sda.AStar.findPath(seek, 9, 1, []);
-    assert.ok(pNoExempt, 'detour path exists');
-    assert.ok(!pNoExempt.some(wp => (wp.x === 7 || wp.x === 8) && wp.y === 1), 'without goal the crowd blocks the line');
-    // С целью: толпа у цели игнорируется — путь прямой по ряду 1
-    const pExempt = sda.AStar.findPath(seek, 9, 1, [], goal);
+    const pChair = sda.AStar.findPath(seek, 9, 1, [], goal);
+    assert.ok(pChair, 'path around the chair exists');
+    assert.ok(!pChair.some(wp => (wp.x === 7 || wp.x === 8) && wp.y === 1),
+        'static furniture near the goal STAYS blocked');
+
+    // ДИНАМИЧЕСКАЯ толпа (другой ИИ) у цели — exempt работает как раньше
+    const dyn = makeStaticEvent(8, 1);
+    dyn._amsSmartTarget = { type: 'player' }; // динамический движитель
+    const { sda: sda2 } = makeEnv({}, { w: 13, h: 5, characters: [dyn, goal] });
+    const pExempt = sda2.AStar.findPath(seek, 9, 1, [], goal);
     assert.ok(pExempt, 'path to the chase goal exists');
-    assert.ok(pExempt.some(wp => wp.x === 8 && wp.y === 1), 'goal exemption clears the crowd near the target');
+    assert.ok(pExempt.some(wp => wp.x === 8 && wp.y === 1),
+        'dynamic crowd near the goal is still exempt (line stays open)');
     assert.strictEqual(pExempt[pExempt.length - 1].y, 1);
 });
 
@@ -244,4 +252,52 @@ test('isDynamicMover классифицирует игрок/фолловер/И
     const mover = makeStaticEvent(4, 4); mover._moveType = 2;
     assert.ok(sda.isDynamicMover(mover), 'moveType>0 is dynamic');
     assert.strictEqual(sda.isDynamicMover(makeStaticEvent(5, 5)), false, 'plain event is static');
+});
+
+test('P16: застревание — блэклист клетки + перпендикулярный пинок + одноразовость', () => {
+    const { sda } = makeEnv({}, { w: 13, h: 5 });
+    const seek = makeSeeker(0, 1);
+    // взводим блэклист как это делает anti-stuck в updateSmartPathLogic
+    seek._amsVelocityX = 1; seek._amsVelocityY = 0; // буксуем, двигаясь вправо
+    seek._amsStuckBlacklist = { x: Math.round(seek._x + 1 * 2), y: Math.round(seek._y + 0 * 2) };
+    const ctx = sda.buildPathContext(seek, null, []);
+    // блэклист-клетка (2,1) обязана быть жёсткой в этом поиске
+    let blocked = false;
+    for (const ob of ctx.obstacles) {
+        if (2 + ctx.sr > ob.x1 && 2 + ctx.sl < ob.x2 && 1 + ctx.sb > ob.y1 && 1 + ctx.st < ob.y2 && ob.hard) {
+            blocked = true; break;
+        }
+    }
+    assert.ok(blocked, 'blacklisted cell is hard-blocked for this search');
+
+    // путь через блэклист обязан обойти клетку (2,1)
+    const p = sda.AStar.findPath(seek, 8, 1, []);
+    assert.ok(p, 'path exists');
+    assert.ok(!p.some(wp => wp.x === 2 && wp.y === 1), 'path detours the blacklisted cell');
+    // одноразовость: после поиска блэклист потреблён
+    assert.strictEqual(seek._amsStuckBlacklist, null, 'blacklist consumed after the search');
+    // следующий поиск — клетка снова свободна
+    const p2 = sda.AStar.findPath(seek, 8, 1, []);
+    assert.ok(p2.some(wp => wp.x === 2 && wp.y === 1), 'blacklist is one-shot');
+});
+
+test('P16: LOS-шаг 0.25 — семплы вдвое плотнее, узкий коллайдер ловится', () => {
+    const { sda, ctx } = makeEnv({}, { w: 13, h: 13 });
+    const seek = makeSeeker(0, 0);
+    // canMoveOn-мок со счётчиком: LOS (0,0)->(6,6), дистанция 8.49
+    // шаг 0.25 -> ~33 внутренних семпла (0.5 давал бы ~16)
+    let calls = 0;
+    ctx.$gameMap.canMoveOn = () => { calls++; return true; };
+    sda.checkLineOfSight(seek, 0, 0, 6, 6, []);
+    assert.ok(calls >= 30 && calls <= 40, '0.25 step produces ~33 samples, got ' + calls);
+    // семпл внутри зоны стула реально блокирует: узкий стул в (3.5,3.5) r0.2
+    // + тело ищущего r0.25 -> зона ~0.45; диагональ обязан пересечь её
+    let blockedSample = false;
+    ctx.$gameMap.canMoveOn = (ch, x, y) => {
+        const dx = (x + 0.5) - 3.5, dy = (y + 0.7) - 3.5;
+        if (Math.hypot(dx, dy) < 0.45) { blockedSample = true; return false; }
+        return true;
+    };
+    sda.checkLineOfSight(seek, 0, 0, 6, 6, []);
+    assert.ok(blockedSample, 'a diagonal sample lands inside the chair zone');
 });
