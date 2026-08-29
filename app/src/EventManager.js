@@ -506,13 +506,6 @@ class EventManager {
 
         const eventAtPos = this.getEventAt(evX, evY);
 
-        // P7/P12: инструмент «Событие» — одиночный клик по пустой клетке
-        // ставит событие ТИХО (редактор — только по двойному клику).
-        if (!eventAtPos && this.eventToolActive) {
-            this.createNewEvent(evX, evY, { silent: true });
-            return;
-        }
-
         if (!eventAtPos && this.tilesetPaletteViewer) {
             const selectedTiles = this.tilesetPaletteViewer.getSelectedTiles();
             if (selectedTiles && selectedTiles.length > 0) {

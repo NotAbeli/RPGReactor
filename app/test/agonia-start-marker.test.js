@@ -144,7 +144,7 @@ test('P5: createEnemyStub наследует шаги-звуки карточк�
         'stub page carries collider comments');
 });
 
-test('P7/P12: инструмент «Событие» — одиночный клик ставит тихо, редактор по двойному', () => {
+test('P14: клик в режиме событий ничего не создаёт — только двойной клик', () => {
     const EventManager = loadEventManager();
     const em = new EventManager({}, {});
     const tm = makeTilemapManager();
@@ -160,29 +160,18 @@ test('P7/P12: инструмент «Событие» — одиночный к�
         data: { button: 0, originalEvent: {}, getLocalPosition: () => ({ x: (x + 0.5) * 48, y: (y + 0.5) * 48 }) }
     }, tm.container);
 
-    // одиночный клик по пустой клетке — событие на карте, редактор НЕ открыт
+    // одиночный клик по пустой клетке — НИЧЕГО не создаётся
     click(10, 10);
+    assert.strictEqual(em.currentMap.events.filter(e => e).length, 1, 'single click on empty tile creates nothing');
     assert.strictEqual(editorOpened, 0, 'no editor on single click');
-    const placed = em.currentMap.events.filter(e => e && e.x === 10 && e.y === 10);
-    assert.strictEqual(placed.length, 1, 'event placed silently');
 
-    // клик по событию — выбор, ничего не создаётся
-    const before = em.currentMap.events.filter(e => e).length;
+    // клик по событию — выбор
     click(5, 5);
-    assert.strictEqual(em.currentMap.events.filter(e => e).length, before, 'click on event does not create');
-    assert.strictEqual(editorOpened, 0, 'still no editor');
+    assert.strictEqual(em.currentMap.events.filter(e => e).length, 1, 'click on event does not create');
 
-    // инструмент выключен — клик по пустой не создаёт
-    em.eventToolActive = false;
-    click(20, 20);
-    assert.strictEqual(em.currentMap.events.filter(e => e).length, before, 'tool off — no creation');
-
-    // двойной клик по пустой — открывает редактор
-    em.eventToolActive = true;
-    const before2 = em.currentMap.events.filter(e => e).length;
-    click(30, 28); // первый клик — тихая постановка
-    click(30, 28); // второй сразу — двойной клик
-    assert.strictEqual(em.currentMap.events.filter(e => e).length, before2 + 1, 'one event placed');
+    // двойной клик по пустой — создаёт и открывает редактор
+    click(30, 28);
+    click(30, 28);
     assert.ok(editorOpened >= 1, 'double click opens the editor');
 });
 
@@ -213,12 +202,12 @@ test('P8: взведённый вид врага — клик по пустой 
     assert.strictEqual(disarmed, 1, 'placement disarmed after placing');
     assert.ok(armed === null, 'armed cleared');
 
-    // после снятия — обычное поведение инструмента: тихая постановка
+    // после снятия — клик по пустой ничего не создаёт
     armed = null;
     const evCountBefore = em.currentMap.events.filter(e => e).length;
     click(3, 3);
-    assert.strictEqual(em.currentMap.events.filter(e => e).length, evCountBefore + 1, 'regular silent placement resumes');
-    assert.strictEqual(created, null, 'editor still closed on single click');
+    assert.strictEqual(em.currentMap.events.filter(e => e).length, evCountBefore, 'single click creates nothing');
+    assert.strictEqual(created, null, 'editor closed on single click');
     assert.strictEqual(stubs.length, 1, 'no extra stubs');
 });
 
@@ -254,11 +243,11 @@ test('P10: взведённый шаблон события — клик по п
     assert.ok(placed[0].pages[0].list[0].code === 101, 'pages deep-copied');
     assert.strictEqual(disarmed, 1, 'disarmed after placing');
 
-    // после снятия — обычная тихая постановка
+    // после снятия — клик по пустой ничего не создаёт
     armed = null;
     const evCount = em.currentMap.events.filter(e => e).length;
     click(9, 9);
-    assert.strictEqual(em.currentMap.events.filter(e => e).length, evCount + 1, 'regular silent placement resumes');
+    assert.strictEqual(em.currentMap.events.filter(e => e).length, evCount, 'single click creates nothing');
     assert.strictEqual(created, null, 'editor closed on single click');
     assert.strictEqual(placed.length, 1, 'no extra template copies');
 });

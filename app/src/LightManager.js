@@ -580,6 +580,11 @@ class LightManager {
     setLightMode(enabled) {
         this.lightMode = enabled;
         if (!enabled) this._placementMode = false;
+        if (enabled && !this.previewOn) {
+            // P14: режим света ВСЕГДА показывает затемнение — включаем превью
+            // сами, каким бы путём ни вошли в режим (кнопка, меню, восстановление).
+            this.previewOn = true;
+        }
         // Container is visible when EITHER editing or preview is on.
         if (this.lightContainer) this.lightContainer.visible = enabled || this.previewOn;
         if (enabled) {

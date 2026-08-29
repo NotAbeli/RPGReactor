@@ -601,9 +601,11 @@ class RPGReactor {
         // --- teardown of the previous mode ---
         if (prev === 'light' && this.lightManager) {
             this.lightManager.setLightMode(false);
-            // P12: затемнение было включено самим режимом — вернуть как было
+            // P14: затемнение включил сам режим — вернуть как было до входа
             if (this._lightAutoPreview && this.lightManager.previewOn) {
                 this.lightManager.setPreview(false);
+                const sun = document.getElementById('overlay-light-btn');
+                if (sun) sun.classList.remove('active');
             }
             this._lightAutoPreview = false;
         }
@@ -635,15 +637,13 @@ class RPGReactor {
             }
             this.eventManager.setEventMode(true);
         } else if (mode === 'light') {
+            // P14: тьму включает сам setLightMode(true) — любой путь входа.
+            // Запоминаем, включали ли мы превью сами (для восстановления).
+            const wasPreview = this.lightManager.previewOn;
             this.lightManager.setLightMode(true);
-            // P12: в режиме света карта обязана показывать затемнение —
-            // включаем плейтест-превью, если юзер не включил его сам (☀)
-            if (!this.lightManager.previewOn) {
-                this._lightAutoPreview = true;
-                this.lightManager.setPreview(true);
-            } else {
-                this._lightAutoPreview = false;
-            }
+            this._lightAutoPreview = !wasPreview;
+            const sun = document.getElementById('overlay-light-btn');
+            if (sun) sun.classList.toggle('active', this.lightManager.previewOn);
         } else if (mode === 'npc') {
             this.enemyInspectorManager.setNpcMode(true);
         } else {
@@ -723,11 +723,10 @@ class RPGReactor {
             if (this.uiManager) this.uiManager.refreshGridButton();
         }
 
-        // Sub-mode buttons reflect their mode; the event tool (P7, pencil
-        // analogue) is active in plain events mode while armed.
+        // Sub-mode buttons reflect their mode; the event tool icon is the
+        // pencil analogue — active in plain events mode.
         const evb = document.getElementById('mode-event-btn');
-        if (evb) evb.classList.toggle('active',
-            mode === 'events' && (!this.eventManager || this.eventManager.eventToolActive !== false));
+        if (evb) evb.classList.toggle('active', mode === 'events');
         const lb = document.getElementById('mode-light-btn');
         if (lb) lb.classList.toggle('active', mode === 'light');
         const nb = document.getElementById('mode-npc-btn');
@@ -794,22 +793,17 @@ class RPGReactor {
         this.setEditingMode(this.editingMode === 'npc' ? 'events' : 'npc');
     }
 
-    // P7: инструмент «Событие» (аналог карандаша) — тумблер: клик по пустой
-    // клетке создаёт событие. Кнопка отражает состояние; работает только в
-    // чистом режиме событий.
+    // P14: кнопка-иконка режима событий (аналог карандаша) — индикатор
+    // активного инструмента. Создание событий — двойной клик или ПКМ.
     toggleEventTool() {
         if (!this.eventManager) return;
         if ((this.editingMode || 'tiles') !== 'events') {
             this.setEditingMode('events');
-            this.eventManager.eventToolActive = true;
-        } else {
-            this.eventManager.eventToolActive = !this.eventManager.eventToolActive;
+            return;
         }
         const btn = document.getElementById('mode-event-btn');
-        if (btn) btn.classList.toggle('active', !!this.eventManager.eventToolActive);
-        this.uiManager.updateStatus(this.eventManager.eventToolActive
-            ? (window.I18n ? window.I18n.t('status.eventToolOn') : 'Event tool: click an empty tile to create an event')
-            : (window.I18n ? window.I18n.t('status.eventToolOff') : 'Event tool off (selection only)'));
+        if (btn) btn.classList.add('active');
+        this.uiManager.updateStatus(window.I18n ? window.I18n.t('status.eventModeEnabled') : 'Event mode enabled');
     }
 
     // Disable event mode if currently active (called when switching to tileset tools)
