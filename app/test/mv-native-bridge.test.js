@@ -242,13 +242,17 @@ test('bridge installs the native 7XX commands and dispatches to pluginCommand', 
         run(725, [0, -25]);
         run(725, [1, 0]);
         run(700, [1, 60, 1, 0, '#e97451', '', '']);
+        // P33: натив 730 ставит поля интерпретатора напрямую (не через
+        // плагин-команду) — контракт WaitAsync-плагина: _waitMode waitAsync
+        it._waitAsyncFrames = 0; it._waitMode = '';
         run(730, [15]);
+        assert.strictEqual(it._waitAsyncFrames, 15, 'waitAsync frames set directly');
+        assert.strictEqual(it._waitMode, 'waitAsync', 'waitAsync mode set directly');
         run(740, [-1, 0, 45, 'Заново...']);
         assert.deepEqual(pluginCalls, [
             { command: 'Stamina', args: ['add', '-25'] },
             { command: 'Stamina', args: ['fill'] },
             { command: 'fire', args: ['radiusgrow', '60', '#e97451'] },
-            { command: 'WaitAsync', args: ['15'] },
         ]);
         // text pop queued on $gameTemp
         assert.strictEqual(sandbox.$gameTemp._rrTextPopQueue.length, 1);
