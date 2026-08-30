@@ -114,6 +114,8 @@ class DatabaseBattleEditor {
                 ],
                 geometry: [
                     { key: 'damage', label: 'Урон по врагу', type: 'number', hint: 'отрицательное; одинаково для пули и удара' },
+                    { key: 'stun', label: 'Время стана (кадры)', type: 'slider', min: 0, max: 300, step: 5, unit: 'f', hint: 'враг замирает после удара' },
+                    { key: 'knockback', label: 'Отбрасывание (тайлы)', type: 'slider', min: 0, max: 5, step: 0.5, unit: 'т', hint: 'враг отлетает от игрока' },
                     { key: 'sneakKill', label: 'Скрытное убийство', type: 'check', hint: 'вне боя — насмерть' },
                     { key: 'noise', label: 'Шум (радиус слуха)', type: 'number', hint: 'справочно; применение — позже' },
                     { key: 'se', label: 'Звук (audio/se)', type: 'text' }
@@ -126,7 +128,7 @@ class DatabaseBattleEditor {
             projectile: { ID: '1', PID: 1, Name: 'Новый снаряд', Source: 0, Target: 0, Graphic: '', Speed: 8, Distance: 12, Hitbox: 24, Z: 3, Regions: '', Terrains: '', AnimID: 0, ActionsEvent: 0, ActionsPlayer: 0, ActionsShooter: 0 },
             tracer: { ID: '1', PID: 1, Name: 'Новый трассер', Source: 0, Target: 0, MaxRange: 10, Color: '#ffffff', Regions: '', Terrains: '', AnimID: 0, ActionsEvent: 0, ActionsPlayer: 0, ActionsShooter: 0 },
             dash: { Name: 'Рывок', TargetMode: '0', MaxCharges: 1, SpeedMultiplier: 3.0, Duration: 15, Decay: 1.5, Cooldown: 20, SE: 'Wind7' },
-            weapons: { name: 'Оружие', varValue: 0, type: 'melee', damage: -20, sneakKill: 'false', noise: 0, se: '' }
+            weapons: { name: 'Оружие', varValue: 0, type: 'melee', damage: -20, stun: 0, knockback: 0, sneakKill: 'false', noise: 0, se: '' }
         };
     }
 

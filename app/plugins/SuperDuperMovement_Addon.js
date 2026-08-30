@@ -824,6 +824,23 @@
     // ======================================================================
     const _SDAP_Game_CharacterBase_update = Game_CharacterBase.prototype.update;
     Game_CharacterBase.prototype.update = function() {
+        // P37: отбрасывание — физический толчок от игрока (работает и в стане)
+        if (this._sdeKnockback && this._sdeKnockback.frames > 0) {
+            this._sdeKnockback.frames--;
+            this.moveVector(this._sdeKnockback.vx, this._sdeKnockback.vy);
+            _SDAP_Game_CharacterBase_update.call(this);
+            return;
+        }
+
+        // P37: стан — враг замирает (нет движения, нет ИИ)
+        if (this._sdeStunTimer > 0) {
+            this._sdeStunTimer--;
+            this._amsVelocityX = 0;
+            this._amsVelocityY = 0;
+            _SDAP_Game_CharacterBase_update.call(this);
+            return;
+        }
+
         this.updateDashCharges();
 
         if (this._amsDashActive) {

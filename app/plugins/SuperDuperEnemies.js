@@ -913,22 +913,37 @@
               return [_sdeCmd(731, ind, [0, 0, 0]), _sdeCmd(722, ind, [0, dmgFists, 0]), se(ind),
                   _sdeCmd(721, ind, ['wound', 1]), _sdeEnd(ind)];
           };
-          var weaponChain = function (i, ind) {
+          var           weaponChain = function (i, ind) {
               var w = SDE_WEAPONS[i];
               var dmg = Number(overrides[String(w.varValue)]);
               if (!isFinite(dmg) || dmg === 0) dmg = w.damage;
               var wse = function (d) { return _sdeCmd(250, d, [{ name: (w.se || seName), volume: 90, pitch: 100, pan: 0 }]); };
+              // P37: эффекты оружия — стан и отбрасывание (скрипты в P14)
+              var hitFx = function (d) {
+                  var cmds = [];
+                  var stun = Math.max(0, Number(w.stun) || 0);
+                  var kb = Math.max(0, Number(w.knockback) || 0);
+                  if (stun > 0) {
+                      cmds.push(_sdeCmd(355, d, ['SDE_API.hitStun(this._eventId(), ' + stun + ')']));
+                  }
+                  if (kb > 0) {
+                      cmds.push(_sdeCmd(355, d, ['SDE_API.hitKnockback(this._eventId(), ' + kb + ')']));
+                  }
+                  return cmds;
+              };
               var inner;
               if (w.sneakKill) {
                   inner = [_sdeCmd(111, ind + 1, [0, 41, 0]),
                       _sdeCmd(722, ind + 2, [0, -9999, 0]), wse(ind + 2), _sdeEnd(ind + 2),
                       _sdeCmd(411, ind + 1, []),
-                      _sdeCmd(731, ind + 2, [0, 0, 0]), _sdeCmd(722, ind + 2, [0, dmg, 0]), wse(ind + 2),
-                      _sdeCmd(721, ind + 2, ['wound', 1]), _sdeEnd(ind + 2),
-                      _sdeCmd(412, ind + 1, [])];
+                      _sdeCmd(731, ind + 2, [0, 0, 0]), _sdeCmd(722, ind + 2, [0, dmg, 0]), wse(ind + 2)]
+                          .concat(hitFx(ind + 2))
+                          .concat([_sdeCmd(721, ind + 2, ['wound', 1]), _sdeEnd(ind + 2),
+                      _sdeCmd(412, ind + 1, [])]);
               } else {
-                  inner = [_sdeCmd(731, ind + 1, [0, 0, 0]), _sdeCmd(722, ind + 1, [0, dmg, 0]), wse(ind + 1),
-                      _sdeCmd(721, ind + 1, ['wound', 1]), _sdeEnd(ind + 1)];
+                  inner = [_sdeCmd(731, ind + 1, [0, 0, 0]), _sdeCmd(722, ind + 1, [0, dmg, 0]), wse(ind + 1)]
+                      .concat(hitFx(ind + 1))
+                      .concat([_sdeCmd(721, ind + 1, ['wound', 1]), _sdeEnd(ind + 1)]);
               }
               var out = [_sdeCmd(111, ind, [1, 17, 0, w.varValue, 0])].concat(inner);
               out.push(_sdeCmd(411, ind, []));
@@ -1793,7 +1808,7 @@
           } catch (e) { return false; }
       },
 
-      // P23: восстановление HP преследователя после межкарточного транзита.
+      // P3c: восстановление HP преследователя после межкарточного транзита.
       setEventDataHp: function(mapId, evId, hp) {
           var data = getEventData(mapId, evId);
           if (!data) return false;
@@ -1801,6 +1816,35 @@
           if (data.hp > data.maxHp) data.hp = data.maxHp;
           if (data.hp <= 0) data.hp = 1; // живой преследователь
           return true;
+      },
+
+      // P37: стан врага — замирает на N кадров (нет движения, нет ИИ)
+      hitStun: function(evId, frames) {
+          var ev = $gameMap.event(Number(evId));
+          if (!ev) return;
+          ev._sdeStunTimer = Math.max(1, Number(frames) || 0);
+          if (ev._amsSmartTarget) {
+              // блокируем умное движение на время стана
+              ev._sdeStunSavedTarget = ev._amsSmartTarget;
+          }
+      },
+
+      // P37: отбрасывание — вектор от игрока, физика коллизий на каждом шаге
+      hitKnockback: function(evId, tiles) {
+          var ev = $gameMap.event(Number(evId));
+          if (!ev || !$gamePlayer) return;
+          var dist = Math.max(0, Number(tiles) || 0);
+          if (dist <= 0) return;
+          var dx = ev._x - $gamePlayer._x;
+          var dy = ev._y - $gamePlayer._y;
+          var mag = Math.hypot(dx, dy) || 1;
+          // распределяем на ~10 кадров — физика проверяет коллизии каждый шаг
+          var frames = 10;
+          ev._sdeKnockback = {
+              vx: (dx / mag) * (dist / frames),
+              vy: (dy / mag) * (dist / frames),
+              frames: frames
+          };
       }
   };
 
@@ -1810,7 +1854,9 @@
           buildEnemyPages: sdeBuildEnemyPages,
           findTemplateByNote: sdeFindTemplateByNote,
           expandMapTemplates: sdeExpandMapTemplates,
-          MEHP_DB: MEHP_DB
+          MEHP_DB: MEHP_DB,
+          hitStun: SDE_API.hitStun,
+          hitKnockback: SDE_API.hitKnockback
       };
   }
 

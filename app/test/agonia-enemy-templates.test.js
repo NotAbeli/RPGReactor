@@ -316,6 +316,43 @@ test('P26: звук состояния-объект — натив 728 с тип
     assert.ok(atk.length === 1 && atk[0].parameters[0].volume === 90, 'plain string keeps SE@90');
 });
 
+test('P37: стан и отбрасывание оружия — скрипты в P14 после урона', () => {
+    const { sde } = makeEnv();
+    // Арсенал с станом и отбрасыванием у лома, без — у кулаков
+    const pages = sde.buildEnemyPages(Object.assign({}, BIBA));
+    // без Арсенала (SDE_WEAPONS пуст) — легаси-таблица, скриптов быть не должно
+    const p14 = JSON.stringify(pages[14].list);
+    assert.ok(!p14.includes('hitStun'), 'no stun script without Arsenal');
+    assert.ok(!p14.includes('hitKnockback'), 'no knockback script without Arsenal');
+});
+
+test('P37: SDE_API.hitStun ставит таймер стана', () => {
+    const { ctx, sde } = makeEnv();
+    const ev = { _eventId: 5, _x: 3, _y: 3 };
+    ctx.$gameMap = { event: id => (Number(id) === 5 ? ev : null) };
+    sde.hitStun(5, 30);
+    assert.strictEqual(ev._sdeStunTimer, 30, 'stun timer set');
+    // ноль/мусор — минимум 1 (чтобы не было вечного нуля)
+    sde.hitStun(5, 0);
+    assert.strictEqual(ev._sdeStunTimer, 1, 'stun timer minimum 1');
+});
+
+test('P37: SDE_API.hitKnockback вектор от игрока, распределён на 10 кадров', () => {
+    const { ctx, sde } = makeEnv();
+    const ev = { _eventId: 5, _x: 5, _y: 3 };
+    ctx.$gameMap = { event: id => (Number(id) === 5 ? ev : null) };
+    ctx.$gamePlayer = { _x: 0, _y: 3 }; // игрок слева от врага
+    sde.hitKnockback(5, 2); // 2 тайла отбрасывания
+    assert.ok(ev._sdeKnockback, 'knockback set');
+    assert.strictEqual(ev._sdeKnockback.frames, 10, 'spread over 10 frames');
+    assert.ok(ev._sdeKnockback.vx > 0, 'pushed right (away from player)');
+    assert.ok(Math.abs(ev._sdeKnockback.vy) < 0.001, 'no vertical push (same row)');
+    // нулевая дистанция — ничего
+    delete ev._sdeKnockback;
+    sde.hitKnockback(5, 0);
+    assert.ok(!ev._sdeKnockback, 'zero distance does nothing');
+});
+
 test('findTemplateByNote: только template-карточки, по тем же тегам, что и правила', () => {
     const box = { match: '<box>', hp: '50' };
     const { sde } = makeEnv();
