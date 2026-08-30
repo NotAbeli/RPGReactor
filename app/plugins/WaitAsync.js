@@ -44,4 +44,31 @@
         }
         return _GameInterpreter_updateWaitMode.call(this);
     };
+
+    // P32: асинхронное ожидание блокирует ТОЛЬКО выполнение команд события —
+    // но не героя. Ядро MV морозит игрока через Game_Player.canMove ->
+    // $gameMap.isEventRunning() (интерпретатор с _waitMode всё ещё running).
+    // Пока карта ждёт waitAsync — пробиваем ровно этот флаг, сохраняя все
+    // прочие блокировки цепочки (дэш, инвентарь, сообщения, маршруты).
+    if (typeof Game_Player !== 'undefined' && Game_Player.prototype
+        && typeof Game_Map !== 'undefined' && Game_Map.prototype) {
+        const _WaitAsync_Game_Player_canMove = Game_Player.prototype.canMove;
+        Game_Player.prototype.canMove = function() {
+            const interp = (typeof $gameMap !== 'undefined' && $gameMap) ? $gameMap._interpreter : null;
+            const waitingAsync = (typeof $gameMap !== 'undefined' && $gameMap)
+                && $gameMap.isEventRunning()
+                && interp && interp._waitMode === "waitAsync"
+                && (typeof $gameMessage === 'undefined' || !$gameMessage.isBusy());
+            if (!waitingAsync) {
+                return _WaitAsync_Game_Player_canMove.call(this);
+            }
+            const origIsRunning = Game_Map.prototype.isEventRunning;
+            Game_Map.prototype.isEventRunning = function() { return false; };
+            try {
+                return _WaitAsync_Game_Player_canMove.call(this);
+            } finally {
+                Game_Map.prototype.isEventRunning = origIsRunning;
+            }
+        };
+    }
 })();
