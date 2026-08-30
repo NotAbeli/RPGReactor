@@ -524,6 +524,65 @@ SDB.Tracer = SDB.Tracer || {};
         }
     };
 
+    /**
+     * P38: ЧИСТАЯ СИСТЕМА ЭФФЕКТОВ ОРУЖИЯ.
+     * Единственная точка применения стана/отбрасывания при попадании
+     * оружием игрока по врагу. Работает напрямую с объектом цели —
+     * без SDE_API, без поиска по ID, без зависимости от P14 страниц.
+     * Урон остаётся в P14 (работает); сюда легко добавить урон/SE позже.
+     */
+    SDB.Core.applyWeaponEffects = function(target, source) {
+        if (source !== $gamePlayer) return;
+        if (!target || target === $gamePlayer || target._erased) return;
+
+        // Оружие игрока из Арсенала (var 17)
+        var weapon = null;
+        try {
+            if (typeof SDE_API !== 'undefined' && SDE_API.getWeaponByVar) {
+                weapon = SDE_API.getWeaponByVar($gameVariables.value(17));
+            }
+        } catch (e) { weapon = null; }
+        if (!weapon) return;
+
+        console.log('[SDB] weapon effects:', weapon.name,
+            'stun=' + weapon.stun, 'kb=' + weapon.knockback);
+
+        // Иммунитеты из карточки врага (БД → ИИ Врагов → Характер)
+        var immune = { stun: false, kb: false };
+        try {
+            if (typeof SDE_API !== 'undefined' && SDE_API.getTemplate && target.event) {
+                var note = target.event() ? (target.event().note || '') : '';
+                var tpl = SDE_API.getTemplate(note.match(/<([^>]+)>/) ? note.match(/<([^>]+)>/)[1] : null);
+                if (tpl) {
+                    immune.stun = String(tpl.ignoreStun) === 'true';
+                    immune.kb = String(tpl.ignoreKnockback) === 'true';
+                }
+            }
+        } catch (e) {}
+
+        // Стан — напрямую на объект цели
+        var stun = Math.max(0, Number(weapon.stun) || 0);
+        if (stun > 0 && !immune.stun) {
+            target._sdeStunTimer = stun;
+            console.log('[SDB] stun applied:', stun, 'frames on', target._eventId);
+        }
+
+        // Отбрасывание — вектор от игрока, по паттерну рывка
+        var kb = Math.max(0, Number(weapon.knockback) || 0);
+        if (kb > 0 && !immune.kb && $gamePlayer) {
+            var dx = target._x - $gamePlayer._x;
+            var dy = target._y - $gamePlayer._y;
+            var mag = Math.hypot(dx, dy) || 1;
+            target._sdeKnockback = {
+                vx: dx / mag,
+                vy: dy / mag,
+                remaining: kb,
+                frames: Math.max(5, Math.round(kb * 8))
+            };
+            console.log('[SDB] knockback applied:', kb, 'tiles on', target._eventId);
+        }
+    };
+
     SDB.Core.processHit = function(target, source, data) {
         var tName = target === $gamePlayer ? "Player" : "Event " + target.eventId();
         SDB.Core.log("HIT: " + tName);
@@ -538,18 +597,9 @@ SDB.Tracer = SDB.Tracer || {};
         } else {
             SDB.Core.executeActionString(data.ActionsEvent, target, source);
 
-            // P37: прямое применение стана и отбрасывания при попадании
-            // по врагу оружием игрока — НЕ через P14-страницу (она зависит
-            // от action string карточки атаки, которая может не ставить D)
-            if (source === $gamePlayer && typeof SDE_API !== 'undefined' && SDE_API.getWeaponByVar) {
-                var weapon = SDE_API.getWeaponByVar($gameVariables.value(17));
-                if (weapon) {
-                    var stun = Math.max(0, Number(weapon.stun) || 0);
-                    var kb = Math.max(0, Number(weapon.knockback) || 0);
-                    if (stun > 0) SDE_API.hitStun(target.eventId(), stun);
-                    if (kb > 0) SDE_API.hitKnockback(target.eventId(), kb);
-                }
-            }
+            // P38: ЧИСТАЯ СИСТЕМА — все эффекты оружия из Арсенала
+            // применяются напрямую на объект цели, без промежуточных звеньев
+            SDB.Core.applyWeaponEffects(target, source);
         }
     };
 
