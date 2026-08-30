@@ -44,22 +44,25 @@ function stubEvent(note, pageComments) {
     });
 }
 
-test('P28: <step_snds> в note — персональный пул заменяет террейн', () => {
+test('P28: <step_snds> в note — персональный пул как фоллбек поверхности', () => {
     const { ctx } = makeEnv({ Events: 'true' });
     const Galv = ctx.Galv;
     // террейн 0 без звуков — обычный путь молчит
     const plain = stubEvent('<biba> <step_se>');
     plain.setStepSe();
-    assert.strictEqual(plain.getStepSound(0), null, 'no terrain pool -> silent without override');
+    assert.strictEqual(plain.getStepSound(0), null, 'no terrain pool, no preset -> silent');
 
-    // с пресетом — 2 своих звука, работают без террейна
+    // P29: ПОВЕРХНОСТЬ ПРЕЖДЕ ВСЕГО — на террейне со своим пулом
+    // пресет НЕ подменяет звук (враг звучит как герой)
+    Galv.CFSTEP.terrainConfig[2] = { mode: 'random', sounds: [{ name: 'MetalStep', volume: 50, pitch: 100, pan: 0 }] };
     const own = stubEvent('<biba> <step_se:80> <step_snds:StepA,StepB>');
     own.setStepSe();
     assert.ok(own._stepSeOn, 'step sounds armed');
     assert.strictEqual(own._stepSeVol, 0.8, 'volume multiplier parsed');
-    assert.strictEqual(own._stepPoolOverride.length, 2, 'personal pool built');
+    assert.strictEqual(own.getStepSound(2).name, 'MetalStep', 'terrain pool wins over the preset');
+    // а на поверхности без пула — играет персональный пресет
     const s = own.getStepSound(0);
-    assert.ok(s && (s.name === 'StepA' || s.name === 'StepB'), 'pool member returned');
+    assert.ok(s && (s.name === 'StepA' || s.name === 'StepB'), 'preset is the fallback on bare terrain');
     assert.strictEqual(s.volume, 90, 'pool default volume');
 });
 

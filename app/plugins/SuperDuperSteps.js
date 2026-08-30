@@ -343,11 +343,13 @@ Galv.CFSTEP = Galv.CFSTEP || {}; // Galv's stuff
 
     Game_CharacterBase.prototype.getStepSound = function(terrainTag) {
         var config = Galv.CFSTEP.terrainConfig[terrainTag];
-        // P28: персональный пул звуков шагов (<step_snds:...> в note события)
-        // — заменяет пул террейна; работает и на террейне без своих звуков
-        var hasOverride = !!(this._stepPoolOverride && this._stepPoolOverride.length);
-        var pool = hasOverride ? this._stepPoolOverride
-            : ((config && config.sounds && config.sounds.length) ? config.sounds : null);
+        // P29: ПОВЕРХНОСТЬ ПРЕЖДЕ ВСЕГО — пул террейна как у героя;
+        // персональный пул (<step_snds> в note) — фоллбек для поверхностей
+        // без своих звуков. Скорость учтена в playStepSE/getStepInterval
+        // (модификаторы бега/шагов — те же, что у героя).
+        var terrainPool = (config && config.sounds && config.sounds.length) ? config.sounds : null;
+        var ownPool = (this._stepPoolOverride && this._stepPoolOverride.length) ? this._stepPoolOverride : null;
+        var pool = terrainPool || ownPool;
         if (!pool) return null;
 
         var mode = (config && config.mode) || 'random';

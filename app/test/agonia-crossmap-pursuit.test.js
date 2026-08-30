@@ -100,7 +100,10 @@ test('P23: xmapParseDoorList — триггер 0/1 и прямой режим, 
     const { sda } = makeEnv();
     const json = {
         events: [null,
-            { id: 1, x: 5, y: 5, pages: [{ trigger: 0, list: [{ code: 201, parameters: [0, 7, 8, 9, 0, 0] }] }] },
+            { id: 1, x: 5, y: 5, pages: [{ trigger: 0, list: [
+                { code: 250, parameters: [{ name: 'Open3', volume: 90, pitch: 100, pan: 0 }] },
+                { code: 201, parameters: [0, 7, 8, 9, 0, 0] }
+            ] }] },
             { id: 2, x: 1, y: 1, pages: [{ trigger: 3, list: [{ code: 201, parameters: [0, 9, 1, 1, 0, 0] }] }] },
             { id: 3, x: 2, y: 2, pages: [{ trigger: 1, list: [{ code: 201, parameters: [1, 4, 5, 6, 4, 2] }] }] }
         ]
@@ -110,6 +113,9 @@ test('P23: xmapParseDoorList — триггер 0/1 и прямой режим, 
     assert.deepStrictEqual(
         [doors[0].evId, doors[0].toMap, doors[0].toX, doors[0].toY],
         [1, 7, 8, 9], 'door destination parsed exactly');
+    // P29: первая SE страницы вынесена в ребро
+    assert.ok(doors[0].se && doors[0].se.name === 'Open3' && doors[0].se.volume === 90,
+        'door SE carried in the static edge');
 });
 
 test('P23: xmapRouteOnGraph — BFS через промежуточные карты, тупик -> null, та же карта -> []', () => {
@@ -215,12 +221,44 @@ test('P28: дверь анимируется при транзите — SE + п
     };
     ctx.$gameMap.event = id => (Number(id) === 7 ? doorEv : null);
     sda.xmap.doorFx(7);
-    assert.ok(playedSe.length === 1 && playedSe[0].name === 'Door1', 'door SE plays');
+    assert.ok(playedSe.length === 1 && playedSe[0].name === 'Door1', 'fallback door SE plays');
     assert.strictEqual(sda.xmap.doorFxQueue().length, 1, 'animation queued');
     // прогоняем тиками (тик = 1 кадр)
     for (let i = 0; i < 40; i++) sda.xmap.tick();
     assert.deepStrictEqual(patterns, [1, 2, 1, 0, 0], 'pattern sequence 0->1->2->1->0 (close restore)');
     assert.strictEqual(sda.xmap.doorFxQueue().length, 0, 'queue drains');
+});
+
+test('P29: дверь открывается СВОИМ SE — приоритет статического ребра', () => {
+    const { sda, ctx } = makeEnv({}, { mapId: 1 });
+    const playedSe = [];
+    ctx.AudioManager = { playSe: s => playedSe.push(s) };
+    // статическое ребро с SE из файла (рантайм-страницы двери переписаны)
+    sda.xmap.setGraphCache({ edges: { 1: [{ evId: 5, x: 1, y: 1, toMap: 2, toX: 3, toY: 3,
+        se: { name: 'Open3', volume: 90, pitch: 100 } }] } });
+    const doorEv = {
+        _eventId: 5, _characterName: '!SF_Door1',
+        setPattern: () => {}
+    };
+    ctx.$gameMap.event = id => (Number(id) === 5 ? doorEv : null);
+    sda.xmap.doorFx(5);
+    assert.strictEqual(playedSe[0].name, 'Open3', 'static edge SE wins over the param default');
+    // рантайм-SE из события — когда у ребра SE нет
+    sda.xmap.setGraphCache({ edges: { 1: [{ evId: 5, x: 1, y: 1, toMap: 2, toX: 3, toY: 3 }] } });
+    doorEv.page = () => ({
+        list: [
+            { code: 250, parameters: [{ name: 'CreakLift', volume: 70, pitch: 105, pan: 0 }] },
+            { code: 201, parameters: [0, 8, 9, 8, 0, 0] }
+        ]
+    });
+    doorEv.event = () => ({ pages: [] });
+    sda.xmap.doorFx(5);
+    assert.strictEqual(playedSe[1].name, 'CreakLift', 'runtime page SE as the second priority');
+    assert.strictEqual(playedSe[1].volume, 70, 'volume from the event command');
+    // совсем ничего — параметр Door SE
+    doorEv.page = () => ({ list: [] });
+    sda.xmap.doorFx(5);
+    assert.strictEqual(playedSe[2].name, 'Door1', 'param fallback last');
 });
 
 test('P28: инжект врага несёт шаги карточки в note (громкость + пул звуков)', () => {

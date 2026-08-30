@@ -1712,16 +1712,58 @@
         return false;
     }
 
+    // P29: SE открытия двери лежит ВНУТРИ ивента двери (первая команда SE в
+    // списке активной страницы — та же, что слышит герой). Фоллбек —
+    // параметр Door SE.
+    function xmapDoorSeFromEvent(ev) {
+        try {
+            var lists = [];
+            var pg = ev.page ? ev.page() : null;
+            if (pg && pg.list) lists.push(pg.list);
+            var data = ev.event && ev.event();
+            if (data && data.pages) {
+                for (var i = 0; i < data.pages.length; i++) lists.push(data.pages[i].list || []);
+            }
+            for (var L = 0; L < lists.length; L++) {
+                var list = lists[L];
+                for (var c = 0; c < list.length; c++) {
+                    var cmd = list[c];
+                    if (cmd.code === 250 && cmd.parameters && cmd.parameters[0] && cmd.parameters[0].name) {
+                        var a = cmd.parameters[0];
+                        return {
+                            name: String(a.name),
+                            volume: Math.max(0, Math.min(100, Number(a.volume) || 90)),
+                            pitch: Math.max(50, Math.min(150, Number(a.pitch) || 100)),
+                            pan: 0
+                        };
+                    }
+                }
+            }
+        } catch (e) {}
+        return null;
+    }
+
     // --- P28: дверь открывается/закрывается при транзите врага. Двери —
     // чарсеты (!SF_Door и т.п.), кадры листаются через pattern; рулим
     // спрайтом двери напрямую, не трогая её сложный список команд.
     let xmapDoorFxQueue = [];
     function xmapDoorFx(evId) {
         try {
-            if (XMAP_DOOR_SE && typeof AudioManager !== 'undefined' && AudioManager.playSe) {
-                AudioManager.playSe({ name: XMAP_DOOR_SE, volume: XMAP_DOOR_VOL, pitch: 100, pan: 0 });
-            }
             var ev = $gameMap.event(evId);
+            // P29 приоритет SE: статическое ребро (файл данных — герой слышит
+            // этот звук при открытии) -> рантайм-страница -> параметр Door SE
+            var se = null;
+            try {
+                var edges = xmapGraph().edges[$gameMap.mapId()] || [];
+                for (var i = 0; i < edges.length; i++) {
+                    if (edges[i].evId === evId && edges[i].se) { se = { name: edges[i].se.name, volume: edges[i].se.volume, pitch: edges[i].se.pitch, pan: 0 }; break; }
+                }
+            } catch (e3) {}
+            if (!se && ev) se = xmapDoorSeFromEvent(ev);
+            if (!se) se = { name: XMAP_DOOR_SE, volume: XMAP_DOOR_VOL, pitch: 100, pan: 0 };
+            if (se.name && typeof AudioManager !== 'undefined' && AudioManager.playSe) {
+                AudioManager.playSe(se);
+            }
             if (!ev || !ev._characterName || typeof ev.setPattern !== 'function') return;
             // 0 закрыта -> 1 полу -> 2 открыта (пауза) -> 1 -> 0 закрыта
             xmapDoorFxQueue.push({
@@ -1756,7 +1798,9 @@
     }
 
     // --- Парсинг дверей из JSON карты (для статического графа; режим 1
-    // с переменными не резолвится статически — пропускается) ---
+    // с переменными не резолвится статически — пропускается). P29: вместе с
+    // ребром выносим ПЕРВУЮ SE страницы-двери (её слышит герой при открытии;
+    // рантайм-страницы дверей переписываются чужими плагинами — файл надёжен) ---
     function xmapParseDoorList(json) {
         var doors = [];
         if (!json || !json.events) return doors;
@@ -1772,10 +1816,26 @@
                 for (var c = 0; c < list.length; c++) {
                     if (list[c].code === 201 && list[c].parameters && list[c].parameters[0] === 0) {
                         var pr = list[c].parameters;
-                        doors.push({
+                        // первая SE страницы — «дверной» звук открытия
+                        var se = null;
+                        for (var s = 0; s < list.length; s++) {
+                            if (list[s].code === 250 && list[s].parameters && list[s].parameters[0]
+                                && list[s].parameters[0].name) {
+                                var a = list[s].parameters[0];
+                                se = {
+                                    name: String(a.name),
+                                    volume: Math.max(0, Math.min(100, Number(a.volume) || 90)),
+                                    pitch: Math.max(50, Math.min(150, Number(a.pitch) || 100))
+                                };
+                                break;
+                            }
+                        }
+                        var door = {
                             evId: i, x: ev.x, y: ev.y,
                             toMap: Number(pr[1]), toX: Number(pr[2]), toY: Number(pr[3])
-                        });
+                        };
+                        if (se) door.se = se;
+                        doors.push(door);
                         found = true;
                         break;
                     }
