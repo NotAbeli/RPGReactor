@@ -55,17 +55,31 @@
         _dk_Scene_Boot_start.call(this);
         if (!this._dkAutoStarted && DataManager.isDatabaseLoaded.call(DataManager)) {
             this._dkAutoStarted = true;
-            setTimeout(function() {
-                try {
-                    if (SceneManager._scene instanceof Scene_Boot || SceneManager._scene instanceof Scene_Title) {
-                        DataManager.setupNewGame();
-                        SceneManager.goto(Scene_Map);
-                        console.log('[DebugKit] auto new game');
-                    }
-                } catch (e) { console.error('[DebugKit] autostart failed:', e); }
-            }, 300);
+            _dkAutoStart();
         }
     };
+    // P31: ретрай — start() одномоментен и может выстрелить ДО асинхронной
+    // загрузки базы (гонка: игра зависала на титуле в дебаг-пробах);
+    // опрашиваем каждый кадр до готовности
+    var _dk_Scene_Boot_update = Scene_Boot.prototype.update;
+    Scene_Boot.prototype.update = function() {
+        _dk_Scene_Boot_update.call(this);
+        if (!this._dkAutoStarted && DataManager.isDatabaseLoaded.call(DataManager)) {
+            this._dkAutoStarted = true;
+            _dkAutoStart();
+        }
+    };
+    function _dkAutoStart() {
+        setTimeout(function() {
+            try {
+                if (SceneManager._scene instanceof Scene_Boot || SceneManager._scene instanceof Scene_Title) {
+                    DataManager.setupNewGame();
+                    SceneManager.goto(Scene_Map);
+                    console.log('[DebugKit] auto new game');
+                }
+            } catch (e) { console.error('[DebugKit] autostart failed:', e); }
+        }, 300);
+    }
     Scene_Boot.prototype._dkPatched = true; // маркер для тестов движка
 
     // --- Бейдж DEBUG ---

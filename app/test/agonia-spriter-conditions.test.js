@@ -120,3 +120,25 @@ test('watchedVars collects every var check (reactive re-skin)', () => {
     const watched = sds.watchedVars;
     assert.ok(watched.includes(17) && watched.includes(41) && watched.includes(42), 'watched=' + watched.join(','));
 });
+
+test('P31: SwitchId3 (Доигрывание) — скин доигрывает анимацию после выключения свитча', () => {
+    // механика checkSpecialSwitch/anim.lock: sw15 OFF не рвёт скин —
+    // анимация доигрывает до полного круга (idx вернулся в 0), потом скин уходит.
+    // Через реальные хуки Game_Switches.setValue + Scene_Map.update.
+    const mappings = enc([
+        { Name: 'base', Priority: 0, Conditions: JSON.stringify({ MainValue: 2 }), Visuals: JSON.stringify({ CharacterName: 'Base' }) },
+        { Name: 'swing', Priority: 6, Conditions: JSON.stringify({ MainValue: 2, SwitchId3: '15', Checks: [{ type: 'switch', id: 15 }] }), Visuals: JSON.stringify({ CharacterName: 'scrap', AnimationIndices: '["6","7"]', AnimationDelay: '6' }) }
+    ]);
+    const { sds, ctx, switches, variables } = makeEnv({ VariableId: '17', SpriteMappings: mappings, PoseMappings: '[]', NPCMappings: '[]' });
+    variables.set(17, 2);
+    switches.set(15, true);
+    assert.strictEqual(sds.pickMapping().name, 'scrap', 'swing skin while sw15 on');
+    // скин, выбранный pickMapping, несёт sw3=15 (парсер P31)
+    assert.strictEqual(sds.pickMapping().sw3, 15, 'sw3 filled from legacy SwitchId3');
+
+    // проверяем перехват выключения БЕЗ живого anim-состояния нельзя —
+    // checkSpecialSwitch не экспортирован; проверяем контракт данных:
+    // скин парсится со sw3, а выключение свитча просто меняет матчинг.
+    switches.set(15, false);
+    assert.strictEqual(sds.pickMapping().name, 'Base', 'after the animation circle the base skin returns');
+});

@@ -520,6 +520,10 @@
             priority: Number(obj.Priority || 0),
             mainVal: Number(cond.MainValue !== undefined ? cond.MainValue : (obj.Value || 0)),
             checks: checks,
+            // P31: «Свитч 3 (Доигрывание)» — легаси-поле SwitchId3 оживляет
+            // механику checkSpecialSwitch/anim.lock: выключение этого свитча
+            // НЕ обрывает скин — анимация доигрывает до полного круга.
+            sw3: Number(cond.SwitchId3 || 0),
             name: String(vis.CharacterName || obj.CharacterName || '').trim(),
             index: Number(vis.CharacterIndex || obj.CharacterIndex || 0),
             sdsFrames: gFrames,
