@@ -990,9 +990,20 @@
       return pages;
   }
 
+  /** P37: читает флаг иммунитета (ignoreStun/ignoreKnockback) из карточки
+   * врага по note-тегу события. true = иммунитет, эффект не применяется. */
+  function sdeIgnoreFlag(ev, flag) {
+      try {
+          if (!ev || !ev.event || !ev.event()) return false;
+          var note = ev.event().note || '';
+          var tpl = sdeFindTemplateByNote(note);
+          if (!tpl) return false;
+          return String(tpl[flag]) === 'true';
+      } catch (e) { return false; }
+  }
+
   /** Найти template-карточку по note-тегу события (тот же match, что у правил). */
-  function sdeFindTemplateByNote(note) {
-      if (!note || !MEHP_DB.length) return null;
+  function sdeFindTemplateByNote(note) {      if (!note || !MEHP_DB.length) return null;
       for (var i = 0; i < MEHP_DB.length; i++) {
           var r = MEHP_DB[i];
           if (r && r.match && String(r.template) === 'true' && note.indexOf(r.match) >= 0) return r;
@@ -1818,32 +1829,32 @@
           return true;
       },
 
-      // P37: стан врага — замирает на N кадров (нет движения, нет ИИ)
+      // P37: стан врага — замирает на N кадров (нет движения, нет ИИ).
+      // ignoreStun на карточке врага = иммунитет к стану
       hitStun: function(evId, frames) {
           var ev = $gameMap.event(Number(evId));
           if (!ev) return;
+          if (sdeIgnoreFlag(ev, 'ignoreStun')) return;
           ev._sdeStunTimer = Math.max(1, Number(frames) || 0);
-          if (ev._amsSmartTarget) {
-              // блокируем умное движение на время стана
-              ev._sdeStunSavedTarget = ev._amsSmartTarget;
-          }
       },
 
-      // P37: отбрасывание — вектор от игрока, физика коллизий на каждом шаге
+      // P37: отбрасывание — вектор от игрока, по паттерну рывка:
+      // force stop физики Altimit → moveVector с sub-step коллизиями.
+      // ignoreKnockback на карточке врага = иммунитет к отбрасыванию
       hitKnockback: function(evId, tiles) {
           var ev = $gameMap.event(Number(evId));
           if (!ev || !$gamePlayer) return;
+          if (sdeIgnoreFlag(ev, 'ignoreKnockback')) return;
           var dist = Math.max(0, Number(tiles) || 0);
           if (dist <= 0) return;
           var dx = ev._x - $gamePlayer._x;
           var dy = ev._y - $gamePlayer._y;
           var mag = Math.hypot(dx, dy) || 1;
-          // распределяем на ~10 кадров — физика проверяет коллизии каждый шаг
-          var frames = 10;
           ev._sdeKnockback = {
-              vx: (dx / mag) * (dist / frames),
-              vy: (dy / mag) * (dist / frames),
-              frames: frames
+              vx: dx / mag,             // единичный вектор от игрока
+              vy: dy / mag,
+              remaining: dist,          // сколько тайлов осталось пролететь
+              frames: Math.max(5, Math.round(dist * 8)) // кап по времени
           };
       }
   };

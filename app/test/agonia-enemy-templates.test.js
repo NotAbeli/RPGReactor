@@ -326,31 +326,42 @@ test('P37: стан и отбрасывание оружия — скрипты 
     assert.ok(!p14.includes('hitKnockback'), 'no knockback script without Arsenal');
 });
 
-test('P37: SDE_API.hitStun ставит таймер стана', () => {
+test('P37: SDE_API.hitStun ставит таймер стана, иммунитет игнорирует', () => {
     const { ctx, sde } = makeEnv();
-    const ev = { _eventId: 5, _x: 3, _y: 3 };
+    const ev = { _eventId: 5, _x: 3, _y: 3, event: () => ({ note: '<biba>' }) };
     ctx.$gameMap = { event: id => (Number(id) === 5 ? ev : null) };
     sde.hitStun(5, 30);
     assert.strictEqual(ev._sdeStunTimer, 30, 'stun timer set');
-    // ноль/мусор — минимум 1 (чтобы не было вечного нуля)
+    // ноль/мусор — минимум 1
     sde.hitStun(5, 0);
     assert.strictEqual(ev._sdeStunTimer, 1, 'stun timer minimum 1');
+    // иммунитет: карточка с ignoreStun=true
+    sde.MEHP_DB.length = 0;
+    sde.MEHP_DB.push({ match: '<biba>', template: 'true', ignoreStun: 'true', hp: '100' });
+    sde.hitStun(5, 30);
+    assert.strictEqual(ev._sdeStunTimer, 1, 'ignoreStun card blocks stun (timer unchanged)');
 });
 
-test('P37: SDE_API.hitKnockback вектор от игрока, распределён на 10 кадров', () => {
+test('P37: SDE_API.hitKnockback вектор от игрока, иммунитет игнорирует', () => {
     const { ctx, sde } = makeEnv();
-    const ev = { _eventId: 5, _x: 5, _y: 3 };
+    const ev = { _eventId: 5, _x: 5, _y: 3, event: () => ({ note: '<biba>' }) };
     ctx.$gameMap = { event: id => (Number(id) === 5 ? ev : null) };
     ctx.$gamePlayer = { _x: 0, _y: 3 }; // игрок слева от врага
-    sde.hitKnockback(5, 2); // 2 тайла отбрасывания
+    sde.MEHP_DB.length = 0;
+    sde.MEHP_DB.push({ match: '<biba>', template: 'true', hp: '100' });
+    sde.hitKnockback(5, 2);
     assert.ok(ev._sdeKnockback, 'knockback set');
-    assert.strictEqual(ev._sdeKnockback.frames, 10, 'spread over 10 frames');
     assert.ok(ev._sdeKnockback.vx > 0, 'pushed right (away from player)');
-    assert.ok(Math.abs(ev._sdeKnockback.vy) < 0.001, 'no vertical push (same row)');
+    assert.ok(ev._sdeKnockback.remaining > 0, 'distance to fly');
     // нулевая дистанция — ничего
     delete ev._sdeKnockback;
     sde.hitKnockback(5, 0);
     assert.ok(!ev._sdeKnockback, 'zero distance does nothing');
+    // иммунитет: карточка с ignoreKnockback=true
+    sde.MEHP_DB.length = 0;
+    sde.MEHP_DB.push({ match: '<biba>', template: 'true', ignoreKnockback: 'true', hp: '100' });
+    sde.hitKnockback(5, 2);
+    assert.ok(!ev._sdeKnockback, 'ignoreKnockback card blocks knockback');
 });
 
 test('findTemplateByNote: только template-карточки, по тем же тегам, что и правила', () => {

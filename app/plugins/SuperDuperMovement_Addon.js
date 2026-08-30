@@ -824,10 +824,31 @@
     // ======================================================================
     const _SDAP_Game_CharacterBase_update = Game_CharacterBase.prototype.update;
     Game_CharacterBase.prototype.update = function() {
-        // P37: отбрасывание — физический толчок от игрока (работает и в стане)
-        if (this._sdeKnockback && this._sdeKnockback.frames > 0) {
+        // P37: отбрасывание — по паттерну рывка: стоп физики Altimit →
+        // sub-step moveVector с коллизиями → стоп при упоре в стену.
+        // Работает и во время стана (толчок в оглушении = hit-stun).
+        if (this._sdeKnockback && this._sdeKnockback.remaining > 0 && this._sdeKnockback.frames > 0) {
             this._sdeKnockback.frames--;
-            this.moveVector(this._sdeKnockback.vx, this._sdeKnockback.vy);
+            this.amsForceStopPhysics();
+            var kb = this._sdeKnockback;
+            var kbSpeed = this.distancePerFrame() * 6; // 6x скорость — заметный толчок
+            var kbStep = Math.min(kbSpeed, kb.remaining);
+            var kbVx = kb.vx * kbStep;
+            var kbVy = kb.vy * kbStep;
+            var kbBlocked = true;
+            var kbX0 = this._x, kbY0 = this._y;
+            // sub-step коллизии как у рывка
+            for (var kbs = 0; kbs < collisionSteps; kbs++) {
+                this.moveVector(kbVx / collisionSteps, kbVy / collisionSteps);
+            }
+            // сдвинулись? если нет — упёрлись в стену/мебель, стоп отбрасывания
+            var kbMoved = Math.hypot(this._x - kbX0, this._y - kbY0);
+            if (kbMoved < kbStep * 0.2) {
+                this._sdeKnockback = null;
+            } else {
+                kb.remaining -= kbMoved;
+                if (kb.remaining <= 0) this._sdeKnockback = null;
+            }
             _SDAP_Game_CharacterBase_update.call(this);
             return;
         }

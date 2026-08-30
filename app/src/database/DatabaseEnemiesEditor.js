@@ -60,7 +60,9 @@ class DatabaseEnemiesEditor {
             damageSE: 'Damage2', sneakKill: 'true',
             // S52: поведенческий конструктор
             disposition: 'aggressive', canPanic: 'true', canFlee: 'true', rememberGun: 'true',
-            speedCalm: 3, speedCombat: 4
+            speedCalm: 3, speedCombat: 4,
+            // P37: иммунитеты к эффектам оружия
+            ignoreStun: 'false', ignoreKnockback: 'false'
         };
     }
 
@@ -142,6 +144,8 @@ class DatabaseEnemiesEditor {
                 { key: 'canPanic', label: 'Пугается', type: 'check' },
                 { key: 'canFlee', label: 'Убегает', type: 'check' },
                 { key: 'rememberGun', label: 'Помнит оружие', type: 'check' },
+                { key: 'ignoreStun', label: 'Игнорирует стан', type: 'check', hint: 'иммунитет к оглушению от оружия' },
+                { key: 'ignoreKnockback', label: 'Игнорирует отбрасывание', type: 'check', hint: 'не отталкивается при ударе' },
                 { key: 'speedCalm', label: 'Скорость в покое', type: 'number', min: 1, max: 6 },
                 { key: 'speedCombat', label: 'Скорость в бою', type: 'number', min: 1, max: 6 }
             ], entry, { commit: () => api.changed() });
