@@ -534,7 +534,7 @@ class DatabaseSpriterEditor {
 
         // --- ▸ Продвинутая анимация (skins/NPC; poses have none) ---
         if (kind !== 'PoseMappings') {
-            wrapper.appendChild(this._renderAdvancedAnimation(entry, kind));
+            wrapper.appendChild(this._renderAdvancedAnimation(entry, kind, changed));
         }
 
         // --- ▸ Условия (collapsed, live summary in the caption) ---
@@ -833,7 +833,7 @@ class DatabaseSpriterEditor {
     }
 
     /** S34: the collapsed fine-tuning block, rendered AFTER Название/Приоритет. */
-    _renderAdvancedAnimation(entry, kind) {
+    _renderAdvancedAnimation(entry, kind, changed) {
         const vis = this._ensure(entry, 'Visuals', {});
         const isNPC = kind === 'NPCMappings';
 
@@ -853,7 +853,7 @@ class DatabaseSpriterEditor {
         // the kit auto-fill. All tiny hint captions are cut (S37b).
         const mk = (label, key, opts) => {
             const f = this._fieldLabel(label);
-            f.appendChild(this._numberField(vis[key], opts, v => { vis[key] = v; this._refreshPreview(); }));
+            f.appendChild(this._numberField(vis[key], opts, v => { vis[key] = v; if (changed) changed(); this._refreshPreview(); }));
             return f;
         };
         const mkSel = (label, key, options) => {
@@ -863,7 +863,7 @@ class DatabaseSpriterEditor {
             if (!options.some(o => Number(o.value) === cur)) {
                 options = options.concat([{ value: cur, label: String(cur) }]);
             }
-            f.appendChild(this._selectField(cur, options, v => { vis[key] = Number(v); this._refreshPreview(); }));
+            f.appendChild(this._selectField(cur, options, v => { vis[key] = Number(v); if (changed) changed(); this._refreshPreview(); }));
             return f;
         };
         const row = (cols, padTop) => {
