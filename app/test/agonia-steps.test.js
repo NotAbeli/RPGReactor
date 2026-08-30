@@ -18,19 +18,22 @@ class Game_Event extends Game_Character {}
 class Game_Player extends Game_Character {}
 
 function makeEnv(pluginParams = {}) {
+    const played = [];
     const ctx = {
         console: { log() {}, error() {}, warn() {} },
         PluginManager: { parameters: () => pluginParams, registerCommand() {} },
         Imported: {},
         Game_Player, Game_Event, Game_CharacterBase,
-        AudioManager: { playSe() {} },
-        $gameMap: { terrainTag: () => 0 }
+        AudioManager: { playSe(se, aex) { played.push({ se: se, aex: aex }); } },
+        $gameMap: { terrainTag: () => 0 },
+        $gamePlayer: { x: 0, y: 0 }
     };
     ctx.window = ctx;
+    
     vm.createContext(ctx);
     vm.runInContext(pluginSrc, ctx, { filename: 'SuperDuperSteps.js' });
     vm.runInContext('Math.randomInt = function(n) { return Math.floor(Math.random()*n); };', ctx);
-    return { ctx };
+    return { ctx, played };
 }
 
 function stubEvent(note, pageComments) {
@@ -89,4 +92,48 @@ test('P28: пустой <step_snds:> не ломает пул террейна',
     assert.strictEqual(ev._stepPoolOverride, null, 'garbage override ignored');
     const s = ev.getStepSound(2);
     assert.strictEqual(s.name, 'T1', 'terrain pool used');
+});
+
+test('P30: с OcRam шаги врага играют позиционно — playSe(se, aex) с привязкой к событию', () => {
+    const { ctx, played } = makeEnv({ Events: 'true', 'Max Hearing Distance': 8 });
+    ctx.Imported['OcRam_Audio_EX'] = true; // OcRam доступен
+    const Galv = ctx.Galv;
+    Galv.CFSTEP.terrainConfig[0] = { mode: 'random', sounds: [{ name: 'Concrete1', volume: 90, pitch: 100, pan: 0 }] };
+    const ev = stubEvent('<biba> <step_se>');
+    ev._eventId = 5;
+    ev.setStepSe();
+    ev.realMoveSpeed = () => 4;
+    ev.playStepSE();
+    assert.strictEqual(played.length, 1, 'one SE played');
+    const p = played[0];
+    assert.ok(p.aex, 'aex object passed to playSe (positional path)');
+    assert.strictEqual(p.aex.eventId, ev._eventId, 'anchored to the enemy event');
+    assert.strictEqual(p.aex.distance, 8, 'fade zone = max hearing distance');
+    assert.strictEqual(p.aex.radius, 1, 'full volume bubble at the source');
+    assert.strictEqual(p.aex.pan, true, 'stereo autopan on');
+    assert.strictEqual(p.se.pan, 0, 'pan handled by AEX, not the SE buffer');
+});
+
+test('P30: без OcRam — прежний линейный фейд по дистанции (фоллбек)', () => {
+    const { ctx, played } = makeEnv({ Events: 'true', 'Max Hearing Distance': 8 });
+    const Galv = ctx.Galv;
+    Galv.CFSTEP.terrainConfig[0] = { mode: 'random', sounds: [{ name: 'Concrete1', volume: 90, pitch: 100, pan: 0 }] };
+    const ev = stubEvent('<biba> <step_se>');
+    ev._eventId = 7; // событие (не герой)
+    ev.setStepSe();
+    ev.realMoveSpeed = () => 4;
+    // враг в 4 тайлах (половина зоны) — линейный фейд ~50%
+    ev._x = 4; ev._y = 0;
+    ctx.$gamePlayer = { x: 0, y: 0 };
+    ev.playStepSE();
+    assert.strictEqual(played.length, 1, 'played');
+    assert.strictEqual(played[0].aex, undefined, 'no aex without OcRam');
+    assert.ok(played[0].se.volume < 90 && played[0].se.volume > 30,
+        'distance fade applied, got ' + played[0].se.volume);
+    // герой играет БЕЗ дистанционной обработки в обоих режимах
+    const hero = stubEvent('');
+    hero._eventId = undefined;
+    hero.realMoveSpeed = () => 4;
+    hero.playStepSE();
+    assert.strictEqual(played[1].se.volume >= 80, true, 'hero steps at full volume');
 });

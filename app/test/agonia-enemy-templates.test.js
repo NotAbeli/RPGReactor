@@ -140,8 +140,18 @@ test('S52: мирный — без атакных страниц, но с тре
     assert.strictEqual(pages.length, 15, '17 - P2 - P12 = 15 pages');
 });
 
-test('S52: тумблеры способностей выпадают свои страницы', () => {
+test('P30: speedCalm 0/мусор в карточке не замораживает скелет (клэмп 1..6)', () => {
     const { sde } = makeEnv();
+    // живой баг: speedCalm "0" -> distancePerFrame = floor(2^0/256*128)/128
+    // = РОВНО 0 -> враг замерал навсегда (moveVector(0,0))
+    const pages = sde.buildEnemyPages(Object.assign({}, BIBA, { speedCalm: '0', speedCombat: '99' }));
+    const speeds = pages.map(p => Number(p.moveSpeed));
+    assert.ok(speeds.every(v => v >= 1 && v <= 6), 'all page speeds clamped to 1..6: ' + speeds.join(','));
+    assert.ok(speeds.includes(3), 'bad calm speed falls back to 3');
+    assert.ok(speeds.includes(4), 'bad combat speed falls back to 4');
+});
+
+test('S52: тумблеры способностей выпадают свои страницы', () => {    const { sde } = makeEnv();
     const noPanic = sde.buildEnemyPages(Object.assign({}, BIBA, { canPanic: 'false' }));
     const allNoPanic = JSON.stringify(noPanic);
     assert.ok(!allNoPanic.includes('<Panic>'), 'panic pages dropped');

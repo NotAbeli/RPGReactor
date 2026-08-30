@@ -277,6 +277,35 @@ Galv.CFSTEP = Galv.CFSTEP || {}; // Galv's stuff
     Galv.CFSTEP.parseConfig();
 
     // Calculate volume based on distance
+    // P30: AEX-объект позиционных шагов врага (механизм OcRam Audio EX,
+    // как у натива 728): полная громкость в радиусе radius у источника,
+    // плавный фейд до distance, автопан лево/право, позиция события живая.
+    // null — OcRam недоступен (фоллбек на линейный фейд).
+    Galv.CFSTEP.makeStepAex = function(char) {
+        try {
+            if (typeof Imported === 'undefined' || !Imported['OcRam_Audio_EX']) return null;
+            if (typeof AudioManager === 'undefined' || !AudioManager.playSe) return null;
+            if (char._eventId === undefined || char._eventId === null) return null;
+            var hear = Math.max(1, Number(Galv.CFSTEP.maxDistance) || 8);
+            return {
+                type: 'd',
+                radius: 1,               // у самого врага — полная громкость
+                distance: hear,          // фейд-зона до предела слышимости
+                fade: 2,
+                pan: true,               // стерео: слева — слева
+                forced: true,
+                'new': true,
+                started: false,
+                dynamic: true,
+                commandIndex: 0,
+                eventId: char._eventId,
+                linkedEvents: [char._eventId]
+            };
+        } catch (e) {
+            return null;
+        }
+    };
+
     Galv.CFSTEP.calculateDistanceVolume = function(sourceX, sourceY, baseVolume) {
         if (Galv.CFSTEP.maxDistance <= 0) return baseVolume;
         
@@ -404,19 +433,29 @@ Galv.CFSTEP = Galv.CFSTEP || {}; // Galv's stuff
                 sound.volume += Galv.CFSTEP.slowVol;
                 sound.pitch += Galv.CFSTEP.slowPitch;
             }
-            
+
+            var volumeVariation = (Math.random() * 20) - 10;
+            var pitchVariation = (Math.random() * 20) - 10;
+
+            sound.volume = Math.max(1, Math.min(150, sound.volume + volumeVariation));
+            sound.pitch = Math.max(50, Math.min(150, sound.pitch + pitchVariation));
+
             if (this !== $gamePlayer && this._eventId !== undefined) {
+                // P30: OcRam AEX — позиционные шаги врага: плавное затухание
+                // по дистанции (radius полная громкость у источника, далее
+                // фейд-зона до distance) + автопан лево/право, позиция
+                // события живая. Фоллбек без OcRam — прежний линейный фейд.
+                var aex = Galv.CFSTEP.makeStepAex ? Galv.CFSTEP.makeStepAex(this) : null;
+                if (aex) {
+                    sound.pan = 0;
+                    AudioManager.playSe(sound, aex);
+                    return;
+                }
                 var distanceVolume = Galv.CFSTEP.calculateDistanceVolume(this._x, this._y, sound.volume);
                 if (distanceVolume <= 0) return;
                 sound.volume = distanceVolume;
             }
-            
-            var volumeVariation = (Math.random() * 20) - 10; 
-            var pitchVariation = (Math.random() * 20) - 10; 
-            
-            sound.volume = Math.max(1, Math.min(150, sound.volume + volumeVariation));
-            sound.pitch = Math.max(50, Math.min(150, sound.pitch + pitchVariation));
-            
+
             AudioManager.playSe(sound);
         }
     };

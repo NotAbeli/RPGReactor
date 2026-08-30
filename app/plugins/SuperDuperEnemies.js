@@ -700,8 +700,13 @@
       var canPanic = _sdeTplString(tpl.canPanic, 'true') === 'true';
       var rememberGun = _sdeTplString(tpl.rememberGun, 'true') === 'true';
       var canFlee = _sdeTplString(tpl.canFlee, 'true') === 'true';
-      var speedCalm = _sdeNum(tpl.speedCalm, 3);
-      var speedCombat = _sdeNum(tpl.speedCombat, 4);
+      // P30-фикс заморозки: скорость 0 (или мусор) в карточке давала
+      // distancePerFrame = floor(2^0/256 * 128)/128 = РОВНО 0 -> враг
+      // замерал навсегда (moveVector(0,0)). Клэмп 1..6, мимо — дефолт.
+      var sc = _sdeNum(tpl.speedCalm, 3);
+      var scc = _sdeNum(tpl.speedCombat, 4);
+      var speedCalm = (sc >= 1 && sc <= 6) ? sc : 3;
+      var speedCombat = (scc >= 1 && scc <= 6) ? scc : 4;
       // Атакная страница P12 нужна только злому и только с хоть какой-то атакой.
       var hasAttack = !peaceful && (dashName !== '' || melee > 0);
 
