@@ -143,9 +143,57 @@ class DatabaseEnemiesEditor {
                 { key: 'canFlee', label: 'Убегает', type: 'check' },
                 { key: 'rememberGun', label: 'Помнит оружие', type: 'check' },
                 { key: 'speedCalm', label: 'Скорость в покое', type: 'number', min: 1, max: 6 },
-                { key: 'speedCombat', label: 'Скорость в бою', type: 'number', min: 1, max: 6 },
-                { key: 'stepVolume', label: 'Громкость шагов %', type: 'number', min: 0, max: 150, hint: 'пишется в заглушку как <step_se:VOL>' }
+                { key: 'speedCombat', label: 'Скорость в бою', type: 'number', min: 1, max: 6 }
             ], entry, { commit: () => api.changed() });
+
+            // P28: шаги врага — громкость и до 4 своих звуков (пусто = общие
+            // звуки террейна, как у героя)
+            form.section(this._tt('Шаги'), { collapsed: true });
+            const stepsBox = document.createElement('div');
+            form.custom(stepsBox);
+            const volF = document.createElement('div');
+            volF.style.cssText = 'display:flex;align-items:center;gap:8px;margin:2px 0 6px;';
+            const volL = document.createElement('span');
+            volL.style.cssText = 'font-size:12.5px;color:var(--color-text-dim);flex:none;';
+            volL.textContent = this._tt('Громкость %');
+            const volI = document.createElement('input');
+            volI.type = 'number'; volI.min = 0; volI.max = 150;
+            volI.value = Number(entry.stepVolume) || 0;
+            volI.style.cssText = 'width:70px;min-width:52px;box-sizing:border-box;font-size:12px;';
+            volI.addEventListener('change', () => {
+                entry.stepVolume = String(Math.max(0, Math.min(150, Number(volI.value) || 0)));
+                api.changed();
+            });
+            volF.appendChild(volL);
+            volF.appendChild(volI);
+            stepsBox.appendChild(volF);
+            const stepNames = String(entry.stepSounds || '').split(',').map(s => s.trim());
+            const stepGrid = document.createElement('div');
+            stepGrid.style.cssText = 'display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 8px;';
+            const persistSteps = () => {
+                const joined = stepNames.map(s => String(s || '').trim()).filter(s => s !== '').join(',');
+                entry.stepSounds = joined;
+                api.changed();
+            };
+            for (let si = 0; si < 4; si++) {
+                const f = document.createElement('label');
+                f.style.cssText = 'display:flex;flex-direction:column;gap:1px;font-size:11px;color:var(--color-text-dim);min-width:0;';
+                const s = document.createElement('span');
+                s.textContent = 'SE ' + (si + 1);
+                f.appendChild(s);
+                const inp = document.createElement('input');
+                inp.type = 'text';
+                inp.placeholder = si === 0 ? this._tt('общий') : '';
+                inp.value = stepNames[si] || '';
+                inp.style.cssText = 'width:100%;box-sizing:border-box;font-size:11.5px;min-width:0;';
+                inp.addEventListener('change', () => {
+                    stepNames[si] = String(inp.value || '').trim();
+                    persistSteps();
+                });
+                f.appendChild(inp);
+                stepGrid.appendChild(f);
+            }
+            stepsBox.appendChild(stepGrid);
 
             // P27: редко правимые секции сворачиваемы — карточка короче
             form.section(this._tt('Внешний вид'), { collapsed: true });

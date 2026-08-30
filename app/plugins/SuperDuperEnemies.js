@@ -1764,6 +1764,15 @@
           return null;
       },
 
+      // P28: карточка-шаблон по тегу (для переноса настроек шагов и др.).
+      getTemplate: function(tag) {
+          if (!tag) return null;
+          for (var i = 0; i < MEHP_DB.length; i++) {
+              if (MEHP_DB[i] && MEHP_DB[i].match === tag) return MEHP_DB[i];
+          }
+          return null;
+      },
+
       // P23: регистрация события, добавленного на карту ПОСЛЕ setup
       // (инжект преследователя). true — успешно.
       registerInjectedEvent: function(mapId, evId) {

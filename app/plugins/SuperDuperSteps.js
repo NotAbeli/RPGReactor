@@ -343,12 +343,17 @@ Galv.CFSTEP = Galv.CFSTEP || {}; // Galv's stuff
 
     Game_CharacterBase.prototype.getStepSound = function(terrainTag) {
         var config = Galv.CFSTEP.terrainConfig[terrainTag];
-        if (!config || !config.sounds || config.sounds.length === 0) return null;
+        // P28: персональный пул звуков шагов (<step_snds:...> в note события)
+        // — заменяет пул террейна; работает и на террейне без своих звуков
+        var hasOverride = !!(this._stepPoolOverride && this._stepPoolOverride.length);
+        var pool = hasOverride ? this._stepPoolOverride
+            : ((config && config.sounds && config.sounds.length) ? config.sounds : null);
+        if (!pool) return null;
 
-        var pool = config.sounds;
+        var mode = (config && config.mode) || 'random';
         var selectedSound = null;
 
-        if (config.mode === 'sequential') {
+        if (mode === 'sequential') {
             if (this._stepSequence[terrainTag] === undefined) {
                 this._stepSequence[terrainTag] = 0;
             }
@@ -489,8 +494,22 @@ Galv.CFSTEP = Galv.CFSTEP || {}; // Galv's stuff
         Game_Event.prototype.setStepSe = function() {
             // P5: <step_se> или <step_se:VOL> (громкость 0–150% на этого врага;
             // дистанционный фейд до игрока применяется как обычно).
+            // P28: <step_snds:A,B,C> — персональный пул звуков шагов этого
+            // врага (заменяет пул террейна; громкость/транскрипция — общие).
             this._stepSeVol = 1;
-            var mNote = String(this.event().note).match(/<step_se(?::(\d+))?>/);
+            this._stepPoolOverride = null;
+            var noteStr = String(this.event().note);
+            var mSnd = noteStr.match(/<step_snds:([^>]*)>/);
+            if (mSnd && mSnd[1]) {
+                var names = mSnd[1].split(',').map(function(s) { return s.trim(); })
+                    .filter(function(s) { return s !== ''; });
+                if (names.length) {
+                    this._stepPoolOverride = names.map(function(n) {
+                        return { name: n, volume: 90, pitch: 100, pan: 0 };
+                    });
+                }
+            }
+            var mNote = noteStr.match(/<step_se(?::(\d+))?>/);
             if (mNote && this._characterName != "") {
                 this._stepSeOn = true;
                 if (mNote[1]) this._stepSeVol = Math.max(0, Math.min(150, Number(mNote[1]))) / 100;
@@ -501,10 +520,21 @@ Galv.CFSTEP = Galv.CFSTEP || {}; // Galv's stuff
                 if (page) {
                     for (var i = 0; i < page.list.length; i++) {
                         if (page.list[i].code == 108) {
-                            var m = String(page.list[i].parameters[0]).match(/<step_se(?::(\d+))?>/);
+                            var cmt = String(page.list[i].parameters[0]);
+                            var m = cmt.match(/<step_se(?::(\d+))?>/);
                             if (m) {
                                 stepSe = true;
                                 if (m[1]) vol = Math.max(0, Math.min(150, Number(m[1]))) / 100;
+                            }
+                            var m2 = cmt.match(/<step_snds:([^>]*)>/);
+                            if (m2 && m2[1]) {
+                                var names2 = m2[1].split(',').map(function(s) { return s.trim(); })
+                                    .filter(function(s) { return s !== ''; });
+                                if (names2.length) {
+                                    this._stepPoolOverride = names2.map(function(n) {
+                                        return { name: n, volume: 90, pitch: 100, pan: 0 };
+                                    });
+                                }
                             }
                         };
                     };

@@ -203,3 +203,47 @@ test('P23: интерес истёк — призрак снят с погони
     sda.xmap.tick();
     assert.strictEqual(st.ghosts.length, 0, 'interest timeout removes the ghost');
 });
+
+test('P28: дверь анимируется при транзите — SE + последовательность паттернов', () => {
+    const { sda, ctx } = makeEnv({}, { mapId: 1 });
+    const playedSe = [];
+    ctx.AudioManager = { playSe: s => playedSe.push(s) };
+    const patterns = [];
+    const doorEv = {
+        _eventId: 7, _characterName: '!SF_Door1',
+        setPattern: p => patterns.push(p)
+    };
+    ctx.$gameMap.event = id => (Number(id) === 7 ? doorEv : null);
+    sda.xmap.doorFx(7);
+    assert.ok(playedSe.length === 1 && playedSe[0].name === 'Door1', 'door SE plays');
+    assert.strictEqual(sda.xmap.doorFxQueue().length, 1, 'animation queued');
+    // прогоняем тиками (тик = 1 кадр)
+    for (let i = 0; i < 40; i++) sda.xmap.tick();
+    assert.deepStrictEqual(patterns, [1, 2, 1, 0, 0], 'pattern sequence 0->1->2->1->0 (close restore)');
+    assert.strictEqual(sda.xmap.doorFxQueue().length, 0, 'queue drains');
+});
+
+test('P28: инжект врага несёт шаги карточки в note (громкость + пул звуков)', () => {
+    const { sda, ctx } = makeEnv({}, { mapId: 3 });
+    sda.xmap.setGraphCache({ edges: {} });
+    ctx.$gamePlayer = Object.assign(new Game_Player(), { _x: 5, _y: 5,
+        collider: () => SEEKER_COLLIDER, collidableWith: () => true });
+    ctx.$dataMap = { events: [null] };
+    ctx.$gameMap._events = [];
+    ctx.SDE_API = {
+        buildTemplatePages: () => [{ list: [{ code: 0 }] }],
+        getTemplate: () => ({ stepVolume: '80', stepSounds: 'Growl1,Growl2' }),
+        registerInjectedEvent: () => true,
+        setEventDataHp: () => true
+    };
+    const st = sda.xmap.state();
+    st.ghosts = [{ key: 'p1', tag: 'biba', selfSwitches: {}, hp: null,
+        leg: { toMap: 3, toX: 1, toY: 1 }, etaFrames: 0, interest: 100, waiting: false }];
+    sda.xmap.tick();
+    assert.strictEqual(st.ghosts.length, 0, 'ghost consumed');
+    const note = ctx.$dataMap.events[1].note;
+    assert.ok(note.indexOf('<biba>') >= 0, 'tag in note');
+    assert.ok(note.indexOf('<step_se:80>') >= 0, 'step volume carried');
+    assert.ok(note.indexOf('<step_snds:Growl1,Growl2>') >= 0, 'personal step pool carried');
+    assert.ok(ctx.$gameMap._events[1], 'Game_Event instance registered');
+});

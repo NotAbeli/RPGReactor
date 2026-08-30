@@ -573,6 +573,12 @@ class InspectorForm {
         this._collapseHost = null;
         return this;
     }
+    /** P28: вставить произвольный узел в текущую секцию (или корень). */
+    custom(el) {
+        this._flush();
+        (this._collapseHost || this.root).appendChild(el);
+        return this;
+    }
     row(label, control, hint) {
         const r = document.createElement('div');
         r.className = 'agn-insp-row';

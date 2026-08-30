@@ -151,13 +151,29 @@
   * @desc Сколько секунд враг держит интерес без сближения, после чего сдаётся.
   * @default 120
   *
-  * @param Door Search Radius
+   * @param Door Search Radius
   * @text Радиус поиска двери
   * @parent --- СКВОЗНАЯ ПОГОНЯ (ЧЕРЕЗ КАРТЫ) ---
   * @type number
   * @min 1
   * @desc Радиус (клетки) поиска двери, которой воспользовался герой.
   * @default 3
+  *
+  * @param Door SE
+  * @text Звук двери
+  * @parent --- СКВОЗНАЯ ПОГОНЯ (ЧЕРЕЗ КАРТЫ) ---
+  * @type string
+  * @desc SE при входе/выходе врага через дверь (audio/se, пусто = без звука).
+  * @default Door1
+  *
+  * @param Door SE Volume
+  * @text Громкость двери
+  * @parent --- СКВОЗНАЯ ПОГОНЯ (ЧЕРЕЗ КАРТЫ) ---
+  * @type number
+  * @min 0
+  * @max 100
+  * @desc Громкость SE двери.
+  * @default 90
   *
   * @help
  * ============================================================================
@@ -319,6 +335,9 @@
     const XMAP_TRANSIT = Math.max(0, Number(params['Transit Frames'] || 90));
     const XMAP_INTEREST = Math.max(10, Number(params['Interest Timeout'] || 120)) * 60;
     const XMAP_DOOR_RADIUS = Math.max(1, Number(params['Door Search Radius'] || 3));
+    // P28: дверь при межкарточном транзите — SE + покадровая анимация чарсета
+    const XMAP_DOOR_SE = String(params['Door SE'] || 'Door1');
+    const XMAP_DOOR_VOL = Math.max(0, Math.min(100, Number(params['Door SE Volume'] || 90)));
 
     // ======================================================================
     // ПОИСК ПУТИ: АЛГОРИТМ A* (PATHFINDING UTILITIES)
@@ -1677,6 +1696,58 @@
     // читается точно (mapId/x/y), сюжетные автозапуски (триггер 3) игнорируются.
     // ======================================================================
 
+    // P28: есть ли у события команда перехода (201) хоть на одной странице —
+    // для распознавания парной двери прибытия (триггер любой)
+    function xmapHasTransfer(ev) {
+        try {
+            var data = ev.event && ev.event();
+            if (!data || !data.pages) return false;
+            for (var p = 0; p < data.pages.length; p++) {
+                var list = data.pages[p].list || [];
+                for (var i = 0; i < list.length; i++) {
+                    if (list[i].code === 201) return true;
+                }
+            }
+        } catch (e) {}
+        return false;
+    }
+
+    // --- P28: дверь открывается/закрывается при транзите врага. Двери —
+    // чарсеты (!SF_Door и т.п.), кадры листаются через pattern; рулим
+    // спрайтом двери напрямую, не трогая её сложный список команд.
+    let xmapDoorFxQueue = [];
+    function xmapDoorFx(evId) {
+        try {
+            if (XMAP_DOOR_SE && typeof AudioManager !== 'undefined' && AudioManager.playSe) {
+                AudioManager.playSe({ name: XMAP_DOOR_SE, volume: XMAP_DOOR_VOL, pitch: 100, pan: 0 });
+            }
+            var ev = $gameMap.event(evId);
+            if (!ev || !ev._characterName || typeof ev.setPattern !== 'function') return;
+            // 0 закрыта -> 1 полу -> 2 открыта (пауза) -> 1 -> 0 закрыта
+            xmapDoorFxQueue.push({
+                evId: evId,
+                seq: [ { p: 1, w: 5 }, { p: 2, w: 14 }, { p: 1, w: 5 }, { p: 0, w: 1 } ],
+                idx: 0, wait: 0
+            });
+        } catch (e) { /* эффект не должен ронять кадр */ }
+    }
+    function xmapDoorFxTick() {
+        for (var i = xmapDoorFxQueue.length - 1; i >= 0; i--) {
+            var f = xmapDoorFxQueue[i];
+            var ev = $gameMap.event(f.evId);
+            if (!ev) { xmapDoorFxQueue.splice(i, 1); continue; }
+            if (f.wait > 0) { f.wait--; continue; }
+            if (f.idx >= f.seq.length) {
+                try { ev.setPattern(0); } catch (e) {}
+                xmapDoorFxQueue.splice(i, 1);
+                continue;
+            }
+            var step = f.seq[f.idx++];
+            try { ev.setPattern(step.p); } catch (e) {}
+            f.wait = step.w;
+        }
+    }
+
     // --- Реестр призраков (персистентный, на $gameSystem) ---
     function xmapState() {
         if (typeof $gameSystem === 'undefined' || !$gameSystem) return null;
@@ -1846,6 +1917,8 @@
         });
         try { ev.smartStop(); } catch (e) {}
         try { ev.erase(); } catch (e) {}
+        // P28: дверь за врагом открывается и закрывается
+        xmapDoorFx(door.evId);
         return true;
     }
 
@@ -1854,6 +1927,28 @@
         try {
             var mapId = $gameMap.mapId();
             if (g.leg.toMap !== mapId) return false;
+            // P28: враг выходит из двери — дверь открывается/закрывается.
+            // Сначала статическое ребро рядом; парная дверь часто авторан
+            // (триггер 2 — в граф не входит) — тогда рантайм-скан: событие
+            // с чарсетом и командой 201 на любой странице в радиусе 1.6.
+            try {
+                var edges = xmapGraph().edges[mapId] || [];
+                var best = null, bestD = 1.6;
+                for (var e = 0; e < edges.length; e++) {
+                    var d = Math.hypot(edges[e].x - g.leg.toX, edges[e].y - g.leg.toY);
+                    if (d < bestD) { bestD = d; best = edges[e]; }
+                }
+                if (!best) {
+                    var evsAll = $gameMap.events();
+                    for (var e2 = 0; e2 < evsAll.length; e2++) {
+                        var e3 = evsAll[e2];
+                        if (!e3 || e3._erased || !e3._characterName) continue;
+                        if (Math.hypot(e3._x - g.leg.toX, e3._y - g.leg.toY) >= 1.6) continue;
+                        if (xmapHasTransfer(e3)) { best = { evId: e3._eventId }; break; }
+                    }
+                }
+                if (best) xmapDoorFx(best.evId);
+            } catch (e2) { /* безопасно */ }
             // 1) заглушка того же вида на карте -> телепортируем к точке прибытия
             var evs = $gameMap.events();
             var target = null;
@@ -1869,9 +1964,21 @@
                 if (typeof SDE_API === 'undefined' || !SDE_API.buildTemplatePages) return false;
                 var pages = SDE_API.buildTemplatePages(g.tag);
                 if (!pages || !pages.length) return false;
+                // P28: note несёт и шаги врага (громкость + персональный пул),
+                // как у редакторных заглушек — иначе инжект беззвучно ходит
+                var tpl = SDE_API.getTemplate ? SDE_API.getTemplate(g.tag) : null;
+                var tagClean = String(g.tag).replace(/^[<]+|[>]+$/g, '');
+                var note = '<' + tagClean + '>';
+                if (tpl) {
+                    var sVol = Number(tpl.stepVolume);
+                    if (sVol > 0) note += ' <step_se:' + Math.min(150, Math.round(sVol)) + '>';
+                    else note += ' <step_se>';
+                    var sSnd = String(tpl.stepSounds || '').trim();
+                    if (sSnd) note += ' <step_snds:' + sSnd + '>';
+                }
                 var id = $dataMap.events.length;
                 var evData = {
-                    id: id, name: 'PURSUIT ' + g.tag, note: '<' + g.tag + '>',
+                    id: id, name: 'PURSUIT ' + g.tag, note: note,
                     x: g.leg.toX, y: g.leg.toY, pages: pages
                 };
                 // MV-контракт: meta обязателен (SuperDuperMovement читает
@@ -1919,6 +2026,7 @@
 
     // --- Тик реестра (каждый кадр активной карты) ---
     function xmapTick() {
+        try { xmapDoorFxTick(); } catch (e) { /* безопасно */ }
         var st = xmapState();
         if (!st || st.ghosts.length === 0) return;
         var playerMap = $gameMap.mapId(); // P23-урок: карта игрока == текущая
@@ -2035,6 +2143,8 @@
                 tick: (typeof xmapTick === 'function') ? xmapTick : null,
                 state: (typeof xmapState === 'function') ? xmapState : null,
                 enabled: () => CONF_XMAP,
+                doorFx: (typeof xmapDoorFx === 'function') ? xmapDoorFx : null,
+                doorFxQueue: () => xmapDoorFxQueue,
                 setGraphCache: function(fake) { xmapGraphCache = fake; },
                 clearGraphCache: function() { xmapGraphCache = null; }
             }

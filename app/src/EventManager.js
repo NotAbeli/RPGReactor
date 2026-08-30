@@ -1360,12 +1360,15 @@ class EventManager {
         const tag = String(tpl.match || '').replace(/[<>]/g, '') || 'enemy';
         const collider = tpl.collider || "<circle cx='0.5' cy='0.7' r='0.25' />";
         // P5: заглушка наследует шаги-звуки карточки (<step_se> / <step_se:VOL>).
+        // P28: <step_snds:...> — персональный пул звуков шагов этого вида.
         const stepVol = Math.max(0, Math.min(150, Number(tpl.stepVolume) || 0));
         const stepTag = stepVol > 0 ? (' <step_se:' + stepVol + '>') : ' <step_se>';
+        const stepSnd = String(tpl.stepSounds || '').trim();
+        const sndTag = stepSnd ? (' <step_snds:' + stepSnd + '>') : '';
         const ev = {
             id: nextId,
             name: 'ENEMY ' + tag,
-            note: String(tpl.match || '') + stepTag,
+            note: String(tpl.match || '') + stepTag + sndTag,
             pages: [{
                 conditions: {
                     actorId: 1, actorValid: false, itemId: 1, itemValid: false,
