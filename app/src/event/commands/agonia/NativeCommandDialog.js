@@ -447,7 +447,10 @@ class NativeCommandDialog {
 
         const label = document.createElement('label');
         label.style.cssText = 'color: var(--color-text-strong); font-size: 12px; font-weight: 600;';
-        label.textContent = field.label;
+        // P34: лейблы полей локализуются (fallback — как в реестре)
+        const labelKey = 'agonia.field.' + field.key;
+        const translated = this._t(labelKey, {});
+        label.textContent = (translated === labelKey) ? field.label : translated;
         wrap.appendChild(label);
 
         if (field.type === 'chestId') {

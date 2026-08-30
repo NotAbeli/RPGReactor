@@ -79,6 +79,8 @@ Object.assign(RR_EVENT_COMMAND_NAMES, {
         'Stamina': 'Стамина',
         'Dash': 'Рывок',
         'Wait Async': 'Асинхронное Ожидание',
+        'agonia.field.frames': 'Кадры',
+        'agonia.command.help.waitAsync': 'Ждёт указанное количество кадров, не останавливая игру и героя.',
         'Damage Flash': 'Вспышка Урона',
         'Save to Samsara': 'Сохранить (Самсара)',
         'Load from Samsara': 'Загрузить (Самсара)',

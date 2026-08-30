@@ -123,7 +123,8 @@ class EventCommandPicker {
                             {
                                 title: 'Timing',
                                 commands: [
-                                    { name: 'Wait', code: 230 }
+                                    { name: 'Wait', code: 230 },
+                                    { name: 'Wait Async', code: 730 }
                                 ]
                             },
                             {
