@@ -537,6 +537,19 @@ SDB.Tracer = SDB.Tracer || {};
             SDB.Core.executeActionString(data.ActionsShooter, source, target);
         } else {
             SDB.Core.executeActionString(data.ActionsEvent, target, source);
+
+            // P37: прямое применение стана и отбрасывания при попадании
+            // по врагу оружием игрока — НЕ через P14-страницу (она зависит
+            // от action string карточки атаки, которая может не ставить D)
+            if (source === $gamePlayer && typeof SDE_API !== 'undefined' && SDE_API.getWeaponByVar) {
+                var weapon = SDE_API.getWeaponByVar($gameVariables.value(17));
+                if (weapon) {
+                    var stun = Math.max(0, Number(weapon.stun) || 0);
+                    var kb = Math.max(0, Number(weapon.knockback) || 0);
+                    if (stun > 0) SDE_API.hitStun(target.eventId(), stun);
+                    if (kb > 0) SDE_API.hitKnockback(target.eventId(), kb);
+                }
+            }
         }
     };
 

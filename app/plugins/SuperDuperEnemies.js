@@ -1829,6 +1829,18 @@
           return true;
       },
 
+      // P37: карточка оружия по var-значению ГГ (для прямого применения
+      // стана/отбрасывания при попадании из SuperDuperBattle)
+      getWeaponByVar: function(varValue) {
+          try {
+              var v = Number(varValue);
+              for (var i = 0; i < SDE_WEAPONS.length; i++) {
+                  if (Number(SDE_WEAPONS[i].varValue) === v) return SDE_WEAPONS[i];
+              }
+          } catch (e) {}
+          return null;
+      },
+
       // P37: стан врага — замирает на N кадров (нет движения, нет ИИ).
       // ignoreStun на карточке врага = иммунитет к стану
       hitStun: function(evId, frames) {
