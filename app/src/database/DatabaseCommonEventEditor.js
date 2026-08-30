@@ -471,6 +471,13 @@ class DatabaseCommonEventEditor {
                 return;
             }
 
+            // P35: нативы движка (700+) — сразу открываем диалог настройки
+            // (та же менюшка, что в редакторе событий карт)
+            if (typeof AgoniaNativeCommands !== 'undefined' && AgoniaNativeCommands.byCode(code)) {
+                this.getEditor('nativeDialog', NativeCommandDialog).showForCode(code, insertAndRefresh);
+                return;
+            }
+
             // Default: insert with default params (no editor)
             const cmds = this.buildCommandStructure(code);
             insertAndRefresh(cmds);
@@ -1011,6 +1018,12 @@ class DatabaseCommonEventEditor {
         // Plugin Command (356, 357)
         if (code === 356 || code === 357) { singleReplace(this.getEditor('pluginCommand', PluginCommandEditor)); return; }
 
+        // P35: нативы движка (700+) — редактируем той же менюшкой
+        if (typeof AgoniaNativeCommands !== 'undefined' && AgoniaNativeCommands.byCode(code)) {
+            singleReplace(this.getEditor('nativeDialog', NativeCommandDialog));
+            return;
+        }
+
         // Fallback: raw JSON editor for unrecognized codes
         this.editCommandRawJSON(command, idx, event);
     }
@@ -1352,6 +1365,7 @@ class DatabaseCommonEventEditor {
             314: [0, 0],                // Recover All
             340: [],                     // Abort Battle
             355: [''],                   // Script
+            730: [60],                   // P35: Wait Async — кадры по умолчанию
         };
         return defaults[code] || [];
     }
