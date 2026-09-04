@@ -152,6 +152,14 @@ class AgoniaNativeCommands {
                 ]
             },
             {
+                code: 760,
+                id: 'weaponAttack',
+                name: 'Weapon Attack',
+                section: 'Utility',
+                help: 'Executes a full weapon attack from the Arsenal card: dash, windup, attack, SE, effects.',
+                fields: []
+            },
+            {
                 code: 731,
                 id: 'damageFlash',
                 name: 'Damage Flash',

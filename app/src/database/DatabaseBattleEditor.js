@@ -112,13 +112,25 @@ class DatabaseBattleEditor {
                     { key: 'varValue', label: 'var ГГ (var 17)', type: 'number', hint: 'значение облика/оружия ГГ — связь со скином Спрайтера' },
                     { key: 'type', label: 'Тип', type: 'select', options: [['melee', 'Ближнее'], ['ranged', 'Дальнее'], ['tool', 'Инструмент'], ['light', 'Свет']], def: 'melee' }
                 ],
-                geometry: [
+                attack: [
+                    { key: 'attackId', label: '№ атаки (БД Боя)', type: 'number', hint: 'performMelee/performProjectile ID' },
+                    { key: 'dashName', label: 'Имя рывка', type: 'text', hint: 'из Dash Database; пусто = без рывка' },
+                    { key: 'windup', label: 'Замах (кадры)', type: 'slider', min: 0, max: 60, step: 1, unit: 'f', hint: 'задержка перед ударом' },
+                    { key: 'cooldown', label: 'Кулдаун (кадры)', type: 'slider', min: 0, max: 300, step: 1, unit: 'f' },
+                    { key: 'staminaCost', label: 'Расход стамины', type: 'slider', min: 0, max: 100, step: 5 },
+                    { key: 'attackSe', label: 'Звук атаки (audio/se)', type: 'text' },
+                    { key: 'swingSwitch', label: 'Свитч анимации замаха', type: 'number', hint: 'switch для скина удара в Спрайтере' }
+                ],
+                effects: [
                     { key: 'damage', label: 'Урон по врагу', type: 'number', hint: 'отрицательное; одинаково для пули и удара' },
                     { key: 'stun', label: 'Время стана (кадры)', type: 'slider', min: 0, max: 300, step: 5, unit: 'f', hint: 'враг замирает после удара' },
                     { key: 'knockback', label: 'Отбрасывание (тайлы)', type: 'slider', min: 0, max: 5, step: 0.5, unit: 'т', hint: 'враг отлетает от игрока' },
                     { key: 'sneakKill', label: 'Скрытное убийство', type: 'check', hint: 'вне боя — насмерть' },
                     { key: 'noise', label: 'Шум (радиус слуха)', type: 'number', hint: 'справочно; применение — позже' },
-                    { key: 'se', label: 'Звук (audio/se)', type: 'text' }
+                    { key: 'se', label: 'Звук попадания (audio/se)', type: 'text' },
+                    { key: 'fireRadius', label: 'Эффект огня (радиус)', type: 'number', hint: '0 = нет; для пистолета 350' },
+                    { key: 'fireColor', label: 'Цвет огня', type: 'text', hint: '#e97451 по умолчанию' },
+                    { key: 'fireFrames', label: 'Длительность огня (кадры)', type: 'number', hint: 'сколько кадров горит эффект' }
                 ]
             }
         };
@@ -128,7 +140,7 @@ class DatabaseBattleEditor {
             projectile: { ID: '1', PID: 1, Name: 'Новый снаряд', Source: 0, Target: 0, Graphic: '', Speed: 8, Distance: 12, Hitbox: 24, Z: 3, Regions: '', Terrains: '', AnimID: 0, ActionsEvent: 0, ActionsPlayer: 0, ActionsShooter: 0 },
             tracer: { ID: '1', PID: 1, Name: 'Новый трассер', Source: 0, Target: 0, MaxRange: 10, Color: '#ffffff', Regions: '', Terrains: '', AnimID: 0, ActionsEvent: 0, ActionsPlayer: 0, ActionsShooter: 0 },
             dash: { Name: 'Рывок', TargetMode: '0', MaxCharges: 1, SpeedMultiplier: 3.0, Duration: 15, Decay: 1.5, Cooldown: 20, SE: 'Wind7' },
-            weapons: { name: 'Оружие', varValue: 0, type: 'melee', damage: -20, stun: 0, knockback: 0, sneakKill: 'false', noise: 0, se: '' }
+            weapons: { name: 'Оружие', varValue: 0, type: 'melee', attackId: 1, dashName: '', windup: 4, cooldown: 3, staminaCost: 25, attackSe: '', swingSwitch: 15, damage: -20, stun: 0, knockback: 0, sneakKill: 'false', noise: 0, se: '', fireRadius: 0, fireColor: '#e97451', fireFrames: 6 }
         };
     }
 
