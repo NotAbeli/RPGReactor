@@ -192,12 +192,21 @@ class DatabaseBattleEditor {
             search: r => [r.Name, r.ID, r.name, r.varValue].join(' '),
             renderDetail: (wrapper, record, idx, commit) => {
                 const defs = this._fieldDefs[meta.kind];
-                const groups = [
-                    ['Идентификация', defs.id],
-                    ['Геометрия и попадание', defs.geometry],
-                    ['Ограничения', defs.limits],
-                    ['Реакции при попадании', defs.reactions]
-                ].filter(([, fields]) => fields);
+                let groups;
+                if (meta.kind === 'weapons') {
+                    groups = [
+                        ['Идентификация', defs.id],
+                        ['Атака', defs.attack],
+                        ['Эффекты', defs.effects]
+                    ];
+                } else {
+                    groups = [
+                        ['Идентификация', defs.id],
+                        ['Геометрия и попадание', defs.geometry],
+                        ['Ограничения', defs.limits],
+                        ['Реакции при попадании', defs.reactions]
+                    ].filter(([, fields]) => fields);
+                }
 
                 const head = meta.kind === 'dash'
                     ? (record.Name || 'Рывок')
