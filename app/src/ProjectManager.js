@@ -845,6 +845,22 @@ class ProjectManager {
                 repaired.push('main');
             }
 
+            // Repair stale MV-import window icon paths: stock MV ships
+            // www/-prefixed paths, but projects migrated by this editor are
+            // flattened. When the recorded icon file does not exist and
+            // dropping the www/ prefix hits a real file, rewrite it.
+            if (packageData.window && typeof packageData.window.icon === 'string' && packageData.window.icon.trim()) {
+                const iconValue = packageData.window.icon;
+                const iconTarget = this.path.join(projectPath, iconValue);
+                if (!this.fs.existsSync(iconTarget) && /^www[/\\]/.test(iconValue)) {
+                    const stripped = iconValue.replace(/^www[/\\]/, '');
+                    if (this.fs.existsSync(this.path.join(projectPath, stripped))) {
+                        packageData.window.icon = stripped;
+                        repaired.push('window.icon');
+                    }
+                }
+            }
+
             if (created || repaired.length > 0) {
                 this._writeFileAtomic(this.fs, packagePath, JSON.stringify(packageData, null, 2), 'utf8');
             }
@@ -2368,27 +2384,24 @@ class ProjectManager {
         '            // Арсенала. Натив 760: читает оружие по var 17, валидирует',
         '            // (перезарядка/кулдаун/стамина), запускает рывок + замах,',
         '            // после N кадров выполняет атаку + SE + эффекты огня.',
+        '            // P39: кэш Арсенала из параметров плагина (мост доставил)',
+        '            RR._arsenal = {};',
+        '            try {',
+        '                var sdeParams = PluginManager.parameters("SuperDuperEnemies");',
+        '                var wlistRaw = sdeParams["Weapon List"];',
+        '                if (wlistRaw) {',
+        '                    var wArr = JSON.parse(wlistRaw);',
+        '                    for (var wi = 0; wi < wArr.length; wi++) {',
+        '                        var wc = JSON.parse(wArr[wi]);',
+        '                        RR._arsenal[Number(wc.varValue)] = wc;',
+        '                    }',
+        '                }',
+        '            } catch (e) {}',
         '            RR.executeWeaponAttack = function() {',
         '                try {',
         '                    if (typeof $gameVariables === "undefined" || !$gameVariables) return false;',
         '                    var var17 = $gameVariables.value(17);',
-        '                    // P39: читаем Арсенал ИЗ ФАЙЛА напрямую — мост-параметры',
-        '                    // могут не содержать новые поля (retired-снапшот старый)',
-        '                    var weapon = null;',
-        '                    if (typeof require === "function") {',
-        '                        var fs = require("fs");',
-        '                        var pth = require("path");',
-        '                        var dpath = pth.join(process.cwd(), "data", "AgoniaEngine.json");',
-        '                        var ag = JSON.parse(fs.readFileSync(dpath, "utf8"));',
-        '                        var wlist = JSON.parse(ag.enemies["Weapon List"] || "[]");',
-        '                        for (var wi = 0; wi < wlist.length; wi++) {',
-        '                            var wc = typeof wlist[wi] === "string" ? JSON.parse(wlist[wi]) : wlist[wi];',
-        '                            if (Number(wc.varValue) === var17) { weapon = wc; break; }',
-        '                        }',
-        '                    }',
-        '                    if (!weapon && typeof SDE_API !== "undefined" && SDE_API.getWeaponByVar) {',
-        '                        weapon = SDE_API.getWeaponByVar(var17);',
-        '                    }',
+        '                    var weapon = RR._arsenal ? RR._arsenal[var17] : null;',
         '                    if (typeof SDE_API !== "undefined" && SDE_API.getWeaponByVar) {',
         '                        weapon = SDE_API.getWeaponByVar(var17);',
         '                    }',

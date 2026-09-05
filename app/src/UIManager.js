@@ -162,31 +162,6 @@ class UIManager {
                     this.callbacks.showOptions();
                 }
                 break;
-            case 'forge-launcher':
-                if (this.callbacks.showForgeLauncher) {
-                    this.callbacks.showForgeLauncher();
-                }
-                break;
-            case 'forge-character-generator':
-                if (this.callbacks.openForgeTool) {
-                    this.callbacks.openForgeTool('character-generator');
-                }
-                break;
-            case 'forge-animation-generator':
-                if (this.callbacks.openForgeTool) {
-                    this.callbacks.openForgeTool('animation-generator');
-                }
-                break;
-            case 'forge-sound-effect-generator':
-                if (this.callbacks.openForgeTool) {
-                    this.callbacks.openForgeTool('sound-effect-generator');
-                }
-                break;
-            case 'forge-effekseer-generator':
-                if (this.callbacks.openForgeTool) {
-                    this.callbacks.openForgeTool('effekseer-generator');
-                }
-                break;
             case 'manage-plugins':
                 if (this.callbacks.showPluginManager) {
                     this.callbacks.showPluginManager();
@@ -194,6 +169,11 @@ class UIManager {
                 break;
             case 'audio-player':
                 this.callbacks.showAudioPlayer();
+                break;
+            case 'sprite-editor':
+                if (this.callbacks.showSpriteEditor) {
+                    this.callbacks.showSpriteEditor();
+                }
                 break;
             case 'mode-tiles':
                 if (this.callbacks.disableEventModeIfActive) {
@@ -985,9 +965,9 @@ class UIManager {
             case 'audio-player':
                 this.callbacks.showAudioPlayer();
                 break;
-            case 'forge-launcher':
-                if (this.callbacks.showForgeLauncher) {
-                    this.callbacks.showForgeLauncher();
+            case 'sprite-editor':
+                if (this.callbacks.showSpriteEditor) {
+                    this.callbacks.showSpriteEditor();
                 }
                 break;
             case 'eraser':

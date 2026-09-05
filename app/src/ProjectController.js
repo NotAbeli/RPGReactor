@@ -384,7 +384,6 @@ class ProjectController {
         // Don't clear the saved path - keep it for next session
         // localStorage.removeItem('lastProjectPath');
 
-        this._notifyForgeProjectChanged();
         this.uiManager.showWelcomeScreen();
         this.uiManager.updateStatus('Project closed');
         this.projectLoaded = false;
@@ -405,16 +404,6 @@ class ProjectController {
             if (!result) this.applicationCloseRequest = null;
         });
         return this.applicationCloseRequest;
-    }
-
-    /** Drop stale Forge tool project paths when the open project changes. */
-    _notifyForgeProjectChanged() {
-        try {
-            const forge = (typeof window !== 'undefined' && window.reactor && window.reactor.forgeManager) || null;
-            if (forge && typeof forge.onProjectChanged === 'function') forge.onProjectChanged();
-        } catch (e) {
-            console.warn('Forge project-change notify failed:', e);
-        }
     }
 
     async newProject() {
@@ -549,7 +538,6 @@ class ProjectController {
         // Load database
         this.uiManager.updateStatus('Loading database...');
         this.logProjectOpen('populate:start', { projectPath: this.currentProject?.path || null });
-        this._notifyForgeProjectChanged();
         const dbLoaded = await this.databaseManager.loadAllData(this.currentProject.path);
         this.logProjectOpen('populate:database', { loaded: dbLoaded });
 
@@ -562,7 +550,6 @@ class ProjectController {
             this.lastLoadedProjectPath = null;
             this.currentProject = null;
             this.projectLoaded = false;
-            this._notifyForgeProjectChanged();
             await this.uiManager.showWelcomeScreen();
             this.updateWindowTitle();
             alert(this._tt('The project database could not be loaded. Check the JSON files for parse errors.'));
