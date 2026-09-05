@@ -827,6 +827,9 @@
         // P37: отбрасывание — по паттерну рывка: стоп физики Altimit →
         // sub-step moveVector с коллизиями → стоп при упоре в стену.
         // Работает и во время стана (толчок в оглушении = hit-stun).
+        // P40: НЕ вызываем chained update — ядро MV обрабатывает moveType
+        // approach (враг идёт к игроку) и противодействует толчку:
+        // против направления врага толчок гасится, по направлению — усиливается.
         if (this._sdeKnockback && this._sdeKnockback.remaining > 0 && this._sdeKnockback.frames > 0) {
             this._sdeKnockback.frames--;
             this.amsForceStopPhysics();
@@ -835,8 +838,6 @@
             var kbStep = Math.min(kbSpeed, kb.remaining);
             var kbVx = kb.vx * kbStep;
             var kbVy = kb.vy * kbStep;
-            var kbBlocked = true;
-            var kbX0 = this._x, kbY0 = this._y;
             // sub-step коллизии как у рывка
             for (var kbs = 0; kbs < collisionSteps; kbs++) {
                 this.moveVector(kbVx / collisionSteps, kbVy / collisionSteps);
@@ -849,8 +850,7 @@
                 kb.remaining -= kbMoved;
                 if (kb.remaining <= 0) this._sdeKnockback = null;
             }
-            _SDAP_Game_CharacterBase_update.call(this);
-            return;
+            return; // P40: без chained update — ядро не противодействует толчку
         }
 
         // P37: стан — враг замирает (нет движения, нет ИИ)
