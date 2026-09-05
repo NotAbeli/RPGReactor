@@ -824,33 +824,21 @@
     // ======================================================================
     const _SDAP_Game_CharacterBase_update = Game_CharacterBase.prototype.update;
     Game_CharacterBase.prototype.update = function() {
-        // P37: отбрасывание — по паттерну рывка: стоп физики Altimit →
-        // sub-step moveVector с коллизиями → стоп при упоре в стену.
-        // Работает и во время стана (толчок в оглушении = hit-stun).
-        // P40: НЕ вызываем chained update — ядро MV обрабатывает moveType
-        // approach (враг идёт к игроку) и противодействует толчку:
-        // против направления врага толчок гасится, по направлению — усиливается.
+        // P40: отбрасывание — по паттерну рывка: стоп физики Altimit →
+        // ОДИН moveVector с полным вектором (без sub-steps — Math.floor
+        // в moveVector асимметричен на мелких значениях: влево тянет
+        // сильнее чем вправо). Коллизии обрабатываются moveVector'ом.
         if (this._sdeKnockback && this._sdeKnockback.remaining > 0 && this._sdeKnockback.frames > 0) {
             this._sdeKnockback.frames--;
             this.amsForceStopPhysics();
             var kb = this._sdeKnockback;
-            var kbSpeed = this.distancePerFrame() * 6; // 6x скорость — заметный толчок
+            var kbSpeed = this.distancePerFrame() * 6;
             var kbStep = Math.min(kbSpeed, kb.remaining);
-            var kbVx = kb.vx * kbStep;
-            var kbVy = kb.vy * kbStep;
-            // sub-step коллизии как у рывка
-            for (var kbs = 0; kbs < collisionSteps; kbs++) {
-                this.moveVector(kbVx / collisionSteps, kbVy / collisionSteps);
-            }
-            // сдвинулись? если нет — упёрлись в стену/мебель, стоп отбрасывания
-            var kbMoved = Math.hypot(this._x - kbX0, this._y - kbY0);
-            if (kbMoved < kbStep * 0.2) {
-                this._sdeKnockback = null;
-            } else {
-                kb.remaining -= kbMoved;
-                if (kb.remaining <= 0) this._sdeKnockback = null;
-            }
-            return; // P40: без chained update — ядро не противодействует толчку
+            this.moveVector(kb.vx * kbStep, kb.vy * kbStep);
+            var kbMoved = Math.hypot(kb.vx * kbStep, kb.vy * kbStep);
+            kb.remaining -= kbMoved;
+            if (kb.remaining <= 0 || kbMoved < 0.001) this._sdeKnockback = null;
+            return;
         }
 
         // P37: стан — враг замирает (нет движения, нет ИИ)
